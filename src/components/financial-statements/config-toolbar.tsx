@@ -40,6 +40,7 @@ interface ConfigToolbarProps {
   includeYoY: boolean;
   includeProForma?: boolean;
   showProFormaDetails?: boolean;
+  attachProFormaToPrint?: boolean;
   includeAllocations?: boolean;
   ebitdaOnly?: boolean;
   includeTotal?: boolean;
@@ -52,6 +53,7 @@ interface ConfigToolbarProps {
   onIncludeYoYChange: (val: boolean) => void;
   onIncludeProFormaChange?: (val: boolean) => void;
   onShowProFormaDetailsChange?: (val: boolean) => void;
+  onAttachProFormaToPrintChange?: (val: boolean) => void;
   onIncludeAllocationsChange?: (val: boolean) => void;
   onEbitdaOnlyChange?: (val: boolean) => void;
   onIncludeTotalChange?: (val: boolean) => void;
@@ -83,6 +85,7 @@ export function ConfigToolbar({
   includeYoY,
   includeProForma,
   showProFormaDetails,
+  attachProFormaToPrint,
   includeAllocations,
   ebitdaOnly,
   includeTotal,
@@ -95,6 +98,7 @@ export function ConfigToolbar({
   onIncludeYoYChange,
   onIncludeProFormaChange,
   onShowProFormaDetailsChange,
+  onAttachProFormaToPrintChange,
   onIncludeAllocationsChange,
   onEbitdaOnlyChange,
   onIncludeTotalChange,
@@ -245,6 +249,17 @@ export function ConfigToolbar({
                   }
                 />
                 Show Details
+              </label>
+            )}
+            {includeProForma && onAttachProFormaToPrintChange && (
+              <label className="flex items-center gap-1.5 text-xs cursor-pointer text-muted-foreground">
+                <Checkbox
+                  checked={attachProFormaToPrint ?? false}
+                  onCheckedChange={(checked) =>
+                    onAttachProFormaToPrintChange(checked === true)
+                  }
+                />
+                Attach to Print
               </label>
             )}
           </div>
