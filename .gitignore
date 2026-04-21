@@ -41,3 +41,13 @@ yarn-error.log*
 next-env.d.ts
 
 .vercel
+
+# python
+__pycache__/
+*.pyc
+
+# office temp/lock files
+~$*
+
+# claude local overrides (personal settings, not for team)
+.claude/settings.local.json
