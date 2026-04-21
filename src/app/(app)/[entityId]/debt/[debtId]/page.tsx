@@ -83,6 +83,7 @@ import {
 } from "@/lib/utils/amortization";
 import * as XLSX from "xlsx";
 import type { DebtStatus } from "@/lib/types/database";
+import { AmortizationExportDialog } from "./amortization-export-dialog";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyRow = any;
@@ -192,6 +193,9 @@ export default function DebtDetailPage() {
   const [whatIfRate, setWhatIfRate] = useState("");
   const [whatIfTerm, setWhatIfTerm] = useState("");
   const [showWhatIf, setShowWhatIf] = useState(false);
+
+  // Amortization Excel export
+  const [amortExportOpen, setAmortExportOpen] = useState(false);
 
   // Delete instrument
   const [deleting, setDeleting] = useState(false);
@@ -2139,7 +2143,7 @@ export default function DebtDetailPage() {
         <TabsContent value="amortization">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-4">
                 <div>
                   <CardTitle>Amortization Schedule</CardTitle>
                   <CardDescription>
@@ -2148,39 +2152,49 @@ export default function DebtDetailPage() {
                       : "Requires start date and balance to generate"}
                   </CardDescription>
                 </div>
-                {dynamicAmortization.length > 0 && (
-                  <div className="flex gap-6 text-right">
-                    <div>
-                      <span className="text-sm text-muted-foreground">Total Principal</span>
-                      <p className="text-lg font-semibold tabular-nums text-green-600">
-                        {formatCurrency(dynamicAmortization.reduce((s, r) => s + r.to_principal, 0))}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-sm text-muted-foreground">Total Interest</span>
-                      <p className="text-lg font-semibold tabular-nums text-amber-600">
-                        {formatCurrency(dynamicAmortization.reduce((s, r) => s + r.to_interest, 0))}
-                      </p>
-                    </div>
-                    {dynamicAmortization.some(r => r.unpaid_interest_end > 0.005) && (
+                <div className="flex items-center gap-6">
+                  {dynamicAmortization.length > 0 && (
+                    <div className="flex gap-6 text-right">
                       <div>
-                        <span className="text-sm text-muted-foreground">Unpaid Interest</span>
-                        <p className="text-lg font-semibold tabular-nums text-red-600">
-                          {formatCurrency(dynamicAmortization[dynamicAmortization.length - 1]?.unpaid_interest_end ?? 0)}
+                        <span className="text-sm text-muted-foreground">Total Principal</span>
+                        <p className="text-lg font-semibold tabular-nums text-green-600">
+                          {formatCurrency(dynamicAmortization.reduce((s, r) => s + r.to_principal, 0))}
                         </p>
                       </div>
-                    )}
-                    <div>
-                      <span className="text-sm text-muted-foreground">Payoff</span>
-                      <p className="text-lg font-semibold tabular-nums">
-                        {getPeriodShortLabel(
-                          dynamicAmortization[dynamicAmortization.length - 1]?.period_year ?? 0,
-                          dynamicAmortization[dynamicAmortization.length - 1]?.period_month ?? 0
-                        )}
-                      </p>
+                      <div>
+                        <span className="text-sm text-muted-foreground">Total Interest</span>
+                        <p className="text-lg font-semibold tabular-nums text-amber-600">
+                          {formatCurrency(dynamicAmortization.reduce((s, r) => s + r.to_interest, 0))}
+                        </p>
+                      </div>
+                      {dynamicAmortization.some(r => r.unpaid_interest_end > 0.005) && (
+                        <div>
+                          <span className="text-sm text-muted-foreground">Unpaid Interest</span>
+                          <p className="text-lg font-semibold tabular-nums text-red-600">
+                            {formatCurrency(dynamicAmortization[dynamicAmortization.length - 1]?.unpaid_interest_end ?? 0)}
+                          </p>
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-sm text-muted-foreground">Payoff</span>
+                        <p className="text-lg font-semibold tabular-nums">
+                          {getPeriodShortLabel(
+                            dynamicAmortization[dynamicAmortization.length - 1]?.period_year ?? 0,
+                            dynamicAmortization[dynamicAmortization.length - 1]?.period_month ?? 0
+                          )}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                  <Button
+                    variant="outline"
+                    onClick={() => setAmortExportOpen(true)}
+                    disabled={dynamicAmortization.length === 0}
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    Export
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -2485,6 +2499,14 @@ export default function DebtDetailPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <AmortizationExportDialog
+        open={amortExportOpen}
+        onOpenChange={setAmortExportOpen}
+        entityId={entityId}
+        instrument={instrument}
+        rows={dynamicAmortization}
+      />
     </div>
   );
 }
