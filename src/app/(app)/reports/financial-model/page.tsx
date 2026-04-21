@@ -87,10 +87,9 @@ export default function FinancialModelPage() {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   // Prevents the financial-data hook from firing until loadOrg has finished
-  // setting organizationId, includeProForma, and includeAllocations.  Without
-  // this gate the hook fires as soon as organizationId is set (before the
-  // async pro-forma / allocation checks complete), producing an intermediate
-  // fetch with incorrect config that causes revenue to "jump".
+  // setting organizationId.  Without this gate the hook could fire before
+  // the org/entity lookups complete, producing an intermediate fetch with
+  // incomplete config.
   const [configReady, setConfigReady] = useState(false);
 
   // Load organization
@@ -137,29 +136,10 @@ export default function FinancialModelPage() {
         );
       }
 
-      // Auto-enable pro forma toggle when active adjustments exist
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { count } = await (supabase as any)
-        .from("pro_forma_adjustments")
-        .select("id", { count: "exact", head: true })
-        .eq("organization_id", membership.organization_id)
-        .eq("is_excluded", false);
-
-      if (count && count > 0) {
-        setIncludeProForma(true);
-      }
-
-      // Auto-enable allocations toggle when active allocations exist
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { count: allocCount } = await (supabase as any)
-        .from("allocation_adjustments")
-        .select("id", { count: "exact", head: true })
-        .eq("organization_id", membership.organization_id)
-        .eq("is_excluded", false);
-
-      if (allocCount && allocCount > 0) {
-        setIncludeAllocations(true);
-      }
+      // Pro forma and allocations toggles intentionally default to unchecked.
+      // The user opts in explicitly via the toolbar; the API only includes
+      // these adjustments when the corresponding query flag is true, so the
+      // on-screen model matches the toggle state.
     }
 
     setConfigReady(true);
@@ -226,6 +206,7 @@ export default function FinancialModelPage() {
       includeProForma: String(includeProForma),
       includeAllocations: String(includeAllocations),
       includeTotal: String(includeTotal),
+      varianceDisplay,
       statements,
     });
     if (scope === "entity" && selectedEntityId) {
