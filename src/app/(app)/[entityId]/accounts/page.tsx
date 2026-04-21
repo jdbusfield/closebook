@@ -520,7 +520,7 @@ export default function AccountsPage() {
                 </SheetDescription>
               </SheetHeader>
 
-              <div className="mt-6 space-y-6">
+              <div className="space-y-6">
                 <div className="rounded-lg border p-4 bg-muted/30">
                   <div className="text-sm text-muted-foreground">
                     Current Balance
