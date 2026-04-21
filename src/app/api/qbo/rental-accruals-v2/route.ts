@@ -26,7 +26,6 @@ import {
   type AccountAccrualLine,
   type AccountAccrualTotal,
   type ProposedJELine,
-  type UnbilledSplit,
 } from "@/lib/utils/revenue-calc-by-account";
 
 export const maxDuration = 120;
@@ -305,14 +304,10 @@ export async function POST(request: Request) {
   // 5. Aggregate per account
   const invoiceDrivenTotals: AccountAccrualTotal[] = aggregateByAccount(allLines);
 
-  // 5a. Compute unbilled earned from active orders (no matching closed invoice)
-  //     and split it across GL accounts using the per-account ratio observed
-  //     in the invoices we just fetched. This matches the existing
-  //     unbilledNet = unbilledEarned × realizationRate formula on the Accruals tab.
-  // Try to load the full config shape (including account links). If the
-  // migration 20260420 hasn't been applied yet, the new columns don't exist
-  // so the extended SELECT will fail — fall back to the basic shape and
-  // carry on without links (the JE lines will use default labels).
+  // 5a. Load the entity accrual config — realization rate plus the linked
+  //     target accounts (Unbilled Receivables, Allowance, Accrued Revenue,
+  //     Deferred Revenue, Unbilled Revenue catch-all). Falls back gracefully
+  //     if migrations 20260420/20260421 haven't been applied.
   let accrualConfig:
     | {
         realization_rate: number | null;
@@ -320,12 +315,13 @@ export async function POST(request: Request) {
         allowance_account_id: string | null;
         accrued_revenue_account_id: string | null;
         deferred_revenue_account_id: string | null;
+        unbilled_revenue_account_id: string | null;
       }
     | null = null;
   const fullCfg = await adminClient
     .from("entity_accrual_config")
     .select(
-      "realization_rate, unbilled_receivables_account_id, allowance_account_id, accrued_revenue_account_id, deferred_revenue_account_id",
+      "realization_rate, unbilled_receivables_account_id, allowance_account_id, accrued_revenue_account_id, deferred_revenue_account_id, unbilled_revenue_account_id",
     )
     .eq("entity_id", entityId)
     .maybeSingle();
@@ -342,26 +338,13 @@ export async function POST(request: Request) {
         allowance_account_id: null,
         accrued_revenue_account_id: null,
         deferred_revenue_account_id: null,
+        unbilled_revenue_account_id: null,
       };
     }
   } else {
     accrualConfig = fullCfg.data;
   }
   const realizationRate = Number(accrualConfig?.realization_rate ?? 1);
-
-  // Build revenue-weight per account from the earned amounts we have. If we
-  // have no invoice data yet, the ratio is empty and the unbilled split
-  // falls through as a single unclassified bucket.
-  const totalEarnedAcrossAccounts = invoiceDrivenTotals.reduce(
-    (s, t) => s + t.earnedRevenue,
-    0,
-  );
-  const accountRatio = new Map<string, number>();
-  if (totalEarnedAcrossAccounts > 0) {
-    for (const t of invoiceDrivenTotals) {
-      accountRatio.set(t.glAccountNo, t.earnedRevenue / totalEarnedAcrossAccounts);
-    }
-  }
 
   // OrderNumber → sum of closed invoice revenue, from the invoices we already
   // have. Mirrors the existing logic in revenue-projection.ts.
@@ -447,88 +430,11 @@ export async function POST(request: Request) {
   const unbilledEarnedNet = round2(unbilledEarnedGross * realizationRate);
   const unbilledDiscount = round2(unbilledEarnedGross - unbilledEarnedNet);
 
-  // Split unbilled earned across GL accounts using the historical ratio.
-  // Stores BOTH gross and net per GL so the JE can debit gross to Unbilled
-  // Receivables, credit revenue at net, and credit the allowance contra for
-  // the discount portion. If we have no ratio (no invoice data), we return
-  // a single unclassified bucket the user can manually re-map later.
-  const unbilledByAccount: Array<{
-    glAccountNo: string;
-    glAccountDescription: string;
-    glAccountId: string;
-    share: number;
-    grossAmount: number;
-    netAmount: number;
-    amount: number; // kept for backward-compatible consumers (net)
-    unclassified: boolean;
-  }> = [];
-  if (unbilledEarnedGross > 0) {
-    if (accountRatio.size > 0) {
-      let grossAllocated = 0;
-      const ratioEntries = [...accountRatio.entries()];
-      const eligible = ratioEntries.filter(([glNo]) =>
-        invoiceDrivenTotals.some((t) => t.glAccountNo === glNo),
-      );
-      eligible.forEach(([glNo, share], idx) => {
-        const match = invoiceDrivenTotals.find((t) => t.glAccountNo === glNo)!;
-        const isLast = idx === eligible.length - 1;
-        const grossAmt = isLast
-          ? round2(unbilledEarnedGross - grossAllocated)
-          : round2(unbilledEarnedGross * share);
-        grossAllocated += grossAmt;
-        const netAmt = round2(grossAmt * realizationRate);
-        unbilledByAccount.push({
-          glAccountNo: glNo,
-          glAccountDescription: match.glAccountDescription,
-          glAccountId: match.glAccountId,
-          share,
-          grossAmount: grossAmt,
-          netAmount: netAmt,
-          amount: netAmt,
-          unclassified: false,
-        });
-      });
-    } else {
-      unbilledByAccount.push({
-        glAccountNo: "",
-        glAccountDescription: "Unclassified Revenue (no historical mapping)",
-        glAccountId: "",
-        share: 1,
-        grossAmount: round2(unbilledEarnedGross),
-        netAmount: round2(unbilledEarnedNet),
-        amount: round2(unbilledEarnedNet),
-        unclassified: true,
-      });
-    }
-  }
-
-  // 5b. For the summary display, merge unbilled earned (net) into the
-  // per-account totals so the user sees total exposure per GL. The JE
-  // building below uses the two sources SEPARATELY so invoice timing
-  // accruals and unbilled projections land in different journal entries.
-  const totalsByKey = new Map<string, AccountAccrualTotal>(
-    invoiceDrivenTotals.map((t) => [t.glAccountNo, { ...t }]),
-  );
-  for (const ub of unbilledByAccount) {
-    const existing = totalsByKey.get(ub.glAccountNo);
-    if (existing) {
-      existing.earnedRevenue = round2(existing.earnedRevenue + ub.netAmount);
-      existing.accrualAmount = round2(existing.accrualAmount + ub.netAmount);
-      existing.lineCount += 1;
-    } else {
-      totalsByKey.set(ub.glAccountNo, {
-        glAccountNo: ub.glAccountNo,
-        glAccountDescription: ub.glAccountDescription,
-        glAccountId: ub.glAccountId,
-        earnedRevenue: ub.netAmount,
-        billedAmount: 0,
-        accrualAmount: ub.netAmount,
-        deferralAmount: 0,
-        lineCount: 1,
-      });
-    }
-  }
-  const totals: AccountAccrualTotal[] = [...totalsByKey.values()].sort((a, b) =>
+  // 5b. Per-account summary table shows only invoice-driven exposure (timing
+  //     accruals + deferrals). Unbilled earned is a single catch-all credit
+  //     that lives in its own bucket — RW doesn't expose per-I-code GL data
+  //     on uninvoiced orders, so there's nothing to merge in here.
+  const totals: AccountAccrualTotal[] = [...invoiceDrivenTotals].sort((a, b) =>
     a.glAccountNo.localeCompare(b.glAccountNo),
   );
 
@@ -563,14 +469,16 @@ export async function POST(request: Request) {
   }));
 
   // 6b. Resolve configured "target" accounts (Unbilled Receivables,
-  //     Allowance for Discounts, Accrued Revenue, Deferred Revenue) against
-  //     the entity's chart. If the user hasn't linked them yet we fall back
-  //     to generic labels so the preview still renders.
+  //     Allowance for Discounts, Accrued Revenue, Deferred Revenue, Unbilled
+  //     Revenue catch-all) against the entity's chart. If the user hasn't
+  //     linked them yet we fall back to generic labels so the preview still
+  //     renders.
   const linkedAccountIds = [
     accrualConfig?.unbilled_receivables_account_id,
     accrualConfig?.allowance_account_id,
     accrualConfig?.accrued_revenue_account_id,
     accrualConfig?.deferred_revenue_account_id,
+    accrualConfig?.unbilled_revenue_account_id,
   ].filter((id): id is string => Boolean(id));
   const linkedAccountsById: Record<
     string,
@@ -617,37 +525,44 @@ export async function POST(request: Request) {
     accrualConfig?.deferred_revenue_account_id,
     "Deferred Revenue (Liability)",
   );
+  const unbilledRevenueAcct = linkedAccount(
+    accrualConfig?.unbilled_revenue_account_id,
+    "Unbilled Revenue (Catch-All Income)",
+  );
 
-  // 7. Build proposed JEs — separate invoice timing accruals from unbilled
-  //    projections, plus deferrals.
-  const unbilledSplit: UnbilledSplit[] = unbilledByAccount.map((u) => ({
-    glAccountNo: u.glAccountNo,
-    glAccountDescription: u.glAccountDescription,
-    glAccountId: u.glAccountId,
-    grossAmount: u.grossAmount,
-    netAmount: u.netAmount,
-  }));
+  // 7. Build proposed JEs — invoice timing accruals split per GL,
+  //    unbilled-earned collapsed to a single catch-all credit, deferrals
+  //    split per GL.
   const je = buildSplitProposedJEs(
     invoiceDrivenTotals,
-    unbilledSplit,
+    {
+      grossAmount: unbilledEarnedGross,
+      netAmount: unbilledEarnedNet,
+    },
     periodYear,
     periodMonth,
     {
       realizationRate,
       accruedRevAccount: { number: accruedRevAcct.number, name: accruedRevAcct.name },
       unbilledArAccount: { number: unbilledArAcct.number, name: unbilledArAcct.name },
+      unbilledRevenueAccount: {
+        number: unbilledRevenueAcct.number,
+        name: unbilledRevenueAcct.name,
+      },
       deferredRevAccount: { number: deferredRevAcct.number, name: deferredRevAcct.name },
       allowanceAccount: { number: allowanceAcct.number, name: allowanceAcct.name },
     },
   );
   // Resolve each JE line's QBO ID: prefer the revenue-GL match (per-account
-  // lines); fall back to the linked-account QBO ID for the aggregate Unbilled
-  // Receivables / Accrued Revenue / Allowance / Deferred Revenue lines.
+  // timing/deferral lines); fall back to the linked-account QBO ID for the
+  // aggregate Unbilled Receivables / Accrued Revenue / Allowance / Deferred
+  // Revenue / Unbilled Revenue catch-all lines.
   const qboForAggregate = (name: string): string | null => {
     if (name === unbilledArAcct.name) return unbilledArAcct.qboId;
     if (name === allowanceAcct.name) return allowanceAcct.qboId;
     if (name === accruedRevAcct.name) return accruedRevAcct.qboId;
     if (name === deferredRevAcct.name) return deferredRevAcct.qboId;
+    if (name === unbilledRevenueAcct.name) return unbilledRevenueAcct.qboId;
     return null;
   };
   const withQbo = (l: ProposedJELine) => ({
@@ -684,8 +599,12 @@ export async function POST(request: Request) {
       discount: round2(unbilledDiscount),
       net: round2(unbilledEarnedNet),
       orderCount: unbilledOrders.length,
-      hasHistoricalRatio: accountRatio.size > 0,
-      byAccount: unbilledByAccount,
+      catchAllAccount: {
+        number: unbilledRevenueAcct.number,
+        name: unbilledRevenueAcct.name,
+        qboId: unbilledRevenueAcct.qboId,
+        linked: Boolean(accrualConfig?.unbilled_revenue_account_id),
+      },
       orders: unbilledOrders.map((u) => ({
         orderNumber: u.order.OrderNumber,
         customer: u.order.Customer ?? "",
