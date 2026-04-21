@@ -112,6 +112,14 @@ export default function AccountsPage() {
     requires_reconciliation: false,
     notes: "",
   });
+  // Draft values for the two DB-backed account fields the detail panel lets
+  // the user edit. Kept separate from editSettings (which is localStorage
+  // only) because these need to be persisted via the accounts API.
+  const [editAccountFields, setEditAccountFields] = useState<{
+    accountNumber: string;
+    name: string;
+  }>({ accountNumber: "", name: "" });
+  const [savingAccountFields, setSavingAccountFields] = useState(false);
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
@@ -161,7 +169,72 @@ export default function AccountsPage() {
       notes: "",
     };
     setEditSettings({ ...existing });
+    setEditAccountFields({
+      accountNumber: account.account_number ?? "",
+      name: account.name,
+    });
     setSheetOpen(true);
+  }
+
+  async function handleSaveAccountFields() {
+    if (!selectedAccount) return;
+    const trimmedName = editAccountFields.name.trim();
+    if (trimmedName.length === 0) {
+      toast.error("Account name cannot be blank");
+      return;
+    }
+    const trimmedNumber = editAccountFields.accountNumber.trim();
+    const currentNumber = selectedAccount.account_number ?? "";
+    const numberChanged = trimmedNumber !== currentNumber;
+    const nameChanged = trimmedName !== selectedAccount.name;
+    if (!numberChanged && !nameChanged) {
+      toast.info("No changes to save");
+      return;
+    }
+
+    setSavingAccountFields(true);
+    try {
+      const res = await fetch(`/api/accounts/${selectedAccount.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(numberChanged
+            ? { accountNumber: trimmedNumber.length > 0 ? trimmedNumber : null }
+            : {}),
+          ...(nameChanged ? { name: trimmedName } : {}),
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error ?? "Failed to update account");
+        return;
+      }
+      const { account } = (await res.json()) as {
+        account: { account_number: string | null; name: string };
+      };
+      // Refresh the list in-place so the row reflects the update.
+      setAccounts((prev) =>
+        prev.map((a) =>
+          a.id === selectedAccount.id
+            ? {
+                ...a,
+                account_number: account.account_number,
+                name: account.name,
+              }
+            : a
+        )
+      );
+      setSelectedAccount({
+        ...selectedAccount,
+        account_number: account.account_number,
+        name: account.name,
+      });
+      toast.success("Account updated");
+    } catch {
+      toast.error("Failed to update account — network error");
+    } finally {
+      setSavingAccountFields(false);
+    }
   }
 
   function handleSaveSettings() {
@@ -454,6 +527,54 @@ export default function AccountsPage() {
                   </div>
                   <div className="text-2xl font-semibold tabular-nums">
                     {formatCurrency(selectedAccount.current_balance)}
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-4">
+                  <h3 className="font-medium">Account Details</h3>
+
+                  <div className="grid grid-cols-[140px_1fr] gap-3 items-start">
+                    <Label htmlFor="account-number" className="pt-2">
+                      Account Number
+                    </Label>
+                    <Input
+                      id="account-number"
+                      placeholder="e.g. 10100"
+                      value={editAccountFields.accountNumber}
+                      onChange={(e) =>
+                        setEditAccountFields((f) => ({
+                          ...f,
+                          accountNumber: e.target.value,
+                        }))
+                      }
+                    />
+
+                    <Label htmlFor="account-name" className="pt-2">
+                      Account Name
+                    </Label>
+                    <Input
+                      id="account-name"
+                      placeholder="Account name"
+                      value={editAccountFields.name}
+                      onChange={(e) =>
+                        setEditAccountFields((f) => ({
+                          ...f,
+                          name: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button
+                      size="sm"
+                      onClick={handleSaveAccountFields}
+                      disabled={savingAccountFields}
+                    >
+                      {savingAccountFields ? "Saving..." : "Save account details"}
+                    </Button>
                   </div>
                 </div>
 

@@ -160,10 +160,30 @@ export async function POST(request: Request) {
     );
   }
 
-  const name = (suppliedName ?? unmatchedRow.qbo_account_name ?? "").trim();
-  if (!name) {
+  const rawName = (suppliedName ?? unmatchedRow.qbo_account_name ?? "").trim();
+  if (!rawName) {
     return NextResponse.json({ error: "Account name is required" }, { status: 400 });
   }
+
+  // QBO trial balance reports collapse the account number into the name
+  // field (e.g. "10100 Cash" or "10100 - Cash - Operating"). If the caller
+  // didn't pass an explicit accountNumber, try to split a leading numeric
+  // prefix off the name so the account_number column is populated correctly
+  // and the remaining text is used as the display name.
+  let parsedNumber: string | null = null;
+  let name = rawName;
+  if (accountNumber === undefined) {
+    // Match a leading number-like token: digits with optional `.` or `-`
+    // separators (e.g. "10100", "10100.1", "10100-01"), followed by one of
+    // `- : . ·` or whitespace, then the rest of the name.
+    const m = rawName.match(/^(\d+(?:[.\-]\d+)*)\s*[-:·.]?\s+(.+)$/);
+    if (m && m[2].trim().length > 0) {
+      parsedNumber = m[1];
+      name = m[2].trim();
+    }
+  }
+  const resolvedAccountNumber =
+    accountNumber !== undefined ? (accountNumber ?? null) : parsedNumber;
 
   // Resolve classification / account_type — either supplied by the caller or
   // inferred from the name.
@@ -196,9 +216,11 @@ export async function POST(request: Request) {
       .insert({
         entity_id: unmatchedRow.entity_id,
         qbo_id: unmatchedRow.qbo_account_id ?? null,
-        account_number: accountNumber ?? null,
+        account_number: resolvedAccountNumber,
         name,
-        fully_qualified_name: name,
+        // Preserve the original QBO-display string as fully_qualified_name
+        // so existing match-by-name logic continues to work on re-sync.
+        fully_qualified_name: rawName,
         classification,
         account_type: accountType,
         is_active: true,
