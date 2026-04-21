@@ -72,7 +72,7 @@ import {
   type RWQuoteRow,
   type UnbilledEarnedLine,
 } from "@/lib/utils/revenue-projection";
-import { Lock, Unlock, Percent } from "lucide-react";
+import { Lock, Unlock, Percent, Download } from "lucide-react";
 import {
   ComposedChart,
   BarChart,
@@ -89,6 +89,14 @@ import {
   Cell,
   ReferenceLine,
 } from "recharts";
+import { GLAccountAccrualSection } from "@/components/revenue-projection/gl-account-accrual-section";
+import {
+  addSheet,
+  createWorkbook,
+  downloadWorkbook,
+  NUMBER_FORMATS,
+} from "@/lib/utils/excel";
+import { createClient as createSupabaseClient } from "@/lib/supabase/client";
 
 // ─── Snapshot Row Type ──────────────────────────────────────────────────────
 
@@ -123,6 +131,17 @@ function formatDate(dateStr: string | null | undefined): string {
     day: "numeric",
     year: "numeric",
   });
+}
+
+// Parse RW date strings ("2026-03-15" / "2026-03-15T..." / "03/15/2026") into
+// a local JS Date without timezone drift. Returns undefined for blank input.
+function parseInvoiceDate(s: string | null | undefined): Date | undefined {
+  if (!s) return undefined;
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+  const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (us) return new Date(Number(us[3]), Number(us[1]) - 1, Number(us[2]));
+  return undefined;
 }
 
 function formatCompact(value: number): string {
@@ -756,6 +775,217 @@ export default function RevenueProjectionPage({ entityId: entityIdProp, isEmbed,
     });
   }, []);
 
+  const [exportingInvoices, setExportingInvoices] = useState(false);
+
+  const exportInvoicesToExcel = useCallback(async () => {
+    if (!data || filteredInvoices.length === 0) return;
+    setExportingInvoices(true);
+    try {
+      const supabase = createSupabaseClient();
+      const { data: entityRow } = await supabase
+        .from("entities")
+        .select("name")
+        .eq("id", entityId)
+        .single();
+      const entityName =
+        (entityRow as { name?: string } | null)?.name ?? "Versatile";
+
+      const showAllocation =
+        dateMode === "rental_period" && invoiceMonthFilter !== "all";
+      const dateModeLabel =
+        dateMode === "invoice_date"
+          ? "Invoice Date"
+          : dateMode === "rental_period"
+            ? "Rental Period (pro-rata)"
+            : "Billing Date";
+      const monthLabel =
+        invoiceMonthFilter === "all"
+          ? "All Months"
+          : invoiceMonths.find((m) => m.key === invoiceMonthFilter)?.label ??
+            invoiceMonthFilter;
+      const periodLabel = `${monthLabel} · ${dateModeLabel}`;
+      const generatedOn = new Date().toLocaleString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+
+      interface InvoiceExportRow {
+        customer: string;
+        invoiceNumber: string;
+        status: string;
+        orderNumber: string;
+        orderDescription: string;
+        invoiceDate: Date | undefined;
+        billingStart: Date | undefined;
+        billingEnd: Date | undefined;
+        equipmentType: string;
+        subTotal: number;
+        tax: number;
+        grossTotal: number;
+        allocatedAmount: number;
+        allocationPct: number | null;
+        allocationDays: number | null;
+      }
+
+      const rows: InvoiceExportRow[] = filteredInvoices.map((inv) => {
+        const alloc = showAllocation
+          ? inv.allocations?.find((a) => a.month === invoiceMonthFilter)
+          : undefined;
+        return {
+          customer: inv.customer || "Unknown",
+          invoiceNumber: inv.invoiceNumber,
+          status: inv.status,
+          orderNumber: inv.orderNumber,
+          orderDescription: inv.orderDescription,
+          invoiceDate: parseInvoiceDate(inv.invoiceDate),
+          billingStart: parseInvoiceDate(inv.billingStartDate),
+          billingEnd: parseInvoiceDate(inv.billingEndDate),
+          equipmentType: inv.equipmentType,
+          subTotal: inv.subTotal,
+          tax: inv.tax,
+          grossTotal: inv.grossTotal,
+          allocatedAmount: showAllocation
+            ? alloc?.amount ?? inv.subTotal
+            : inv.subTotal,
+          allocationPct: showAllocation ? alloc?.percentage ?? null : null,
+          allocationDays: showAllocation ? alloc?.days ?? null : null,
+        };
+      });
+
+      const wb = createWorkbook({
+        company: entityName,
+        title: `Invoices — ${monthLabel}`,
+      });
+
+      addSheet<InvoiceExportRow>(wb, {
+        name: "Invoices",
+        title: {
+          entityName,
+          reportTitle: `Invoices — ${monthLabel}`,
+          subtitle: `Grouped by ${dateModeLabel.toLowerCase()} · ${filteredInvoices.length} invoices, ${customerGroups.length} customers`,
+          period: periodLabel,
+          asOf: `Generated ${generatedOn}`,
+        },
+        columns: [
+          { header: "Customer", width: 30, value: (r) => r.customer },
+          { header: "Invoice #", width: 14, value: (r) => r.invoiceNumber },
+          { header: "Status", width: 12, value: (r) => r.status },
+          { header: "Order #", width: 14, value: (r) => r.orderNumber || "—" },
+          {
+            header: "Order Description",
+            width: 38,
+            value: (r) => r.orderDescription || "—",
+          },
+          {
+            header: "Invoice Date",
+            width: 14,
+            value: (r) => r.invoiceDate ?? null,
+            format: NUMBER_FORMATS.date,
+          },
+          {
+            header: "Billing Start",
+            width: 14,
+            value: (r) => r.billingStart ?? null,
+            format: NUMBER_FORMATS.date,
+          },
+          {
+            header: "Billing End",
+            width: 14,
+            value: (r) => r.billingEnd ?? null,
+            format: NUMBER_FORMATS.date,
+          },
+          {
+            header: "Equipment",
+            width: 16,
+            value: (r) =>
+              ({
+                vehicle: "Vehicle",
+                grip_lighting: "Grip & Lighting",
+                studio: "Studio",
+                pro_supplies: "Pro Supplies",
+              }[r.equipmentType] ?? r.equipmentType),
+          },
+          {
+            header: "Revenue (Subtotal)",
+            width: 18,
+            value: (r) => r.subTotal,
+            format: NUMBER_FORMATS.currency,
+            total: "sum",
+          },
+          {
+            header: "Tax",
+            width: 14,
+            value: (r) => r.tax,
+            format: NUMBER_FORMATS.currency,
+            total: "sum",
+          },
+          {
+            header: "Gross Total",
+            width: 16,
+            value: (r) => r.grossTotal,
+            format: NUMBER_FORMATS.currency,
+            total: "sum",
+          },
+          ...(showAllocation
+            ? ([
+                {
+                  header: "Alloc %",
+                  width: 10,
+                  value: (r: InvoiceExportRow) =>
+                    r.allocationPct == null ? "" : r.allocationPct / 100,
+                  format: NUMBER_FORMATS.percent,
+                },
+                {
+                  header: "Alloc Days",
+                  width: 11,
+                  value: (r: InvoiceExportRow) => r.allocationDays ?? null,
+                  format: NUMBER_FORMATS.integer,
+                },
+                {
+                  header: `Allocated to ${monthLabel}`,
+                  width: 22,
+                  value: (r: InvoiceExportRow) => r.allocatedAmount,
+                  format: NUMBER_FORMATS.currency,
+                  total: "sum",
+                },
+              ] as const)
+            : []),
+        ],
+        rows,
+        groupBy: (r) => r.customer,
+        sort: (a, b) =>
+          a.customer.localeCompare(b.customer) ||
+          a.invoiceNumber.localeCompare(b.invoiceNumber),
+        grandTotal: true,
+        footnote: showAllocation
+          ? `"Allocated" column shows the portion of each invoice's subtotal recognised in ${monthLabel} based on rental period overlap.`
+          : `For QuickBooks reconciliation: compare Revenue (Subtotal) to QB income for this period. Status column: CLOSED/PROCESSED = synced to QB; NEW/APPROVED = pending in RentalWorks.`,
+      });
+
+      const fileSlug = `${entityName.replace(/\s+/g, "_")}_Invoices_${
+        invoiceMonthFilter === "all" ? "All" : invoiceMonthFilter
+      }`;
+      await downloadWorkbook(wb, fileSlug);
+      toast.success(`Exported ${filteredInvoices.length} invoices to Excel`);
+    } catch (err) {
+      console.error("Invoice export error:", err);
+      toast.error(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setExportingInvoices(false);
+    }
+  }, [
+    data,
+    filteredInvoices,
+    customerGroups,
+    invoiceMonthFilter,
+    invoiceMonths,
+    dateMode,
+    entityId,
+  ]);
+
   if (loading && !data) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
@@ -1276,7 +1506,7 @@ export default function RevenueProjectionPage({ entityId: entityIdProp, isEmbed,
         <TabsContent value="invoices">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex items-start justify-between gap-3">
                 <div>
                   <CardTitle>Invoices</CardTitle>
                   <CardDescription>
@@ -1288,33 +1518,54 @@ export default function RevenueProjectionPage({ entityId: entityIdProp, isEmbed,
                         : "rental billing date"}
                   </CardDescription>
                 </div>
-                {invoiceMonths.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <button
-                      onClick={() => setInvoiceMonthFilter("all")}
-                      className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                        invoiceMonthFilter === "all"
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      All
-                    </button>
-                    {invoiceMonths.map(({ key, label }) => (
+                <div className="flex flex-wrap items-center justify-end gap-1.5">
+                  {invoiceMonths.length > 0 && (
+                    <>
                       <button
-                        key={key}
-                        onClick={() => setInvoiceMonthFilter(key)}
+                        onClick={() => setInvoiceMonthFilter("all")}
                         className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                          invoiceMonthFilter === key
+                          invoiceMonthFilter === "all"
                             ? "bg-primary text-primary-foreground"
                             : "bg-muted text-muted-foreground hover:text-foreground"
                         }`}
                       >
-                        {label}
+                        All
                       </button>
-                    ))}
-                  </div>
-                )}
+                      {invoiceMonths.map(({ key, label }) => (
+                        <button
+                          key={key}
+                          onClick={() => setInvoiceMonthFilter(key)}
+                          className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                            invoiceMonthFilter === key
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={exportInvoicesToExcel}
+                    disabled={
+                      exportingInvoices ||
+                      !data ||
+                      filteredInvoices.length === 0
+                    }
+                    className="ml-1 h-7 px-2.5"
+                    title="Export the filtered invoice list to Excel for QuickBooks reconciliation"
+                  >
+                    {exportingInvoices ? (
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Download className="mr-1.5 h-3.5 w-3.5" />
+                    )}
+                    Export
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -3502,6 +3753,7 @@ function AccrualTab({
         onClosed={loadCloses}
       />
       <HistoricalClosesSection closes={closes} loading={closesLoading} onRefresh={loadCloses} />
+      <GLAccountAccrualSection entityId={entityId} />
     </>
   );
 }

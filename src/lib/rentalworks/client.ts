@@ -56,6 +56,23 @@ export interface BrowseResponse<T = Record<string, unknown>> {
   columnIndex: Record<string, number>;
 }
 
+export interface RWGLDistributionRow {
+  Date: string;
+  GlAccountNo: string;
+  GlAccountDescription: string;
+  GlAccountId: string;
+  GroupHeading: string; // e.g. "INCOME"
+  OrderBy: number;
+  GroupHeadingOrder: number;
+  Debit: number;
+  Credit: number;
+  CurrencyId: string;
+  CurrencyCode: string;
+  CurrencySymbol: string;
+  OfficeLocationId: string;
+  OfficeLocation: string;
+}
+
 export interface JwtResponse {
   statuscode: number;
   statusmessage: string;
@@ -295,6 +312,16 @@ export class RentalWorksClient {
   // Invoice Items (requires uniqueids filter)
   async getInvoiceItems(invoiceId: string, params?: BrowseRequest) {
     return this.browse('invoiceitem', {
+      ...params,
+      uniqueids: { InvoiceId: invoiceId, ...(params?.uniqueids ?? {}) },
+    });
+  }
+
+  // GL Distribution (requires uniqueids: { InvoiceId }). Returns the per-account JE
+  // that RW posts for the invoice — AR debit + revenue credits, already mapped to GL numbers.
+  async getGLDistribution(invoiceId: string, params?: BrowseRequest) {
+    return this.browse<RWGLDistributionRow>('gldistribution', {
+      pagesize: 500,
       ...params,
       uniqueids: { InvoiceId: invoiceId, ...(params?.uniqueids ?? {}) },
     });
