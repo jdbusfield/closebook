@@ -128,6 +128,30 @@ interface UnbilledByAccount {
   unclassified: boolean;
 }
 
+type TemplateSource =
+  | "same-order"
+  | "same-customer"
+  | "same-type"
+  | "global"
+  | "unclassified";
+
+interface PerOrderSplit {
+  orderNumber: string | null;
+  customer: string;
+  equipmentType: string;
+  grossInMonth: number;
+  templateSource: TemplateSource;
+  templateDetail: string;
+  lines: Array<{
+    glAccountNo: string;
+    glAccountDescription: string;
+    glAccountId: string;
+    grossAmount: number;
+    netAmount: number;
+    share: number;
+  }>;
+}
+
 interface UnbilledEarned {
   realizationRate: number;
   gross: number;
@@ -137,6 +161,8 @@ interface UnbilledEarned {
   hasHistoricalRatio: boolean;
   byAccount: UnbilledByAccount[];
   orders: UnbilledOrderDetail[];
+  templateCounts?: Record<TemplateSource, number>;
+  perOrderSplits?: PerOrderSplit[];
 }
 
 interface ApiResponse {
@@ -1102,9 +1128,19 @@ export function GLAccountAccrualSection({ entityId }: { entityId: string }) {
                   realization rate with the remaining{" "}
                   {(100 - data.unbilledEarned.realizationRate * 100).toFixed(0)}
                   % credited to the Allowance for Discounts contra-revenue
-                  account. GL split uses the historical ratio from this
-                  period&apos;s invoices.
+                  account. GL split is computed <strong>per order</strong>:
+                  each order uses its own prior invoices when available, then
+                  the same customer&apos;s invoices, then invoices of the same
+                  equipment type (vehicle / grip &amp; lighting / studio / pro
+                  supplies), falling back to the period-wide mix only if
+                  nothing better exists. Hover a credit line to see which
+                  orders contributed and which template each fell to.
                 </p>
+                {data.unbilledEarned.templateCounts && (
+                  <div className="text-xs text-muted-foreground mb-2">
+                    {renderTemplateCounts(data.unbilledEarned.templateCounts)}
+                  </div>
+                )}
                 <TooltipProvider delayDuration={150}>
                   <div className="overflow-x-auto rounded-md border">
                     <Table>
@@ -1373,6 +1409,24 @@ function StatCard({ label, value }: { label: string; value: string }) {
   );
 }
 
+const TEMPLATE_SOURCE_LABELS: Record<TemplateSource, string> = {
+  "same-order": "same order",
+  "same-customer": "same customer",
+  "same-type": "same equipment type",
+  "global": "period-wide mix",
+  "unclassified": "unclassified",
+};
+
+function renderTemplateCounts(counts: Record<TemplateSource, number>): string {
+  const parts: string[] = [];
+  (Object.keys(TEMPLATE_SOURCE_LABELS) as TemplateSource[]).forEach((k) => {
+    const n = counts[k] ?? 0;
+    if (n > 0) parts.push(`${n} ${TEMPLATE_SOURCE_LABELS[k]}`);
+  });
+  if (parts.length === 0) return "No orders to split";
+  return `GL templates: ${parts.join(" · ")}`;
+}
+
 function UnbilledEarnedSection({ ub }: { ub: UnbilledEarned }) {
   const [showOrders, setShowOrders] = useState(false);
   const ratePct = Math.round(ub.realizationRate * 1000) / 10;
@@ -1383,11 +1437,17 @@ function UnbilledEarnedSection({ ub }: { ub: UnbilledEarned }) {
           Unbilled Earned (active orders, no invoice yet)
         </div>
         <div className="text-xs text-blue-800/80">
-          Orders whose rental period overlaps this month but haven&apos;t been invoiced.
-          Revenue is allocated to GL accounts by the historical ratio of accounts
-          hit by this period&apos;s invoices, then discounted by the entity&apos;s
-          realization rate ({ratePct}%).
+          Orders whose rental period overlaps this month but haven&apos;t been
+          invoiced. Each order is split to its own GL accounts using the most
+          specific template available (same order &rarr; same customer &rarr;
+          same equipment type &rarr; period-wide mix), then discounted by the
+          entity&apos;s realization rate ({ratePct}%).
         </div>
+        {ub.templateCounts && (
+          <div className="text-xs text-blue-800/80 mt-1">
+            {renderTemplateCounts(ub.templateCounts)}
+          </div>
+        )}
       </div>
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
         <StatCard label="Active Orders" value={String(ub.orderCount)} />
@@ -1396,7 +1456,7 @@ function UnbilledEarnedSection({ ub }: { ub: UnbilledEarned }) {
         <StatCard label="Net (Accrual)" value={formatCurrency(ub.net)} />
         <StatCard
           label="GL Split"
-          value={ub.hasHistoricalRatio ? "Historical ratio" : "Unclassified"}
+          value={ub.hasHistoricalRatio ? "Per-order template" : "Unclassified"}
         />
       </div>
       {ub.byAccount.length > 0 && (
@@ -1636,9 +1696,31 @@ function buildBreakdown({
       };
     }
 
-    // Per-GL credit line: each order contributes earnedInMonth × share × rate
-    // Share = per-GL portion of the proposed net; derive from this JE line's
-    // credit vs total net across all orders.
+    // Per-GL credit line: only orders whose own template hit THIS GL account
+    // contribute. We pull from perOrderSplits (authoritative) when available
+    // and fall back to the legacy "every order contributes proportionally"
+    // behavior if the API hasn't upgraded yet.
+    const splits = unbilledEarned.perOrderSplits;
+    if (splits && splits.length > 0) {
+      for (const p of splits) {
+        const match = p.lines.find((ln) => ln.glAccountNo === accountNumber);
+        if (!match || match.netAmount <= 0) continue;
+        rows.push({
+          kind: "unbilled",
+          label: p.orderNumber ?? "(no order #)",
+          secondary: `${p.customer} · ${TEMPLATE_SOURCE_LABELS[p.templateSource]} template`,
+          earned: round2(match.netAmount),
+          billed: 0,
+          diff: round2(match.netAmount),
+        });
+      }
+      return {
+        rows: rows.sort((a, b) => b.diff - a.diff),
+        footerNote: `Only orders whose per-order GL template includes this account contribute. Amounts are net of realization rate (${(rate * 100).toFixed(0)}%).`,
+      };
+    }
+
+    // Legacy fallback: proportional share across all orders.
     const totalOrderEarnedInMonth = unbilledEarned.orders.reduce(
       (s, o) => s + o.earnedInMonth,
       0,

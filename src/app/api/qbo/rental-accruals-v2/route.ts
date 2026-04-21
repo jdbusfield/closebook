@@ -28,6 +28,13 @@ import {
   type ProposedJELine,
   type UnbilledSplit,
 } from "@/lib/utils/revenue-calc-by-account";
+import {
+  splitUnbilledByOrder,
+  type OrderGLTemplateSource,
+  type UnbilledOrderForSplit,
+  type PerOrderSplit,
+} from "@/lib/utils/unbilled-order-gl-split";
+import { classifyEquipmentType } from "@/lib/utils/rebate-calculations";
 
 export const maxDuration = 120;
 
@@ -305,10 +312,41 @@ export async function POST(request: Request) {
   // 5. Aggregate per account
   const invoiceDrivenTotals: AccountAccrualTotal[] = aggregateByAccount(allLines);
 
+  // 5-prep. Build per-invoice GL templates. Each closed invoice we successfully
+  //         fetched becomes a candidate template for unbilled-order splitting.
+  //         We keep the revenue credits (4xxxx) only — that's what actually
+  //         maps to the income side of the JE.
+  const glTemplates: OrderGLTemplateSource[] = [];
+  for (const r of fetchResults) {
+    if (!r.ok) continue;
+    const inv = r.invoice;
+    const revenueLines = r.gl
+      .filter((g) =>
+        isRevenueAccount(String(g.GlAccountNo ?? ""), String(g.GroupHeading ?? "")),
+      )
+      .map((g) => ({
+        glAccountNo: String(g.GlAccountNo ?? ""),
+        glAccountDescription: String(g.GlAccountDescription ?? ""),
+        glAccountId: String(g.GlAccountId ?? ""),
+        revenueAmount: toNum(g.Credit) - toNum(g.Debit),
+      }))
+      .filter((l) => l.revenueAmount > 0);
+    if (revenueLines.length === 0) continue;
+    glTemplates.push({
+      invoiceNumber: inv.InvoiceNumber,
+      orderNumber: inv.OrderNumber ?? null,
+      customerName: inv.Customer ?? "",
+      equipmentType: classifyEquipmentType(inv.OrderDescription ?? ""),
+      glLines: revenueLines,
+    });
+  }
+
   // 5a. Compute unbilled earned from active orders (no matching closed invoice)
-  //     and split it across GL accounts using the per-account ratio observed
-  //     in the invoices we just fetched. This matches the existing
-  //     unbilledNet = unbilledEarned × realizationRate formula on the Accruals tab.
+  //     and split each order's amount across GL accounts using the most
+  //     specific template available for THAT order (prior same-order invoice,
+  //     then same customer, then same equipment type, then period-wide mix).
+  //     This fixes the "single vehicle order sprinkled across 18 accounts" bug
+  //     the old period-wide historical ratio caused.
   // Try to load the full config shape (including account links). If the
   // migration 20260420 hasn't been applied yet, the new columns don't exist
   // so the extended SELECT will fail — fall back to the basic shape and
@@ -348,20 +386,6 @@ export async function POST(request: Request) {
     accrualConfig = fullCfg.data;
   }
   const realizationRate = Number(accrualConfig?.realization_rate ?? 1);
-
-  // Build revenue-weight per account from the earned amounts we have. If we
-  // have no invoice data yet, the ratio is empty and the unbilled split
-  // falls through as a single unclassified bucket.
-  const totalEarnedAcrossAccounts = invoiceDrivenTotals.reduce(
-    (s, t) => s + t.earnedRevenue,
-    0,
-  );
-  const accountRatio = new Map<string, number>();
-  if (totalEarnedAcrossAccounts > 0) {
-    for (const t of invoiceDrivenTotals) {
-      accountRatio.set(t.glAccountNo, t.earnedRevenue / totalEarnedAcrossAccounts);
-    }
-  }
 
   // OrderNumber → sum of closed invoice revenue, from the invoices we already
   // have. Mirrors the existing logic in revenue-projection.ts.
@@ -447,11 +471,26 @@ export async function POST(request: Request) {
   const unbilledEarnedNet = round2(unbilledEarnedGross * realizationRate);
   const unbilledDiscount = round2(unbilledEarnedGross - unbilledEarnedNet);
 
-  // Split unbilled earned across GL accounts using the historical ratio.
-  // Stores BOTH gross and net per GL so the JE can debit gross to Unbilled
-  // Receivables, credit revenue at net, and credit the allowance contra for
-  // the discount portion. If we have no ratio (no invoice data), we return
-  // a single unclassified bucket the user can manually re-map later.
+  // Split unbilled earned per order against the best-available GL template.
+  // Each order drives its own portion of the split — a pure vehicle order
+  // like AC10005 lands its dollars on vehicle revenue accounts rather than
+  // being sprinkled across every GL the period's invoice mix happens to
+  // touch.  Stores BOTH gross and net per GL so the JE can debit gross to
+  // Unbilled Receivables, credit revenue at net, and credit the allowance
+  // contra for the discount portion.
+  const ordersForSplit: UnbilledOrderForSplit[] = unbilledOrders.map((u) => ({
+    orderNumber: u.order.OrderNumber ?? null,
+    customerName: u.order.Customer ?? "",
+    equipmentType: classifyEquipmentType(
+      (u.order as unknown as { Description?: string }).Description ?? "",
+    ),
+    grossInMonth: u.earnedInMonth,
+  }));
+  const splitResult = splitUnbilledByOrder({
+    orders: ordersForSplit,
+    templates: glTemplates,
+  });
+
   const unbilledByAccount: Array<{
     glAccountNo: string;
     glAccountDescription: string;
@@ -461,46 +500,16 @@ export async function POST(request: Request) {
     netAmount: number;
     amount: number; // kept for backward-compatible consumers (net)
     unclassified: boolean;
-  }> = [];
-  if (unbilledEarnedGross > 0) {
-    if (accountRatio.size > 0) {
-      let grossAllocated = 0;
-      const ratioEntries = [...accountRatio.entries()];
-      const eligible = ratioEntries.filter(([glNo]) =>
-        invoiceDrivenTotals.some((t) => t.glAccountNo === glNo),
-      );
-      eligible.forEach(([glNo, share], idx) => {
-        const match = invoiceDrivenTotals.find((t) => t.glAccountNo === glNo)!;
-        const isLast = idx === eligible.length - 1;
-        const grossAmt = isLast
-          ? round2(unbilledEarnedGross - grossAllocated)
-          : round2(unbilledEarnedGross * share);
-        grossAllocated += grossAmt;
-        const netAmt = round2(grossAmt * realizationRate);
-        unbilledByAccount.push({
-          glAccountNo: glNo,
-          glAccountDescription: match.glAccountDescription,
-          glAccountId: match.glAccountId,
-          share,
-          grossAmount: grossAmt,
-          netAmount: netAmt,
-          amount: netAmt,
-          unclassified: false,
-        });
-      });
-    } else {
-      unbilledByAccount.push({
-        glAccountNo: "",
-        glAccountDescription: "Unclassified Revenue (no historical mapping)",
-        glAccountId: "",
-        share: 1,
-        grossAmount: round2(unbilledEarnedGross),
-        netAmount: round2(unbilledEarnedNet),
-        amount: round2(unbilledEarnedNet),
-        unclassified: true,
-      });
-    }
-  }
+  }> = splitResult.byAccount.map((a) => ({
+    glAccountNo: a.glAccountNo,
+    glAccountDescription: a.glAccountDescription,
+    glAccountId: a.glAccountId,
+    share: a.share,
+    grossAmount: round2(a.grossAmount),
+    netAmount: round2(a.grossAmount * realizationRate),
+    amount: round2(a.grossAmount * realizationRate),
+    unclassified: a.unclassified,
+  }));
 
   // 5b. For the summary display, merge unbilled earned (net) into the
   // per-account totals so the user sees total exposure per GL. The JE
@@ -684,8 +693,27 @@ export async function POST(request: Request) {
       discount: round2(unbilledDiscount),
       net: round2(unbilledEarnedNet),
       orderCount: unbilledOrders.length,
-      hasHistoricalRatio: accountRatio.size > 0,
+      hasHistoricalRatio: glTemplates.length > 0,
       byAccount: unbilledByAccount,
+      templateCounts: splitResult.templateCounts,
+      perOrderSplits: splitResult.perOrder.map(
+        (p): PerOrderSplitResponse => ({
+          orderNumber: p.orderNumber,
+          customer: p.customerName,
+          equipmentType: p.equipmentType,
+          grossInMonth: p.grossInMonth,
+          templateSource: p.templateSource,
+          templateDetail: p.templateDetail,
+          lines: p.lines.map((ln) => ({
+            glAccountNo: ln.glAccountNo,
+            glAccountDescription: ln.glAccountDescription,
+            glAccountId: ln.glAccountId,
+            grossAmount: ln.grossAmount,
+            netAmount: round2(ln.grossAmount * realizationRate),
+            share: ln.share,
+          })),
+        }),
+      ),
       orders: unbilledOrders.map((u) => ({
         orderNumber: u.order.OrderNumber,
         customer: u.order.Customer ?? "",
@@ -707,6 +735,23 @@ export async function POST(request: Request) {
       })),
     },
   });
+}
+
+interface PerOrderSplitResponse {
+  orderNumber: string | null;
+  customer: string;
+  equipmentType: PerOrderSplit["equipmentType"];
+  grossInMonth: number;
+  templateSource: PerOrderSplit["templateSource"];
+  templateDetail: string;
+  lines: Array<{
+    glAccountNo: string;
+    glAccountDescription: string;
+    glAccountId: string;
+    grossAmount: number;
+    netAmount: number;
+    share: number;
+  }>;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
