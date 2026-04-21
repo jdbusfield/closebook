@@ -79,6 +79,10 @@ export default function FinancialModelPage() {
   const [includeYoY, setIncludeYoY] = useState(false);
   const [includeProForma, setIncludeProForma] = useState(false);
   const [showProFormaDetails, setShowProFormaDetails] = useState(false);
+  // Controls whether the pro forma detail schedule is attached as an extra
+  // page to the browser Print output. Defaults to off so printing the model
+  // doesn't balloon to an extra page unless the user asks for it.
+  const [attachProFormaToPrint, setAttachProFormaToPrint] = useState(false);
   const [includeAllocations, setIncludeAllocations] = useState(false);
   const [includeTotal, setIncludeTotal] = useState(false);
   const [ebitdaOnly, setEbitdaOnly] = useState(false);
@@ -87,9 +91,10 @@ export default function FinancialModelPage() {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   // Prevents the financial-data hook from firing until loadOrg has finished
-  // setting organizationId.  Without this gate the hook could fire before
-  // the org/entity lookups complete, producing an intermediate fetch with
-  // incomplete config.
+  // setting organizationId, includeProForma, and includeAllocations.  Without
+  // this gate the hook fires as soon as organizationId is set (before the
+  // async pro-forma / allocation checks complete), producing an intermediate
+  // fetch with incorrect config that causes revenue to "jump".
   const [configReady, setConfigReady] = useState(false);
 
   // Load organization
@@ -136,10 +141,31 @@ export default function FinancialModelPage() {
         );
       }
 
-      // Pro forma and allocations toggles intentionally default to unchecked.
-      // The user opts in explicitly via the toolbar; the API only includes
-      // these adjustments when the corresponding query flag is true, so the
-      // on-screen model matches the toggle state.
+      // Auto-enable pro forma toggle when active adjustments exist so the
+      // model numbers include them by default. The user can still uncheck
+      // the toggle to hide them.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { count } = await (supabase as any)
+        .from("pro_forma_adjustments")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", membership.organization_id)
+        .eq("is_excluded", false);
+
+      if (count && count > 0) {
+        setIncludeProForma(true);
+      }
+
+      // Auto-enable allocations toggle when active allocations exist.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { count: allocCount } = await (supabase as any)
+        .from("allocation_adjustments")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", membership.organization_id)
+        .eq("is_excluded", false);
+
+      if (allocCount && allocCount > 0) {
+        setIncludeAllocations(true);
+      }
     }
 
     setConfigReady(true);
@@ -374,6 +400,7 @@ export default function FinancialModelPage() {
         includeYoY={includeYoY}
         includeProForma={includeProForma}
         showProFormaDetails={showProFormaDetails}
+        attachProFormaToPrint={attachProFormaToPrint}
         includeAllocations={includeAllocations}
         ebitdaOnly={ebitdaOnly}
         includeTotal={includeTotal}
@@ -386,9 +413,13 @@ export default function FinancialModelPage() {
         onIncludeYoYChange={setIncludeYoY}
         onIncludeProFormaChange={(val) => {
           setIncludeProForma(val);
-          if (!val) setShowProFormaDetails(false);
+          if (!val) {
+            setShowProFormaDetails(false);
+            setAttachProFormaToPrint(false);
+          }
         }}
         onShowProFormaDetailsChange={setShowProFormaDetails}
+        onAttachProFormaToPrintChange={setAttachProFormaToPrint}
         onIncludeAllocationsChange={setIncludeAllocations}
         onEbitdaOnlyChange={setEbitdaOnly}
         onIncludeTotalChange={setIncludeTotal}
@@ -626,7 +657,7 @@ export default function FinancialModelPage() {
               </div>
             )}
             {/* Print-only pro forma detail listing (separate page) */}
-            {includeProForma && proFormaDetails.length > 0 && (
+            {attachProFormaToPrint && includeProForma && proFormaDetails.length > 0 && (
               <div className="hidden print:block stmt-page-break">
                 <ProFormaDetailSchedule
                   {...sharedScheduleProps}
@@ -656,7 +687,7 @@ export default function FinancialModelPage() {
                 />
               </div>
             )}
-            {includeProForma && proFormaDetails.length > 0 && (
+            {attachProFormaToPrint && includeProForma && proFormaDetails.length > 0 && (
               <div className="hidden print:block stmt-page-break">
                 <ProFormaDetailSchedule
                   {...sharedScheduleProps}
@@ -686,7 +717,7 @@ export default function FinancialModelPage() {
                 />
               </div>
             )}
-            {includeProForma && proFormaDetails.length > 0 && (
+            {attachProFormaToPrint && includeProForma && proFormaDetails.length > 0 && (
               <div className="hidden print:block stmt-page-break">
                 <ProFormaDetailSchedule
                   {...sharedScheduleProps}
@@ -716,7 +747,7 @@ export default function FinancialModelPage() {
                 />
               </div>
             )}
-            {includeProForma && proFormaDetails.length > 0 && (
+            {attachProFormaToPrint && includeProForma && proFormaDetails.length > 0 && (
               <div className="hidden print:block stmt-page-break">
                 <ProFormaDetailSchedule
                   {...sharedScheduleProps}
