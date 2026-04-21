@@ -108,6 +108,18 @@ export async function GET(request: Request) {
     }),
   );
 
+  // F. /invoice/browse filtered by OrderNumber — to see whether invoice rows
+  //    carry Department / OrderType / category totals like order rows do.
+  const invoicesForOrder = await tryCall(() =>
+    rw.browse("invoice", {
+      pagesize: 5,
+      searchfields: ["OrderNumber"],
+      searchfieldoperators: ["="],
+      searchfieldvalues: [orderNumber],
+      searchfieldtypes: [""],
+    }),
+  );
+
   return NextResponse.json({
     orderNumber,
     orderId,
@@ -116,6 +128,7 @@ export async function GET(request: Request) {
     orderItemsBrowse: summarize(orderItemsBrowse),
     glByOrder: summarize(glByOrder),
     glByOrderNumber: summarize(glByOrderNumber),
+    invoicesForOrder: summarize(invoicesForOrder),
   });
 }
 

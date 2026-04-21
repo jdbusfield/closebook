@@ -26,15 +26,7 @@ import {
   type AccountAccrualLine,
   type AccountAccrualTotal,
   type ProposedJELine,
-  type UnbilledSplit,
 } from "@/lib/utils/revenue-calc-by-account";
-import {
-  splitUnbilledByOrder,
-  type OrderGLTemplateSource,
-  type UnbilledOrderForSplit,
-  type PerOrderSplit,
-} from "@/lib/utils/unbilled-order-gl-split";
-import { classifyEquipmentType } from "@/lib/utils/rebate-calculations";
 
 export const maxDuration = 120;
 
@@ -312,45 +304,10 @@ export async function POST(request: Request) {
   // 5. Aggregate per account
   const invoiceDrivenTotals: AccountAccrualTotal[] = aggregateByAccount(allLines);
 
-  // 5-prep. Build per-invoice GL templates. Each closed invoice we successfully
-  //         fetched becomes a candidate template for unbilled-order splitting.
-  //         We keep the revenue credits (4xxxx) only — that's what actually
-  //         maps to the income side of the JE.
-  const glTemplates: OrderGLTemplateSource[] = [];
-  for (const r of fetchResults) {
-    if (!r.ok) continue;
-    const inv = r.invoice;
-    const revenueLines = r.gl
-      .filter((g) =>
-        isRevenueAccount(String(g.GlAccountNo ?? ""), String(g.GroupHeading ?? "")),
-      )
-      .map((g) => ({
-        glAccountNo: String(g.GlAccountNo ?? ""),
-        glAccountDescription: String(g.GlAccountDescription ?? ""),
-        glAccountId: String(g.GlAccountId ?? ""),
-        revenueAmount: toNum(g.Credit) - toNum(g.Debit),
-      }))
-      .filter((l) => l.revenueAmount > 0);
-    if (revenueLines.length === 0) continue;
-    glTemplates.push({
-      invoiceNumber: inv.InvoiceNumber,
-      orderNumber: inv.OrderNumber ?? null,
-      customerName: inv.Customer ?? "",
-      equipmentType: classifyEquipmentType(inv.OrderDescription ?? ""),
-      glLines: revenueLines,
-    });
-  }
-
-  // 5a. Compute unbilled earned from active orders (no matching closed invoice)
-  //     and split each order's amount across GL accounts using the most
-  //     specific template available for THAT order (prior same-order invoice,
-  //     then same customer, then same equipment type, then period-wide mix).
-  //     This fixes the "single vehicle order sprinkled across 18 accounts" bug
-  //     the old period-wide historical ratio caused.
-  // Try to load the full config shape (including account links). If the
-  // migration 20260420 hasn't been applied yet, the new columns don't exist
-  // so the extended SELECT will fail — fall back to the basic shape and
-  // carry on without links (the JE lines will use default labels).
+  // 5a. Load the entity accrual config — realization rate plus the linked
+  //     target accounts (Unbilled Receivables, Allowance, Accrued Revenue,
+  //     Deferred Revenue, Unbilled Revenue catch-all). Falls back gracefully
+  //     if migrations 20260420/20260421 haven't been applied.
   let accrualConfig:
     | {
         realization_rate: number | null;
@@ -358,12 +315,13 @@ export async function POST(request: Request) {
         allowance_account_id: string | null;
         accrued_revenue_account_id: string | null;
         deferred_revenue_account_id: string | null;
+        unbilled_revenue_account_id: string | null;
       }
     | null = null;
   const fullCfg = await adminClient
     .from("entity_accrual_config")
     .select(
-      "realization_rate, unbilled_receivables_account_id, allowance_account_id, accrued_revenue_account_id, deferred_revenue_account_id",
+      "realization_rate, unbilled_receivables_account_id, allowance_account_id, accrued_revenue_account_id, deferred_revenue_account_id, unbilled_revenue_account_id",
     )
     .eq("entity_id", entityId)
     .maybeSingle();
@@ -380,6 +338,7 @@ export async function POST(request: Request) {
         allowance_account_id: null,
         accrued_revenue_account_id: null,
         deferred_revenue_account_id: null,
+        unbilled_revenue_account_id: null,
       };
     }
   } else {
@@ -471,73 +430,11 @@ export async function POST(request: Request) {
   const unbilledEarnedNet = round2(unbilledEarnedGross * realizationRate);
   const unbilledDiscount = round2(unbilledEarnedGross - unbilledEarnedNet);
 
-  // Split unbilled earned per order against the best-available GL template.
-  // Each order drives its own portion of the split — a pure vehicle order
-  // like AC10005 lands its dollars on vehicle revenue accounts rather than
-  // being sprinkled across every GL the period's invoice mix happens to
-  // touch.  Stores BOTH gross and net per GL so the JE can debit gross to
-  // Unbilled Receivables, credit revenue at net, and credit the allowance
-  // contra for the discount portion.
-  const ordersForSplit: UnbilledOrderForSplit[] = unbilledOrders.map((u) => ({
-    orderNumber: u.order.OrderNumber ?? null,
-    customerName: u.order.Customer ?? "",
-    equipmentType: classifyEquipmentType(
-      (u.order as unknown as { Description?: string }).Description ?? "",
-    ),
-    grossInMonth: u.earnedInMonth,
-  }));
-  const splitResult = splitUnbilledByOrder({
-    orders: ordersForSplit,
-    templates: glTemplates,
-  });
-
-  const unbilledByAccount: Array<{
-    glAccountNo: string;
-    glAccountDescription: string;
-    glAccountId: string;
-    share: number;
-    grossAmount: number;
-    netAmount: number;
-    amount: number; // kept for backward-compatible consumers (net)
-    unclassified: boolean;
-  }> = splitResult.byAccount.map((a) => ({
-    glAccountNo: a.glAccountNo,
-    glAccountDescription: a.glAccountDescription,
-    glAccountId: a.glAccountId,
-    share: a.share,
-    grossAmount: round2(a.grossAmount),
-    netAmount: round2(a.grossAmount * realizationRate),
-    amount: round2(a.grossAmount * realizationRate),
-    unclassified: a.unclassified,
-  }));
-
-  // 5b. For the summary display, merge unbilled earned (net) into the
-  // per-account totals so the user sees total exposure per GL. The JE
-  // building below uses the two sources SEPARATELY so invoice timing
-  // accruals and unbilled projections land in different journal entries.
-  const totalsByKey = new Map<string, AccountAccrualTotal>(
-    invoiceDrivenTotals.map((t) => [t.glAccountNo, { ...t }]),
-  );
-  for (const ub of unbilledByAccount) {
-    const existing = totalsByKey.get(ub.glAccountNo);
-    if (existing) {
-      existing.earnedRevenue = round2(existing.earnedRevenue + ub.netAmount);
-      existing.accrualAmount = round2(existing.accrualAmount + ub.netAmount);
-      existing.lineCount += 1;
-    } else {
-      totalsByKey.set(ub.glAccountNo, {
-        glAccountNo: ub.glAccountNo,
-        glAccountDescription: ub.glAccountDescription,
-        glAccountId: ub.glAccountId,
-        earnedRevenue: ub.netAmount,
-        billedAmount: 0,
-        accrualAmount: ub.netAmount,
-        deferralAmount: 0,
-        lineCount: 1,
-      });
-    }
-  }
-  const totals: AccountAccrualTotal[] = [...totalsByKey.values()].sort((a, b) =>
+  // 5b. Per-account summary table shows only invoice-driven exposure (timing
+  //     accruals + deferrals). Unbilled earned is a single catch-all credit
+  //     that lives in its own bucket — RW doesn't expose per-I-code GL data
+  //     on uninvoiced orders, so there's nothing to merge in here.
+  const totals: AccountAccrualTotal[] = [...invoiceDrivenTotals].sort((a, b) =>
     a.glAccountNo.localeCompare(b.glAccountNo),
   );
 
@@ -572,14 +469,16 @@ export async function POST(request: Request) {
   }));
 
   // 6b. Resolve configured "target" accounts (Unbilled Receivables,
-  //     Allowance for Discounts, Accrued Revenue, Deferred Revenue) against
-  //     the entity's chart. If the user hasn't linked them yet we fall back
-  //     to generic labels so the preview still renders.
+  //     Allowance for Discounts, Accrued Revenue, Deferred Revenue, Unbilled
+  //     Revenue catch-all) against the entity's chart. If the user hasn't
+  //     linked them yet we fall back to generic labels so the preview still
+  //     renders.
   const linkedAccountIds = [
     accrualConfig?.unbilled_receivables_account_id,
     accrualConfig?.allowance_account_id,
     accrualConfig?.accrued_revenue_account_id,
     accrualConfig?.deferred_revenue_account_id,
+    accrualConfig?.unbilled_revenue_account_id,
   ].filter((id): id is string => Boolean(id));
   const linkedAccountsById: Record<
     string,
@@ -626,37 +525,44 @@ export async function POST(request: Request) {
     accrualConfig?.deferred_revenue_account_id,
     "Deferred Revenue (Liability)",
   );
+  const unbilledRevenueAcct = linkedAccount(
+    accrualConfig?.unbilled_revenue_account_id,
+    "Unbilled Revenue (Catch-All Income)",
+  );
 
-  // 7. Build proposed JEs — separate invoice timing accruals from unbilled
-  //    projections, plus deferrals.
-  const unbilledSplit: UnbilledSplit[] = unbilledByAccount.map((u) => ({
-    glAccountNo: u.glAccountNo,
-    glAccountDescription: u.glAccountDescription,
-    glAccountId: u.glAccountId,
-    grossAmount: u.grossAmount,
-    netAmount: u.netAmount,
-  }));
+  // 7. Build proposed JEs — invoice timing accruals split per GL,
+  //    unbilled-earned collapsed to a single catch-all credit, deferrals
+  //    split per GL.
   const je = buildSplitProposedJEs(
     invoiceDrivenTotals,
-    unbilledSplit,
+    {
+      grossAmount: unbilledEarnedGross,
+      netAmount: unbilledEarnedNet,
+    },
     periodYear,
     periodMonth,
     {
       realizationRate,
       accruedRevAccount: { number: accruedRevAcct.number, name: accruedRevAcct.name },
       unbilledArAccount: { number: unbilledArAcct.number, name: unbilledArAcct.name },
+      unbilledRevenueAccount: {
+        number: unbilledRevenueAcct.number,
+        name: unbilledRevenueAcct.name,
+      },
       deferredRevAccount: { number: deferredRevAcct.number, name: deferredRevAcct.name },
       allowanceAccount: { number: allowanceAcct.number, name: allowanceAcct.name },
     },
   );
   // Resolve each JE line's QBO ID: prefer the revenue-GL match (per-account
-  // lines); fall back to the linked-account QBO ID for the aggregate Unbilled
-  // Receivables / Accrued Revenue / Allowance / Deferred Revenue lines.
+  // timing/deferral lines); fall back to the linked-account QBO ID for the
+  // aggregate Unbilled Receivables / Accrued Revenue / Allowance / Deferred
+  // Revenue / Unbilled Revenue catch-all lines.
   const qboForAggregate = (name: string): string | null => {
     if (name === unbilledArAcct.name) return unbilledArAcct.qboId;
     if (name === allowanceAcct.name) return allowanceAcct.qboId;
     if (name === accruedRevAcct.name) return accruedRevAcct.qboId;
     if (name === deferredRevAcct.name) return deferredRevAcct.qboId;
+    if (name === unbilledRevenueAcct.name) return unbilledRevenueAcct.qboId;
     return null;
   };
   const withQbo = (l: ProposedJELine) => ({
@@ -693,27 +599,12 @@ export async function POST(request: Request) {
       discount: round2(unbilledDiscount),
       net: round2(unbilledEarnedNet),
       orderCount: unbilledOrders.length,
-      hasHistoricalRatio: glTemplates.length > 0,
-      byAccount: unbilledByAccount,
-      templateCounts: splitResult.templateCounts,
-      perOrderSplits: splitResult.perOrder.map(
-        (p): PerOrderSplitResponse => ({
-          orderNumber: p.orderNumber,
-          customer: p.customerName,
-          equipmentType: p.equipmentType,
-          grossInMonth: p.grossInMonth,
-          templateSource: p.templateSource,
-          templateDetail: p.templateDetail,
-          lines: p.lines.map((ln) => ({
-            glAccountNo: ln.glAccountNo,
-            glAccountDescription: ln.glAccountDescription,
-            glAccountId: ln.glAccountId,
-            grossAmount: ln.grossAmount,
-            netAmount: round2(ln.grossAmount * realizationRate),
-            share: ln.share,
-          })),
-        }),
-      ),
+      catchAllAccount: {
+        number: unbilledRevenueAcct.number,
+        name: unbilledRevenueAcct.name,
+        qboId: unbilledRevenueAcct.qboId,
+        linked: Boolean(accrualConfig?.unbilled_revenue_account_id),
+      },
       orders: unbilledOrders.map((u) => ({
         orderNumber: u.order.OrderNumber,
         customer: u.order.Customer ?? "",
@@ -735,23 +626,6 @@ export async function POST(request: Request) {
       })),
     },
   });
-}
-
-interface PerOrderSplitResponse {
-  orderNumber: string | null;
-  customer: string;
-  equipmentType: PerOrderSplit["equipmentType"];
-  grossInMonth: number;
-  templateSource: PerOrderSplit["templateSource"];
-  templateDetail: string;
-  lines: Array<{
-    glAccountNo: string;
-    glAccountDescription: string;
-    glAccountId: string;
-    grossAmount: number;
-    netAmount: number;
-    share: number;
-  }>;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
