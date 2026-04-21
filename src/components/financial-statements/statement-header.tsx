@@ -10,6 +10,9 @@ const ENTITY_LOGOS: Record<string, string> = {
   "avon": "/logos/silverco.svg",
   "versatile studios": "/logos/versatile-studios.svg",
   "versatile": "/logos/versatile-studios.svg",
+  "hollywood depot rentals": "/logos/hollywood-depot-rentals.jpg",
+  "hollywood depot": "/logos/hollywood-depot-rentals.jpg",
+  "hdr": "/logos/hollywood-depot-rentals.jpg",
 };
 
 function getLogoForEntity(companyName: string): string | null {
