@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { AccountCombobox } from "@/components/ui/account-combobox";
 import {
   Tooltip,
   TooltipContent,
@@ -260,7 +261,8 @@ export function GLAccountAccrualSection({ entityId }: { entityId: string }) {
           .select("id, account_number, name, classification, account_type, account_sub_type")
           .eq("entity_id", entityId)
           .eq("is_active", true)
-          .order("account_number", { ascending: true });
+          .order("account_number", { ascending: true })
+          .range(0, 9999);
         if (!cancelled && accts) setEntityAccounts(accts);
       } catch (err) {
         console.error("Load account links error:", err);
@@ -1849,20 +1851,35 @@ function AccrualAccountLinksCard({
   available: boolean;
   onChange: (field: keyof LinksState, accountId: string | null) => void;
 }) {
-  // Filter account lists by classification so each dropdown only shows
-  // plausible candidates. Allowance for Discounts is typically booked as
-  // Revenue (contra) in QBO, so we surface revenue accounts there.
-  const assetAccounts = useMemo(
-    () => accounts.filter((a) => a.classification === "Asset"),
+  // Sort each dropdown so the classification that "usually" fits comes first,
+  // but EVERY account is selectable — entities don't always classify things
+  // the standard way. A search bar makes it easy to find any account.
+  const sortedByClassification = useCallback(
+    (preferredClassification: string): EntityAccount[] => {
+      return [...accounts].sort((a, b) => {
+        const aPref = a.classification === preferredClassification ? 0 : 1;
+        const bPref = b.classification === preferredClassification ? 0 : 1;
+        if (aPref !== bPref) return aPref - bPref;
+        const aNum = a.account_number ?? "";
+        const bNum = b.account_number ?? "";
+        if (aNum && bNum) return aNum.localeCompare(bNum);
+        return a.name.localeCompare(b.name);
+      });
+    },
     [accounts],
+  );
+
+  const assetAccounts = useMemo(
+    () => sortedByClassification("Asset"),
+    [sortedByClassification],
   );
   const liabilityAccounts = useMemo(
-    () => accounts.filter((a) => a.classification === "Liability"),
-    [accounts],
+    () => sortedByClassification("Liability"),
+    [sortedByClassification],
   );
   const revenueAccounts = useMemo(
-    () => accounts.filter((a) => a.classification === "Revenue"),
-    [accounts],
+    () => sortedByClassification("Revenue"),
+    [sortedByClassification],
   );
 
   const renderLink = (
@@ -1871,9 +1888,20 @@ function AccrualAccountLinksCard({
     description: string,
     usage: string,
     candidateList: EntityAccount[],
+    preferredClassification: string,
   ) => {
     const currentId = links[field];
     const current = accounts.find((a) => a.id === currentId) ?? null;
+    const comboOptions = candidateList.map((a) => ({
+      id: a.id,
+      account_number: a.account_number,
+      name: a.name,
+      account_type: a.account_type ?? undefined,
+      secondary:
+        a.classification && a.classification !== preferredClassification
+          ? a.classification
+          : a.account_sub_type ?? undefined,
+    }));
     return (
       <div key={field} className="rounded-md border p-3 space-y-1.5">
         <div className="flex items-center justify-between gap-2">
@@ -1897,33 +1925,29 @@ function AccrualAccountLinksCard({
             </Badge>
           )}
         </div>
-        <Select
-          value={currentId ?? "__none__"}
-          onValueChange={(v) => onChange(field, v === "__none__" ? null : v)}
-          disabled={!loaded || !available}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue
+        <div className="flex items-center gap-2">
+          <div className="flex-1 min-w-0">
+            <AccountCombobox
+              accounts={comboOptions}
+              value={currentId ?? ""}
+              onValueChange={(v) => onChange(field, v || null)}
               placeholder={loaded ? "Select account…" : "Loading…"}
+              searchPlaceholder="Search by name, number, or type…"
+              emptyMessage="No matching account."
+              disabled={!loaded || !available}
             />
-          </SelectTrigger>
-          <SelectContent className="max-h-[320px]">
-            <SelectItem value="__none__">— Not linked —</SelectItem>
-            {candidateList.map((a) => (
-              <SelectItem key={a.id} value={a.id}>
-                <span className="font-mono text-xs mr-2">
-                  {a.account_number ?? "—"}
-                </span>
-                {a.name}
-                {a.account_sub_type ? (
-                  <span className="ml-2 text-muted-foreground text-xs">
-                    ({a.account_sub_type})
-                  </span>
-                ) : null}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          </div>
+          {currentId && (
+            <button
+              type="button"
+              onClick={() => onChange(field, null)}
+              className="text-[11px] text-muted-foreground hover:text-rose-600 underline"
+              disabled={!loaded || !available}
+            >
+              Clear
+            </button>
+          )}
+        </div>
         <p className="text-[11px] text-muted-foreground italic">{usage}</p>
       </div>
     );
@@ -1963,6 +1987,7 @@ function AccrualAccountLinksCard({
             "Asset account debited for the revenue cut-off accrual.",
             "DR on: Revenue Cut-Off Accrual",
             assetAccounts,
+            "Asset",
           )}
           {renderLink(
             "unbilledReceivablesAccountId",
@@ -1970,6 +1995,7 @@ function AccrualAccountLinksCard({
             "Asset account debited for the estimated unbilled revenue accrual (gross).",
             "DR on: Estimated Unbilled Revenue Accrual",
             assetAccounts,
+            "Asset",
           )}
           {renderLink(
             "allowanceAccountId",
@@ -1977,6 +2003,7 @@ function AccrualAccountLinksCard({
             "Contra-revenue account credited for the realization-rate discount.",
             "CR on: Estimated Unbilled Revenue Accrual",
             revenueAccounts,
+            "Revenue",
           )}
           {renderLink(
             "deferredRevenueAccountId",
@@ -1984,6 +2011,7 @@ function AccrualAccountLinksCard({
             "Liability account credited for billings not yet earned.",
             "CR on: Deferral JE",
             liabilityAccounts,
+            "Liability",
           )}
         </div>
       </CardContent>
