@@ -430,11 +430,105 @@ export async function POST(request: Request) {
   const unbilledEarnedNet = round2(unbilledEarnedGross * realizationRate);
   const unbilledDiscount = round2(unbilledEarnedGross - unbilledEarnedNet);
 
-  // 5b. Per-account summary table shows only invoice-driven exposure (timing
-  //     accruals + deferrals). Unbilled earned is a single catch-all credit
-  //     that lives in its own bucket — RW doesn't expose per-I-code GL data
-  //     on uninvoiced orders, so there's nothing to merge in here.
-  const totals: AccountAccrualTotal[] = [...invoiceDrivenTotals].sort((a, b) =>
+  // 5b. Resolve configured "target" accounts (Unbilled Receivables,
+  //     Allowance for Discounts, Accrued Revenue, Deferred Revenue, Unbilled
+  //     Revenue catch-all) against the entity's chart. We need this BEFORE
+  //     building the per-GL summary so the catch-all unbilled-revenue row
+  //     can be appended with its real account number / QBO ID.
+  const linkedAccountIds = [
+    accrualConfig?.unbilled_receivables_account_id,
+    accrualConfig?.allowance_account_id,
+    accrualConfig?.accrued_revenue_account_id,
+    accrualConfig?.deferred_revenue_account_id,
+    accrualConfig?.unbilled_revenue_account_id,
+  ].filter((id): id is string => Boolean(id));
+  const linkedAccountsById: Record<
+    string,
+    { qbo_id: string | null; account_number: string | null; name: string; id: string }
+  > = {};
+  if (linkedAccountIds.length > 0) {
+    const { data: linked } = await adminClient
+      .from("accounts")
+      .select("id, qbo_id, account_number, name")
+      .in("id", linkedAccountIds);
+    if (linked) {
+      for (const a of linked) {
+        linkedAccountsById[a.id] = {
+          id: a.id,
+          qbo_id: a.qbo_id ?? null,
+          account_number: a.account_number ?? null,
+          name: a.name,
+        };
+      }
+    }
+  }
+  const linkedAccount = (id: string | null | undefined, fallbackName: string) => {
+    if (!id)
+      return {
+        number: "",
+        name: fallbackName,
+        qboId: null as string | null,
+        accountId: null as string | null,
+      };
+    const row = linkedAccountsById[id];
+    if (!row)
+      return { number: "", name: fallbackName, qboId: null, accountId: null };
+    return {
+      number: row.account_number ?? "",
+      name: row.name,
+      qboId: row.qbo_id,
+      accountId: row.id,
+    };
+  };
+  const unbilledArAcct = linkedAccount(
+    accrualConfig?.unbilled_receivables_account_id,
+    "Unbilled Receivables (Asset)",
+  );
+  const allowanceAcct = linkedAccount(
+    accrualConfig?.allowance_account_id,
+    "Allowance for Discounts (Contra-Revenue)",
+  );
+  const accruedRevAcct = linkedAccount(
+    accrualConfig?.accrued_revenue_account_id,
+    "Accrued Revenue (Asset)",
+  );
+  const deferredRevAcct = linkedAccount(
+    accrualConfig?.deferred_revenue_account_id,
+    "Deferred Revenue (Liability)",
+  );
+  const unbilledRevenueAcct = linkedAccount(
+    accrualConfig?.unbilled_revenue_account_id,
+    "Unbilled Revenue (Catch-All Income)",
+  );
+
+  // 5c. Per-account summary table merges invoice-driven exposure (timing
+  //     accruals + deferrals, per real GL) with a single catch-all row for
+  //     the unbilled-earned net so the Earned-this-month total ties to the
+  //     JE: invoice revenue credits + catch-all revenue credit.
+  const totalsWithCatchAll: AccountAccrualTotal[] = [...invoiceDrivenTotals];
+  if (unbilledEarnedNet > 0) {
+    const catchAllKey = unbilledRevenueAcct.number || "__catchall__";
+    const existing = totalsWithCatchAll.find(
+      (t) => t.glAccountNo === catchAllKey,
+    );
+    if (existing) {
+      existing.earnedRevenue = round2(existing.earnedRevenue + unbilledEarnedNet);
+      existing.accrualAmount = round2(existing.accrualAmount + unbilledEarnedNet);
+      existing.lineCount += unbilledOrders.length;
+    } else {
+      totalsWithCatchAll.push({
+        glAccountNo: unbilledRevenueAcct.number,
+        glAccountDescription: unbilledRevenueAcct.name,
+        glAccountId: unbilledRevenueAcct.accountId ?? "",
+        earnedRevenue: unbilledEarnedNet,
+        billedAmount: 0,
+        accrualAmount: unbilledEarnedNet,
+        deferralAmount: 0,
+        lineCount: unbilledOrders.length,
+      });
+    }
+  }
+  const totals: AccountAccrualTotal[] = totalsWithCatchAll.sort((a, b) =>
     a.glAccountNo.localeCompare(b.glAccountNo),
   );
 
@@ -460,75 +554,41 @@ export async function POST(request: Request) {
     }
   }
 
-  const totalsWithQBO = totals.map((t) => ({
-    ...t,
-    qboAccountId: qboAccountMap[t.glAccountNo]?.id ?? null,
-    qboQboId: qboAccountMap[t.glAccountNo]?.qbo_id ?? null,
-    qboAccountName: qboAccountMap[t.glAccountNo]?.name ?? null,
-    matchedToQBO: Boolean(qboAccountMap[t.glAccountNo]),
-  }));
-
-  // 6b. Resolve configured "target" accounts (Unbilled Receivables,
-  //     Allowance for Discounts, Accrued Revenue, Deferred Revenue, Unbilled
-  //     Revenue catch-all) against the entity's chart. If the user hasn't
-  //     linked them yet we fall back to generic labels so the preview still
-  //     renders.
-  const linkedAccountIds = [
-    accrualConfig?.unbilled_receivables_account_id,
-    accrualConfig?.allowance_account_id,
-    accrualConfig?.accrued_revenue_account_id,
-    accrualConfig?.deferred_revenue_account_id,
-    accrualConfig?.unbilled_revenue_account_id,
-  ].filter((id): id is string => Boolean(id));
-  const linkedAccountsById: Record<
-    string,
-    { qbo_id: string | null; account_number: string | null; name: string }
-  > = {};
-  if (linkedAccountIds.length > 0) {
-    const { data: linked } = await adminClient
-      .from("accounts")
-      .select("id, qbo_id, account_number, name")
-      .in("id", linkedAccountIds);
-    if (linked) {
-      for (const a of linked) {
-        linkedAccountsById[a.id] = {
-          qbo_id: a.qbo_id ?? null,
-          account_number: a.account_number ?? null,
-          name: a.name,
-        };
-      }
+  // For the catch-all row, we already have the linked-account QBO info from
+  // the linkedAccount helper above — fall back to that when the GL number
+  // doesn't show up in the per-entity accounts lookup (e.g. when the link
+  // wasn't set up yet, the row uses the placeholder name with no number).
+  const isCatchAllRow = (t: AccountAccrualTotal) =>
+    t.glAccountDescription === unbilledRevenueAcct.name &&
+    t.glAccountNo === unbilledRevenueAcct.number;
+  const totalsWithQBO = totals.map((t) => {
+    const direct = qboAccountMap[t.glAccountNo];
+    if (direct) {
+      return {
+        ...t,
+        qboAccountId: direct.id,
+        qboQboId: direct.qbo_id,
+        qboAccountName: direct.name,
+        matchedToQBO: true,
+      };
     }
-  }
-  const linkedAccount = (id: string | null | undefined, fallbackName: string) => {
-    if (!id) return { number: "", name: fallbackName, qboId: null as string | null };
-    const row = linkedAccountsById[id];
-    if (!row) return { number: "", name: fallbackName, qboId: null };
+    if (isCatchAllRow(t) && unbilledRevenueAcct.accountId) {
+      return {
+        ...t,
+        qboAccountId: unbilledRevenueAcct.accountId,
+        qboQboId: unbilledRevenueAcct.qboId,
+        qboAccountName: unbilledRevenueAcct.name,
+        matchedToQBO: true,
+      };
+    }
     return {
-      number: row.account_number ?? "",
-      name: row.name,
-      qboId: row.qbo_id,
+      ...t,
+      qboAccountId: null,
+      qboQboId: null,
+      qboAccountName: null,
+      matchedToQBO: false,
     };
-  };
-  const unbilledArAcct = linkedAccount(
-    accrualConfig?.unbilled_receivables_account_id,
-    "Unbilled Receivables (Asset)",
-  );
-  const allowanceAcct = linkedAccount(
-    accrualConfig?.allowance_account_id,
-    "Allowance for Discounts (Contra-Revenue)",
-  );
-  const accruedRevAcct = linkedAccount(
-    accrualConfig?.accrued_revenue_account_id,
-    "Accrued Revenue (Asset)",
-  );
-  const deferredRevAcct = linkedAccount(
-    accrualConfig?.deferred_revenue_account_id,
-    "Deferred Revenue (Liability)",
-  );
-  const unbilledRevenueAcct = linkedAccount(
-    accrualConfig?.unbilled_revenue_account_id,
-    "Unbilled Revenue (Catch-All Income)",
-  );
+  });
 
   // 7. Build proposed JEs — invoice timing accruals split per GL,
   //    unbilled-earned collapsed to a single catch-all credit, deferrals
