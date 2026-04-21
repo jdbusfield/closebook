@@ -47,6 +47,10 @@ const ENTITY_LOGOS: Record<string, { src: string; alt: string }> = {
     src: "/logos/silverco.svg",
     alt: "Silverco Enterprises, LLC",
   },
+  "Hollywood Depot Rentals": {
+    src: "/logos/hollywood-depot-rentals.jpg",
+    alt: "Hollywood Depot Rentals",
+  },
 };
 
 const MONTH_LABELS = [
