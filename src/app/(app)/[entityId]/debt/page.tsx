@@ -44,7 +44,6 @@ import {
   Landmark,
   DollarSign,
   ArrowRight,
-  TrendingDown,
   Percent,
   CreditCard,
   Plus,
@@ -395,19 +394,6 @@ export default function DebtPage() {
     (sum: number, i: AnyInstrument) => sum + (i.current_draw ?? i.original_amount ?? 0),
     0
   );
-  const totalPrincipal = Object.values(txnSummary).reduce(
-    (sum, s) => sum + s.principal,
-    0
-  );
-  const totalInterest = Object.values(txnSummary).reduce(
-    (sum, s) => sum + s.interest,
-    0
-  );
-  const totalPayment = Object.values(txnSummary).reduce(
-    (sum, s) => sum + s.payment,
-    0
-  );
-
   // Current / Long-term split
   const totalCurrentPortion = instruments.reduce(
     (sum: number, i: AnyInstrument) => sum + (i.current_portion ?? 0),
@@ -725,21 +711,6 @@ export default function DebtPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-2">
-              <TrendingDown className="h-4 w-4 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">Monthly Payment</p>
-            </div>
-            <p className="text-2xl font-semibold tabular-nums mt-1">
-              {formatCurrency(totalPayment)}
-            </p>
-            <div className="flex gap-4 text-xs text-muted-foreground mt-1">
-              <span>P: {formatCurrency(totalPrincipal)}</span>
-              <span>I: {formatCurrency(totalInterest)}</span>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
               <Percent className="h-4 w-4 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">Wtd Avg Rate</p>
             </div>
@@ -887,9 +858,7 @@ export default function DebtPage() {
                     <TableHead className="text-right">Rate</TableHead>
                     <TableHead className="text-right">Original / Limit</TableHead>
                     <TableHead className="text-right">Balance</TableHead>
-                    <TableHead className="text-right">Payment</TableHead>
-                    <TableHead className="text-right">Principal</TableHead>
-                    <TableHead className="text-right">Interest</TableHead>
+                    <TableHead className="text-right">Accrued Interest</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
@@ -897,7 +866,6 @@ export default function DebtPage() {
                 <TableBody>
                   {instruments.map((instr: AnyInstrument) => {
                     const amort = amortization[instr.id];
-                    const txn = txnSummary[instr.id];
                     const isLOC = locTypes.includes(instr.debt_type);
                     return (
                       <TableRow key={instr.id}>
@@ -942,13 +910,21 @@ export default function DebtPage() {
                           {formatCurrency(instr.current_draw ?? instr.original_amount ?? 0)}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {txn ? formatCurrency(txn.payment) : formatCurrency(0)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {txn ? formatCurrency(txn.principal) : formatCurrency(0)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {txn ? formatCurrency(txn.interest) : formatCurrency(0)}
+                          {/*
+                            Accrued Interest column shows this period's
+                            interest accrual. Prefer the stored
+                            debt_amortization row's interest figure (honors
+                            the instrument's day-count convention); fall back
+                            to a 1/12-of-annual-rate approximation on the
+                            outstanding balance when no schedule is stored
+                            for the selected period.
+                          */}
+                          {formatCurrency(
+                            amort?.interest ??
+                              ((instr.current_draw ?? instr.original_amount ?? 0) *
+                                (instr.interest_rate ?? 0)) /
+                                12
+                          )}
                         </TableCell>
                         <TableCell>
                           <Badge
@@ -976,13 +952,17 @@ export default function DebtPage() {
                       {formatCurrency(totalOutstanding)}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {formatCurrency(totalPayment)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatCurrency(totalPrincipal)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatCurrency(totalInterest)}
+                      {formatCurrency(
+                        instruments.reduce((sum: number, i: AnyInstrument) => {
+                          const amort = amortization[i.id];
+                          const accrual =
+                            amort?.interest ??
+                            ((i.current_draw ?? i.original_amount ?? 0) *
+                              (i.interest_rate ?? 0)) /
+                              12;
+                          return sum + accrual;
+                        }, 0)
+                      )}
                     </TableCell>
                     <TableCell colSpan={2} />
                   </TableRow>
