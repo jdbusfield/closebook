@@ -106,6 +106,14 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
   const [ppaAmount, setPpaAmount] = useState<Record<string, string>>({});
   const [ppaNote, setPpaNote] = useState<Record<string, string>>({});
   const [ppaOpen, setPpaOpen] = useState<Set<string>>(new Set());
+  // Most recent PPA from any STRICTLY prior period per group, used as the
+  // default that carries forward until a new value is set in a later period.
+  const [carryForwardPpa, setCarryForwardPpa] = useState<
+    Record<
+      string,
+      { amount: number; note: string | null; year: number; month: number }
+    >
+  >({});
 
   // Data
   const [entityAccounts, setEntityAccounts] = useState<EntityAccount[]>([]);
@@ -522,11 +530,63 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
         ppaOpenSet.add(r.gl_account_group);
       }
     }
+
+    // 5b. Fetch the most recent PPA from a strictly prior period per group,
+    // so it carries forward into the current period until explicitly changed.
+    const { data: priorPpaRows } = await supabase
+      .from("debt_reconciliations")
+      .select(
+        "gl_account_group, period_year, period_month, prior_period_adjustment, prior_period_adjustment_note"
+      )
+      .eq("entity_id", entityId)
+      .or(
+        `period_year.lt.${periodYear},and(period_year.eq.${periodYear},period_month.lt.${periodMonth})`
+      )
+      .order("period_year", { ascending: false })
+      .order("period_month", { ascending: false })
+      .limit(1000);
+
+    const carryForwardMap: Record<
+      string,
+      { amount: number; note: string | null; year: number; month: number }
+    > = {};
+    for (const r of (priorPpaRows ?? []) as {
+      gl_account_group: string;
+      period_year: number;
+      period_month: number;
+      prior_period_adjustment: number | null;
+      prior_period_adjustment_note: string | null;
+    }[]) {
+      if (!carryForwardMap[r.gl_account_group]) {
+        carryForwardMap[r.gl_account_group] = {
+          amount: Number(r.prior_period_adjustment ?? 0),
+          note: r.prior_period_adjustment_note,
+          year: r.period_year,
+          month: r.period_month,
+        };
+      }
+    }
+
+    // For any group with no current-period recon row, seed the input from the
+    // carry-forward so it's visible and will be persisted when the user
+    // reconciles this period.
+    for (const group of DEBT_GL_ACCOUNT_GROUPS) {
+      if (reconMap[group.key]) continue;
+      const cf = carryForwardMap[group.key];
+      if (!cf) continue;
+      if (cf.amount !== 0 || (cf.note ?? "").length > 0) {
+        ppaAmountMap[group.key] = cf.amount !== 0 ? String(cf.amount) : "";
+        ppaNoteMap[group.key] = cf.note ?? "";
+        ppaOpenSet.add(group.key);
+      }
+    }
+
     setReconciliations(reconMap);
     setNotes(notesMap);
     setPpaAmount(ppaAmountMap);
     setPpaNote(ppaNoteMap);
     setPpaOpen(ppaOpenSet);
+    setCarryForwardPpa(carryForwardMap);
 
     // 6. Fetch year-wide reconciliation status + GL data for schedule overview
     const { data: yearReconData } = await supabase
@@ -715,6 +775,9 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
     });
 
     const recon = reconciliations[groupKey];
+    const cf = carryForwardPpa[groupKey];
+    const hasCarryForward = cf != null && Math.abs(cf.amount) > 0.005;
+
     if (recon) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (supabase as any)
@@ -724,6 +787,30 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
           prior_period_adjustment_note: null,
         })
         .eq("id", recon.id);
+      loadData();
+    } else if (hasCarryForward) {
+      // No current-period record yet, but a prior period would carry a PPA
+      // forward. Persist a zero override here so the carry-forward stops at
+      // this period and doesn't reappear in future periods.
+      const glBal = glBalances[groupKey] ?? 0;
+      const subBal = subledgerBalances[groupKey]?.total ?? 0;
+      const variance = glBal - subBal;
+      await supabase.from("debt_reconciliations").upsert(
+        {
+          entity_id: entityId,
+          period_year: periodYear,
+          period_month: periodMonth,
+          gl_account_group: groupKey,
+          gl_balance: glBal,
+          subledger_balance: subBal,
+          variance,
+          is_reconciled: false,
+          notes: notes[groupKey] || null,
+          prior_period_adjustment: 0,
+          prior_period_adjustment_note: null,
+        },
+        { onConflict: "entity_id,period_year,period_month,gl_account_group" }
+      );
       loadData();
     }
     setSaving(null);
@@ -901,6 +988,14 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
                 Math.abs(ppa - savedPpa) > 0.005 ||
                 (ppaNote[group.key] ?? "") !==
                   (recon?.prior_period_adjustment_note ?? "");
+              const carryForward = carryForwardPpa[group.key];
+              // Carry-forward note shows when the displayed PPA matches a prior
+              // period's value AND no current-period record exists yet.
+              const showCarryForwardNote =
+                !recon &&
+                carryForward != null &&
+                Math.abs(ppa - carryForward.amount) < 0.005 &&
+                Math.abs(carryForward.amount) > 0.005;
 
               return (
                 <Card key={group.key} className={isStale ? "border-amber-400" : ""}>
@@ -922,6 +1017,11 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
                           <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
                           Reconciled
                           {Math.abs(savedPpa) > 0.005 && " (w/ PPA)"}
+                        </Badge>
+                      ) : hasPpa && Math.abs(adjustedVariance) <= 0.01 ? (
+                        <Badge variant="outline" className="border-amber-400 text-amber-700">
+                          <AlertTriangle className="mr-1 h-3.5 w-3.5" />
+                          PPA Pending
                         </Badge>
                       ) : Math.abs(adjustedVariance) > 0.01 && groupMappings.length > 0 ? (
                         <Badge variant="destructive">
@@ -1079,6 +1179,13 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
                             <div className="flex items-center justify-between">
                               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                 Prior Period Adjustment
+                                {showCarryForwardNote && (
+                                  <span className="ml-2 normal-case font-normal text-muted-foreground italic">
+                                    Carried forward from{" "}
+                                    {MONTHS[carryForward!.month - 1].slice(0, 3)}{" "}
+                                    {carryForward!.year}
+                                  </span>
+                                )}
                               </p>
                               <Button
                                 variant="ghost"
