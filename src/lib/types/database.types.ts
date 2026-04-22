@@ -850,6 +850,8 @@ export type Database = {
           created_by: string | null
           created_at: string
           updated_at: string
+          day_count_convention: string | null
+          opening_accrued_interest: number | null
         }
         Insert: {
           id?: string
@@ -875,6 +877,8 @@ export type Database = {
           created_by?: string | null
           created_at?: string
           updated_at?: string
+          day_count_convention?: string | null
+          opening_accrued_interest?: number | null
         }
         Update: {
           id?: string
@@ -900,6 +904,8 @@ export type Database = {
           created_by?: string | null
           created_at?: string
           updated_at?: string
+          day_count_convention?: string | null
+          opening_accrued_interest?: number | null
         }
         Relationships: []
       }
