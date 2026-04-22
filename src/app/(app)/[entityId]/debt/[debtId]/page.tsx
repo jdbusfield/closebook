@@ -849,7 +849,13 @@ export default function DebtDetailPage() {
     balance = isLOCType ? (instrument.current_draw ?? instrument.original_amount) : instrument.original_amount;
 
     let cumInterest = 0;
-    let interestPayable = 0; // running interest payable balance
+    // Running interest payable balance. Seeded from the instrument's
+    // `opening_accrued_interest` so the roll-forward reflects unpaid interest
+    // that existed when the loan was brought onto the books.
+    let interestPayable = Math.max(
+      0,
+      Number(instrument.opening_accrued_interest ?? 0)
+    );
 
     // Generate up to 24 months past current, but at least through today
     const maxMonths = 240; // 20 years max
@@ -1063,7 +1069,13 @@ export default function DebtDetailPage() {
     const entries: DynamicAmortEntry[] = [];
     const isLOC = ["line_of_credit", "revolving_credit", "investor_loc"].includes(instrument.debt_type);
     let balance = isLOC ? (instrument.current_draw ?? instrument.original_amount) : instrument.original_amount;
-    let unpaidInterest = 0;
+    // Running unpaid interest. Starts at the instrument's declared opening
+    // accrued interest so the first row's `Unpaid Int` column reflects what
+    // the borrower already owed when the loan came onto the books.
+    let unpaidInterest = Math.max(
+      0,
+      Number(instrument.opening_accrued_interest ?? 0)
+    );
     let cumPrincipal = 0;
     let cumInterest = 0;
 
