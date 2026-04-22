@@ -235,6 +235,7 @@ export default function DebtDetailPage() {
     maturity_date: "",
     payment_amount: "",
     credit_limit: "",
+    opening_accrued_interest: "",
     day_count_convention: "30/360",
     balloon_amount: "",
     collateral_description: "",
@@ -260,6 +261,10 @@ export default function DebtDetailPage() {
       maturity_date: instrument.maturity_date ?? "",
       payment_amount: instrument.payment_amount ? String(instrument.payment_amount) : "",
       credit_limit: instrument.credit_limit ? String(instrument.credit_limit) : "",
+      opening_accrued_interest:
+        instrument.opening_accrued_interest != null
+          ? String(instrument.opening_accrued_interest)
+          : "",
       day_count_convention: instrument.day_count_convention ?? "30/360",
       balloon_amount: instrument.balloon_amount ? String(instrument.balloon_amount) : "",
       collateral_description: instrument.collateral_description ?? "",
@@ -296,6 +301,9 @@ export default function DebtDetailPage() {
           maturity_date: editForm.maturity_date || null,
           payment_amount: editForm.payment_amount ? parseFloat(editForm.payment_amount) : null,
           credit_limit: editForm.credit_limit ? parseFloat(editForm.credit_limit) : null,
+          opening_accrued_interest: editForm.opening_accrued_interest
+            ? parseFloat(editForm.opening_accrued_interest)
+            : 0,
           day_count_convention: editForm.day_count_convention,
           balloon_amount: editForm.balloon_amount ? parseFloat(editForm.balloon_amount) : null,
           is_secured: !!editForm.collateral_description,
@@ -1441,6 +1449,19 @@ export default function DebtDetailPage() {
               <div className="space-y-2">
                 <Label htmlFor="edit_credit_limit">Credit Limit</Label>
                 <Input id="edit_credit_limit" type="number" step="0.01" value={editForm.credit_limit} onChange={(e) => setEditForm({ ...editForm, credit_limit: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit_opening_accrued_interest">Opening Accrued Interest</Label>
+                <Input
+                  id="edit_opening_accrued_interest"
+                  type="number"
+                  step="0.01"
+                  value={editForm.opening_accrued_interest}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, opening_accrued_interest: e.target.value })
+                  }
+                  placeholder="Unpaid interest at start"
+                />
               </div>
               {/* Current Draw / Balance is read-only — only changes via recorded transactions */}
             </div>
