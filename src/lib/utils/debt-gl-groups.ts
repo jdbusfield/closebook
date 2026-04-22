@@ -35,7 +35,7 @@ export const DEBT_GL_ACCOUNT_GROUPS: DebtGLAccountGroup[] = [
   },
 ];
 
-const LOC_TYPES = new Set(["line_of_credit", "revolving_credit"]);
+const LOC_TYPES = new Set(["line_of_credit", "revolving_credit", "investor_loc"]);
 
 /**
  * Determine which GL account group a debt instrument belongs to.

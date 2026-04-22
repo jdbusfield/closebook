@@ -4639,6 +4639,8 @@ export type Database = {
           reconciled_by: string | null
           reconciled_at: string | null
           notes: string | null
+          prior_period_adjustment: number
+          prior_period_adjustment_note: string | null
           created_at: string
           updated_at: string
         }
@@ -4655,6 +4657,8 @@ export type Database = {
           reconciled_by?: string | null
           reconciled_at?: string | null
           notes?: string | null
+          prior_period_adjustment?: number
+          prior_period_adjustment_note?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -4671,6 +4675,8 @@ export type Database = {
           reconciled_by?: string | null
           reconciled_at?: string | null
           notes?: string | null
+          prior_period_adjustment?: number
+          prior_period_adjustment_note?: string | null
           created_at?: string
           updated_at?: string
         }

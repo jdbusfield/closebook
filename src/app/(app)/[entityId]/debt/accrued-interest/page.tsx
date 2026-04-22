@@ -55,6 +55,7 @@ const TYPE_LABELS: Record<string, string> = {
   term_loan: "Term Loan",
   line_of_credit: "Line of Credit",
   revolving_credit: "Revolving Credit",
+  investor_loc: "Investor LOC",
   mortgage: "Mortgage",
   equipment_loan: "Equipment Loan",
   balloon_loan: "Balloon Loan",
