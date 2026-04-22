@@ -164,6 +164,20 @@ const TRANSACTION_TYPE_COLORS: Record<string, string> = {
   adjustment: "text-muted-foreground",
 };
 
+/**
+ * Parse an ISO "YYYY-MM-DD" effective_date as a local calendar date.
+ *
+ * `new Date("2026-04-01")` parses as UTC midnight — in any timezone west of
+ * UTC that lands on March 31 local, so `.getMonth()` silently returns the
+ * previous month. Every month-bucketing computation on this page goes
+ * through this helper so an April 1st transaction lands in April regardless
+ * of the user's timezone.
+ */
+function parseLocalYmd(iso: string): { year: number; month: number; day: number } {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  return { year: y, month: m, day: d };
+}
+
 export default function DebtDetailPage() {
   const params = useParams();
   const entityId = params.entityId as string;
@@ -792,8 +806,8 @@ export default function DebtDetailPage() {
       (a, b) => new Date(a.effective_date).getTime() - new Date(b.effective_date).getTime()
     );
     for (const txn of sortedTxns) {
-      const d = new Date(txn.effective_date);
-      const key = `${d.getFullYear()}-${d.getMonth() + 1}`;
+      const ymd = parseLocalYmd(txn.effective_date);
+      const key = `${ymd.year}-${ymd.month}`;
       if (!monthlyDayChanges[key]) monthlyDayChanges[key] = [];
       if (!monthlyNetChanges[key]) monthlyNetChanges[key] = 0;
       let delta = 0;
@@ -805,7 +819,7 @@ export default function DebtDetailPage() {
         delta = -Math.abs(txn.amount);
       }
       if (delta !== 0) {
-        monthlyDayChanges[key].push({ day: d.getDate(), amount: delta });
+        monthlyDayChanges[key].push({ day: ymd.day, amount: delta });
         monthlyNetChanges[key] += delta;
       }
     }
@@ -813,8 +827,8 @@ export default function DebtDetailPage() {
     // Build a map of interest payments by month (for interest payable roll forward)
     const monthlyInterestPaid: Record<string, number> = {};
     for (const txn of sortedTxns) {
-      const d = new Date(txn.effective_date);
-      const key = `${d.getFullYear()}-${d.getMonth() + 1}`;
+      const ymd = parseLocalYmd(txn.effective_date);
+      const key = `${ymd.year}-${ymd.month}`;
       let intPaid = 0;
       if ((txn.to_interest ?? 0) !== 0) {
         intPaid = Math.abs(txn.to_interest);
@@ -1006,8 +1020,8 @@ export default function DebtDetailPage() {
     interface DayChange { day: number; amount: number; }
     const amortDayChanges: Record<string, DayChange[]> = {};
     for (const txn of sortedTxns) {
-      const d = new Date(txn.effective_date);
-      const key = `${d.getFullYear()}-${d.getMonth() + 1}`;
+      const ymd = parseLocalYmd(txn.effective_date);
+      const key = `${ymd.year}-${ymd.month}`;
       let delta = 0;
       if (txn.transaction_type === "advance") {
         delta = Math.abs(txn.amount);
@@ -1018,7 +1032,7 @@ export default function DebtDetailPage() {
       }
       if (delta !== 0) {
         if (!amortDayChanges[key]) amortDayChanges[key] = [];
-        amortDayChanges[key].push({ day: d.getDate(), amount: delta });
+        amortDayChanges[key].push({ day: ymd.day, amount: delta });
       }
     }
 
@@ -1026,8 +1040,8 @@ export default function DebtDetailPage() {
     const interestTypes = ["interest_payment"];
 
     for (const txn of sortedTxns) {
-      const d = new Date(txn.effective_date);
-      const key = `${d.getFullYear()}-${d.getMonth() + 1}`;
+      const ymd = parseLocalYmd(txn.effective_date);
+      const key = `${ymd.year}-${ymd.month}`;
 
       if (txn.transaction_type === "advance") {
         monthlyAdvances[key] = (monthlyAdvances[key] ?? 0) + Math.abs(txn.amount);
