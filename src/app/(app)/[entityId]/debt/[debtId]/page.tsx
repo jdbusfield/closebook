@@ -890,7 +890,11 @@ export default function DebtDetailPage() {
       let interest: number;
       const totalDays = new Date(cy, cm, 0).getDate(); // days in this month
       const isFirstMonth = i === 0;
-      const startDay = isFirstMonth ? startDate.getDate() : 1;
+      // Interest starts accruing the day AFTER start_date (so a 12/31 start
+      // means accrual begins 1/1 — the start month gets no interest). Shift
+      // the first-period startDay by +1; downstream accrualDays math handles
+      // the "no accrual this month" case by producing 0 days.
+      const startDay = isFirstMonth ? startDate.getDate() + 1 : 1;
       const accrualDays = totalDays - startDay + 1; // days of interest in this period
       const fullFactor = interestFactor(cy, cm, convention);
       const factor = isFirstMonth ? fullFactor * (accrualDays / totalDays) : fullFactor;
@@ -1105,7 +1109,9 @@ export default function DebtDetailPage() {
       const fullFactor = interestFactor(cy, cm, convention);
       // Pro-rate the first period based on the actual start day within the month
       const isFirstPeriod = i === 0;
-      const startDay = isFirstPeriod ? Number(instrument.start_date.split("T")[0].split("-")[2]) : 1;
+      // See comment on Interest Roll Forward builder above — +1 shifts
+      // accrual to the day after start_date.
+      const startDay = isFirstPeriod ? Number(instrument.start_date.split("T")[0].split("-")[2]) + 1 : 1;
       const totalDays = new Date(cy, cm, 0).getDate();
       const accrualDays = totalDays - startDay + 1;
       const factor = isFirstPeriod ? fullFactor * (accrualDays / totalDays) : fullFactor;
