@@ -57,6 +57,11 @@ import {
   getPeriodLabel,
 } from "@/lib/utils/dates";
 import type { DebtStatus } from "@/lib/types/database";
+import {
+  computeUnpaidInterestAtPeriod,
+  type AccruedInterestTransaction,
+  type AccruedInterestRateChange,
+} from "@/lib/utils/debt-accrued-interest";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyInstrument = any;
@@ -134,14 +139,14 @@ export default function DebtPage() {
   const [glBalances, setGLBalances] = useState<GLBalance[]>([]);
   const [txnSummary, setTxnSummary] = useState<Record<string, TransactionSummary>>({});
   /**
-   * Cumulative interest paid per instrument from start_date through the END
-   * of the selected period. Used together with the stored schedule's
-   * `cumulative_interest` and the instrument's `opening_accrued_interest`
-   * to compute the running unpaid-interest balance shown in the Accrued
-   * Interest column (so it reflects the carry-forward from all prior
-   * periods, not just this month's accrual).
+   * Unpaid-interest balance per instrument as of the selected period end.
+   * Computed via the same day-weighted, month-by-month replay used by the
+   * debt detail page's amortization table, so the Accrued Interest column
+   * here matches the Unpaid Interest value shown there. The replay uses
+   * all transactions (for balance changes + interest paid) and rate
+   * history (for variable-rate lookups) — both loaded in loadData.
    */
-  const [interestPaidToDate, setInterestPaidToDate] = useState<Record<string, number>>({});
+  const [accruedInterestByInstr, setAccruedInterestByInstr] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -327,38 +332,98 @@ export default function DebtPage() {
       }
       setTxnSummary(txnMap);
 
-      // Cumulative interest paid per instrument from the beginning of time
-      // through the END of the selected period. Combined with the stored
-      // schedule's cumulative_interest and the instrument's opening
-      // accrued, this gives the running unpaid-interest balance for the
-      // Accrued Interest column.
-      const { data: paidToDateData } = await supabase
-        .from("debt_transactions")
-        .select("debt_instrument_id, transaction_type, amount, to_interest")
-        .in("debt_instrument_id", instrIds)
-        .lt("transaction_date", periodEnd);
+      // Accrued-interest running balance — computed via the same
+      // month-by-month, day-weighted replay that drives the Unpaid Interest
+      // column on the debt detail page. We need every transaction with an
+      // effective_date on or before the period end (balance changes + any
+      // interest paid) plus the rate history for variable-rate instruments.
+      const periodEndDate = new Date(
+        periodMonth === 12 ? periodYear + 1 : periodYear,
+        periodMonth === 12 ? 0 : periodMonth,
+        0 // last day of selected period
+      );
+      const periodEndIso = `${periodEndDate.getFullYear()}-${String(
+        periodEndDate.getMonth() + 1
+      ).padStart(2, "0")}-${String(periodEndDate.getDate()).padStart(2, "0")}`;
 
-      const paidMap: Record<string, number> = {};
-      if (paidToDateData) {
-        for (const t of paidToDateData as unknown as {
-          debt_instrument_id: string;
-          transaction_type: string;
-          amount: number;
-          to_interest: number;
-        }[]) {
-          let intPaid = 0;
-          if ((t.to_interest ?? 0) !== 0) {
-            intPaid = Math.abs(t.to_interest);
-          } else if (t.transaction_type === "interest_payment") {
-            intPaid = Math.abs(t.amount ?? 0);
-          }
-          if (intPaid > 0) {
-            paidMap[t.debt_instrument_id] =
-              (paidMap[t.debt_instrument_id] ?? 0) + intPaid;
-          }
+      const [allTxnsRes, rateHistoryRes] = await Promise.all([
+        supabase
+          .from("debt_transactions")
+          .select(
+            "debt_instrument_id, effective_date, transaction_type, amount, to_principal, to_interest"
+          )
+          .in("debt_instrument_id", instrIds)
+          .lte("effective_date", periodEndIso)
+          .order("effective_date", { ascending: true }),
+        supabase
+          .from("debt_rate_history")
+          .select("debt_instrument_id, effective_date, interest_rate")
+          .in("debt_instrument_id", instrIds)
+          .lte("effective_date", periodEndIso)
+          .order("effective_date", { ascending: true }),
+      ]);
+
+      const txnsByInstr: Record<
+        string,
+        AccruedInterestTransaction[]
+      > = {};
+      for (const t of (allTxnsRes.data ?? []) as unknown as Array<{
+        debt_instrument_id: string;
+        effective_date: string;
+        transaction_type: string;
+        amount: number;
+        to_principal: number | null;
+        to_interest: number | null;
+      }>) {
+        if (!txnsByInstr[t.debt_instrument_id]) {
+          txnsByInstr[t.debt_instrument_id] = [];
         }
+        txnsByInstr[t.debt_instrument_id].push({
+          effective_date: t.effective_date,
+          transaction_type: t.transaction_type,
+          amount: t.amount,
+          to_principal: t.to_principal,
+          to_interest: t.to_interest,
+        });
       }
-      setInterestPaidToDate(paidMap);
+
+      const ratesByInstr: Record<
+        string,
+        AccruedInterestRateChange[]
+      > = {};
+      for (const r of (rateHistoryRes.data ?? []) as unknown as Array<{
+        debt_instrument_id: string;
+        effective_date: string;
+        interest_rate: number;
+      }>) {
+        if (!ratesByInstr[r.debt_instrument_id]) {
+          ratesByInstr[r.debt_instrument_id] = [];
+        }
+        ratesByInstr[r.debt_instrument_id].push({
+          effective_date: r.effective_date,
+          interest_rate: r.interest_rate,
+        });
+      }
+
+      const accruedMap: Record<string, number> = {};
+      for (const i of instr) {
+        accruedMap[i.id] = computeUnpaidInterestAtPeriod({
+          instrument: {
+            start_date: i.start_date,
+            interest_rate: i.interest_rate ?? 0,
+            debt_type: i.debt_type,
+            day_count_convention: i.day_count_convention,
+            current_draw: i.current_draw,
+            original_amount: i.original_amount,
+            opening_accrued_interest: i.opening_accrued_interest,
+          },
+          transactions: txnsByInstr[i.id] ?? [],
+          rateHistory: ratesByInstr[i.id] ?? [],
+          targetYear: periodYear,
+          targetMonth: periodMonth,
+        });
+      }
+      setAccruedInterestByInstr(accruedMap);
 
       const liabilityAccountIds = instr
         .map((i: AnyInstrument) => i.liability_account_id)
@@ -381,7 +446,7 @@ export default function DebtPage() {
       setAmortization({});
       setGLBalances([]);
       setTxnSummary({});
-      setInterestPaidToDate({});
+      setAccruedInterestByInstr({});
     }
 
     setLoading(false);
@@ -441,25 +506,15 @@ export default function DebtPage() {
   );
   /**
    * Unpaid accrued interest for an instrument as of the selected period's
-   * end. Matches what the amortization table on the debt detail page shows
-   * in its Unpaid Interest column: opening accrued at start_date, plus all
-   * scheduled interest accrued through this period, minus all interest
-   * paid through this period. When the scheduled amortization is missing
-   * (e.g., a new instrument without a generated schedule yet), fall back to
-   * a one-month approximation so the column isn't blank.
+   * end. Comes from the day-weighted month-by-month replay that loadData
+   * runs per instrument — identical logic to what the Unpaid Interest
+   * column on the debt detail page uses, so the two match. Falls back to
+   * opening accrued on first render (before loadData completes).
    */
   function accruedInterestBalance(instr: AnyInstrument): number {
-    const opening = Number(instr.opening_accrued_interest ?? 0);
-    const amort = amortization[instr.id];
-    const cumulativeAccrued = amort?.cumulative_interest;
-    const paid = interestPaidToDate[instr.id] ?? 0;
-    if (cumulativeAccrued != null) {
-      return Math.max(0, opening + cumulativeAccrued - paid);
-    }
-    // Fallback: single-month approximation on the outstanding balance.
-    const balance = instr.current_draw ?? instr.original_amount ?? 0;
-    const rate = instr.interest_rate ?? 0;
-    return Math.max(0, opening + (balance * rate) / 12 - paid);
+    const computed = accruedInterestByInstr[instr.id];
+    if (computed != null) return computed;
+    return Math.max(0, Number(instr.opening_accrued_interest ?? 0));
   }
 
   // Current / Long-term split
