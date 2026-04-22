@@ -256,6 +256,32 @@ export default function FinancialModelPage() {
   }
 
   function handlePrint() {
+    // Chrome uses `document.title` at print time for two things that bleed
+    // into the saved PDF: the PDF's Title metadata (shown as the tab label
+    // when you reopen the file) and the default filename in the Save
+    // dialog. Without overriding it, both pick up the app's generic layout
+    // title ("CloseBook — Month-End Close Management"). Swap to a
+    // report-specific title for the duration of the print, then restore
+    // on `afterprint` so normal navigation isn't affected.
+    const MONTH_ABBR = [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    const startLabel = `${MONTH_ABBR[startMonth - 1]} ${startYear}`;
+    const endLabel = `${MONTH_ABBR[endMonth - 1]} ${endYear}`;
+    const periodLabel =
+      startLabel === endLabel ? startLabel : `${startLabel} - ${endLabel}`;
+    const printTitle = `${companyName || "Financial Statements"} - ${periodLabel} Financials`;
+
+    const originalTitle = document.title;
+    document.title = printTitle;
+
+    const restore = () => {
+      document.title = originalTitle;
+      window.removeEventListener("afterprint", restore);
+    };
+    window.addEventListener("afterprint", restore);
+
     window.print();
   }
 
