@@ -171,7 +171,7 @@ export function generateAmortizationSchedule(
     case "principal_and_interest":
     default:
       // For LOC types without explicit structure, default to interest-only
-      if (["line_of_credit", "revolving_credit"].includes(debt.debt_type)) {
+      if (["line_of_credit", "revolving_credit", "investor_loc"].includes(debt.debt_type)) {
         return generateInterestOnlySchedule(debt, throughYear, throughMonth, sortedRates);
       }
       return generatePISchedule(debt, throughYear, throughMonth, sortedRates);

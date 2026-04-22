@@ -27,6 +27,8 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Textarea } from "@/components/ui/textarea";
+import { CurrencyInput } from "@/components/ui/currency-input";
+import { Input } from "@/components/ui/input";
 import {
   Tooltip,
   TooltipContent,
@@ -40,6 +42,7 @@ import {
   ChevronRight,
   Plus,
   X,
+  Pencil,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils/dates";
 import { DEBT_GL_ACCOUNT_GROUPS } from "@/lib/utils/debt-gl-groups";
@@ -80,6 +83,8 @@ interface ReconciliationRecord {
   is_reconciled: boolean;
   reconciled_at: string | null;
   notes: string | null;
+  prior_period_adjustment: number | null;
+  prior_period_adjustment_note: string | null;
 }
 
 const MONTHS = [
@@ -87,7 +92,7 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-const LOC_TYPES = new Set(["line_of_credit", "revolving_credit"]);
+const LOC_TYPES = new Set(["line_of_credit", "revolving_credit", "investor_loc"]);
 
 export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) {
   const supabase = createClient();
@@ -98,6 +103,9 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
   const [saving, setSaving] = useState<string | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [ppaAmount, setPpaAmount] = useState<Record<string, string>>({});
+  const [ppaNote, setPpaNote] = useState<Record<string, string>>({});
+  const [ppaOpen, setPpaOpen] = useState<Set<string>>(new Set());
 
   // Data
   const [entityAccounts, setEntityAccounts] = useState<EntityAccount[]>([]);
@@ -352,7 +360,7 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
         const baseRate = instr.interest_rate ?? 0;
         const convention = instr.day_count_convention ?? "30/360";
         const rateChanges = ratesByInstrument[instr.id] ?? [];
-        const isLOC = ["line_of_credit", "revolving_credit"].includes(instr.debt_type);
+        const isLOC = ["line_of_credit", "revolving_credit", "investor_loc"].includes(instr.debt_type);
         let balance = isLOC ? (instr.current_draw ?? instr.original_amount) : instr.original_amount;
         let unpaidInt = 0;
 
@@ -501,12 +509,24 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
 
     const reconMap: Record<string, ReconciliationRecord> = {};
     const notesMap: Record<string, string> = {};
+    const ppaAmountMap: Record<string, string> = {};
+    const ppaNoteMap: Record<string, string> = {};
+    const ppaOpenSet = new Set<string>();
     for (const r of (reconData ?? []) as ReconciliationRecord[]) {
       reconMap[r.gl_account_group] = r;
       notesMap[r.gl_account_group] = r.notes ?? "";
+      const ppa = Number(r.prior_period_adjustment ?? 0);
+      ppaAmountMap[r.gl_account_group] = ppa !== 0 ? String(ppa) : "";
+      ppaNoteMap[r.gl_account_group] = r.prior_period_adjustment_note ?? "";
+      if (ppa !== 0 || (r.prior_period_adjustment_note ?? "").length > 0) {
+        ppaOpenSet.add(r.gl_account_group);
+      }
     }
     setReconciliations(reconMap);
     setNotes(notesMap);
+    setPpaAmount(ppaAmountMap);
+    setPpaNote(ppaNoteMap);
+    setPpaOpen(ppaOpenSet);
 
     // 6. Fetch year-wide reconciliation status + GL data for schedule overview
     const { data: yearReconData } = await supabase
@@ -614,6 +634,8 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
     const glBal = glBalances[groupKey] ?? 0;
     const subBal = subledgerBalances[groupKey]?.total ?? 0;
     const variance = glBal - subBal;
+    const ppa = parseFloat(ppaAmount[groupKey] ?? "") || 0;
+    const ppaText = (ppaNote[groupKey] ?? "").trim();
 
     const { data: userData } = await supabase.auth.getUser();
 
@@ -630,12 +652,90 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
         reconciled_by: userData?.user?.id ?? null,
         reconciled_at: new Date().toISOString(),
         notes: notes[groupKey] || null,
+        prior_period_adjustment: ppa,
+        prior_period_adjustment_note: ppaText.length > 0 ? ppaText : null,
       },
       { onConflict: "entity_id,period_year,period_month,gl_account_group" }
     );
 
     setSaving(null);
     loadData();
+  };
+
+  const handleSavePpa = async (groupKey: string) => {
+    setSaving(groupKey);
+    const glBal = glBalances[groupKey] ?? 0;
+    const subBal = subledgerBalances[groupKey]?.total ?? 0;
+    const variance = glBal - subBal;
+    const ppa = parseFloat(ppaAmount[groupKey] ?? "") || 0;
+    const ppaText = (ppaNote[groupKey] ?? "").trim();
+    const recon = reconciliations[groupKey];
+
+    if (recon) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any)
+        .from("debt_reconciliations")
+        .update({
+          prior_period_adjustment: ppa,
+          prior_period_adjustment_note: ppaText.length > 0 ? ppaText : null,
+        })
+        .eq("id", recon.id);
+    } else {
+      await supabase.from("debt_reconciliations").upsert(
+        {
+          entity_id: entityId,
+          period_year: periodYear,
+          period_month: periodMonth,
+          gl_account_group: groupKey,
+          gl_balance: glBal,
+          subledger_balance: subBal,
+          variance,
+          is_reconciled: false,
+          notes: notes[groupKey] || null,
+          prior_period_adjustment: ppa,
+          prior_period_adjustment_note: ppaText.length > 0 ? ppaText : null,
+        },
+        { onConflict: "entity_id,period_year,period_month,gl_account_group" }
+      );
+    }
+
+    toast.success("Prior period adjustment saved");
+    setSaving(null);
+    loadData();
+  };
+
+  const handleClearPpa = async (groupKey: string) => {
+    setSaving(groupKey);
+    setPpaAmount((prev) => ({ ...prev, [groupKey]: "" }));
+    setPpaNote((prev) => ({ ...prev, [groupKey]: "" }));
+    setPpaOpen((prev) => {
+      const next = new Set(prev);
+      next.delete(groupKey);
+      return next;
+    });
+
+    const recon = reconciliations[groupKey];
+    if (recon) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any)
+        .from("debt_reconciliations")
+        .update({
+          prior_period_adjustment: 0,
+          prior_period_adjustment_note: null,
+        })
+        .eq("id", recon.id);
+      loadData();
+    }
+    setSaving(null);
+  };
+
+  const togglePpaOpen = (key: string) => {
+    setPpaOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   };
 
   const handleUnreconcile = async (groupKey: string) => {
@@ -792,6 +892,15 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
               const isExpanded = expandedGroups.has(group.key);
               const groupMappings = mappedAccounts[group.key] ?? [];
               const isAdding = addingToGroup === group.key;
+              const ppa = parseFloat(ppaAmount[group.key] ?? "") || 0;
+              const adjustedVariance = variance - ppa;
+              const hasPpa = Math.abs(ppa) > 0.005;
+              const isPpaOpen = ppaOpen.has(group.key) || hasPpa;
+              const savedPpa = Number(recon?.prior_period_adjustment ?? 0);
+              const ppaDirty =
+                Math.abs(ppa - savedPpa) > 0.005 ||
+                (ppaNote[group.key] ?? "") !==
+                  (recon?.prior_period_adjustment_note ?? "");
 
               return (
                 <Card key={group.key} className={isStale ? "border-amber-400" : ""}>
@@ -812,8 +921,9 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
                         <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
                           <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
                           Reconciled
+                          {Math.abs(savedPpa) > 0.005 && " (w/ PPA)"}
                         </Badge>
-                      ) : Math.abs(variance) > 0.01 && groupMappings.length > 0 ? (
+                      ) : Math.abs(adjustedVariance) > 0.01 && groupMappings.length > 0 ? (
                         <Badge variant="destructive">
                           <AlertTriangle className="mr-1 h-3.5 w-3.5" />
                           Variance
@@ -948,6 +1058,119 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
                             {formatCurrency(variance)}
                           </p>
                         </div>
+                      </div>
+                    )}
+
+                    {/* Prior Period Adjustment */}
+                    {groupMappings.length > 0 && (
+                      <div className="border-t pt-3">
+                        {!isPpaOpen ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => togglePpaOpen(group.key)}
+                            className="text-xs text-muted-foreground hover:text-foreground"
+                          >
+                            <Plus className="mr-1 h-3.5 w-3.5" />
+                            Apply prior period adjustment
+                          </Button>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                                Prior Period Adjustment
+                              </p>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleClearPpa(group.key)}
+                                disabled={saving === group.key}
+                                className="h-7 text-xs text-muted-foreground hover:text-destructive"
+                              >
+                                <X className="mr-1 h-3 w-3" />
+                                Clear
+                              </Button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 items-end">
+                              <div>
+                                <label className="text-xs text-muted-foreground">
+                                  Adjustment Amount
+                                </label>
+                                <div className="flex gap-1">
+                                  <CurrencyInput
+                                    value={ppaAmount[group.key] ?? ""}
+                                    onValueChange={(v) =>
+                                      setPpaAmount((prev) => ({
+                                        ...prev,
+                                        [group.key]: v,
+                                      }))
+                                    }
+                                    placeholder="$0.00"
+                                    className="h-9 text-sm"
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() =>
+                                      setPpaAmount((prev) => ({
+                                        ...prev,
+                                        [group.key]: String(variance),
+                                      }))
+                                    }
+                                    title="Set adjustment equal to current variance"
+                                    className="h-9 shrink-0 text-xs"
+                                  >
+                                    Use Variance
+                                  </Button>
+                                </div>
+                              </div>
+                              <div>
+                                <label className="text-xs text-muted-foreground">
+                                  Adjusted Variance
+                                </label>
+                                <p
+                                  className={`text-base font-semibold tabular-nums h-9 flex items-center ${
+                                    Math.abs(adjustedVariance) > 0.01
+                                      ? "text-red-600"
+                                      : "text-green-600"
+                                  }`}
+                                >
+                                  {formatCurrency(adjustedVariance)}
+                                </p>
+                              </div>
+                            </div>
+                            <div>
+                              <label className="text-xs text-muted-foreground">
+                                Reason (e.g. &quot;2025 books closed; adjusting JE booked
+                                in 2026&quot;)
+                              </label>
+                              <Input
+                                value={ppaNote[group.key] ?? ""}
+                                onChange={(e) =>
+                                  setPpaNote((prev) => ({
+                                    ...prev,
+                                    [group.key]: e.target.value,
+                                  }))
+                                }
+                                placeholder="Why this variance is being ignored..."
+                                className="h-9 text-sm"
+                              />
+                            </div>
+                            {recon && ppaDirty && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleSavePpa(group.key)}
+                                disabled={saving === group.key}
+                                className="h-8 text-xs"
+                              >
+                                <Pencil className="mr-1 h-3 w-3" />
+                                {saving === group.key ? "Saving..." : "Save adjustment"}
+                              </Button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
 

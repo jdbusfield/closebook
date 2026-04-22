@@ -100,6 +100,7 @@ const TYPE_LABELS: Record<string, string> = {
   term_loan: "Term Loan",
   line_of_credit: "Line of Credit",
   revolving_credit: "Revolving Credit",
+  investor_loc: "Investor LOC",
   mortgage: "Mortgage",
   equipment_loan: "Equipment Loan",
   balloon_loan: "Balloon Loan",
@@ -413,7 +414,7 @@ export default function DebtPage() {
   );
 
   // Credit utilization for LOCs
-  const locTypes = ["line_of_credit", "revolving_credit"];
+  const locTypes = ["line_of_credit", "revolving_credit", "investor_loc"];
   const totalCreditLimit = instruments
     .filter((i: AnyInstrument) => locTypes.includes(i.debt_type))
     .reduce((sum: number, i: AnyInstrument) => sum + (i.credit_limit ?? 0), 0);

@@ -117,6 +117,7 @@ const TYPE_LABELS: Record<string, string> = {
   term_loan: "Term Loan",
   line_of_credit: "Line of Credit",
   revolving_credit: "Revolving Credit",
+  investor_loc: "Investor LOC",
   mortgage: "Mortgage",
   equipment_loan: "Equipment Loan",
   balloon_loan: "Balloon Loan",
@@ -836,7 +837,7 @@ export default function DebtDetailPage() {
     let balance = instrument.current_draw ?? instrument.original_amount ?? 0;
     // Walk backwards from start to figure out original balance if transactions exist before start
     // Actually, start with original amount and apply transactions forward
-    const isLOCType = ["line_of_credit", "revolving_credit"].includes(instrument.debt_type);
+    const isLOCType = ["line_of_credit", "revolving_credit", "investor_loc"].includes(instrument.debt_type);
     balance = isLOCType ? (instrument.current_draw ?? instrument.original_amount) : instrument.original_amount;
 
     let cumInterest = 0;
@@ -1052,7 +1053,7 @@ export default function DebtDetailPage() {
     }
 
     const entries: DynamicAmortEntry[] = [];
-    const isLOC = ["line_of_credit", "revolving_credit"].includes(instrument.debt_type);
+    const isLOC = ["line_of_credit", "revolving_credit", "investor_loc"].includes(instrument.debt_type);
     let balance = isLOC ? (instrument.current_draw ?? instrument.original_amount) : instrument.original_amount;
     let unpaidInterest = 0;
     let cumPrincipal = 0;
@@ -1256,7 +1257,7 @@ export default function DebtDetailPage() {
     return sum;
   }, 0);
 
-  const isLOC = ["line_of_credit", "revolving_credit"].includes(instrument.debt_type);
+  const isLOC = ["line_of_credit", "revolving_credit", "investor_loc"].includes(instrument.debt_type);
 
   const formatDate = (d: string | null) => {
     if (!d) return "---";
