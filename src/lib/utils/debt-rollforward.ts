@@ -112,6 +112,10 @@ export interface DebtInstrumentInput {
   start_date: string; // ISO yyyy-mm-dd
   maturity_date: string | null;
   status: string;
+  /** Unpaid interest carried in at start_date; defaults to 0 if omitted. */
+  opening_accrued_interest?: number | null;
+  /** Day-count convention — drives the rough interest-accrual approximation. */
+  day_count_convention?: string | null;
 }
 
 export interface DebtTransactionInput {
@@ -161,6 +165,24 @@ export interface InstrumentRollForward {
   endingBalance: number;
   /** Principal paid net of reversals (Σ to_principal for paydown-type txns). */
   netPrincipalPaid: number;
+  /**
+   * Unpaid interest carried into the window. Equal to the instrument's
+   * `opening_accrued_interest` when the loan predates the window; 0 for
+   * loans that originate inside the window.
+   */
+  beginningAccruedInterest: number;
+  /**
+   * Approximated interest accrual over the window, using avg balance ×
+   * rate × (days in window / year basis). Rough — meant for roll-forward
+   * display, not billing.
+   */
+  interestAccrued: number;
+  /**
+   * Running unpaid interest at window end = beginning + accrued − paid
+   * (clamped at 0). Not clamped in totals, so overpayment shows as a
+   * negative carry for audit visibility.
+   */
+  endingAccruedInterest: number;
   /** Reconciliation state for display badge (null if unknown). */
   reconciled: boolean | null;
   variance: number | null;
@@ -201,6 +223,9 @@ export interface RollForwardTotals {
   noteRenewals: number;
   endingBalance: number;
   netPrincipalPaid: number;
+  beginningAccruedInterest: number;
+  interestAccrued: number;
+  endingAccruedInterest: number;
   /** Weighted-average rate for the period: Σ(rate × avg balance). */
   weightedAvgRate: number;
   instrumentCount: number;
@@ -222,6 +247,9 @@ function emptyTotals(): RollForwardTotals {
     noteRenewals: 0,
     endingBalance: 0,
     netPrincipalPaid: 0,
+    beginningAccruedInterest: 0,
+    interestAccrued: 0,
+    endingAccruedInterest: 0,
     weightedAvgRate: 0,
     instrumentCount: 0,
   };
@@ -240,6 +268,9 @@ function addToTotals(t: RollForwardTotals, r: InstrumentRollForward): void {
   t.noteRenewals += r.noteRenewals;
   t.endingBalance += r.endingBalance;
   t.netPrincipalPaid += r.netPrincipalPaid;
+  t.beginningAccruedInterest += r.beginningAccruedInterest;
+  t.interestAccrued += r.interestAccrued;
+  t.endingAccruedInterest += r.endingAccruedInterest;
   t.instrumentCount += 1;
 }
 
@@ -252,6 +283,30 @@ function finalizeWeightedRate(t: RollForwardTotals, weightedRateNumerator: numbe
 /** True if the transaction's effective_date is strictly before `startIso`. */
 function isBefore(effectiveDate: string, startIso: string): boolean {
   return effectiveDate.slice(0, 10) < startIso;
+}
+
+/**
+ * Inclusive day count between two ISO dates. Used by the approximate
+ * accrued-interest accrual over the roll-forward window.
+ */
+function daysBetweenInclusive(startIso: string, endIso: string): number {
+  const start = Date.parse(`${startIso.slice(0, 10)}T00:00:00Z`);
+  const end = Date.parse(`${endIso.slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 0;
+  return Math.floor((end - start) / 86_400_000) + 1;
+}
+
+/** Year basis (denominator) implied by a day-count convention. Defaults to 365. */
+function yearBasisForConvention(convention?: string | null): number {
+  switch ((convention ?? "").toLowerCase()) {
+    case "30/360":
+    case "actual/360":
+      return 360;
+    case "actual/365":
+    case "actual/actual":
+    default:
+      return 365;
+  }
 }
 
 /** True if the transaction falls in [startIso, endIso], inclusive on both. */
@@ -524,6 +579,34 @@ export function computeDebtRollForward(input: RollForwardInput): GroupedRollForw
       continue;
     }
 
+    // Accrued-interest roll-forward. The declared `opening_accrued_interest`
+    // sits at `start_date`; if the loan predates the window we carry it in,
+    // otherwise it's 0 because accrual only starts on start_date.
+    const openingAccrued = Math.max(
+      0,
+      Number(instr.opening_accrued_interest ?? 0)
+    );
+    const beginningAccruedInterest =
+      startDate && startDate < startIso ? openingAccrued : 0;
+
+    // Approximate interest accrued during the window. Uses the average of
+    // beginning and ending principal as the base, the instrument's rate, and
+    // the prorated window length. Good enough for a supplemental report —
+    // precise day-count accrual lives in the amortization schedule.
+    const windowDays = daysBetweenInclusive(
+      startDate && startDate > startIso ? startDate : startIso,
+      endIso
+    );
+    const yearBasis = yearBasisForConvention(instr.day_count_convention);
+    const avgBalance = (Math.max(0, beginning) + Math.max(0, ending)) / 2;
+    const interestAccrued =
+      windowDays > 0 && avgBalance > 0 && instr.interest_rate > 0
+        ? avgBalance * instr.interest_rate * (windowDays / yearBasis)
+        : 0;
+
+    const endingAccruedInterest =
+      beginningAccruedInterest + interestAccrued - interestPaid;
+
     const recon = reconMap.get(instr.id);
     rows.push({
       instrument: instr,
@@ -540,6 +623,9 @@ export function computeDebtRollForward(input: RollForwardInput): GroupedRollForw
       noteRenewals: buckets.note_renewals,
       endingBalance: ending,
       netPrincipalPaid,
+      beginningAccruedInterest,
+      interestAccrued,
+      endingAccruedInterest,
       reconciled: recon ? recon.is_reconciled : null,
       variance: recon ? recon.variance : null,
       transactionCount: inWindow.length,

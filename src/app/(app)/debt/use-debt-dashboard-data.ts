@@ -228,7 +228,7 @@ export function useDebtDashboardData(
             supabase
               .from("debt_instruments")
               .select(
-                "id, entity_id, instrument_name, lender_name, debt_type, original_amount, interest_rate, credit_limit, current_draw, payment_amount, payment_frequency, start_date, maturity_date, status"
+                "id, entity_id, instrument_name, lender_name, debt_type, original_amount, interest_rate, credit_limit, current_draw, payment_amount, payment_frequency, start_date, maturity_date, status, opening_accrued_interest, day_count_convention"
               )
               .in("entity_id", entityIds)
               .range(from, to)

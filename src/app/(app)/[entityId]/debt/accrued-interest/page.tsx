@@ -47,7 +47,12 @@ interface AccruedInterestRow {
 
   // For pro-rata: if start_date is in the report year, accrued from start through 12/31
   accruedDays: number;
+  /** Period-only accrual (interest that accrued in December of the report year). */
   accruedInterest: number;
+  /** Unpaid interest already on the books at the loan's start_date. */
+  openingAccruedInterest: number;
+  /** Total unpaid interest to show on the balance sheet: period + opening. */
+  totalUnpaidInterest: number;
   status: string;
 }
 
@@ -224,8 +229,26 @@ export default function AccruedInterestPage() {
         balanceEnteringDec * dailyRate * accruedDays * 100
       ) / 100;
 
+      // Carry-forward unpaid interest set on the instrument at start. We
+      // surface this on every year's report so the balance-sheet accrued
+      // total includes the full amount the borrower owes, not just the
+      // current-period accrual. For a refined treatment, a future iteration
+      // could net out interest payments made since start_date.
+      const openingAccruedInterest = Math.max(
+        0,
+        Math.round((Number(instr.opening_accrued_interest ?? 0)) * 100) / 100
+      );
+      const totalUnpaidInterest = Math.round(
+        (accruedInterest + openingAccruedInterest) * 100
+      ) / 100;
+
       // Skip instruments with no balance and no accrual
-      if (balanceEnteringDec <= 0 && accruedInterest <= 0) continue;
+      if (
+        balanceEnteringDec <= 0 &&
+        accruedInterest <= 0 &&
+        openingAccruedInterest <= 0
+      )
+        continue;
 
       result.push({
         instrumentId: instr.id,
@@ -241,6 +264,8 @@ export default function AccruedInterestPage() {
         beginningBalance: balanceEnteringDec,
         accruedDays,
         accruedInterest,
+        openingAccruedInterest,
+        totalUnpaidInterest,
         status: instr.status,
       });
     }
@@ -254,6 +279,14 @@ export default function AccruedInterestPage() {
   }, [loadData]);
 
   const totalAccruedInterest = rows.reduce((s, r) => s + r.accruedInterest, 0);
+  const totalOpeningAccrued = rows.reduce(
+    (s, r) => s + r.openingAccruedInterest,
+    0
+  );
+  const totalUnpaidInterest = rows.reduce(
+    (s, r) => s + r.totalUnpaidInterest,
+    0
+  );
   const totalBalance = rows.reduce((s, r) => s + r.beginningBalance, 0);
 
   // ── Excel Export ──────────────────────────────────────────────────────
@@ -271,7 +304,9 @@ export default function AccruedInterestPage() {
       "Daily Rate": r.dailyRate,
       ["Beginning Balance"]: r.beginningBalance,
       "Accrued Days": r.accruedDays,
-      [`Accrued Interest 12/31/${year}`]: r.accruedInterest,
+      [`Period Accrual 12/${year}`]: r.accruedInterest,
+      "Opening Accrued": r.openingAccruedInterest,
+      [`Total Unpaid Interest 12/31/${year}`]: r.totalUnpaidInterest,
     }));
 
     // Add totals row
@@ -286,7 +321,9 @@ export default function AccruedInterestPage() {
       "Daily Rate": 0,
       ["Beginning Balance"]: totalBalance,
       "Accrued Days": 0,
-      [`Accrued Interest 12/31/${year}`]: totalAccruedInterest,
+      [`Period Accrual 12/${year}`]: totalAccruedInterest,
+      "Opening Accrued": totalOpeningAccrued,
+      [`Total Unpaid Interest 12/31/${year}`]: totalUnpaidInterest,
     });
 
     const ws = XLSX.utils.json_to_sheet(sheetRows);
@@ -364,7 +401,9 @@ export default function AccruedInterestPage() {
         "Daily Rate",
         "Beginning\nBalance",
         "Accrued\nDays",
-        `Accrued Interest\n12/31/${year}`,
+        `Period Accrual\n12/${year}`,
+        "Opening\nAccrued",
+        `Total Unpaid\n12/31/${year}`,
       ],
     ];
 
@@ -379,6 +418,8 @@ export default function AccruedInterestPage() {
       formatCurrency(r.beginningBalance),
       String(r.accruedDays),
       formatCurrency(r.accruedInterest),
+      formatCurrency(r.openingAccruedInterest),
+      formatCurrency(r.totalUnpaidInterest),
     ]);
 
     // Totals row
@@ -393,6 +434,8 @@ export default function AccruedInterestPage() {
       formatCurrency(totalBalance),
       "",
       formatCurrency(totalAccruedInterest),
+      formatCurrency(totalOpeningAccrued),
+      formatCurrency(totalUnpaidInterest),
     ]);
 
     autoTable(doc, {
@@ -403,16 +446,18 @@ export default function AccruedInterestPage() {
       headStyles: { fillColor: [41, 41, 41], fontSize: 7.5, halign: "center" },
       bodyStyles: { fontSize: 7.5 },
       columnStyles: {
-        0: { cellWidth: 110 },
-        1: { cellWidth: 80 },
-        2: { cellWidth: 65 },
-        3: { cellWidth: 70, halign: "center" },
-        4: { cellWidth: 50, halign: "right" },
-        5: { cellWidth: 55, halign: "center" },
-        6: { cellWidth: 70, halign: "right" },
-        7: { cellWidth: 80, halign: "right" },
-        8: { cellWidth: 45, halign: "center" },
-        9: { cellWidth: 90, halign: "right" },
+        0: { cellWidth: 95 },
+        1: { cellWidth: 65 },
+        2: { cellWidth: 55 },
+        3: { cellWidth: 60, halign: "center" },
+        4: { cellWidth: 45, halign: "right" },
+        5: { cellWidth: 50, halign: "center" },
+        6: { cellWidth: 55, halign: "right" },
+        7: { cellWidth: 70, halign: "right" },
+        8: { cellWidth: 40, halign: "center" },
+        9: { cellWidth: 70, halign: "right" },
+        10: { cellWidth: 65, halign: "right" },
+        11: { cellWidth: 75, halign: "right" },
       },
       margin: { left: margin, right: margin },
       didParseCell: (data: AnyRow) => {
@@ -511,13 +556,19 @@ export default function AccruedInterestPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Accrued Interest
+              Total Unpaid Interest
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatCurrency(totalAccruedInterest)}
+              {formatCurrency(totalUnpaidInterest)}
             </div>
+            {totalOpeningAccrued > 0 && (
+              <div className="mt-1 text-xs text-muted-foreground">
+                Period accrual {formatCurrency(totalAccruedInterest)} +
+                opening {formatCurrency(totalOpeningAccrued)}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -552,7 +603,13 @@ export default function AccruedInterestPage() {
                       Accrued Days
                     </TableHead>
                     <TableHead className="text-right">
-                      Accrued Interest
+                      Period Accrual
+                    </TableHead>
+                    <TableHead className="text-right">
+                      Opening Accrued
+                    </TableHead>
+                    <TableHead className="text-right">
+                      Total Unpaid Interest
                     </TableHead>
                   </TableRow>
                 </TableHeader>
@@ -585,8 +642,14 @@ export default function AccruedInterestPage() {
                       <TableCell className="text-center">
                         {r.accruedDays}
                       </TableCell>
-                      <TableCell className="text-right font-medium">
+                      <TableCell className="text-right">
                         {formatCurrency(r.accruedInterest)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(r.openingAccruedInterest)}
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {formatCurrency(r.totalUnpaidInterest)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -605,6 +668,12 @@ export default function AccruedInterestPage() {
                     <TableCell />
                     <TableCell className="text-right">
                       {formatCurrency(totalAccruedInterest)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(totalOpeningAccrued)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(totalUnpaidInterest)}
                     </TableCell>
                   </TableRow>
                 </TableBody>
