@@ -94,6 +94,18 @@ const MONTHS = [
 
 const LOC_TYPES = new Set(["line_of_credit", "revolving_credit", "investor_loc"]);
 
+/**
+ * Parse an ISO "YYYY-MM-DD" effective_date as a local calendar date.
+ * `new Date(iso)` parses it as UTC midnight, which lands a day earlier in
+ * any timezone west of UTC — e.g. April 1 reads as March 31 in Pacific.
+ * All month-bucketing on this tab goes through this helper so transactions
+ * land in the correct month regardless of the user's timezone.
+ */
+function parseLocalYmd(iso: string): { year: number; month: number; day: number } {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  return { year: y, month: m, day: d };
+}
+
 export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) {
   const supabase = createClient();
   const now = new Date();
@@ -314,8 +326,8 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
       const dayChangesByInstrMonth: Record<string, Record<string, DayChange[]>> = {};
 
       for (const txn of (allTxnData ?? []) as { debt_instrument_id: string; transaction_type: string; amount: number; to_principal: number; to_interest: number; effective_date: string }[]) {
-        const d = new Date(txn.effective_date);
-        const mKey = `${d.getFullYear()}-${d.getMonth() + 1}`;
+        const ymd = parseLocalYmd(txn.effective_date);
+        const mKey = `${ymd.year}-${ymd.month}`;
         const iid = txn.debt_instrument_id;
 
         // Track day-level balance changes for day-weighted interest
@@ -328,7 +340,7 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
         if (delta !== 0) {
           if (!dayChangesByInstrMonth[iid]) dayChangesByInstrMonth[iid] = {};
           if (!dayChangesByInstrMonth[iid][mKey]) dayChangesByInstrMonth[iid][mKey] = [];
-          dayChangesByInstrMonth[iid][mKey].push({ day: d.getDate(), amount: delta });
+          dayChangesByInstrMonth[iid][mKey].push({ day: ymd.day, amount: delta });
         }
 
         if (txn.transaction_type === "advance") {
