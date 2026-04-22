@@ -153,6 +153,7 @@ export default function DebtPage() {
     payment_amount: "",
     credit_limit: "",
     current_draw: "",
+    opening_accrued_interest: "",
     day_count_convention: "30/360",
     balloon_amount: "",
     is_secured: false,
@@ -178,6 +179,7 @@ export default function DebtPage() {
       payment_amount: "",
       credit_limit: "",
       current_draw: "",
+      opening_accrued_interest: "",
       day_count_convention: "30/360",
       balloon_amount: "",
       is_secured: false,
@@ -214,6 +216,9 @@ export default function DebtPage() {
           payment_amount: form.payment_amount ? parseFloat(form.payment_amount) : null,
           credit_limit: form.credit_limit ? parseFloat(form.credit_limit) : null,
           current_draw: form.current_draw ? parseFloat(form.current_draw) : null,
+          opening_accrued_interest: form.opening_accrued_interest
+            ? parseFloat(form.opening_accrued_interest)
+            : 0,
           day_count_convention: form.day_count_convention,
           balloon_amount: form.balloon_amount ? parseFloat(form.balloon_amount) : null,
           is_secured: form.is_secured,
@@ -605,8 +610,8 @@ export default function DebtPage() {
                     <Input id="current_draw" type="number" step="0.01" value={form.current_draw} onChange={(e) => setForm({ ...form, current_draw: e.target.value })} placeholder="Outstanding balance" />
                   </div>
                 </div>
-                {/* Row 6: Day count, Balloon */}
-                <div className="grid grid-cols-2 gap-4">
+                {/* Row 6: Day count, Opening accrued interest, Balloon */}
+                <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="day_count_convention">Day Count Convention</Label>
                     <Select value={form.day_count_convention} onValueChange={(v) => setForm({ ...form, day_count_convention: v })}>
@@ -618,6 +623,17 @@ export default function DebtPage() {
                         <SelectItem value="actual/actual">Actual/Actual</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="opening_accrued_interest">Opening Accrued Interest</Label>
+                    <Input
+                      id="opening_accrued_interest"
+                      type="number"
+                      step="0.01"
+                      value={form.opening_accrued_interest}
+                      onChange={(e) => setForm({ ...form, opening_accrued_interest: e.target.value })}
+                      placeholder="Unpaid interest at start"
+                    />
                   </div>
                   {form.payment_structure === "balloon" && (
                     <div className="space-y-2">
