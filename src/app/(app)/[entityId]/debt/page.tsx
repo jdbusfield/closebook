@@ -69,6 +69,8 @@ interface AmortizationPeriod {
   interest: number;
   ending_balance: number;
   interest_rate: number | null;
+  /** Running total of scheduled interest from the schedule's start through this period. */
+  cumulative_interest: number | null;
 }
 
 interface GLBalance {
@@ -131,6 +133,15 @@ export default function DebtPage() {
   >({});
   const [glBalances, setGLBalances] = useState<GLBalance[]>([]);
   const [txnSummary, setTxnSummary] = useState<Record<string, TransactionSummary>>({});
+  /**
+   * Cumulative interest paid per instrument from start_date through the END
+   * of the selected period. Used together with the stored schedule's
+   * `cumulative_interest` and the instrument's `opening_accrued_interest`
+   * to compute the running unpaid-interest balance shown in the Accrued
+   * Interest column (so it reflects the carry-forward from all prior
+   * periods, not just this month's accrual).
+   */
+  const [interestPaidToDate, setInterestPaidToDate] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -257,7 +268,7 @@ export default function DebtPage() {
       const { data: amortData } = await supabase
         .from("debt_amortization")
         .select(
-          "debt_instrument_id, beginning_balance, payment, principal, interest, ending_balance, interest_rate"
+          "debt_instrument_id, beginning_balance, payment, principal, interest, ending_balance, interest_rate, cumulative_interest"
         )
         .in("debt_instrument_id", instrIds)
         .eq("period_year", periodYear)
@@ -316,6 +327,39 @@ export default function DebtPage() {
       }
       setTxnSummary(txnMap);
 
+      // Cumulative interest paid per instrument from the beginning of time
+      // through the END of the selected period. Combined with the stored
+      // schedule's cumulative_interest and the instrument's opening
+      // accrued, this gives the running unpaid-interest balance for the
+      // Accrued Interest column.
+      const { data: paidToDateData } = await supabase
+        .from("debt_transactions")
+        .select("debt_instrument_id, transaction_type, amount, to_interest")
+        .in("debt_instrument_id", instrIds)
+        .lt("transaction_date", periodEnd);
+
+      const paidMap: Record<string, number> = {};
+      if (paidToDateData) {
+        for (const t of paidToDateData as unknown as {
+          debt_instrument_id: string;
+          transaction_type: string;
+          amount: number;
+          to_interest: number;
+        }[]) {
+          let intPaid = 0;
+          if ((t.to_interest ?? 0) !== 0) {
+            intPaid = Math.abs(t.to_interest);
+          } else if (t.transaction_type === "interest_payment") {
+            intPaid = Math.abs(t.amount ?? 0);
+          }
+          if (intPaid > 0) {
+            paidMap[t.debt_instrument_id] =
+              (paidMap[t.debt_instrument_id] ?? 0) + intPaid;
+          }
+        }
+      }
+      setInterestPaidToDate(paidMap);
+
       const liabilityAccountIds = instr
         .map((i: AnyInstrument) => i.liability_account_id)
         .filter((id: string | null): id is string => id !== null);
@@ -337,6 +381,7 @@ export default function DebtPage() {
       setAmortization({});
       setGLBalances([]);
       setTxnSummary({});
+      setInterestPaidToDate({});
     }
 
     setLoading(false);
@@ -394,6 +439,29 @@ export default function DebtPage() {
     (sum: number, i: AnyInstrument) => sum + (i.current_draw ?? i.original_amount ?? 0),
     0
   );
+  /**
+   * Unpaid accrued interest for an instrument as of the selected period's
+   * end. Matches what the amortization table on the debt detail page shows
+   * in its Unpaid Interest column: opening accrued at start_date, plus all
+   * scheduled interest accrued through this period, minus all interest
+   * paid through this period. When the scheduled amortization is missing
+   * (e.g., a new instrument without a generated schedule yet), fall back to
+   * a one-month approximation so the column isn't blank.
+   */
+  function accruedInterestBalance(instr: AnyInstrument): number {
+    const opening = Number(instr.opening_accrued_interest ?? 0);
+    const amort = amortization[instr.id];
+    const cumulativeAccrued = amort?.cumulative_interest;
+    const paid = interestPaidToDate[instr.id] ?? 0;
+    if (cumulativeAccrued != null) {
+      return Math.max(0, opening + cumulativeAccrued - paid);
+    }
+    // Fallback: single-month approximation on the outstanding balance.
+    const balance = instr.current_draw ?? instr.original_amount ?? 0;
+    const rate = instr.interest_rate ?? 0;
+    return Math.max(0, opening + (balance * rate) / 12 - paid);
+  }
+
   // Current / Long-term split
   const totalCurrentPortion = instruments.reduce(
     (sum: number, i: AnyInstrument) => sum + (i.current_portion ?? 0),
@@ -910,21 +978,7 @@ export default function DebtPage() {
                           {formatCurrency(instr.current_draw ?? instr.original_amount ?? 0)}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {/*
-                            Accrued Interest column shows this period's
-                            interest accrual. Prefer the stored
-                            debt_amortization row's interest figure (honors
-                            the instrument's day-count convention); fall back
-                            to a 1/12-of-annual-rate approximation on the
-                            outstanding balance when no schedule is stored
-                            for the selected period.
-                          */}
-                          {formatCurrency(
-                            amort?.interest ??
-                              ((instr.current_draw ?? instr.original_amount ?? 0) *
-                                (instr.interest_rate ?? 0)) /
-                                12
-                          )}
+                          {formatCurrency(accruedInterestBalance(instr))}
                         </TableCell>
                         <TableCell>
                           <Badge
@@ -953,15 +1007,11 @@ export default function DebtPage() {
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {formatCurrency(
-                        instruments.reduce((sum: number, i: AnyInstrument) => {
-                          const amort = amortization[i.id];
-                          const accrual =
-                            amort?.interest ??
-                            ((i.current_draw ?? i.original_amount ?? 0) *
-                              (i.interest_rate ?? 0)) /
-                              12;
-                          return sum + accrual;
-                        }, 0)
+                        instruments.reduce(
+                          (sum: number, i: AnyInstrument) =>
+                            sum + accruedInterestBalance(i),
+                          0
+                        )
                       )}
                     </TableCell>
                     <TableCell colSpan={2} />
