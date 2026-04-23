@@ -1086,17 +1086,42 @@ export default function DebtDetailPage() {
       }
     }
 
-    // Determine the scheduled payment amount for projections
+    // Determine the scheduled payment amount for projections. PIK loans
+    // have no scheduled cash payments during the term — the entire balance
+    // plus accrued unpaid interest is due as a bullet at maturity — so we
+    // skip the P&I calculation and only fall back to an explicitly set
+    // payment_amount (which users can still override).
     let scheduledPayment = instrument.payment_amount ?? 0;
-    if (scheduledPayment <= 0 && instrument.term_months && baseRate > 0) {
-      // Calculate from standard amortization formula using current balance would be wrong —
-      // we need original parameters. Use original_amount + term_months.
-      const r = baseRate / 12;
-      const n = instrument.term_months;
-      const factor = Math.pow(1 + r, n);
-      scheduledPayment = Math.round(instrument.original_amount * (r * factor) / (factor - 1) * 100) / 100;
-    } else if (scheduledPayment <= 0 && instrument.term_months && baseRate === 0) {
-      scheduledPayment = Math.round(instrument.original_amount / instrument.term_months * 100) / 100;
+    if (!instrument.is_pik) {
+      if (scheduledPayment <= 0 && instrument.term_months && baseRate > 0) {
+        // Calculate from standard amortization formula using current balance would be wrong —
+        // we need original parameters. Use original_amount + term_months.
+        const r = baseRate / 12;
+        const n = instrument.term_months;
+        const factor = Math.pow(1 + r, n);
+        scheduledPayment = Math.round(instrument.original_amount * (r * factor) / (factor - 1) * 100) / 100;
+      } else if (scheduledPayment <= 0 && instrument.term_months && baseRate === 0) {
+        scheduledPayment = Math.round(instrument.original_amount / instrument.term_months * 100) / 100;
+      }
+    }
+
+    // For PIK loans, work out the maturity month so the projection can bullet-
+    // pay off the principal + accrued unpaid interest on that row (and stop).
+    let pikMatYear: number | null = null;
+    let pikMatMonth: number | null = null;
+    if (instrument.is_pik) {
+      if (instrument.maturity_date) {
+        const [my, mm] = instrument.maturity_date
+          .split("T")[0]
+          .split("-")
+          .map(Number);
+        pikMatYear = my;
+        pikMatMonth = mm;
+      } else if (instrument.term_months) {
+        const totalIdx = sdM - 1 + instrument.term_months - 1;
+        pikMatYear = sdY + Math.floor(totalIdx / 12);
+        pikMatMonth = (totalIdx % 12) + 1;
+      }
     }
 
     const entries: DynamicAmortEntry[] = [];
@@ -1164,9 +1189,24 @@ export default function DebtDetailPage() {
         monthInterest = Math.round(balance * rate * factor * 100) / 100;
       }
 
+      // PIK: compound this period's accrual on the running unpaid-interest
+      // balance too, so the Interest Accrued and Unpaid Interest columns
+      // grow at interest-on-interest.
+      if (instrument.is_pik && unpaidInterest > 0) {
+        monthInterest = Math.round(
+          (monthInterest + unpaidInterest * rate * factor) * 100
+        ) / 100;
+      }
+
       let payment = 0;
       let toInterest = 0;
       let toPrincipal = 0;
+
+      const isPikMaturity =
+        instrument.is_pik &&
+        pikMatYear !== null &&
+        cy === pikMatYear &&
+        cm === pikMatMonth;
 
       if (isPast) {
         // Past month — use actual transaction breakdowns
@@ -1177,8 +1217,16 @@ export default function DebtDetailPage() {
           toPrincipal = Math.min(ma.toPrincipal, balance); // cap at current balance
         }
         // else payment = 0 (no payment made)
-      } else {
-        // Current or future month — assume scheduled payment, interest-first allocation
+      } else if (isPikMaturity) {
+        // PIK bullet payoff: principal + all accrued unpaid interest + this
+        // period's accrual, all due at maturity.
+        toInterest = Math.round((unpaidInterest + monthInterest) * 100) / 100;
+        toPrincipal = Math.round(balance * 100) / 100;
+        payment = Math.round((toInterest + toPrincipal) * 100) / 100;
+      } else if (!instrument.is_pik) {
+        // Current or future non-PIK month — assume scheduled payment,
+        // interest-first allocation. PIK loans have no scheduled cash
+        // payments during the term, so the projection leaves payment at 0.
         if (scheduledPayment > 0) {
           const totalOwed = balance + unpaidInterest + monthInterest;
           payment = Math.min(scheduledPayment, Math.round(totalOwed * 100) / 100);
