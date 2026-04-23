@@ -425,6 +425,7 @@ export default function DebtPage() {
             current_draw: i.current_draw,
             original_amount: i.original_amount,
             opening_accrued_interest: i.opening_accrued_interest,
+            is_pik: i.is_pik,
           },
           transactions: txnsByInstr[i.id] ?? [],
           rateHistory: ratesByInstr[i.id] ?? [],

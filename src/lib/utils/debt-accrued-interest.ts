@@ -40,6 +40,12 @@ export interface AccruedInterestInstrument {
   current_draw?: number | null;
   original_amount: number;
   opening_accrued_interest?: number | null;
+  /**
+   * Payment-in-Kind: when true, each period's accrual is computed on
+   * (principal balance + running unpaid interest), so unpaid interest
+   * compounds ("interest on interest") rather than accruing linearly.
+   */
+  is_pik?: boolean | null;
 }
 
 export interface AccruedInterestTransaction {
@@ -233,6 +239,13 @@ export function computeUnpaidInterestAtPeriod(
       monthInterest = avgBalance * rate * factor;
     } else {
       monthInterest = balance * rate * factor;
+    }
+
+    // PIK: compound this period's accrual on the unpaid balance too, so
+    // the user's "unpaid interest" column grows by interest on interest.
+    // Unpaid isn't day-weighted (it only changes at month boundaries).
+    if (instrument.is_pik && unpaid > 0) {
+      monthInterest += unpaid * rate * factor;
     }
 
     const intPaid = interestPaidByMonth[key] ?? 0;
