@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Card,
   CardContent,
@@ -252,6 +253,7 @@ export default function DebtDetailPage() {
     opening_accrued_interest: "",
     day_count_convention: "30/360",
     balloon_amount: "",
+    is_pik: false,
     collateral_description: "",
     notes: "",
     status: "active",
@@ -281,6 +283,7 @@ export default function DebtDetailPage() {
           : "",
       day_count_convention: instrument.day_count_convention ?? "30/360",
       balloon_amount: instrument.balloon_amount ? String(instrument.balloon_amount) : "",
+      is_pik: !!instrument.is_pik,
       collateral_description: instrument.collateral_description ?? "",
       notes: instrument.notes ?? "",
       status: instrument.status ?? "active",
@@ -321,6 +324,7 @@ export default function DebtDetailPage() {
           day_count_convention: editForm.day_count_convention,
           balloon_amount: editForm.balloon_amount ? parseFloat(editForm.balloon_amount) : null,
           is_secured: !!editForm.collateral_description,
+          is_pik: editForm.is_pik,
           collateral_description: editForm.collateral_description || null,
           notes: editForm.notes || null,
           status: editForm.status,
@@ -922,13 +926,25 @@ export default function DebtDetailPage() {
         interest = Math.round(balance * monthRate * factor * 100) / 100;
       }
 
-      const adjustedBalance = Math.max(0, balance + changes);
-      cumInterest += interest;
-
-      // Interest payable roll forward
+      // PIK: interest capitalizes to the balance each period instead of
+      // sitting in interest payable. Interest payable stays at 0 (unless
+      // cash interest is paid for some reason).
       const intPaid = monthlyInterestPaid[key] ?? 0;
       const intPayableBeg = Math.round(interestPayable * 100) / 100;
-      interestPayable = Math.round((interestPayable + interest - intPaid) * 100) / 100;
+      const pikCapitalized = !!instrument.is_pik && intPaid === 0;
+
+      const adjustedBalance = Math.max(
+        0,
+        balance + changes + (pikCapitalized ? interest : 0)
+      );
+      cumInterest += interest;
+
+      if (pikCapitalized) {
+        // No payable buildup — interest immediately folds into the balance.
+        interestPayable = Math.round(interestPayable * 100) / 100;
+      } else {
+        interestPayable = Math.round((interestPayable + interest - intPaid) * 100) / 100;
+      }
 
       entries.push({
         year: cy,
@@ -946,8 +962,8 @@ export default function DebtDetailPage() {
 
       balance = adjustedBalance;
 
-      // Balance only changes via transactions (draws/paydowns), not amortization
-      if (balance <= 0 && changes === 0 && i > 0) break;
+      // Balance changes via transactions (draws/paydowns) or PIK capitalization
+      if (balance <= 0 && changes === 0 && !pikCapitalized && i > 0) break;
     }
 
     return entries;
@@ -1338,6 +1354,9 @@ export default function DebtDetailPage() {
                   instrument.payment_structure}
               </Badge>
             )}
+            {instrument.is_pik && (
+              <Badge variant="secondary">PIK</Badge>
+            )}
           </div>
           <div className="flex items-center gap-4 text-muted-foreground mt-1">
             {instrument.lender_name && (
@@ -1521,6 +1540,19 @@ export default function DebtDetailPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="flex items-start justify-between rounded-lg border p-3">
+              <div className="space-y-0.5 pr-4">
+                <Label htmlFor="edit_is_pik" className="cursor-pointer">PIK Interest</Label>
+                <p className="text-xs text-muted-foreground">
+                  Interest capitalizes to the balance each period (compounds — pay interest on the interest) instead of being paid in cash. Entire accrued balance is due at maturity. Toggling recalculates the amortization table and interest roll forward.
+                </p>
+              </div>
+              <Switch
+                id="edit_is_pik"
+                checked={editForm.is_pik}
+                onCheckedChange={(v) => setEditForm({ ...editForm, is_pik: v })}
+              />
             </div>
             {editForm.payment_structure === "balloon" && (
               <div className="space-y-2">

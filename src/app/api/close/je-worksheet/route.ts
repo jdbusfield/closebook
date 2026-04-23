@@ -255,6 +255,7 @@ async function computeDebtEntries(
       balloon_amount: inst.balloon_amount ? Number(inst.balloon_amount) : null,
       balloon_date: inst.balloon_date ?? null,
       rate_type: inst.rate_type ?? "fixed",
+      is_pik: inst.is_pik ?? false,
     };
 
     const schedule = generateAmortizationSchedule(debtData, periodYear, periodMonth);
@@ -270,33 +271,53 @@ async function computeDebtEntries(
     const debits: WorksheetEntry["debits"] = [];
     const credits: WorksheetEntry["credits"] = [];
 
-    if (periodEntry.interest > 0) {
+    // PIK capitalization period: interest accrues but is not paid in cash —
+    // it's credited to Loan Payable, growing the liability.
+    const isPikCapitalization =
+      inst.is_pik && periodEntry.interest > 0 && periodEntry.principal === 0 && periodEntry.payment === 0;
+
+    if (isPikCapitalization) {
       debits.push({
         account: "Interest Expense",
         accountId: inst.interest_expense_account_id ?? undefined,
         amount: periodEntry.interest,
       });
-    }
-
-    if (periodEntry.principal > 0) {
-      debits.push({
+      credits.push({
         account: "Loan Payable",
         accountId: inst.liability_account_id ?? undefined,
-        amount: periodEntry.principal,
+        amount: periodEntry.interest,
+      });
+    } else {
+      if (periodEntry.interest > 0) {
+        debits.push({
+          account: "Interest Expense",
+          accountId: inst.interest_expense_account_id ?? undefined,
+          amount: periodEntry.interest,
+        });
+      }
+
+      if (periodEntry.principal > 0) {
+        debits.push({
+          account: "Loan Payable",
+          accountId: inst.liability_account_id ?? undefined,
+          amount: periodEntry.principal,
+        });
+      }
+
+      credits.push({
+        account: "Cash / AP",
+        amount: round2(periodEntry.interest + periodEntry.principal),
       });
     }
-
-    credits.push({
-      account: "Cash / AP",
-      amount: round2(periodEntry.interest + periodEntry.principal),
-    });
 
     entries.push({
       source: "debt",
       sourceRecordId: inst.id,
       sourceRecordName: inst.instrument_name,
       date: `${periodYear}-${String(periodMonth).padStart(2, "0")}-01`,
-      description: `Debt service — ${inst.instrument_name}`,
+      description: isPikCapitalization
+        ? `PIK interest capitalization — ${inst.instrument_name}`
+        : `Debt service — ${inst.instrument_name}`,
       debits,
       credits,
     });
