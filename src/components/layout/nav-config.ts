@@ -56,6 +56,7 @@ export function getOrgNavGroups(): NavGroup[] {
         { title: "Close Dashboard", href: "/close-dashboard", icon: CheckSquare },
         { title: "Financial Model", href: "/reports/financial-model", icon: FileText },
         { title: "Debt Dashboard", href: "/debt", icon: Landmark },
+        { title: "Rental Assets", href: "/rental-assets", icon: Car },
         { title: "TB Variance", href: "/tb-variance", icon: AlertTriangle },
         { title: "IC Eliminations", href: "/ic-eliminations", icon: ArrowLeftRight },
         { title: "Payroll", href: "/payroll", icon: Users },
