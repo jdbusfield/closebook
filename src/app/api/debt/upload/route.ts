@@ -297,6 +297,7 @@ function parseRate(value: unknown): number {
 function resolveDebtType(value: unknown): string {
   if (!value) return "term_loan";
   const s = String(value).toLowerCase().replace(/[^a-z]/g, "");
+  if (s.includes("investor")) return "investor_loc";
   if (s.includes("revolv")) return "revolving_credit";
   if (s.includes("loc") || s.includes("lineofcredit") || s.includes("line")) return "line_of_credit";
   if (s.includes("mortgage")) return "mortgage";

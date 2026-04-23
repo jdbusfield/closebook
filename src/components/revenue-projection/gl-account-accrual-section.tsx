@@ -119,13 +119,11 @@ interface UnbilledOrderDetail {
   invoiceCount: number;
 }
 
-interface UnbilledByAccount {
-  glAccountNo: string;
-  glAccountDescription: string;
-  glAccountId: string;
-  share: number;
-  amount: number;
-  unclassified: boolean;
+interface UnbilledCatchAllAccount {
+  number: string;
+  name: string;
+  qboId: string | null;
+  linked: boolean;
 }
 
 interface UnbilledEarned {
@@ -134,8 +132,7 @@ interface UnbilledEarned {
   discount: number;
   net: number;
   orderCount: number;
-  hasHistoricalRatio: boolean;
-  byAccount: UnbilledByAccount[];
+  catchAllAccount?: UnbilledCatchAllAccount;
   orders: UnbilledOrderDetail[];
 }
 
@@ -213,11 +210,13 @@ export function GLAccountAccrualSection({ entityId }: { entityId: string }) {
     allowanceAccountId: string | null;
     accruedRevenueAccountId: string | null;
     deferredRevenueAccountId: string | null;
+    unbilledRevenueAccountId: string | null;
   }>({
     unbilledReceivablesAccountId: null,
     allowanceAccountId: null,
     accruedRevenueAccountId: null,
     deferredRevenueAccountId: null,
+    unbilledRevenueAccountId: null,
   });
   const [accountLinksLoaded, setAccountLinksLoaded] = useState(false);
   const [accountLinksAvailable, setAccountLinksAvailable] = useState(true);
@@ -253,6 +252,7 @@ export function GLAccountAccrualSection({ entityId }: { entityId: string }) {
             allowanceAccountId: json.allowanceAccountId ?? null,
             accruedRevenueAccountId: json.accruedRevenueAccountId ?? null,
             deferredRevenueAccountId: json.deferredRevenueAccountId ?? null,
+            unbilledRevenueAccountId: json.unbilledRevenueAccountId ?? null,
           });
           setAccountLinksAvailable(json.accountLinksAvailable !== false);
         }
@@ -281,7 +281,8 @@ export function GLAccountAccrualSection({ entityId }: { entityId: string }) {
         | "unbilledReceivablesAccountId"
         | "allowanceAccountId"
         | "accruedRevenueAccountId"
-        | "deferredRevenueAccountId",
+        | "deferredRevenueAccountId"
+        | "unbilledRevenueAccountId",
       accountId: string | null,
     ) => {
       const nextLinks = { ...accountLinks, [field]: accountId };
@@ -1102,8 +1103,22 @@ export function GLAccountAccrualSection({ entityId }: { entityId: string }) {
                   realization rate with the remaining{" "}
                   {(100 - data.unbilledEarned.realizationRate * 100).toFixed(0)}
                   % credited to the Allowance for Discounts contra-revenue
-                  account. GL split uses the historical ratio from this
-                  period&apos;s invoices.
+                  account. The revenue credit posts to a single catch-all
+                  account — RentalWorks doesn&apos;t expose per-I-code GL data
+                  on uninvoiced orders, so we don&apos;t pretend to know
+                  which specific revenue accounts each order will hit. The
+                  actual GL coding flows through normally next month when the
+                  invoice is cut.
+                  {data.unbilledEarned.catchAllAccount &&
+                    !data.unbilledEarned.catchAllAccount.linked && (
+                      <>
+                        {" "}
+                        <span className="text-amber-700 font-medium">
+                          ⚠ Link a catch-all revenue account in the settings
+                          card above so the JE carries a real GL number.
+                        </span>
+                      </>
+                    )}
                 </p>
                 <TooltipProvider delayDuration={150}>
                   <div className="overflow-x-auto rounded-md border">
@@ -1376,6 +1391,7 @@ function StatCard({ label, value }: { label: string; value: string }) {
 function UnbilledEarnedSection({ ub }: { ub: UnbilledEarned }) {
   const [showOrders, setShowOrders] = useState(false);
   const ratePct = Math.round(ub.realizationRate * 1000) / 10;
+  const catchAll = ub.catchAllAccount;
   return (
     <div className="rounded-md border border-blue-200 bg-blue-50/30 p-4 space-y-3">
       <div>
@@ -1383,57 +1399,39 @@ function UnbilledEarnedSection({ ub }: { ub: UnbilledEarned }) {
           Unbilled Earned (active orders, no invoice yet)
         </div>
         <div className="text-xs text-blue-800/80">
-          Orders whose rental period overlaps this month but haven&apos;t been invoiced.
-          Revenue is allocated to GL accounts by the historical ratio of accounts
-          hit by this period&apos;s invoices, then discounted by the entity&apos;s
-          realization rate ({ratePct}%).
+          Orders whose rental period overlaps this month but haven&apos;t been
+          invoiced. Booked as a single catch-all revenue credit at month-end
+          (RentalWorks doesn&apos;t expose per-I-code GL data on uninvoiced
+          orders); the actual GL coding flows through next month when the
+          invoice is cut. Discounted by the entity&apos;s realization rate
+          ({ratePct}%).
         </div>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <StatCard label="Active Orders" value={String(ub.orderCount)} />
         <StatCard label="Gross Earned" value={formatCurrency(ub.gross)} />
         <StatCard label={`Discount (${(100 - ratePct).toFixed(1)}%)`} value={formatCurrency(ub.discount)} />
         <StatCard label="Net (Accrual)" value={formatCurrency(ub.net)} />
-        <StatCard
-          label="GL Split"
-          value={ub.hasHistoricalRatio ? "Historical ratio" : "Unclassified"}
-        />
       </div>
-      {ub.byAccount.length > 0 && (
-        <div className="overflow-x-auto rounded-md border bg-white">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>GL #</TableHead>
-                <TableHead>Account</TableHead>
-                <TableHead className="text-right">Share</TableHead>
-                <TableHead className="text-right">Amount (Net)</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {ub.byAccount.map((b, idx) => (
-                <TableRow key={idx}>
-                  <TableCell className="font-mono text-xs">{b.glAccountNo || "—"}</TableCell>
-                  <TableCell>
-                    {b.glAccountDescription}
-                    {b.unclassified && (
-                      <Badge variant="outline" className="ml-2 text-amber-700 border-amber-300">
-                        Unclassified
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
-                    {(b.share * 100).toFixed(1)}%
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums font-medium">
-                    {formatCurrency(b.amount)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+      <div className="rounded-md border bg-white p-3 text-xs">
+        <div className="font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+          Catch-all revenue account
         </div>
-      )}
+        {catchAll && catchAll.linked ? (
+          <div className="flex items-center gap-2">
+            <span className="font-mono">{catchAll.number || "—"}</span>
+            <span>{catchAll.name}</span>
+            {catchAll.qboId && (
+              <span className="text-muted-foreground">QBO #{catchAll.qboId}</span>
+            )}
+          </div>
+        ) : (
+          <div className="text-amber-700">
+            Not linked. Open the settings card and pick an income account to
+            land the unbilled credit on.
+          </div>
+        )}
+      </div>
       <button
         onClick={() => setShowOrders((v) => !v)}
         className="flex items-center gap-1.5 text-xs font-medium text-blue-800 hover:text-blue-900"
@@ -1605,52 +1603,28 @@ function buildBreakdown({
 }): Breakdown {
   const rows: BreakdownRow[] = [];
 
-  // ── Unbilled-source JE: all rows describe active orders ──
+  // ── Unbilled-source JE: 3 lines (DR Unbilled AR / CR catch-all rev / CR
+  //    allowance) — all are aggregates over the order list. We disambiguate
+  //    by line role and scale each order's earnedInMonth accordingly.
   if (source === "unbilled" && unbilledEarned) {
     const rate = unbilledEarned.realizationRate;
-    // For the aggregate DR (Unbilled Receivables, gross) and aggregate CR
-    // (Allowance for Discounts, discount), iterate all orders and show each
-    // order's gross / discount contribution to the aggregate total. We
-    // disambiguate the two aggregate lines by `line.accountName`.
-    if (isAggregate) {
-      const isAllowance = line.accountName.toLowerCase().includes("allowance");
-      const scale = isAllowance ? 1 - rate : 1; // gross for DR; discount for allowance
-      const typeLabel = isAllowance
-        ? `Discount share @ ${((1 - rate) * 100).toFixed(0)}%`
-        : "Gross earned in month";
-      for (const o of unbilledEarned.orders) {
-        const contribution = round2(o.earnedInMonth * scale);
-        if (contribution <= 0) continue;
-        rows.push({
-          kind: "unbilled",
-          label: o.orderNumber,
-          secondary: `${o.customer} · ${o.daysInMonth}/${o.totalRentalDays} days`,
-          earned: contribution,
-          billed: 0,
-          diff: contribution,
-        });
-      }
-      return {
-        rows: rows.sort((a, b) => b.diff - a.diff),
-        footerNote: typeLabel,
-      };
+    const nameLower = line.accountName.toLowerCase();
+    const isAllowance = nameLower.includes("allowance");
+    const isCredit = line.credit > 0;
+    let scale: number;
+    let typeLabel: string;
+    if (isAllowance) {
+      scale = 1 - rate;
+      typeLabel = `Discount share @ ${((1 - rate) * 100).toFixed(0)}%`;
+    } else if (isCredit) {
+      scale = rate;
+      typeLabel = `Net revenue @ ${(rate * 100).toFixed(0)}% realization`;
+    } else {
+      scale = 1;
+      typeLabel = "Gross earned in month";
     }
-
-    // Per-GL credit line: each order contributes earnedInMonth × share × rate
-    // Share = per-GL portion of the proposed net; derive from this JE line's
-    // credit vs total net across all orders.
-    const totalOrderEarnedInMonth = unbilledEarned.orders.reduce(
-      (s, o) => s + o.earnedInMonth,
-      0,
-    );
-    const thisLineNet =
-      proposedJELines.find(
-        (l) => l.accountNumber === accountNumber && l.credit > 0,
-      )?.credit ?? 0;
-    const totalNet = round2(totalOrderEarnedInMonth * rate);
-    const share = totalNet > 0 ? thisLineNet / totalNet : 0;
     for (const o of unbilledEarned.orders) {
-      const contribution = round2(o.earnedInMonth * share * rate);
+      const contribution = round2(o.earnedInMonth * scale);
       if (contribution <= 0) continue;
       rows.push({
         kind: "unbilled",
@@ -1663,7 +1637,7 @@ function buildBreakdown({
     }
     return {
       rows: rows.sort((a, b) => b.diff - a.diff),
-      footerNote: `Each order's earned-in-month × ${(share * 100).toFixed(1)}% (GL share) × ${(rate * 100).toFixed(0)}% (realization)`,
+      footerNote: typeLabel,
     };
   }
 
@@ -1836,6 +1810,7 @@ type LinksState = {
   allowanceAccountId: string | null;
   accruedRevenueAccountId: string | null;
   deferredRevenueAccountId: string | null;
+  unbilledRevenueAccountId: string | null;
 };
 
 function AccrualAccountLinksCard({
@@ -1971,9 +1946,13 @@ function AccrualAccountLinksCard({
             <div className="mt-1 text-xs">
               The account-link columns don&apos;t exist in{" "}
               <code className="font-mono">entity_accrual_config</code> yet.
-              Apply migration{" "}
+              Apply migrations{" "}
               <code className="font-mono">
                 20260420_accrual_je_account_links.sql
+              </code>{" "}
+              and{" "}
+              <code className="font-mono">
+                20260421_unbilled_revenue_catchall_account.sql
               </code>{" "}
               in the Supabase SQL editor, then reload. Linking is disabled
               until then; realization rate still works normally.
@@ -1996,6 +1975,14 @@ function AccrualAccountLinksCard({
             "DR on: Estimated Unbilled Revenue Accrual",
             assetAccounts,
             "Asset",
+          )}
+          {renderLink(
+            "unbilledRevenueAccountId",
+            "Unbilled Revenue (Catch-All Income)",
+            "Single income account credited for the entire unbilled-earned net amount each month-end.",
+            "CR on: Estimated Unbilled Revenue Accrual",
+            revenueAccounts,
+            "Revenue",
           )}
           {renderLink(
             "allowanceAccountId",

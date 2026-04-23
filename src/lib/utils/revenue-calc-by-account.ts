@@ -162,16 +162,15 @@ export interface ProposedJELine {
 }
 
 /**
- * Per-GL slice of the unbilled-earned accrual (from active orders with no
- * invoice yet). Each entry carries both gross (list price) and net
- * (realization-rate-adjusted) amounts so the JE can credit revenue at net
- * and credit an allowance contra-account for the discount.
+ * Total unbilled-earned exposure for the period. The unbilled JE collapses
+ * to a single revenue credit because RentalWorks doesn't expose per-I-code
+ * GL data on uninvoiced orders — the actual GL coding flows through the
+ * invoice GL Distribution next month, so there's no point pretending to
+ * know it now.
  */
-export interface UnbilledSplit {
-  glAccountNo: string;
-  glAccountDescription: string;
-  glAccountId?: string;
+export interface UnbilledTotals {
   grossAmount: number;
+  /** grossAmount × realizationRate. */
   netAmount: number;
 }
 
@@ -186,22 +185,23 @@ export interface UnbilledSplit {
  *
  *   - `unbilledAccrual` — accrual from active orders whose rental period
  *     overlaps but which haven't been invoiced at all. Recognized at the
- *     realization rate (variable-consideration estimate per ASC 606). DR
- *     Unbilled Receivables / CR revenue GLs at net / CR Allowance for
- *     Discounts for the discount portion.
+ *     realization rate (variable-consideration estimate per ASC 606). Three
+ *     lines: DR Unbilled Receivables (gross) / CR Unbilled Revenue catch-all
+ *     (net) / CR Allowance for Discounts (discount portion).
  *
  *   - `deferral` — invoices dated in-period whose rental period is outside
  *     the target month. DR revenue GLs per account / CR Deferred Revenue.
  */
 export function buildSplitProposedJEs(
   invoiceTotals: AccountAccrualTotal[],
-  unbilledByAccount: UnbilledSplit[],
+  unbilledTotals: UnbilledTotals,
   periodYear: number,
   periodMonth: number,
   opts: {
     realizationRate: number;
     accruedRevAccount?: { number: string; name: string };
     unbilledArAccount?: { number: string; name: string };
+    unbilledRevenueAccount?: { number: string; name: string };
     deferredRevAccount?: { number: string; name: string };
     allowanceAccount?: { number: string; name: string };
   },
@@ -218,6 +218,10 @@ export function buildSplitProposedJEs(
   const unbilledArAccount = opts.unbilledArAccount ?? {
     number: "",
     name: "Unbilled Receivables (Asset)",
+  };
+  const unbilledRevenueAccount = opts.unbilledRevenueAccount ?? {
+    number: "",
+    name: "Unbilled Revenue (Catch-All Income)",
   };
   const deferredRevAccount = opts.deferredRevAccount ?? {
     number: "",
@@ -257,14 +261,12 @@ export function buildSplitProposedJEs(
     }
   }
 
-  // 2. Unbilled accrual — from active orders (rate-adjusted)
+  // 2. Unbilled accrual — from active orders (rate-adjusted), credited as a
+  //    single catch-all bucket. Per-I-code GL coding lands when the invoice
+  //    actually gets cut next month.
   const unbilledLines: ProposedJELine[] = [];
-  const totalUnbilledGross = round2(
-    unbilledByAccount.reduce((s, u) => s + u.grossAmount, 0),
-  );
-  const totalUnbilledNet = round2(
-    unbilledByAccount.reduce((s, u) => s + u.netAmount, 0),
-  );
+  const totalUnbilledGross = round2(unbilledTotals.grossAmount);
+  const totalUnbilledNet = round2(unbilledTotals.netAmount);
   const allowance = round2(totalUnbilledGross - totalUnbilledNet);
   const ratePct = Math.round(opts.realizationRate * 1000) / 10;
   if (totalUnbilledGross > 0) {
@@ -277,17 +279,15 @@ export function buildSplitProposedJEs(
       credit: 0,
       memo: `Unbilled earned revenue (gross) — ${periodLabel}`,
     });
-    for (const u of unbilledByAccount) {
-      if (u.netAmount > 0) {
-        unbilledLines.push({
-          lineNo: ++n,
-          accountNumber: u.glAccountNo,
-          accountName: u.glAccountDescription,
-          debit: 0,
-          credit: u.netAmount,
-          memo: `Projected revenue @ ${ratePct}% realization — ${periodLabel}`,
-        });
-      }
+    if (totalUnbilledNet > 0) {
+      unbilledLines.push({
+        lineNo: ++n,
+        accountNumber: unbilledRevenueAccount.number,
+        accountName: unbilledRevenueAccount.name,
+        debit: 0,
+        credit: totalUnbilledNet,
+        memo: `Projected revenue @ ${ratePct}% realization — ${periodLabel}`,
+      });
     }
     if (allowance > 0) {
       unbilledLines.push({

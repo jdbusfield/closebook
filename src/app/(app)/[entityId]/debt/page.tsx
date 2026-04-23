@@ -45,7 +45,6 @@ import {
   Landmark,
   DollarSign,
   ArrowRight,
-  TrendingDown,
   Percent,
   CreditCard,
   Plus,
@@ -57,8 +56,14 @@ import {
   formatPercentage,
   getCurrentPeriod,
   getPeriodLabel,
+  getPriorPeriod,
 } from "@/lib/utils/dates";
 import type { DebtStatus } from "@/lib/types/database";
+import {
+  computeUnpaidInterestAtPeriod,
+  type AccruedInterestTransaction,
+  type AccruedInterestRateChange,
+} from "@/lib/utils/debt-accrued-interest";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyInstrument = any;
@@ -71,6 +76,8 @@ interface AmortizationPeriod {
   interest: number;
   ending_balance: number;
   interest_rate: number | null;
+  /** Running total of scheduled interest from the schedule's start through this period. */
+  cumulative_interest: number | null;
 }
 
 interface GLBalance {
@@ -101,6 +108,7 @@ const TYPE_LABELS: Record<string, string> = {
   term_loan: "Term Loan",
   line_of_credit: "Line of Credit",
   revolving_credit: "Revolving Credit",
+  investor_loc: "Investor LOC",
   mortgage: "Mortgage",
   equipment_loan: "Equipment Loan",
   balloon_loan: "Balloon Loan",
@@ -124,14 +132,27 @@ export default function DebtPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const current = getCurrentPeriod();
-  const [periodYear, setPeriodYear] = useState(current.year);
-  const [periodMonth, setPeriodMonth] = useState(current.month);
+  // Default to the prior closed month so Accrued Interest and the GL
+  // comparison reflect the last completed period (end of March when
+  // today is in April) rather than a partial mid-month accrual.
+  const defaultPeriod = getPriorPeriod(current.year, current.month);
+  const [periodYear, setPeriodYear] = useState(defaultPeriod.year);
+  const [periodMonth, setPeriodMonth] = useState(defaultPeriod.month);
   const [instruments, setInstruments] = useState<AnyInstrument[]>([]);
   const [amortization, setAmortization] = useState<
     Record<string, AmortizationPeriod>
   >({});
   const [glBalances, setGLBalances] = useState<GLBalance[]>([]);
   const [txnSummary, setTxnSummary] = useState<Record<string, TransactionSummary>>({});
+  /**
+   * Unpaid-interest balance per instrument as of the selected period end.
+   * Computed via the same day-weighted, month-by-month replay used by the
+   * debt detail page's amortization table, so the Accrued Interest column
+   * here matches the Unpaid Interest value shown there. The replay uses
+   * all transactions (for balance changes + interest paid) and rate
+   * history (for variable-rate lookups) — both loaded in loadData.
+   */
+  const [accruedInterestByInstr, setAccruedInterestByInstr] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -153,6 +174,7 @@ export default function DebtPage() {
     payment_amount: "",
     credit_limit: "",
     current_draw: "",
+    opening_accrued_interest: "",
     day_count_convention: "30/360",
     balloon_amount: "",
     is_secured: false,
@@ -179,6 +201,7 @@ export default function DebtPage() {
       payment_amount: "",
       credit_limit: "",
       current_draw: "",
+      opening_accrued_interest: "",
       day_count_convention: "30/360",
       balloon_amount: "",
       is_secured: false,
@@ -216,6 +239,9 @@ export default function DebtPage() {
           payment_amount: form.payment_amount ? parseFloat(form.payment_amount) : null,
           credit_limit: form.credit_limit ? parseFloat(form.credit_limit) : null,
           current_draw: form.current_draw ? parseFloat(form.current_draw) : null,
+          opening_accrued_interest: form.opening_accrued_interest
+            ? parseFloat(form.opening_accrued_interest)
+            : 0,
           day_count_convention: form.day_count_convention,
           balloon_amount: form.balloon_amount ? parseFloat(form.balloon_amount) : null,
           is_secured: form.is_secured,
@@ -256,7 +282,7 @@ export default function DebtPage() {
       const { data: amortData } = await supabase
         .from("debt_amortization")
         .select(
-          "debt_instrument_id, beginning_balance, payment, principal, interest, ending_balance, interest_rate"
+          "debt_instrument_id, beginning_balance, payment, principal, interest, ending_balance, interest_rate, cumulative_interest"
         )
         .in("debt_instrument_id", instrIds)
         .eq("period_year", periodYear)
@@ -315,6 +341,99 @@ export default function DebtPage() {
       }
       setTxnSummary(txnMap);
 
+      // Accrued-interest running balance — computed via the same
+      // month-by-month, day-weighted replay that drives the Unpaid Interest
+      // column on the debt detail page. We need every transaction with an
+      // effective_date on or before the period end (balance changes + any
+      // interest paid) plus the rate history for variable-rate instruments.
+      const periodEndDate = new Date(
+        periodMonth === 12 ? periodYear + 1 : periodYear,
+        periodMonth === 12 ? 0 : periodMonth,
+        0 // last day of selected period
+      );
+      const periodEndIso = `${periodEndDate.getFullYear()}-${String(
+        periodEndDate.getMonth() + 1
+      ).padStart(2, "0")}-${String(periodEndDate.getDate()).padStart(2, "0")}`;
+
+      const [allTxnsRes, rateHistoryRes] = await Promise.all([
+        supabase
+          .from("debt_transactions")
+          .select(
+            "debt_instrument_id, effective_date, transaction_type, amount, to_principal, to_interest"
+          )
+          .in("debt_instrument_id", instrIds)
+          .lte("effective_date", periodEndIso)
+          .order("effective_date", { ascending: true }),
+        supabase
+          .from("debt_rate_history")
+          .select("debt_instrument_id, effective_date, interest_rate")
+          .in("debt_instrument_id", instrIds)
+          .lte("effective_date", periodEndIso)
+          .order("effective_date", { ascending: true }),
+      ]);
+
+      const txnsByInstr: Record<
+        string,
+        AccruedInterestTransaction[]
+      > = {};
+      for (const t of (allTxnsRes.data ?? []) as unknown as Array<{
+        debt_instrument_id: string;
+        effective_date: string;
+        transaction_type: string;
+        amount: number;
+        to_principal: number | null;
+        to_interest: number | null;
+      }>) {
+        if (!txnsByInstr[t.debt_instrument_id]) {
+          txnsByInstr[t.debt_instrument_id] = [];
+        }
+        txnsByInstr[t.debt_instrument_id].push({
+          effective_date: t.effective_date,
+          transaction_type: t.transaction_type,
+          amount: t.amount,
+          to_principal: t.to_principal,
+          to_interest: t.to_interest,
+        });
+      }
+
+      const ratesByInstr: Record<
+        string,
+        AccruedInterestRateChange[]
+      > = {};
+      for (const r of (rateHistoryRes.data ?? []) as unknown as Array<{
+        debt_instrument_id: string;
+        effective_date: string;
+        interest_rate: number;
+      }>) {
+        if (!ratesByInstr[r.debt_instrument_id]) {
+          ratesByInstr[r.debt_instrument_id] = [];
+        }
+        ratesByInstr[r.debt_instrument_id].push({
+          effective_date: r.effective_date,
+          interest_rate: r.interest_rate,
+        });
+      }
+
+      const accruedMap: Record<string, number> = {};
+      for (const i of instr) {
+        accruedMap[i.id] = computeUnpaidInterestAtPeriod({
+          instrument: {
+            start_date: i.start_date,
+            interest_rate: i.interest_rate ?? 0,
+            debt_type: i.debt_type,
+            day_count_convention: i.day_count_convention,
+            current_draw: i.current_draw,
+            original_amount: i.original_amount,
+            opening_accrued_interest: i.opening_accrued_interest,
+          },
+          transactions: txnsByInstr[i.id] ?? [],
+          rateHistory: ratesByInstr[i.id] ?? [],
+          targetYear: periodYear,
+          targetMonth: periodMonth,
+        });
+      }
+      setAccruedInterestByInstr(accruedMap);
+
       const liabilityAccountIds = instr
         .map((i: AnyInstrument) => i.liability_account_id)
         .filter((id: string | null): id is string => id !== null);
@@ -336,6 +455,7 @@ export default function DebtPage() {
       setAmortization({});
       setGLBalances([]);
       setTxnSummary({});
+      setAccruedInterestByInstr({});
     }
 
     setLoading(false);
@@ -393,18 +513,18 @@ export default function DebtPage() {
     (sum: number, i: AnyInstrument) => sum + (i.current_draw ?? i.original_amount ?? 0),
     0
   );
-  const totalPrincipal = Object.values(txnSummary).reduce(
-    (sum, s) => sum + s.principal,
-    0
-  );
-  const totalInterest = Object.values(txnSummary).reduce(
-    (sum, s) => sum + s.interest,
-    0
-  );
-  const totalPayment = Object.values(txnSummary).reduce(
-    (sum, s) => sum + s.payment,
-    0
-  );
+  /**
+   * Unpaid accrued interest for an instrument as of the selected period's
+   * end. Comes from the day-weighted month-by-month replay that loadData
+   * runs per instrument — identical logic to what the Unpaid Interest
+   * column on the debt detail page uses, so the two match. Falls back to
+   * opening accrued on first render (before loadData completes).
+   */
+  function accruedInterestBalance(instr: AnyInstrument): number {
+    const computed = accruedInterestByInstr[instr.id];
+    if (computed != null) return computed;
+    return Math.max(0, Number(instr.opening_accrued_interest ?? 0));
+  }
 
   // Current / Long-term split
   const totalCurrentPortion = instruments.reduce(
@@ -417,7 +537,7 @@ export default function DebtPage() {
   );
 
   // Credit utilization for LOCs
-  const locTypes = ["line_of_credit", "revolving_credit"];
+  const locTypes = ["line_of_credit", "revolving_credit", "investor_loc"];
   const totalCreditLimit = instruments
     .filter((i: AnyInstrument) => locTypes.includes(i.debt_type))
     .reduce((sum: number, i: AnyInstrument) => sum + (i.credit_limit ?? 0), 0);
@@ -608,8 +728,8 @@ export default function DebtPage() {
                     <Input id="current_draw" type="number" step="0.01" value={form.current_draw} onChange={(e) => setForm({ ...form, current_draw: e.target.value })} placeholder="Outstanding balance" />
                   </div>
                 </div>
-                {/* Row 6: Day count, Balloon */}
-                <div className="grid grid-cols-2 gap-4">
+                {/* Row 6: Day count, Opening accrued interest, Balloon */}
+                <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="day_count_convention">Day Count Convention</Label>
                     <Select value={form.day_count_convention} onValueChange={(v) => setForm({ ...form, day_count_convention: v })}>
@@ -621,6 +741,17 @@ export default function DebtPage() {
                         <SelectItem value="actual/actual">Actual/Actual</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="opening_accrued_interest">Opening Accrued Interest</Label>
+                    <Input
+                      id="opening_accrued_interest"
+                      type="number"
+                      step="0.01"
+                      value={form.opening_accrued_interest}
+                      onChange={(e) => setForm({ ...form, opening_accrued_interest: e.target.value })}
+                      placeholder="Unpaid interest at start"
+                    />
                   </div>
                   {form.payment_structure === "balloon" && (
                     <div className="space-y-2">
@@ -721,21 +852,6 @@ export default function DebtPage() {
               {activeInstruments.length} active instrument
               {activeInstruments.length !== 1 ? "s" : ""}
             </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <TrendingDown className="h-4 w-4 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">Monthly Payment</p>
-            </div>
-            <p className="text-2xl font-semibold tabular-nums mt-1">
-              {formatCurrency(totalPayment)}
-            </p>
-            <div className="flex gap-4 text-xs text-muted-foreground mt-1">
-              <span>P: {formatCurrency(totalPrincipal)}</span>
-              <span>I: {formatCurrency(totalInterest)}</span>
-            </div>
           </CardContent>
         </Card>
         <Card>
@@ -888,9 +1004,7 @@ export default function DebtPage() {
                     <TableHead className="text-right">Rate</TableHead>
                     <TableHead className="text-right">Original / Limit</TableHead>
                     <TableHead className="text-right">Balance</TableHead>
-                    <TableHead className="text-right">Payment</TableHead>
-                    <TableHead className="text-right">Principal</TableHead>
-                    <TableHead className="text-right">Interest</TableHead>
+                    <TableHead className="text-right">Accrued Interest</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
@@ -898,7 +1012,6 @@ export default function DebtPage() {
                 <TableBody>
                   {instruments.map((instr: AnyInstrument) => {
                     const amort = amortization[instr.id];
-                    const txn = txnSummary[instr.id];
                     const isLOC = locTypes.includes(instr.debt_type);
                     return (
                       <TableRow key={instr.id}>
@@ -943,13 +1056,7 @@ export default function DebtPage() {
                           {formatCurrency(instr.current_draw ?? instr.original_amount ?? 0)}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {txn ? formatCurrency(txn.payment) : formatCurrency(0)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {txn ? formatCurrency(txn.principal) : formatCurrency(0)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {txn ? formatCurrency(txn.interest) : formatCurrency(0)}
+                          {formatCurrency(accruedInterestBalance(instr))}
                         </TableCell>
                         <TableCell>
                           <Badge
@@ -977,13 +1084,13 @@ export default function DebtPage() {
                       {formatCurrency(totalOutstanding)}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {formatCurrency(totalPayment)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatCurrency(totalPrincipal)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatCurrency(totalInterest)}
+                      {formatCurrency(
+                        instruments.reduce(
+                          (sum: number, i: AnyInstrument) =>
+                            sum + accruedInterestBalance(i),
+                          0
+                        )
+                      )}
                     </TableCell>
                     <TableCell colSpan={2} />
                   </TableRow>

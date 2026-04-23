@@ -24,7 +24,7 @@ export async function GET(request: Request) {
     const fullResult = await admin
       .from("entity_accrual_config")
       .select(
-        "entity_id, realization_rate, notes, updated_at, updated_by, unbilled_receivables_account_id, allowance_account_id, accrued_revenue_account_id, deferred_revenue_account_id",
+        "entity_id, realization_rate, notes, updated_at, updated_by, unbilled_receivables_account_id, allowance_account_id, accrued_revenue_account_id, deferred_revenue_account_id, unbilled_revenue_account_id",
       )
       .eq("entity_id", entityId)
       .maybeSingle();
@@ -58,6 +58,8 @@ export async function GET(request: Request) {
         (row?.accrued_revenue_account_id as string | null) ?? null,
       deferredRevenueAccountId:
         (row?.deferred_revenue_account_id as string | null) ?? null,
+      unbilledRevenueAccountId:
+        (row?.unbilled_revenue_account_id as string | null) ?? null,
       accountLinksAvailable,
       hasRule: Boolean(row),
     });
@@ -86,6 +88,7 @@ export async function PUT(request: Request) {
       allowanceAccountId,
       accruedRevenueAccountId,
       deferredRevenueAccountId,
+      unbilledRevenueAccountId,
     } = body as {
       entityId: string;
       realizationRate: number;
@@ -94,6 +97,7 @@ export async function PUT(request: Request) {
       allowanceAccountId?: string | null;
       accruedRevenueAccountId?: string | null;
       deferredRevenueAccountId?: string | null;
+      unbilledRevenueAccountId?: string | null;
     };
 
     if (!entityId || typeof realizationRate !== "number") {
@@ -122,6 +126,7 @@ export async function PUT(request: Request) {
       allowance_account_id: allowanceAccountId ?? null,
       accrued_revenue_account_id: accruedRevenueAccountId ?? null,
       deferred_revenue_account_id: deferredRevenueAccountId ?? null,
+      unbilled_revenue_account_id: unbilledRevenueAccountId ?? null,
     };
 
     // Try the full upsert first. If the link columns don't exist yet
@@ -136,7 +141,7 @@ export async function PUT(request: Request) {
       .from("entity_accrual_config")
       .upsert({ ...baseFields, ...linkFields }, { onConflict: "entity_id" })
       .select(
-        "entity_id, realization_rate, notes, updated_at, updated_by, unbilled_receivables_account_id, allowance_account_id, accrued_revenue_account_id, deferred_revenue_account_id",
+        "entity_id, realization_rate, notes, updated_at, updated_by, unbilled_receivables_account_id, allowance_account_id, accrued_revenue_account_id, deferred_revenue_account_id, unbilled_revenue_account_id",
       )
       .single();
     if (full.error) {
@@ -168,10 +173,12 @@ export async function PUT(request: Request) {
         (row.accrued_revenue_account_id as string | null) ?? null,
       deferredRevenueAccountId:
         (row.deferred_revenue_account_id as string | null) ?? null,
+      unbilledRevenueAccountId:
+        (row.unbilled_revenue_account_id as string | null) ?? null,
       accountLinksAvailable,
       migrationHint: accountLinksAvailable
         ? null
-        : `Account link columns not present in entity_accrual_config. Apply migration 20260420_accrual_je_account_links.sql before linking accounts. (DB message: ${dbError})`,
+        : `Account link columns not present in entity_accrual_config. Apply migrations 20260420_accrual_je_account_links.sql and 20260421_unbilled_revenue_catchall_account.sql before linking accounts. (DB message: ${dbError})`,
       hasRule: true,
     });
   } catch (err) {

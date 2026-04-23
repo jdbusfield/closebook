@@ -851,6 +851,8 @@ export type Database = {
           created_by: string | null
           created_at: string
           updated_at: string
+          day_count_convention: string | null
+          opening_accrued_interest: number | null
         }
         Insert: {
           id?: string
@@ -877,6 +879,8 @@ export type Database = {
           created_by?: string | null
           created_at?: string
           updated_at?: string
+          day_count_convention?: string | null
+          opening_accrued_interest?: number | null
         }
         Update: {
           id?: string
@@ -903,6 +907,8 @@ export type Database = {
           created_by?: string | null
           created_at?: string
           updated_at?: string
+          day_count_convention?: string | null
+          opening_accrued_interest?: number | null
         }
         Relationships: []
       }
@@ -4642,6 +4648,8 @@ export type Database = {
           reconciled_by: string | null
           reconciled_at: string | null
           notes: string | null
+          prior_period_adjustment: number
+          prior_period_adjustment_note: string | null
           created_at: string
           updated_at: string
         }
@@ -4658,6 +4666,8 @@ export type Database = {
           reconciled_by?: string | null
           reconciled_at?: string | null
           notes?: string | null
+          prior_period_adjustment?: number
+          prior_period_adjustment_note?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -4674,6 +4684,8 @@ export type Database = {
           reconciled_by?: string | null
           reconciled_at?: string | null
           notes?: string | null
+          prior_period_adjustment?: number
+          prior_period_adjustment_note?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -5043,6 +5055,7 @@ export type Database = {
           allowance_account_id: string | null
           accrued_revenue_account_id: string | null
           deferred_revenue_account_id: string | null
+          unbilled_revenue_account_id: string | null
         }
         Insert: {
           id?: string
@@ -5056,6 +5069,7 @@ export type Database = {
           allowance_account_id?: string | null
           accrued_revenue_account_id?: string | null
           deferred_revenue_account_id?: string | null
+          unbilled_revenue_account_id?: string | null
         }
         Update: {
           id?: string
@@ -5069,6 +5083,7 @@ export type Database = {
           allowance_account_id?: string | null
           accrued_revenue_account_id?: string | null
           deferred_revenue_account_id?: string | null
+          unbilled_revenue_account_id?: string | null
         }
         Relationships: []
       }

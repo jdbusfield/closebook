@@ -22,6 +22,12 @@ export interface DebtForAmortization {
   balloon_date?: string | null;
   rate_type?: string; // "fixed" | "variable" | "adjustable"
   is_pik?: boolean; // Payment-in-Kind: interest capitalizes to balance (compounds) instead of cash payment
+  /**
+   * Unpaid interest already accrued when the loan was brought onto the books.
+   * Folded into the first period's interest + payment so cumulative totals
+   * reflect what the borrower actually owes. Does not affect principal.
+   */
+  opening_accrued_interest?: number | null;
 }
 
 export interface RateChange {
@@ -178,7 +184,7 @@ export function generateAmortizationSchedule(
     case "principal_and_interest":
     default:
       // For LOC types without explicit structure, default to interest-only
-      if (["line_of_credit", "revolving_credit"].includes(debt.debt_type)) {
+      if (["line_of_credit", "revolving_credit", "investor_loc"].includes(debt.debt_type)) {
         return generateInterestOnlySchedule(debt, throughYear, throughMonth, sortedRates);
       }
       return generatePISchedule(debt, throughYear, throughMonth, sortedRates);
@@ -209,6 +215,10 @@ function generatePIKSchedule(
   let cumPrincipal = 0;
   let cumInterest = 0;
 
+  // Carry-forward: unpaid interest at start date folds into the first
+  // period's interest and then capitalizes along with it.
+  let pendingOpeningAccrued = Math.max(0, Number(debt.opening_accrued_interest ?? 0));
+
   let matYear: number | null = null;
   let matMonth: number | null = null;
   if (debt.maturity_date) {
@@ -222,7 +232,8 @@ function generatePIKSchedule(
 
     const rate = getRateForPeriod(debt.interest_rate, cy, cm, rateChanges);
     const factor = interestFactor(cy, cm, convention);
-    const interest = round2(balance * rate * factor);
+    const periodInterest = round2(balance * rate * factor);
+    const interest = round2(periodInterest + pendingOpeningAccrued);
 
     const isMaturityPeriod =
       (matYear !== null && cy === matYear && cm === matMonth) ||
@@ -261,6 +272,7 @@ function generatePIKSchedule(
       cumulative_interest: round2(cumInterest),
     });
 
+    pendingOpeningAccrued = 0; // only folded into the first emitted row
     if (endingBalance <= 0) break;
     balance = endingBalance;
     ({ year: cy, month: cm } = advanceMonth(cy, cm));
@@ -289,6 +301,10 @@ function generatePISchedule(
   let cumPrincipal = 0;
   let cumInterest = 0;
 
+  // Carry-forward: unpaid interest at start date rolls into the first
+  // period's interest and payment. Does not move principal.
+  let pendingOpeningAccrued = Math.max(0, Number(debt.opening_accrued_interest ?? 0));
+
   let lastRate = debt.interest_rate;
   let remainingTerm = termMonths;
   let monthlyPayment =
@@ -308,9 +324,21 @@ function generatePISchedule(
     }
 
     const factor = interestFactor(cy, cm, convention);
-    const interest = round2(balance * rate * factor);
-    const payment = Math.min(monthlyPayment, balance + interest);
-    const principal = round2(payment - interest);
+    const periodInterest = round2(balance * rate * factor);
+    const interest = round2(periodInterest + pendingOpeningAccrued);
+    // First-period payment absorbs the carry-forward; principal target is
+    // the regularly scheduled principal (payment − scheduled interest) so
+    // amortization pace is unchanged.
+    const scheduledPrincipal = round2(
+      Math.max(0, Math.min(monthlyPayment - periodInterest, balance))
+    );
+    const payment = round2(
+      Math.min(
+        monthlyPayment + pendingOpeningAccrued,
+        scheduledPrincipal + interest
+      )
+    );
+    const principal = scheduledPrincipal;
     const endingBalance = round2(Math.max(0, balance - principal));
 
     cumPrincipal += principal;
@@ -320,7 +348,7 @@ function generatePISchedule(
       period_year: cy,
       period_month: cm,
       beginning_balance: round2(balance),
-      payment: round2(payment),
+      payment,
       principal,
       interest,
       ending_balance: endingBalance,
@@ -330,6 +358,7 @@ function generatePISchedule(
       cumulative_interest: round2(cumInterest),
     });
 
+    pendingOpeningAccrued = 0; // only added to the first emitted row
     balance = endingBalance;
     ({ year: cy, month: cm } = advanceMonth(cy, cm));
   }
@@ -357,6 +386,7 @@ function generateInterestOnlySchedule(
   let cm = start.month;
   let cumPrincipal = 0;
   let cumInterest = 0;
+  let pendingOpeningAccrued = Math.max(0, Number(debt.opening_accrued_interest ?? 0));
 
   const maxPeriods = debt.term_months ?? 120;
 
@@ -365,7 +395,7 @@ function generateInterestOnlySchedule(
 
     const rate = getRateForPeriod(debt.interest_rate, cy, cm, rateChanges);
     const factor = interestFactor(cy, cm, convention);
-    const interest = round2(balance * rate * factor);
+    const interest = round2(balance * rate * factor + pendingOpeningAccrued);
 
     // Check if this is the maturity month
     let principal = 0;
@@ -396,6 +426,7 @@ function generateInterestOnlySchedule(
       cumulative_interest: round2(cumInterest),
     });
 
+    pendingOpeningAccrued = 0;
     if (endingBalance <= 0) break;
     ({ year: cy, month: cm } = advanceMonth(cy, cm));
   }
@@ -422,6 +453,7 @@ function generateBalloonSchedule(
   let cm = start.month;
   let cumPrincipal = 0;
   let cumInterest = 0;
+  let pendingOpeningAccrued = Math.max(0, Number(debt.opening_accrued_interest ?? 0));
 
   const monthlyPayment =
     debt.payment_amount ?? calculateMonthlyPayment(balance, debt.interest_rate, termMonths);
@@ -432,7 +464,8 @@ function generateBalloonSchedule(
 
     const rate = getRateForPeriod(debt.interest_rate, cy, cm, rateChanges);
     const factor = interestFactor(cy, cm, convention);
-    const interest = round2(balance * rate * factor);
+    const periodInterest = round2(balance * rate * factor);
+    const interest = round2(periodInterest + pendingOpeningAccrued);
 
     const isLastPeriod = i === termMonths - 1;
     let payment: number;
@@ -442,8 +475,13 @@ function generateBalloonSchedule(
       principal = balance;
       payment = round2(principal + interest);
     } else {
-      payment = Math.min(monthlyPayment, balance + interest);
-      principal = round2(payment - interest);
+      const scheduledPrincipal = round2(
+        Math.max(0, Math.min(monthlyPayment - periodInterest, balance))
+      );
+      payment = round2(
+        Math.min(monthlyPayment + pendingOpeningAccrued, scheduledPrincipal + interest)
+      );
+      principal = scheduledPrincipal;
     }
 
     const endingBalance = round2(Math.max(0, balance - principal));
@@ -455,7 +493,7 @@ function generateBalloonSchedule(
       period_year: cy,
       period_month: cm,
       beginning_balance: round2(balance),
-      payment: round2(payment),
+      payment,
       principal,
       interest,
       ending_balance: endingBalance,
@@ -465,6 +503,7 @@ function generateBalloonSchedule(
       cumulative_interest: round2(cumInterest),
     });
 
+    pendingOpeningAccrued = 0;
     balance = endingBalance;
     ({ year: cy, month: cm } = advanceMonth(cy, cm));
   }

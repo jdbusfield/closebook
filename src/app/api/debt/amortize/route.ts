@@ -70,6 +70,7 @@ export async function POST(request: NextRequest) {
     balloon_amount: instr.balloon_amount,
     rate_type: instr.rate_type,
     is_pik: instr.is_pik,
+    opening_accrued_interest: instr.opening_accrued_interest,
   };
 
   const schedule = generateAmortizationSchedule(

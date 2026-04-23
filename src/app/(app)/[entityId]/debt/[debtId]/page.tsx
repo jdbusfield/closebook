@@ -84,6 +84,7 @@ import {
 } from "@/lib/utils/amortization";
 import * as XLSX from "xlsx";
 import type { DebtStatus } from "@/lib/types/database";
+import { AmortizationExportDialog } from "./amortization-export-dialog";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyRow = any;
@@ -117,6 +118,7 @@ const TYPE_LABELS: Record<string, string> = {
   term_loan: "Term Loan",
   line_of_credit: "Line of Credit",
   revolving_credit: "Revolving Credit",
+  investor_loc: "Investor LOC",
   mortgage: "Mortgage",
   equipment_loan: "Equipment Loan",
   balloon_loan: "Balloon Loan",
@@ -163,6 +165,20 @@ const TRANSACTION_TYPE_COLORS: Record<string, string> = {
   adjustment: "text-muted-foreground",
 };
 
+/**
+ * Parse an ISO "YYYY-MM-DD" effective_date as a local calendar date.
+ *
+ * `new Date("2026-04-01")` parses as UTC midnight — in any timezone west of
+ * UTC that lands on March 31 local, so `.getMonth()` silently returns the
+ * previous month. Every month-bucketing computation on this page goes
+ * through this helper so an April 1st transaction lands in April regardless
+ * of the user's timezone.
+ */
+function parseLocalYmd(iso: string): { year: number; month: number; day: number } {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  return { year: y, month: m, day: d };
+}
+
 export default function DebtDetailPage() {
   const params = useParams();
   const entityId = params.entityId as string;
@@ -193,6 +209,9 @@ export default function DebtDetailPage() {
   const [whatIfRate, setWhatIfRate] = useState("");
   const [whatIfTerm, setWhatIfTerm] = useState("");
   const [showWhatIf, setShowWhatIf] = useState(false);
+
+  // Amortization Excel export
+  const [amortExportOpen, setAmortExportOpen] = useState(false);
 
   // Delete instrument
   const [deleting, setDeleting] = useState(false);
@@ -231,6 +250,7 @@ export default function DebtDetailPage() {
     maturity_date: "",
     payment_amount: "",
     credit_limit: "",
+    opening_accrued_interest: "",
     day_count_convention: "30/360",
     balloon_amount: "",
     is_pik: false,
@@ -257,6 +277,10 @@ export default function DebtDetailPage() {
       maturity_date: instrument.maturity_date ?? "",
       payment_amount: instrument.payment_amount ? String(instrument.payment_amount) : "",
       credit_limit: instrument.credit_limit ? String(instrument.credit_limit) : "",
+      opening_accrued_interest:
+        instrument.opening_accrued_interest != null
+          ? String(instrument.opening_accrued_interest)
+          : "",
       day_count_convention: instrument.day_count_convention ?? "30/360",
       balloon_amount: instrument.balloon_amount ? String(instrument.balloon_amount) : "",
       is_pik: !!instrument.is_pik,
@@ -294,6 +318,9 @@ export default function DebtDetailPage() {
           maturity_date: editForm.maturity_date || null,
           payment_amount: editForm.payment_amount ? parseFloat(editForm.payment_amount) : null,
           credit_limit: editForm.credit_limit ? parseFloat(editForm.credit_limit) : null,
+          opening_accrued_interest: editForm.opening_accrued_interest
+            ? parseFloat(editForm.opening_accrued_interest)
+            : 0,
           day_count_convention: editForm.day_count_convention,
           balloon_amount: editForm.balloon_amount ? parseFloat(editForm.balloon_amount) : null,
           is_secured: !!editForm.collateral_description,
@@ -783,8 +810,8 @@ export default function DebtDetailPage() {
       (a, b) => new Date(a.effective_date).getTime() - new Date(b.effective_date).getTime()
     );
     for (const txn of sortedTxns) {
-      const d = new Date(txn.effective_date);
-      const key = `${d.getFullYear()}-${d.getMonth() + 1}`;
+      const ymd = parseLocalYmd(txn.effective_date);
+      const key = `${ymd.year}-${ymd.month}`;
       if (!monthlyDayChanges[key]) monthlyDayChanges[key] = [];
       if (!monthlyNetChanges[key]) monthlyNetChanges[key] = 0;
       let delta = 0;
@@ -796,7 +823,7 @@ export default function DebtDetailPage() {
         delta = -Math.abs(txn.amount);
       }
       if (delta !== 0) {
-        monthlyDayChanges[key].push({ day: d.getDate(), amount: delta });
+        monthlyDayChanges[key].push({ day: ymd.day, amount: delta });
         monthlyNetChanges[key] += delta;
       }
     }
@@ -804,8 +831,8 @@ export default function DebtDetailPage() {
     // Build a map of interest payments by month (for interest payable roll forward)
     const monthlyInterestPaid: Record<string, number> = {};
     for (const txn of sortedTxns) {
-      const d = new Date(txn.effective_date);
-      const key = `${d.getFullYear()}-${d.getMonth() + 1}`;
+      const ymd = parseLocalYmd(txn.effective_date);
+      const key = `${ymd.year}-${ymd.month}`;
       let intPaid = 0;
       if ((txn.to_interest ?? 0) !== 0) {
         intPaid = Math.abs(txn.to_interest);
@@ -836,11 +863,17 @@ export default function DebtDetailPage() {
     let balance = instrument.current_draw ?? instrument.original_amount ?? 0;
     // Walk backwards from start to figure out original balance if transactions exist before start
     // Actually, start with original amount and apply transactions forward
-    const isLOCType = ["line_of_credit", "revolving_credit"].includes(instrument.debt_type);
+    const isLOCType = ["line_of_credit", "revolving_credit", "investor_loc"].includes(instrument.debt_type);
     balance = isLOCType ? (instrument.current_draw ?? instrument.original_amount) : instrument.original_amount;
 
     let cumInterest = 0;
-    let interestPayable = 0; // running interest payable balance
+    // Running interest payable balance. Seeded from the instrument's
+    // `opening_accrued_interest` so the roll-forward reflects unpaid interest
+    // that existed when the loan was brought onto the books.
+    let interestPayable = Math.max(
+      0,
+      Number(instrument.opening_accrued_interest ?? 0)
+    );
 
     // Generate up to 24 months past current, but at least through today
     const maxMonths = 240; // 20 years max
@@ -861,7 +894,11 @@ export default function DebtDetailPage() {
       let interest: number;
       const totalDays = new Date(cy, cm, 0).getDate(); // days in this month
       const isFirstMonth = i === 0;
-      const startDay = isFirstMonth ? startDate.getDate() : 1;
+      // Interest starts accruing the day AFTER start_date (so a 12/31 start
+      // means accrual begins 1/1 — the start month gets no interest). Shift
+      // the first-period startDay by +1; downstream accrualDays math handles
+      // the "no accrual this month" case by producing 0 days.
+      const startDay = isFirstMonth ? startDate.getDate() + 1 : 1;
       const accrualDays = totalDays - startDay + 1; // days of interest in this period
       const fullFactor = interestFactor(cy, cm, convention);
       const factor = isFirstMonth ? fullFactor * (accrualDays / totalDays) : fullFactor;
@@ -1003,8 +1040,8 @@ export default function DebtDetailPage() {
     interface DayChange { day: number; amount: number; }
     const amortDayChanges: Record<string, DayChange[]> = {};
     for (const txn of sortedTxns) {
-      const d = new Date(txn.effective_date);
-      const key = `${d.getFullYear()}-${d.getMonth() + 1}`;
+      const ymd = parseLocalYmd(txn.effective_date);
+      const key = `${ymd.year}-${ymd.month}`;
       let delta = 0;
       if (txn.transaction_type === "advance") {
         delta = Math.abs(txn.amount);
@@ -1015,7 +1052,7 @@ export default function DebtDetailPage() {
       }
       if (delta !== 0) {
         if (!amortDayChanges[key]) amortDayChanges[key] = [];
-        amortDayChanges[key].push({ day: d.getDate(), amount: delta });
+        amortDayChanges[key].push({ day: ymd.day, amount: delta });
       }
     }
 
@@ -1023,8 +1060,8 @@ export default function DebtDetailPage() {
     const interestTypes = ["interest_payment"];
 
     for (const txn of sortedTxns) {
-      const d = new Date(txn.effective_date);
-      const key = `${d.getFullYear()}-${d.getMonth() + 1}`;
+      const ymd = parseLocalYmd(txn.effective_date);
+      const key = `${ymd.year}-${ymd.month}`;
 
       if (txn.transaction_type === "advance") {
         monthlyAdvances[key] = (monthlyAdvances[key] ?? 0) + Math.abs(txn.amount);
@@ -1064,9 +1101,15 @@ export default function DebtDetailPage() {
     }
 
     const entries: DynamicAmortEntry[] = [];
-    const isLOC = ["line_of_credit", "revolving_credit"].includes(instrument.debt_type);
+    const isLOC = ["line_of_credit", "revolving_credit", "investor_loc"].includes(instrument.debt_type);
     let balance = isLOC ? (instrument.current_draw ?? instrument.original_amount) : instrument.original_amount;
-    let unpaidInterest = 0;
+    // Running unpaid interest. Starts at the instrument's declared opening
+    // accrued interest so the first row's `Unpaid Int` column reflects what
+    // the borrower already owed when the loan came onto the books.
+    let unpaidInterest = Math.max(
+      0,
+      Number(instrument.opening_accrued_interest ?? 0)
+    );
     let cumPrincipal = 0;
     let cumInterest = 0;
 
@@ -1082,7 +1125,9 @@ export default function DebtDetailPage() {
       const fullFactor = interestFactor(cy, cm, convention);
       // Pro-rate the first period based on the actual start day within the month
       const isFirstPeriod = i === 0;
-      const startDay = isFirstPeriod ? Number(instrument.start_date.split("T")[0].split("-")[2]) : 1;
+      // See comment on Interest Roll Forward builder above — +1 shifts
+      // accrual to the day after start_date.
+      const startDay = isFirstPeriod ? Number(instrument.start_date.split("T")[0].split("-")[2]) + 1 : 1;
       const totalDays = new Date(cy, cm, 0).getDate();
       const accrualDays = totalDays - startDay + 1;
       const factor = isFirstPeriod ? fullFactor * (accrualDays / totalDays) : fullFactor;
@@ -1268,7 +1313,7 @@ export default function DebtDetailPage() {
     return sum;
   }, 0);
 
-  const isLOC = ["line_of_credit", "revolving_credit"].includes(instrument.debt_type);
+  const isLOC = ["line_of_credit", "revolving_credit", "investor_loc"].includes(instrument.debt_type);
 
   const formatDate = (d: string | null) => {
     if (!d) return "---";
@@ -1455,6 +1500,19 @@ export default function DebtDetailPage() {
               <div className="space-y-2">
                 <Label htmlFor="edit_credit_limit">Credit Limit</Label>
                 <Input id="edit_credit_limit" type="number" step="0.01" value={editForm.credit_limit} onChange={(e) => setEditForm({ ...editForm, credit_limit: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit_opening_accrued_interest">Opening Accrued Interest</Label>
+                <Input
+                  id="edit_opening_accrued_interest"
+                  type="number"
+                  step="0.01"
+                  value={editForm.opening_accrued_interest}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, opening_accrued_interest: e.target.value })
+                  }
+                  placeholder="Unpaid interest at start"
+                />
               </div>
               {/* Current Draw / Balance is read-only — only changes via recorded transactions */}
             </div>
@@ -2171,7 +2229,7 @@ export default function DebtDetailPage() {
         <TabsContent value="amortization">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-4">
                 <div>
                   <CardTitle>Amortization Schedule</CardTitle>
                   <CardDescription>
@@ -2180,39 +2238,49 @@ export default function DebtDetailPage() {
                       : "Requires start date and balance to generate"}
                   </CardDescription>
                 </div>
-                {dynamicAmortization.length > 0 && (
-                  <div className="flex gap-6 text-right">
-                    <div>
-                      <span className="text-sm text-muted-foreground">Total Principal</span>
-                      <p className="text-lg font-semibold tabular-nums text-green-600">
-                        {formatCurrency(dynamicAmortization.reduce((s, r) => s + r.to_principal, 0))}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-sm text-muted-foreground">Total Interest</span>
-                      <p className="text-lg font-semibold tabular-nums text-amber-600">
-                        {formatCurrency(dynamicAmortization.reduce((s, r) => s + r.to_interest, 0))}
-                      </p>
-                    </div>
-                    {dynamicAmortization.some(r => r.unpaid_interest_end > 0.005) && (
+                <div className="flex items-center gap-6">
+                  {dynamicAmortization.length > 0 && (
+                    <div className="flex gap-6 text-right">
                       <div>
-                        <span className="text-sm text-muted-foreground">Unpaid Interest</span>
-                        <p className="text-lg font-semibold tabular-nums text-red-600">
-                          {formatCurrency(dynamicAmortization[dynamicAmortization.length - 1]?.unpaid_interest_end ?? 0)}
+                        <span className="text-sm text-muted-foreground">Total Principal</span>
+                        <p className="text-lg font-semibold tabular-nums text-green-600">
+                          {formatCurrency(dynamicAmortization.reduce((s, r) => s + r.to_principal, 0))}
                         </p>
                       </div>
-                    )}
-                    <div>
-                      <span className="text-sm text-muted-foreground">Payoff</span>
-                      <p className="text-lg font-semibold tabular-nums">
-                        {getPeriodShortLabel(
-                          dynamicAmortization[dynamicAmortization.length - 1]?.period_year ?? 0,
-                          dynamicAmortization[dynamicAmortization.length - 1]?.period_month ?? 0
-                        )}
-                      </p>
+                      <div>
+                        <span className="text-sm text-muted-foreground">Total Interest</span>
+                        <p className="text-lg font-semibold tabular-nums text-amber-600">
+                          {formatCurrency(dynamicAmortization.reduce((s, r) => s + r.to_interest, 0))}
+                        </p>
+                      </div>
+                      {dynamicAmortization.some(r => r.unpaid_interest_end > 0.005) && (
+                        <div>
+                          <span className="text-sm text-muted-foreground">Unpaid Interest</span>
+                          <p className="text-lg font-semibold tabular-nums text-red-600">
+                            {formatCurrency(dynamicAmortization[dynamicAmortization.length - 1]?.unpaid_interest_end ?? 0)}
+                          </p>
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-sm text-muted-foreground">Payoff</span>
+                        <p className="text-lg font-semibold tabular-nums">
+                          {getPeriodShortLabel(
+                            dynamicAmortization[dynamicAmortization.length - 1]?.period_year ?? 0,
+                            dynamicAmortization[dynamicAmortization.length - 1]?.period_month ?? 0
+                          )}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                  <Button
+                    variant="outline"
+                    onClick={() => setAmortExportOpen(true)}
+                    disabled={dynamicAmortization.length === 0}
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    Export
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -2517,6 +2585,14 @@ export default function DebtDetailPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <AmortizationExportDialog
+        open={amortExportOpen}
+        onOpenChange={setAmortExportOpen}
+        entityId={entityId}
+        instrument={instrument}
+        rows={dynamicAmortization}
+      />
     </div>
   );
 }

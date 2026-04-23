@@ -21,6 +21,7 @@ const SCHEDULE_FIELDS = [
   "balloon_amount",
   "rate_type",
   "is_pik",
+  "opening_accrued_interest",
   "debt_type",
 ] as const;
 
@@ -48,6 +49,7 @@ export async function POST(request: NextRequest) {
     payment_amount,
     credit_limit,
     current_draw,
+    opening_accrued_interest,
     loan_number,
     payment_structure,
     day_count_convention,
@@ -88,6 +90,7 @@ export async function POST(request: NextRequest) {
       payment_amount: payment_amount || null,
       credit_limit: credit_limit || null,
       current_draw: current_draw || null,
+      opening_accrued_interest: opening_accrued_interest ?? 0,
       loan_number: loan_number || null,
       payment_structure: payment_structure || "principal_and_interest",
       day_count_convention: day_count_convention || "30/360",
@@ -125,6 +128,7 @@ export async function POST(request: NextRequest) {
       balloon_amount: data.balloon_amount,
       rate_type: data.rate_type,
       is_pik: data.is_pik,
+      opening_accrued_interest: data.opening_accrued_interest,
     };
 
     const schedule = generateAmortizationSchedule(
@@ -258,6 +262,7 @@ export async function PATCH(request: NextRequest) {
       balloon_amount: data.balloon_amount,
       rate_type: data.rate_type,
       is_pik: data.is_pik,
+      opening_accrued_interest: data.opening_accrued_interest,
     };
 
     const schedule = generateAmortizationSchedule(
