@@ -382,7 +382,11 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
         const rateChanges = ratesByInstrument[instr.id] ?? [];
         const isLOC = ["line_of_credit", "revolving_credit", "investor_loc"].includes(instr.debt_type);
         let balance = isLOC ? (instr.current_draw ?? instr.original_amount) : instr.original_amount;
-        let unpaidInt = 0;
+        // Seed unpaid interest from the instrument's declared opening accrued
+        // interest so the subledger reflects ALL interest the borrower owes —
+        // including what had already accrued before the instrument was booked,
+        // not just what has accrued since it's been active.
+        let unpaidInt = Math.max(0, Number(instr.opening_accrued_interest ?? 0));
 
         // Parse start date (string split to avoid UTC timezone shift)
         const [sdY, sdM, sdD] = (instr.start_date as string).split("T")[0].split("-").map(Number);
@@ -390,15 +394,19 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
         let cm = sdM;
         const startDay = sdD;
 
-        // Scheduled payment for projections
+        // Scheduled payment for projections. PIK loans have no scheduled cash
+        // payments during the term (bullet at maturity), so leave at 0 unless
+        // explicitly set.
         let scheduledPayment = instr.payment_amount ?? 0;
-        if (scheduledPayment <= 0 && instr.term_months && baseRate > 0) {
-          const r = baseRate / 12;
-          const n = instr.term_months;
-          const f = Math.pow(1 + r, n);
-          scheduledPayment = round2(instr.original_amount * (r * f) / (f - 1));
-        } else if (scheduledPayment <= 0 && instr.term_months && baseRate === 0) {
-          scheduledPayment = round2(instr.original_amount / instr.term_months);
+        if (!instr.is_pik) {
+          if (scheduledPayment <= 0 && instr.term_months && baseRate > 0) {
+            const r = baseRate / 12;
+            const n = instr.term_months;
+            const f = Math.pow(1 + r, n);
+            scheduledPayment = round2(instr.original_amount * (r * f) / (f - 1));
+          } else if (scheduledPayment <= 0 && instr.term_months && baseRate === 0) {
+            scheduledPayment = round2(instr.original_amount / instr.term_months);
+          }
         }
 
         const now = new Date();
@@ -458,6 +466,13 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
             monthInterest = round2(avgBal * rate * factor);
           } else {
             monthInterest = round2(balance * rate * factor);
+          }
+
+          // PIK: compound this period's accrual on the running unpaid-interest
+          // balance so the subledger matches the detail page's
+          // interest-on-interest behavior.
+          if (instr.is_pik && unpaidInt > 0) {
+            monthInterest = round2(monthInterest + unpaidInt * rate * factor);
           }
 
           let toInterest = 0;
