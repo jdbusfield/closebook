@@ -55,6 +55,7 @@ import {
   formatPercentage,
   getCurrentPeriod,
   getPeriodLabel,
+  getPriorPeriod,
 } from "@/lib/utils/dates";
 import type { DebtStatus } from "@/lib/types/database";
 import {
@@ -130,8 +131,12 @@ export default function DebtPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const current = getCurrentPeriod();
-  const [periodYear, setPeriodYear] = useState(current.year);
-  const [periodMonth, setPeriodMonth] = useState(current.month);
+  // Default to the prior closed month so Accrued Interest and the GL
+  // comparison reflect the last completed period (end of March when
+  // today is in April) rather than a partial mid-month accrual.
+  const defaultPeriod = getPriorPeriod(current.year, current.month);
+  const [periodYear, setPeriodYear] = useState(defaultPeriod.year);
+  const [periodMonth, setPeriodMonth] = useState(defaultPeriod.month);
   const [instruments, setInstruments] = useState<AnyInstrument[]>([]);
   const [amortization, setAmortization] = useState<
     Record<string, AmortizationPeriod>
