@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -155,6 +156,7 @@ export default function DebtPage() {
     day_count_convention: "30/360",
     balloon_amount: "",
     is_secured: false,
+    is_pik: false,
     collateral_description: "",
     notes: "",
   });
@@ -180,6 +182,7 @@ export default function DebtPage() {
       day_count_convention: "30/360",
       balloon_amount: "",
       is_secured: false,
+      is_pik: false,
       collateral_description: "",
       notes: "",
     });
@@ -216,6 +219,7 @@ export default function DebtPage() {
           day_count_convention: form.day_count_convention,
           balloon_amount: form.balloon_amount ? parseFloat(form.balloon_amount) : null,
           is_secured: form.is_secured,
+          is_pik: form.is_pik,
           collateral_description: form.collateral_description || null,
           notes: form.notes || null,
         }),
@@ -624,6 +628,20 @@ export default function DebtPage() {
                       <Input id="balloon_amount" type="number" step="0.01" value={form.balloon_amount} onChange={(e) => setForm({ ...form, balloon_amount: e.target.value })} />
                     </div>
                   )}
+                </div>
+                {/* PIK Toggle */}
+                <div className="flex items-start justify-between rounded-lg border p-3">
+                  <div className="space-y-0.5 pr-4">
+                    <Label htmlFor="is_pik" className="cursor-pointer">PIK Interest</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Interest capitalizes to the balance each period (compounds — pay interest on the interest) instead of being paid in cash. Entire accrued balance is due at maturity.
+                    </p>
+                  </div>
+                  <Switch
+                    id="is_pik"
+                    checked={form.is_pik}
+                    onCheckedChange={(v) => setForm({ ...form, is_pik: v })}
+                  />
                 </div>
                 {/* Row 7: Collateral & Notes */}
                 <div className="grid grid-cols-2 gap-4">

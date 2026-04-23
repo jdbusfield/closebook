@@ -21,6 +21,7 @@ export interface DebtForAmortization {
   balloon_amount?: number | null;
   balloon_date?: string | null;
   rate_type?: string; // "fixed" | "variable" | "adjustable"
+  is_pik?: boolean; // Payment-in-Kind: interest capitalizes to balance (compounds) instead of cash payment
 }
 
 export interface RateChange {
@@ -159,6 +160,12 @@ export function generateAmortizationSchedule(
     (a, b) => new Date(a.effective_date).getTime() - new Date(b.effective_date).getTime()
   );
 
+  // PIK overrides the payment structure: interest capitalizes each period,
+  // no cash service, full accrued balance due at maturity.
+  if (debt.is_pik) {
+    return generatePIKSchedule(debt, throughYear, throughMonth, sortedRates);
+  }
+
   const structure = debt.payment_structure ?? "principal_and_interest";
 
   switch (structure) {
@@ -176,6 +183,90 @@ export function generateAmortizationSchedule(
       }
       return generatePISchedule(debt, throughYear, throughMonth, sortedRates);
   }
+}
+
+/**
+ * Payment-in-Kind schedule — interest accrues and is capitalized into the
+ * balance each period ("interest on interest"). No cash payments during the
+ * term. At maturity, the full compounded balance is due as a bullet.
+ */
+function generatePIKSchedule(
+  debt: DebtForAmortization,
+  throughYear: number,
+  throughMonth: number,
+  rateChanges: RateChange[]
+): AmortizationEntry[] {
+  const entries: AmortizationEntry[] = [];
+  const start = parseDate(debt.start_date);
+  const convention = debt.day_count_convention ?? "30/360";
+  const termMonths = debt.term_months ?? 120;
+
+  let balance = debt.current_draw ?? debt.original_amount;
+  if (balance <= 0) return entries;
+
+  let cy = start.year;
+  let cm = start.month;
+  let cumPrincipal = 0;
+  let cumInterest = 0;
+
+  let matYear: number | null = null;
+  let matMonth: number | null = null;
+  if (debt.maturity_date) {
+    const mat = parseDate(debt.maturity_date);
+    matYear = mat.year;
+    matMonth = mat.month;
+  }
+
+  for (let i = 0; i < termMonths; i++) {
+    if (cy > throughYear || (cy === throughYear && cm > throughMonth)) break;
+
+    const rate = getRateForPeriod(debt.interest_rate, cy, cm, rateChanges);
+    const factor = interestFactor(cy, cm, convention);
+    const interest = round2(balance * rate * factor);
+
+    const isMaturityPeriod =
+      (matYear !== null && cy === matYear && cm === matMonth) ||
+      (matYear === null && i === termMonths - 1);
+
+    let payment: number;
+    let principal: number;
+    let endingBalance: number;
+
+    if (isMaturityPeriod) {
+      // Bullet payoff: entire accrued balance + final period interest
+      principal = round2(balance);
+      payment = round2(balance + interest);
+      endingBalance = 0;
+    } else {
+      // Capitalize: interest added to balance, no cash movement
+      principal = 0;
+      payment = 0;
+      endingBalance = round2(balance + interest);
+    }
+
+    cumPrincipal += principal;
+    cumInterest += interest;
+
+    entries.push({
+      period_year: cy,
+      period_month: cm,
+      beginning_balance: round2(balance),
+      payment,
+      principal,
+      interest,
+      ending_balance: endingBalance,
+      interest_rate: rate,
+      fees: 0,
+      cumulative_principal: round2(cumPrincipal),
+      cumulative_interest: round2(cumInterest),
+    });
+
+    if (endingBalance <= 0) break;
+    balance = endingBalance;
+    ({ year: cy, month: cm } = advanceMonth(cy, cm));
+  }
+
+  return entries;
 }
 
 /**

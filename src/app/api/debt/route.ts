@@ -3,9 +3,26 @@ import { createClient } from "@/lib/supabase/server";
 import {
   generateAmortizationSchedule,
   type DebtForAmortization,
+  type RateChange,
 } from "@/lib/utils/amortization";
 import { getCurrentPeriod } from "@/lib/utils/dates";
 import { logAuditEvent } from "@/lib/utils/audit";
+
+// Fields that, when changed, invalidate the existing amortization schedule.
+const SCHEDULE_FIELDS = [
+  "original_amount",
+  "interest_rate",
+  "term_months",
+  "start_date",
+  "maturity_date",
+  "payment_amount",
+  "payment_structure",
+  "day_count_convention",
+  "balloon_amount",
+  "rate_type",
+  "is_pik",
+  "debt_type",
+] as const;
 
 /**
  * POST /api/debt
@@ -39,6 +56,7 @@ export async function POST(request: NextRequest) {
     spread_margin,
     balloon_amount,
     is_secured,
+    is_pik,
     collateral_description,
     notes,
   } = body;
@@ -78,6 +96,7 @@ export async function POST(request: NextRequest) {
       spread_margin: normalizedSpread || null,
       balloon_amount: balloon_amount || null,
       is_secured: is_secured || false,
+      is_pik: is_pik || false,
       collateral_description: collateral_description || null,
       notes: notes || null,
       status: "active",
@@ -105,6 +124,7 @@ export async function POST(request: NextRequest) {
       current_draw: data.current_draw,
       balloon_amount: data.balloon_amount,
       rate_type: data.rate_type,
+      is_pik: data.is_pik,
     };
 
     const schedule = generateAmortizationSchedule(
@@ -202,6 +222,71 @@ export async function PATCH(request: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // If any schedule-affecting field changed, regenerate the amortization table
+  // so the stored schedule and interest roll forward reflect the new parameters.
+  const scheduleChanged = SCHEDULE_FIELDS.some((f) => f in updates);
+  if (scheduleChanged && data) {
+    let rateChanges: RateChange[] = [];
+    if (data.rate_type && data.rate_type !== "fixed") {
+      const { data: rates } = await sb
+        .from("debt_rate_history")
+        .select("effective_date, interest_rate")
+        .eq("debt_instrument_id", id)
+        .order("effective_date", { ascending: true });
+      if (rates) {
+        rateChanges = rates.map((r: { effective_date: string; interest_rate: number }) => ({
+          effective_date: r.effective_date,
+          interest_rate: r.interest_rate,
+        }));
+      }
+    }
+
+    const currentPeriod = getCurrentPeriod();
+    const amortInput: DebtForAmortization = {
+      debt_type: data.debt_type,
+      original_amount: data.original_amount,
+      interest_rate: data.interest_rate,
+      term_months: data.term_months,
+      start_date: data.start_date,
+      maturity_date: data.maturity_date,
+      payment_amount: data.payment_amount,
+      payment_structure: data.payment_structure,
+      day_count_convention: data.day_count_convention,
+      credit_limit: data.credit_limit,
+      current_draw: data.current_draw,
+      balloon_amount: data.balloon_amount,
+      rate_type: data.rate_type,
+      is_pik: data.is_pik,
+    };
+
+    const schedule = generateAmortizationSchedule(
+      amortInput,
+      currentPeriod.year,
+      currentPeriod.month,
+      rateChanges
+    );
+
+    await sb.from("debt_amortization").delete().eq("debt_instrument_id", id);
+
+    if (schedule.length > 0) {
+      const amortEntries = schedule.map((entry) => ({
+        debt_instrument_id: id,
+        period_year: entry.period_year,
+        period_month: entry.period_month,
+        beginning_balance: entry.beginning_balance,
+        payment: entry.payment,
+        principal: entry.principal,
+        interest: entry.interest,
+        ending_balance: entry.ending_balance,
+        interest_rate: entry.interest_rate,
+        fees: entry.fees,
+        cumulative_principal: entry.cumulative_principal,
+        cumulative_interest: entry.cumulative_interest,
+      }));
+      await sb.from("debt_amortization").insert(amortEntries);
+    }
+  }
 
   // Audit log
   const { data: membership } = await supabase

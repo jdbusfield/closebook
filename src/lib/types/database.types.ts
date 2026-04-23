@@ -847,6 +847,7 @@ export type Database = {
           status: string
           source_file_name: string | null
           uploaded_at: string | null
+          is_pik: boolean
           created_by: string | null
           created_at: string
           updated_at: string
@@ -872,6 +873,7 @@ export type Database = {
           status?: string
           source_file_name?: string | null
           uploaded_at?: string | null
+          is_pik?: boolean
           created_by?: string | null
           created_at?: string
           updated_at?: string
@@ -897,6 +899,7 @@ export type Database = {
           status?: string
           source_file_name?: string | null
           uploaded_at?: string | null
+          is_pik?: boolean
           created_by?: string | null
           created_at?: string
           updated_at?: string
