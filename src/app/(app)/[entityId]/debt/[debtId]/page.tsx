@@ -926,25 +926,21 @@ export default function DebtDetailPage() {
         interest = Math.round(balance * monthRate * factor * 100) / 100;
       }
 
-      // PIK: interest capitalizes to the balance each period instead of
-      // sitting in interest payable. Interest payable stays at 0 (unless
-      // cash interest is paid for some reason).
-      const intPaid = monthlyInterestPaid[key] ?? 0;
+      // PIK: each period's accrual also compounds on the unpaid interest
+      // balance, so the "unpaid interest" column builds at interest-on-interest
+      // rather than linear. Unpaid isn't day-weighted — it only moves at
+      // month boundaries.
       const intPayableBeg = Math.round(interestPayable * 100) / 100;
-      const pikCapitalized = !!instrument.is_pik && intPaid === 0;
+      if (instrument.is_pik && interestPayable > 0) {
+        interest = Math.round((interest + interestPayable * monthRate * factor) * 100) / 100;
+      }
 
-      const adjustedBalance = Math.max(
-        0,
-        balance + changes + (pikCapitalized ? interest : 0)
-      );
+      const adjustedBalance = Math.max(0, balance + changes);
       cumInterest += interest;
 
-      if (pikCapitalized) {
-        // No payable buildup — interest immediately folds into the balance.
-        interestPayable = Math.round(interestPayable * 100) / 100;
-      } else {
-        interestPayable = Math.round((interestPayable + interest - intPaid) * 100) / 100;
-      }
+      const intPaid = monthlyInterestPaid[key] ?? 0;
+      interestPayable = Math.round((interestPayable + interest - intPaid) * 100) / 100;
+      if (interestPayable < 0) interestPayable = 0;
 
       entries.push({
         year: cy,
@@ -962,8 +958,11 @@ export default function DebtDetailPage() {
 
       balance = adjustedBalance;
 
-      // Balance changes via transactions (draws/paydowns) or PIK capitalization
-      if (balance <= 0 && changes === 0 && !pikCapitalized && i > 0) break;
+      // Balance only changes via transactions (draws/paydowns). Under PIK,
+      // interest accrues into the unpaid column instead of principal, so we
+      // must NOT bail out just because the principal balance is zero — the
+      // unpaid balance can still grow via compounding.
+      if (balance <= 0 && changes === 0 && !instrument.is_pik && i > 0) break;
     }
 
     return entries;

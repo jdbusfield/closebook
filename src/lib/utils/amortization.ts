@@ -192,9 +192,11 @@ export function generateAmortizationSchedule(
 }
 
 /**
- * Payment-in-Kind schedule — interest accrues and is capitalized into the
- * balance each period ("interest on interest"). No cash payments during the
- * term. At maturity, the full compounded balance is due as a bullet.
+ * Payment-in-Kind schedule — each period's interest is computed on
+ * (principal balance + running unpaid interest), so the unpaid interest
+ * itself earns interest going forward ("interest on interest"). Principal
+ * balance stays constant until maturity; at maturity the borrower pays off
+ * the principal plus the full accrued unpaid interest as a bullet.
  */
 function generatePIKSchedule(
   debt: DebtForAmortization,
@@ -207,17 +209,22 @@ function generatePIKSchedule(
   const convention = debt.day_count_convention ?? "30/360";
   const termMonths = debt.term_months ?? 120;
 
-  let balance = debt.current_draw ?? debt.original_amount;
-  if (balance <= 0) return entries;
+  const principalBalance = debt.current_draw ?? debt.original_amount;
+  if (principalBalance <= 0) return entries;
 
   let cy = start.year;
   let cm = start.month;
   let cumPrincipal = 0;
   let cumInterest = 0;
 
-  // Carry-forward: unpaid interest at start date folds into the first
-  // period's interest and then capitalizes along with it.
-  let pendingOpeningAccrued = Math.max(0, Number(debt.opening_accrued_interest ?? 0));
+  // Running unpaid-interest balance. Seeded from opening_accrued_interest so
+  // prior-owed interest starts earning compound interest on day one. This is
+  // the "unpaid interest" the user sees rolling forward each month.
+  let unpaid = Math.max(0, Number(debt.opening_accrued_interest ?? 0));
+  // The opening chunk is injected into the first row's display interest so
+  // it's visible to the user (mirrors the non-PIK generators). Subsequent
+  // rows just display that period's compound accrual.
+  let pendingOpeningAccrued = unpaid;
 
   let matYear: number | null = null;
   let matMonth: number | null = null;
@@ -232,8 +239,10 @@ function generatePIKSchedule(
 
     const rate = getRateForPeriod(debt.interest_rate, cy, cm, rateChanges);
     const factor = interestFactor(cy, cm, convention);
-    const periodInterest = round2(balance * rate * factor);
-    const interest = round2(periodInterest + pendingOpeningAccrued);
+    // Compound base: interest accrues on principal AND any unpaid interest
+    // that has built up. This is what makes PIK "interest on interest".
+    const periodInterest = round2((principalBalance + unpaid) * rate * factor);
+    const displayInterest = round2(periodInterest + pendingOpeningAccrued);
 
     const isMaturityPeriod =
       (matYear !== null && cy === matYear && cm === matMonth) ||
@@ -244,27 +253,31 @@ function generatePIKSchedule(
     let endingBalance: number;
 
     if (isMaturityPeriod) {
-      // Bullet payoff: entire accrued balance + final period interest
-      principal = round2(balance);
-      payment = round2(balance + interest);
+      // Bullet payoff: principal + all unpaid interest (pre-period) +
+      // this period's accrual.
+      principal = round2(principalBalance);
+      payment = round2(principalBalance + unpaid + periodInterest);
       endingBalance = 0;
+      unpaid = 0;
     } else {
-      // Capitalize: interest added to balance, no cash movement
+      // Unpaid interest grows by this period's compound accrual. Principal
+      // stays put; no cash movement this period.
       principal = 0;
       payment = 0;
-      endingBalance = round2(balance + interest);
+      endingBalance = round2(principalBalance);
+      unpaid = round2(unpaid + periodInterest);
     }
 
     cumPrincipal += principal;
-    cumInterest += interest;
+    cumInterest += displayInterest;
 
     entries.push({
       period_year: cy,
       period_month: cm,
-      beginning_balance: round2(balance),
+      beginning_balance: round2(principalBalance),
       payment,
       principal,
-      interest,
+      interest: displayInterest,
       ending_balance: endingBalance,
       interest_rate: rate,
       fees: 0,
@@ -273,8 +286,7 @@ function generatePIKSchedule(
     });
 
     pendingOpeningAccrued = 0; // only folded into the first emitted row
-    if (endingBalance <= 0) break;
-    balance = endingBalance;
+    if (isMaturityPeriod) break;
     ({ year: cy, month: cm } = advanceMonth(cy, cm));
   }
 
