@@ -45,7 +45,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { formatCurrency, getCurrentPeriod } from "@/lib/utils/dates";
+import { formatCurrency, formatIsoDateLocal, getCurrentPeriod } from "@/lib/utils/dates";
 import { useRentalAssetData } from "./use-rental-asset-data";
 import { TrendsTab } from "./trends-tab";
 
@@ -903,7 +903,7 @@ function ActivityList({
                 {a.vehicle_make ?? ""} {a.vehicle_model ?? ""}
               </div>
               <div className="text-xs text-muted-foreground">
-                {date ? new Date(date).toLocaleDateString() : "—"}
+                {date ? formatIsoDateLocal(date) : "—"}
               </div>
             </div>
             <div className="text-right">
