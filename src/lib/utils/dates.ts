@@ -1,5 +1,21 @@
 import { format, endOfMonth, startOfMonth, subMonths, addMonths } from "date-fns";
 
+/**
+ * Format a bare ISO date string ("YYYY-MM-DD" or "YYYY-MM-DDTHH:..") using the
+ * viewer's locale without the UTC-vs-local timezone shift. `new Date(iso)` on
+ * a bare date string parses as UTC midnight, which renders one day earlier in
+ * negative-offset timezones (PST/EST/etc). This splits the string and builds
+ * a local Date so the displayed date matches what was entered.
+ */
+export function formatIsoDateLocal(
+  iso: string | null | undefined
+): string {
+  if (!iso) return "";
+  const [y, m, d] = iso.split("T")[0].split("-").map(Number);
+  if (!y || !m || !d) return "";
+  return new Date(y, m - 1, d).toLocaleDateString();
+}
+
 export function getPeriodLabel(year: number, month: number): string {
   const date = new Date(year, month - 1, 1);
   return format(date, "MMMM yyyy");

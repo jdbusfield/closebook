@@ -32,7 +32,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ArrowRight, Car, Download, Search } from "lucide-react";
-import { formatCurrency } from "@/lib/utils/dates";
+import { formatCurrency, formatIsoDateLocal } from "@/lib/utils/dates";
 import {
   getVehicleClassification,
   getReportingGroup,
@@ -626,7 +626,7 @@ export function SoldTab({ entityId }: SoldTabProps) {
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {asset.disposed_date
-                          ? new Date(asset.disposed_date).toLocaleDateString()
+                          ? formatIsoDateLocal(asset.disposed_date)
                           : "---"}
                       </TableCell>
                       <TableCell className="text-muted-foreground">

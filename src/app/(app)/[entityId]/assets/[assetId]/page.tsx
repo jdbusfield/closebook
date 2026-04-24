@@ -55,7 +55,7 @@ import {
   FileText,
   RotateCcw,
 } from "lucide-react";
-import { formatCurrency, getCurrentPeriod } from "@/lib/utils/dates";
+import { formatCurrency, formatIsoDateLocal, getCurrentPeriod } from "@/lib/utils/dates";
 import { calculateDispositionGainLoss } from "@/lib/utils/depreciation";
 import { regenerateAssetSchedule } from "@/lib/utils/depreciation-regenerate";
 import {
@@ -860,7 +860,7 @@ export default function AssetDetailPage() {
               <div>
                 <span className="text-muted-foreground">Date</span>
                 <p className="font-medium">
-                  {new Date(asset.disposed_date).toLocaleDateString()}
+                  {formatIsoDateLocal(asset.disposed_date)}
                 </p>
               </div>
               <div>
