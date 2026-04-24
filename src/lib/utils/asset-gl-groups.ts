@@ -3,7 +3,7 @@ import {
   type VehicleClassification,
 } from "./vehicle-classification";
 
-export type ReconLineType = "cost" | "accum_depr";
+export type ReconLineType = "cost" | "accum_depr" | "gain_on_sale";
 
 export interface GLAccountGroup {
   key: string;
@@ -67,6 +67,20 @@ export const RECON_GROUPS: ReconGroup[] = [
     lineType: "accum_depr",
     parentKey: "trailers_net",
   },
+  {
+    key: "vehicles_gain_on_sale",
+    displayName: "Vehicles — Gain on Sale",
+    masterType: "Vehicle",
+    lineType: "gain_on_sale",
+    parentKey: "vehicles_net",
+  },
+  {
+    key: "trailers_gain_on_sale",
+    displayName: "Trailers — Gain on Sale",
+    masterType: "Trailer",
+    lineType: "gain_on_sale",
+    parentKey: "trailers_net",
+  },
 ];
 
 /**
@@ -109,7 +123,8 @@ export function getEffectiveReconGroups(
   const accumGroups = settings?.combine_fleet_accum_depr
     ? [FLEET_ACCUM_DEPR_GROUP]
     : RECON_GROUPS.filter((g) => g.lineType === "accum_depr");
-  return [...costGroups, ...accumGroups];
+  const gainGroups = RECON_GROUPS.filter((g) => g.lineType === "gain_on_sale");
+  return [...costGroups, ...accumGroups, ...gainGroups];
 }
 
 /** True when the group spans both Vehicle and Trailer master types. */

@@ -98,6 +98,7 @@ interface AssetRow {
   book_net_value: number;
   status: string;
   disposed_date: string | null;
+  disposed_book_gain_loss: number | null;
   cost_account_id: string | null;
   accum_depr_account_id: string | null;
   master_type_override: string | null;
@@ -265,7 +266,7 @@ export function ReconciliationTab({ entityId }: ReconciliationTabProps) {
     const { data: assetsData } = await supabase
       .from("fixed_assets")
       .select(
-        "id, asset_name, asset_tag, vehicle_class, in_service_date, acquisition_cost, book_useful_life_months, book_salvage_value, book_depreciation_method, book_accumulated_depreciation, book_net_value, status, disposed_date, cost_account_id, accum_depr_account_id, master_type_override"
+        "id, asset_name, asset_tag, vehicle_class, in_service_date, acquisition_cost, book_useful_life_months, book_salvage_value, book_depreciation_method, book_accumulated_depreciation, book_net_value, status, disposed_date, disposed_book_gain_loss, cost_account_id, accum_depr_account_id, master_type_override"
       )
       .eq("entity_id", entityId);
 
@@ -285,6 +286,18 @@ export function ReconciliationTab({ entityId }: ReconciliationTabProps) {
       const dd = a.disposed_date?.slice(0, 10) ?? null;
       if (a.status === "disposed" && dd && dd <= periodLastDay) return false;
       return true;
+    });
+
+    // Assets disposed year-to-date through the selected period. P&L gain-on-sale
+    // accounts accumulate from Jan 1 through the period end (and reset at year
+    // close), so the subledger sums every disposal in the same calendar year up
+    // to the selected period end.
+    const periodYearStart = `${periodYear}-01-01`;
+    const disposedYtd = allAssetsRaw.filter((a) => {
+      if (a.status !== "disposed") return false;
+      const dd = a.disposed_date?.slice(0, 10) ?? null;
+      if (!dd) return false;
+      return dd >= periodYearStart && dd <= periodLastDay;
     });
 
     // 5. Build per-asset rule-driven depreciation schedule through the period.
@@ -506,6 +519,37 @@ export function ReconciliationTab({ entityId }: ReconciliationTabProps) {
       if (accumKey && grouped[accumKey]) {
         grouped[accumKey].total += accumDepr;
         grouped[accumKey].assets.push({ ...asset, periodValue: accumDepr });
+      }
+    }
+
+    // Gain on sale (P&L). For each YTD-disposed asset, route to the
+    // gain_on_sale recon group matching its master type. Sign is negated so
+    // a gain (income → credit balance) appears negative in the subledger,
+    // matching how `gl_balances.ending_balance` represents credit balances.
+    for (const asset of disposedYtd) {
+      const rawGainLoss = Number(asset.disposed_book_gain_loss ?? 0);
+      const signed = -rawGainLoss;
+      const mt = getEffectiveMasterType(
+        asset.vehicle_class,
+        asset.master_type_override,
+        cc
+      );
+      let key: string | null = null;
+      if (mt) {
+        const g = RECON_GROUPS.find(
+          (rg) => rg.masterType === mt && rg.lineType === "gain_on_sale"
+        );
+        if (g) key = g.key;
+      }
+      if (!key) {
+        // No master type — bucket under unallocated so users can see it
+        grouped[UNALLOCATED_KEY].total += signed;
+        grouped[UNALLOCATED_KEY].assets.push({ ...asset, periodValue: signed });
+        continue;
+      }
+      if (grouped[key]) {
+        grouped[key].total += signed;
+        grouped[key].assets.push({ ...asset, periodValue: signed });
       }
     }
     setSubledgerBalances(grouped);
@@ -979,12 +1023,21 @@ export function ReconciliationTab({ entityId }: ReconciliationTabProps) {
   // Vehicles + Trailers) get their own section; per-master-type groups render
   // inside their respective Vehicles / Trailers sections.
   const vehicleGroups = effectiveReconGroups.filter(
-    (g) => g.masterType === "Vehicle" && !isFleetReconGroup(g)
+    (g) =>
+      g.masterType === "Vehicle" &&
+      !isFleetReconGroup(g) &&
+      g.lineType !== "gain_on_sale"
   );
   const trailerGroups = effectiveReconGroups.filter(
-    (g) => g.masterType === "Trailer" && !isFleetReconGroup(g)
+    (g) =>
+      g.masterType === "Trailer" &&
+      !isFleetReconGroup(g) &&
+      g.lineType !== "gain_on_sale"
   );
   const fleetGroups = effectiveReconGroups.filter(isFleetReconGroup);
+  const gainOnSaleGroups = effectiveReconGroups.filter(
+    (g) => g.lineType === "gain_on_sale"
+  );
 
   function renderReconCard(group: ReconGroup) {
     const glBal = glBalances[group.key] ?? 0;
@@ -1232,7 +1285,11 @@ export function ReconciliationTab({ entityId }: ReconciliationTabProps) {
                       <TableRow>
                         <TableHead>Asset</TableHead>
                         <TableHead className="text-right">
-                          {group.lineType === "cost" ? "Cost" : "Accum Depr"}
+                          {group.lineType === "cost"
+                            ? "Cost"
+                            : group.lineType === "accum_depr"
+                              ? "Accum Depr"
+                              : "Gain / (Loss)"}
                         </TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1624,6 +1681,21 @@ export function ReconciliationTab({ entityId }: ReconciliationTabProps) {
                   </div>
                 );
               })()}
+            </div>
+          )}
+
+          {/* Gain on Sale section — P&L reconciliation for assets disposed
+              year-to-date through the selected period. Values are signed so
+              that gains (income) appear negative, matching credit-balance
+              representation in `gl_balances.ending_balance`. */}
+          {gainOnSaleGroups.length > 0 && (
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                Gain on Sale (YTD)
+              </h3>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {gainOnSaleGroups.map(renderReconCard)}
+              </div>
             </div>
           )}
 

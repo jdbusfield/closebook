@@ -75,6 +75,7 @@ interface AssetRow {
   book_net_value: number;
   status: string;
   disposed_date: string | null;
+  disposed_book_gain_loss: number | null;
   cost_account_id: string | null;
   accum_depr_account_id: string | null;
   master_type_override: string | null;
@@ -140,7 +141,7 @@ export function ReconciliationYearView({
         supabase
           .from("fixed_assets")
           .select(
-            "id, vehicle_class, in_service_date, acquisition_cost, book_useful_life_months, book_salvage_value, book_depreciation_method, book_accumulated_depreciation, book_net_value, status, disposed_date, cost_account_id, accum_depr_account_id, master_type_override"
+            "id, vehicle_class, in_service_date, acquisition_cost, book_useful_life_months, book_salvage_value, book_depreciation_method, book_accumulated_depreciation, book_net_value, status, disposed_date, disposed_book_gain_loss, cost_account_id, accum_depr_account_id, master_type_override"
           )
           .eq("entity_id", entityId),
         supabase
@@ -409,6 +410,30 @@ export function ReconciliationYearView({
           subTotals[accumKey] += accumDepr;
           anyAssetContributing[accumKey] = true;
         }
+      }
+
+      // Gain on sale (P&L) — YTD through this month for assets disposed in
+      // the same calendar year. Sign is negated so gains (credit balance)
+      // appear negative, matching `gl_balances.ending_balance`.
+      const periodYearStart = `${year}-01-01`;
+      for (const asset of assets) {
+        if (asset.status !== "disposed") continue;
+        const dd = asset.disposed_date?.slice(0, 10) ?? null;
+        if (!dd || dd < periodYearStart || dd > periodLastDay) continue;
+        const mt = getEffectiveMasterType(
+          asset.vehicle_class,
+          asset.master_type_override,
+          customClasses
+        );
+        if (!mt) continue;
+        const g = RECON_GROUPS.find(
+          (rg) => rg.masterType === mt && rg.lineType === "gain_on_sale"
+        );
+        if (!g) continue;
+        if (subTotals[g.key] === undefined) continue;
+        const signed = -Number(asset.disposed_book_gain_loss ?? 0);
+        subTotals[g.key] += signed;
+        if (signed !== 0) anyAssetContributing[g.key] = true;
       }
 
       // GL totals per recon group
