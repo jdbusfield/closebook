@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ResponsiveContainer,
   LineChart,
@@ -15,6 +15,10 @@ import {
   YAxis,
   Legend,
   Tooltip as RechartsTooltip,
+  Customized,
+  usePlotArea,
+  useXAxisDomain,
+  useYAxisDomain,
 } from "recharts";
 import {
   Card,
@@ -32,13 +36,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Check, ChevronDown, AlertCircle, Download } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  AlertCircle,
+  Download,
+  X,
+  ArrowRight,
+} from "lucide-react";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { DrillDownSheet, type DrillParams } from "./drill-down-sheet";
+import { VEHICLE_CLASSIFICATIONS } from "@/lib/utils/vehicle-classification";
 
 // ──────────── types ────────────
 
@@ -56,6 +68,7 @@ interface PeriodPoint {
     finUtilPct: number;
     avgDailyRate: number;
     vehicleCount: number;
+    revenuePerActiveAsset: number;
   };
   byGroup: Record<
     string,
@@ -70,6 +83,7 @@ interface PeriodPoint {
       finUtilPct: number;
       avgDailyRate: number;
       vehicleCount: number;
+      revenuePerActiveAsset: number;
     }
   >;
 }
@@ -111,8 +125,32 @@ const FALLBACK_COLORS = [
   "#a855f7",
   "#0ea5e9",
 ];
-function colorFor(group: string, idx: number): string {
-  return GROUP_COLORS[group] ?? FALLBACK_COLORS[idx % FALLBACK_COLORS.length];
+// Palette offered in the inline color picker. Twelve distinct hues picked
+// to read well on both light and dark surfaces.
+const COLOR_PALETTE = [
+  "#3b82f6",
+  "#ef4444",
+  "#10b981",
+  "#f59e0b",
+  "#8b5cf6",
+  "#ec4899",
+  "#06b6d4",
+  "#84cc16",
+  "#f97316",
+  "#a855f7",
+  "#14b8a6",
+  "#64748b",
+];
+function colorFor(
+  group: string,
+  idx: number,
+  overrides: Record<string, string> = {}
+): string {
+  return (
+    overrides[group] ??
+    GROUP_COLORS[group] ??
+    FALLBACK_COLORS[idx % FALLBACK_COLORS.length]
+  );
 }
 
 type Metric =
@@ -122,7 +160,8 @@ type Metric =
   | "maintenance"
   | "finUtilPct"
   | "avgDailyRate"
-  | "vehicleCount";
+  | "vehicleCount"
+  | "revenuePerActiveAsset";
 type ViewMode = "aggregate" | "by_group";
 type ChartStyle = "line" | "area" | "bar";
 type GroupBy = "reporting_group" | "master_type";
@@ -172,7 +211,7 @@ const METRICS: {
   {
     key: "utilizationPct",
     label: "DBR Utilization %",
-    yFormat: (v) => `${v.toFixed(0)}%`,
+    yFormat: (v) => `${v.toFixed(1)}%`,
     defaultStyle: "line",
     description: "Rental days ÷ fleet days, weighted across the scope.",
   },
@@ -221,12 +260,28 @@ const METRICS: {
     description:
       "Distinct vehicles that appeared in the fleet (fleet_days > 0) during the period. Matched assets + orphans, de-duplicated across months when viewing quarterly/yearly.",
   },
+  {
+    key: "revenuePerActiveAsset",
+    label: "Revenue per Active Asset",
+    yFormat: (v) => formatCompact(v),
+    defaultStyle: "bar",
+    description:
+      "Total revenue ÷ distinct active vehicles in the period. Measures average per-vehicle earning power across the bucket — rising means each active asset is pulling more weight.",
+  },
 ];
 
 function formatCompact(v: number): string {
-  if (Math.abs(v) >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(v) >= 1_000) return `$${(v / 1_000).toFixed(0)}k`;
-  return `$${Math.round(v)}`;
+  const abs = Math.abs(v);
+  if (abs >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
+  // Keep full precision under $10k so a $7,562 value doesn't render as "$7k".
+  if (abs < 10_000) {
+    return v.toLocaleString("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 0,
+    });
+  }
+  return `$${(v / 1_000).toFixed(0)}k`;
 }
 
 // Full precision for a daily rate — never "compact" since daily numbers
@@ -251,6 +306,21 @@ export function TrendsTab({
 }: TrendsTabProps) {
   const [drillParams, setDrillParams] = useState<DrillParams | null>(null);
 
+  // ── Point-to-point compare mode ──
+  // When on, chart clicks capture data points instead of opening the
+  // drill-down sheet. Two captured points render a graphic showing the
+  // absolute and relative change between them.
+  type ComparePoint = {
+    period: string;
+    label: string;
+    group: string | null;
+  };
+  const [compareMode, setCompareMode] = useState(false);
+  const [comparePoints, setComparePoints] = useState<ComparePoint[]>([]);
+  // Which series to compare. `null` = total across visible groups;
+  // otherwise the name of a specific reporting group.
+  const [compareSeries, setCompareSeries] = useState<string | null>(null);
+
   function openDrill(period: string, label: string, group: string | null) {
     setDrillParams({
       organizationId,
@@ -261,8 +331,53 @@ export function TrendsTab({
       includeService,
       entityId,
       entityName,
+      classes:
+        selectedClasses && selectedClasses.size > 0
+          ? [...selectedClasses]
+          : null,
     });
   }
+
+  // Recharts fires both Bar.onClick AND BarChart.onClick for the same
+  // physical click, so our handler is invoked twice with the same period.
+  // We dedupe by tracking the last (period, timestamp) pair — anything
+  // within this burst window is treated as a single click.
+  const lastClickRef = useRef<{ period: string; ts: number } | null>(null);
+  const CLICK_BURST_MS = 350;
+
+  // Click handler: in compare mode we capture the point; otherwise we
+  // open the drill-down. Drops the oldest point when a third click lands.
+  function handlePointClick(
+    period: string,
+    label: string,
+    group: string | null
+  ) {
+    const now = Date.now();
+    const last = lastClickRef.current;
+    if (last && last.period === period && now - last.ts < CLICK_BURST_MS) {
+      // Same click, second fire — ignore.
+      return;
+    }
+    lastClickRef.current = { period, ts: now };
+
+    if (!compareMode) {
+      openDrill(period, label, group);
+      return;
+    }
+    setComparePoints((prev) => {
+      // If the same period is clicked twice (with a real gap between
+      // clicks), treat the second as a de-select so the user can correct
+      // a misclick without hitting Clear.
+      if (prev.some((p) => p.period === period)) {
+        return prev.filter((p) => p.period !== period);
+      }
+      const next = [...prev, { period, label, group }];
+      // Keep the two most recent clicks — order matters (first = "from",
+      // second = "to") so the % change reads the way the user expects.
+      return next.length > 2 ? next.slice(-2) : next;
+    });
+  }
+
   // Date range — default to last 24 months (or full history if less).
   const [rangePreset, setRangePreset] = useState<
     "12m" | "24m" | "60m" | "ytd" | "all" | "custom"
@@ -285,6 +400,11 @@ export function TrendsTab({
   const [groupBy, setGroupBy] = useState<GroupBy>("reporting_group");
   const [granularity, setGranularity] = useState<Granularity>("monthly");
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
+  // Class-level filter. `null` = no filter (all classes allowed). A non-null
+  // Set restricts the chart to only those vehicle classes.
+  const [selectedClasses, setSelectedClasses] = useState<Set<string> | null>(
+    null
+  );
   // Whether to stack per-group bars/areas when stacking is meaningful.
   // Only applies to additive metrics (revenue, fleet days, maintenance,
   // vehicle count) — rate metrics never stack.
@@ -299,6 +419,39 @@ export function TrendsTab({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<TrendsResponse | null>(null);
+
+  // Per-group color overrides. Persists in localStorage so the operator's
+  // customized palette sticks across sessions (fallback colors can be
+  // indistinguishable when several random hues land close to each other).
+  const COLOR_LS_KEY = "rental-assets-trends-color-overrides";
+  const [colorOverrides, setColorOverrides] = useState<Record<string, string>>(
+    () => {
+      if (typeof window === "undefined") return {};
+      try {
+        const raw = window.localStorage.getItem(COLOR_LS_KEY);
+        return raw ? (JSON.parse(raw) as Record<string, string>) : {};
+      } catch {
+        return {};
+      }
+    }
+  );
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        COLOR_LS_KEY,
+        JSON.stringify(colorOverrides)
+      );
+    } catch {
+      // Quota/privacy mode — the UI still works without persistence.
+    }
+  }, [colorOverrides]);
+
+  // Chart shape changes (metric, grouping, YoY, granularity) invalidate the
+  // captured compare points — drop them so the compare card doesn't reference
+  // a period that no longer exists on the x-axis.
+  useEffect(() => {
+    setComparePoints([]);
+  }, [metric, groupBy, yoyMode, yoySlotType, yoySlotValue, granularity]);
 
   // Resolve each metric's default chart style when it changes (unless the
   // user has explicitly overridden that style).
@@ -404,6 +557,9 @@ export function TrendsTab({
       include_service: String(includeService),
       granularity: effectiveGranularity,
     });
+    if (selectedClasses && selectedClasses.size > 0) {
+      params.set("classes", [...selectedClasses].join(","));
+    }
     fetch(`/api/rental-assets/trends?${params.toString()}`, {
       signal: controller.signal,
     })
@@ -425,6 +581,7 @@ export function TrendsTab({
     endMonth,
     includeService,
     effectiveGranularity,
+    selectedClasses,
   ]);
 
   const rawSeries = useMemo(() => data?.series ?? [], [data]);
@@ -493,6 +650,8 @@ export function TrendsTab({
           avgDailyRate:
             a.actualRentalDays > 0 ? a.revenue / a.actualRentalDays : 0,
           vehicleCount: a.vehicleCount,
+          revenuePerActiveAsset:
+            a.vehicleCount > 0 ? a.revenue / a.vehicleCount : 0,
         };
       }
       return { ...p, byGroup };
@@ -601,6 +760,93 @@ export function TrendsTab({
 
   const activeGroups = allGroups.filter((g) => selectedGroups.has(g));
 
+  // Which series the compare delta reads from. Preference:
+  //   1. Explicit user pick (compareSeries), if still valid
+  //   2. If both picked points share a group, use that group
+  //   3. If viewing a single group, use it
+  //   4. Fall back to "total"
+  const effectiveCompareSeries = useMemo(() => {
+    if (
+      compareSeries &&
+      (compareSeries === "total" || activeGroups.includes(compareSeries))
+    ) {
+      return compareSeries;
+    }
+    const gs = comparePoints.map((p) => p.group).filter(Boolean) as string[];
+    if (gs.length >= 2 && gs[0] === gs[1]) return gs[0];
+    if (viewMode === "by_group" && activeGroups.length === 1) {
+      return activeGroups[0];
+    }
+    return "total";
+  }, [compareSeries, activeGroups, viewMode, comparePoints]);
+
+  // Resolve the two clicked periods to {label, value} pairs on the active
+  // series so both the in-chart overlay and the top strip pull from one
+  // source of truth. Points are sorted chronologically by `period` — the
+  // earlier bucket is always `a` ("from") and the later one is `b` ("to"),
+  // so the % change reads as "earlier → later" regardless of click order.
+  const compareValues = useMemo(() => {
+    if (!compareMode || comparePoints.length !== 2) return null;
+    const key = effectiveCompareSeries;
+    const [p0, p1] = [...comparePoints].sort((x, y) =>
+      x.period.localeCompare(y.period)
+    );
+    const rowA = chartData.find((r) => r.period === p0.period);
+    const rowB = chartData.find((r) => r.period === p1.period);
+    if (!rowA || !rowB) return null;
+    const vA = rowA[key];
+    const vB = rowB[key];
+    if (typeof vA !== "number" || typeof vB !== "number") return null;
+    return {
+      a: { label: p0.label, value: vA },
+      b: { label: p1.label, value: vB },
+    };
+  }, [compareMode, comparePoints, effectiveCompareSeries, chartData]);
+
+  // Classes eligible for the Classes selector. Always show every class in
+  // the catalog regardless of which groups are active — operators compare
+  // across groups (e.g. "2-room cast trailers vs class 24 trucks") and
+  // hiding out-of-group classes blocks that workflow. Picking a class
+  // whose reporting group isn't currently shown auto-enables that group
+  // so the bars land on the chart. Excludes the "ADJ"
+  // accounting-adjustment sentinel since it's not a real vehicle class.
+  const availableClasses = useMemo(() => {
+    return Object.values(VEHICLE_CLASSIFICATIONS)
+      .filter((c) => c.class !== "ADJ")
+      .sort((a, b) => {
+        const ra = a.reportingGroup || "~";
+        const rb = b.reportingGroup || "~";
+        if (ra !== rb) return ra.localeCompare(rb);
+        return a.class.localeCompare(b.class, undefined, { numeric: true });
+      });
+  }, []);
+
+  // Index class → reportingGroup so the class picker can auto-add the
+  // right group(s) to selectedGroups when a class is toggled on.
+  const groupForClass = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of availableClasses) {
+      if (c.reportingGroup) m.set(c.class, c.reportingGroup);
+    }
+    return m;
+  }, [availableClasses]);
+
+  // When the set of available classes changes (e.g. user narrowed the
+  // groups filter), drop any previously-selected classes that are no
+  // longer valid. If nothing remains selected, reset to "all" (null).
+  useEffect(() => {
+    if (!selectedClasses) return;
+    const availableSet = new Set(availableClasses.map((c) => c.class));
+    let changed = false;
+    const next = new Set<string>();
+    for (const c of selectedClasses) {
+      if (availableSet.has(c)) next.add(c);
+      else changed = true;
+    }
+    if (!changed) return;
+    setSelectedClasses(next.size === 0 ? null : next);
+  }, [availableClasses, selectedClasses]);
+
   function exportCsv() {
     const cols = ["period", "total", ...allGroups];
     const rows = [cols.join(",")].concat(
@@ -631,36 +877,30 @@ export function TrendsTab({
     <div className="space-y-4">
       {/* ───── Controls ───── */}
       <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Metric */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-muted-foreground">
-                Metric
-              </span>
-              <Select
-                value={metric}
-                onValueChange={(v) => {
-                  setMetric(v as Metric);
-                  setStyleOverridden(false);
-                }}
-              >
-                <SelectTrigger className="h-8 w-[220px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {METRICS.map((m) => (
-                    <SelectItem key={m.key} value={m.key}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+        <CardContent className="py-5 space-y-4">
+          {/* ── Metric row — what is being measured ── */}
+          <ControlRow label="Metric">
+            <Select
+              value={metric}
+              onValueChange={(v) => {
+                setMetric(v as Metric);
+                setStyleOverridden(false);
+              }}
+            >
+              <SelectTrigger className="h-8 w-[220px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {METRICS.map((m) => (
+                  <SelectItem key={m.key} value={m.key}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-            {/* Compare with (secondary metric) */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-muted-foreground">
+            <div className="flex items-center gap-1.5 pl-1 border-l ml-1">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                 Compare
               </span>
               <Select
@@ -683,83 +923,36 @@ export function TrendsTab({
                 </SelectContent>
               </Select>
               {secondaryMetric && (
-                <div className="flex items-center gap-1 rounded-md border p-0.5">
+                <SegmentedGroup>
                   {(["line", "area", "bar"] as ChartStyle[]).map((s) => (
-                    <Button
+                    <SegmentedButton
                       key={s}
-                      variant={secondaryStyle === s ? "default" : "ghost"}
-                      size="sm"
-                      className="h-7 px-2 text-xs capitalize"
+                      active={secondaryStyle === s}
                       onClick={() => {
                         setSecondaryStyle(s);
                         setSecondaryStyleOverridden(true);
                       }}
                     >
-                      {s}
-                    </Button>
+                      <span className="capitalize">{s}</span>
+                    </SegmentedButton>
                   ))}
-                </div>
+                </SegmentedGroup>
               )}
             </div>
+          </ControlRow>
 
-            {/* Group-by */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-muted-foreground">
-                Group
-              </span>
-              <Select
-                value={groupBy}
-                onValueChange={(v) => setGroupBy(v as GroupBy)}
-              >
-                <SelectTrigger className="h-8 w-[180px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="reporting_group">
-                    Reporting Group
-                  </SelectItem>
-                  <SelectItem value="master_type">Vehicle / Trailer</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Granularity — hidden in YoY mode since granularity is forced
-                to match the slot type */}
-            {!yoyMode && (
-              <div className="flex items-center gap-1 rounded-md border p-0.5">
-                {(
-                  [
-                    ["monthly", "Monthly"],
-                    ["quarterly", "Quarterly"],
-                    ["yearly", "Yearly"],
-                  ] as const
-                ).map(([k, label]) => (
-                  <Button
-                    key={k}
-                    variant={granularity === k ? "default" : "ghost"}
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                    onClick={() => setGranularity(k)}
-                  >
-                    {label}
-                  </Button>
-                ))}
-              </div>
-            )}
-
-            {/* YoY toggle + slot picker */}
-            <div className="flex items-center gap-1 rounded-md border bg-background p-0.5">
-              <Button
-                variant={yoyMode ? "default" : "ghost"}
-                size="sm"
-                className="h-7 px-2 text-xs"
+          {/* ── Time row — YoY + granularity + date range ── */}
+          <ControlRow label="Time">
+            <SegmentedGroup>
+              <SegmentedButton
+                active={yoyMode}
                 onClick={() => setYoyMode((v) => !v)}
                 title="Compare the same period across years"
               >
                 YoY
-              </Button>
+              </SegmentedButton>
               {yoyMode && (
-                <>
+                <div className="flex items-center gap-1 pl-1 ml-1 border-l">
                   <Select
                     value={yoySlotType}
                     onValueChange={(v) => {
@@ -767,7 +960,7 @@ export function TrendsTab({
                       setYoySlotValue(1);
                     }}
                   >
-                    <SelectTrigger className="h-7 w-[96px] border-0 text-xs">
+                    <SelectTrigger className="h-7 w-[96px] border-0 text-xs shadow-none">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -779,7 +972,7 @@ export function TrendsTab({
                     value={String(yoySlotValue)}
                     onValueChange={(v) => setYoySlotValue(Number(v))}
                   >
-                    <SelectTrigger className="h-7 w-[108px] border-0 text-xs">
+                    <SelectTrigger className="h-7 w-[108px] border-0 text-xs shadow-none">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -798,145 +991,170 @@ export function TrendsTab({
                           )}
                     </SelectContent>
                   </Select>
-                </>
+                </div>
               )}
-            </div>
+            </SegmentedGroup>
 
-            {/* Date range presets — hidden in YoY mode since the chart
-                always spans full history with year on the x-axis */}
             {!yoyMode && (
-            <div className="flex items-center gap-1 rounded-md border p-0.5">
-              {(
-                [
-                  ["12m", "12M"],
-                  ["24m", "24M"],
-                  ["60m", "5Y"],
-                  ["ytd", "YTD"],
-                  ["all", "All"],
-                  ["custom", "Custom"],
-                ] as const
-              ).map(([k, label]) => (
-                <Button
-                  key={k}
-                  variant={rangePreset === k ? "default" : "ghost"}
-                  size="sm"
-                  className="h-7 px-2 text-xs"
-                  onClick={() => {
-                    setRangePreset(k);
-                    if (k !== "custom") {
-                      setCustomStart(null);
-                      setCustomEnd(null);
-                    } else if (availablePeriods.length > 0 && !customStart) {
-                      // Seed custom range with the current preset's resolved
-                      // bounds so user has a sensible starting point.
-                      setCustomStart({
-                        year: startYear ?? availablePeriods[availablePeriods.length - 1].year,
-                        month:
-                          startMonth ??
-                          availablePeriods[availablePeriods.length - 1].month,
-                      });
-                      setCustomEnd({
-                        year: endYear ?? availablePeriods[0].year,
-                        month: endMonth ?? availablePeriods[0].month,
-                      });
-                    }
-                  }}
-                >
-                  {label}
-                </Button>
-              ))}
-            </div>
-            )}
+              <>
+                <SegmentedGroup>
+                  {(
+                    [
+                      ["monthly", "Monthly"],
+                      ["quarterly", "Quarterly"],
+                      ["yearly", "Yearly"],
+                    ] as const
+                  ).map(([k, label]) => (
+                    <SegmentedButton
+                      key={k}
+                      active={granularity === k}
+                      onClick={() => setGranularity(k)}
+                    >
+                      {label}
+                    </SegmentedButton>
+                  ))}
+                </SegmentedGroup>
 
-            {/* Custom range pickers — only shown when "Custom" is active */}
-            {!yoyMode && rangePreset === "custom" && availablePeriods.length > 0 && (
-              <div className="flex items-center gap-1 rounded-md border bg-background px-1 py-0.5">
-                <MonthPicker
-                  value={
-                    customStart ?? availablePeriods[availablePeriods.length - 1]
-                  }
-                  available={availablePeriods}
-                  onChange={setCustomStart}
-                  label="From"
-                />
-                <span className="text-xs text-muted-foreground">→</span>
-                <MonthPicker
-                  value={customEnd ?? availablePeriods[0]}
-                  available={availablePeriods}
-                  onChange={setCustomEnd}
-                  label="To"
-                />
-              </div>
-            )}
+                <SegmentedGroup>
+                  {(
+                    [
+                      ["12m", "12M"],
+                      ["24m", "24M"],
+                      ["60m", "5Y"],
+                      ["ytd", "YTD"],
+                      ["all", "All"],
+                      ["custom", "Custom"],
+                    ] as const
+                  ).map(([k, label]) => (
+                    <SegmentedButton
+                      key={k}
+                      active={rangePreset === k}
+                      onClick={() => {
+                        setRangePreset(k);
+                        if (k !== "custom") {
+                          setCustomStart(null);
+                          setCustomEnd(null);
+                        } else if (
+                          availablePeriods.length > 0 &&
+                          !customStart
+                        ) {
+                          setCustomStart({
+                            year:
+                              startYear ??
+                              availablePeriods[availablePeriods.length - 1]
+                                .year,
+                            month:
+                              startMonth ??
+                              availablePeriods[availablePeriods.length - 1]
+                                .month,
+                          });
+                          setCustomEnd({
+                            year: endYear ?? availablePeriods[0].year,
+                            month: endMonth ?? availablePeriods[0].month,
+                          });
+                        }
+                      }}
+                    >
+                      {label}
+                    </SegmentedButton>
+                  ))}
+                </SegmentedGroup>
 
-            {/* View mode */}
-            <div className="flex items-center gap-1 rounded-md border p-0.5">
-              <Button
-                variant={viewMode === "aggregate" ? "default" : "ghost"}
-                size="sm"
-                className="h-7 px-2 text-xs"
+                {rangePreset === "custom" && availablePeriods.length > 0 && (
+                  <div className="flex items-center gap-1 rounded-md border bg-background px-1 py-0.5">
+                    <MonthPicker
+                      value={
+                        customStart ??
+                        availablePeriods[availablePeriods.length - 1]
+                      }
+                      available={availablePeriods}
+                      onChange={setCustomStart}
+                      label="From"
+                    />
+                    <span className="text-xs text-muted-foreground">→</span>
+                    <MonthPicker
+                      value={customEnd ?? availablePeriods[0]}
+                      available={availablePeriods}
+                      onChange={setCustomEnd}
+                      label="To"
+                    />
+                  </div>
+                )}
+              </>
+            )}
+          </ControlRow>
+
+          {/* ── Display row — view + style + stacking + grouping + export ── */}
+          <ControlRow label="Display">
+            <SegmentedGroup>
+              <SegmentedButton
+                active={viewMode === "aggregate"}
                 onClick={() => setViewMode("aggregate")}
               >
                 Aggregate
-              </Button>
-              <Button
-                variant={viewMode === "by_group" ? "default" : "ghost"}
-                size="sm"
-                className="h-7 px-2 text-xs"
+              </SegmentedButton>
+              <SegmentedButton
+                active={viewMode === "by_group"}
                 onClick={() => setViewMode("by_group")}
               >
                 By Group
-              </Button>
-            </div>
+              </SegmentedButton>
+            </SegmentedGroup>
 
-            {/* Chart style */}
-            <div className="flex items-center gap-1 rounded-md border p-0.5">
+            <SegmentedGroup>
               {(["line", "area", "bar"] as ChartStyle[]).map((s) => (
-                <Button
+                <SegmentedButton
                   key={s}
-                  variant={chartStyle === s ? "default" : "ghost"}
-                  size="sm"
-                  className="h-7 px-2 text-xs capitalize"
+                  active={chartStyle === s}
                   onClick={() => {
                     setChartStyle(s);
                     setStyleOverridden(true);
                   }}
                 >
-                  {s}
-                </Button>
+                  <span className="capitalize">{s}</span>
+                </SegmentedButton>
               ))}
-            </div>
+            </SegmentedGroup>
 
-            {/* Stack toggle — only shown when stacking is meaningful:
-                additive metric + by-group view + bar/area style + no
-                secondary (dual axis + stacking gets visually tangled). */}
             {STACKABLE_METRICS.includes(metric) &&
               viewMode === "by_group" &&
               (chartStyle === "bar" || chartStyle === "area") &&
               !secondaryMetric && (
-                <div className="flex items-center gap-1 rounded-md border p-0.5">
-                  <Button
-                    variant={stacked ? "default" : "ghost"}
-                    size="sm"
-                    className="h-7 px-2 text-xs"
+                <SegmentedGroup>
+                  <SegmentedButton
+                    active={stacked}
                     onClick={() => setStacked(true)}
                     title="Stack groups on top of each other so the total is visible"
                   >
                     Stacked
-                  </Button>
-                  <Button
-                    variant={!stacked ? "default" : "ghost"}
-                    size="sm"
-                    className="h-7 px-2 text-xs"
+                  </SegmentedButton>
+                  <SegmentedButton
+                    active={!stacked}
                     onClick={() => setStacked(false)}
                     title="Show each group side-by-side"
                   >
                     Grouped
-                  </Button>
-                </div>
+                  </SegmentedButton>
+                </SegmentedGroup>
               )}
 
-            {/* Group multi-select */}
+            {viewMode === "by_group" && (
+              <Select
+                value={groupBy}
+                onValueChange={(v) => setGroupBy(v as GroupBy)}
+              >
+                <SelectTrigger className="h-8 w-[180px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="reporting_group">
+                    Reporting Group
+                  </SelectItem>
+                  <SelectItem value="master_type">Vehicle / Trailer</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+
             {viewMode === "by_group" && allGroups.length > 0 && (
               <Popover>
                 <PopoverTrigger asChild>
@@ -967,38 +1185,224 @@ export function TrendsTab({
                       None
                     </Button>
                   </div>
+                  {Object.keys(colorOverrides).length > 0 && (
+                    <button
+                      onClick={() => setColorOverrides({})}
+                      className="mb-2 w-full rounded-sm px-2 py-1 text-left text-[11px] text-muted-foreground hover:bg-accent"
+                    >
+                      Reset all custom colors
+                    </button>
+                  )}
                   <div className="space-y-1">
                     {allGroups.map((g, idx) => {
                       const active = selectedGroups.has(g);
+                      const color = colorFor(g, idx, colorOverrides);
                       return (
-                        <button
+                        <div
                           key={g}
-                          onClick={() => {
-                            setSelectedGroups((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(g)) next.delete(g);
-                              else next.add(g);
-                              return next;
-                            });
-                          }}
-                          className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent"
+                          className="group flex w-full items-center gap-1 rounded-sm pr-1 text-xs hover:bg-accent"
                         >
-                          <span
-                            className="h-3 w-3 shrink-0 rounded-sm"
-                            style={{
-                              backgroundColor: colorFor(g, idx),
-                              opacity: active ? 1 : 0.25,
-                            }}
+                          <ColorSwatchPicker
+                            group={g}
+                            color={color}
+                            active={active}
+                            onChange={(c) =>
+                              setColorOverrides((prev) => ({
+                                ...prev,
+                                [g]: c,
+                              }))
+                            }
+                            onReset={() =>
+                              setColorOverrides((prev) => {
+                                if (!(g in prev)) return prev;
+                                const next = { ...prev };
+                                delete next[g];
+                                return next;
+                              })
+                            }
+                            hasOverride={g in colorOverrides}
                           />
-                          <span className="flex-1 text-left">{g}</span>
-                          {active && <Check className="h-3 w-3" />}
-                        </button>
+                          <button
+                            onClick={() => {
+                              setSelectedGroups((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(g)) next.delete(g);
+                                else next.add(g);
+                                return next;
+                              });
+                            }}
+                            className="flex flex-1 items-center gap-2 py-1 pl-1 text-left"
+                          >
+                            <span className="flex-1">{g}</span>
+                            {active && <Check className="h-3 w-3" />}
+                          </button>
+                        </div>
                       );
                     })}
                   </div>
                 </PopoverContent>
               </Popover>
             )}
+
+            {/* Classes multi-select — narrows the underlying data to specific
+                vehicle classes. Scoped by the current Groups selection when
+                grouping by reporting group. */}
+            {availableClasses.length > 0 && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8">
+                    Classes
+                    <Badge variant="secondary" className="ml-1.5">
+                      {selectedClasses
+                        ? `${selectedClasses.size}/${availableClasses.length}`
+                        : `All · ${availableClasses.length}`}
+                    </Badge>
+                    <ChevronDown className="ml-1 h-3.5 w-3.5" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="w-[280px] p-2"
+                  align="end"
+                >
+                  <div className="mb-2 flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 flex-1 text-xs"
+                      onClick={() => setSelectedClasses(null)}
+                    >
+                      All
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 flex-1 text-xs"
+                      onClick={() => setSelectedClasses(new Set())}
+                    >
+                      None
+                    </Button>
+                  </div>
+                  <div className="max-h-[320px] overflow-y-auto space-y-0.5">
+                    {(() => {
+                      // Render classes with a sticky-ish reporting-group
+                      // header so the picker reads as a hierarchy.
+                      const nodes: React.ReactNode[] = [];
+                      let prevGroup: string | null = null;
+                      for (const c of availableClasses) {
+                        if (c.reportingGroup !== prevGroup) {
+                          nodes.push(
+                            <div
+                              key={`hdr-${c.reportingGroup || "none"}`}
+                              className="mt-1.5 px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground first:mt-0"
+                            >
+                              {c.reportingGroup || "Uncategorized"}
+                            </div>
+                          );
+                          prevGroup = c.reportingGroup;
+                        }
+                        const active = selectedClasses
+                          ? selectedClasses.has(c.class)
+                          : true;
+                        nodes.push(
+                          <button
+                            key={c.class}
+                            onClick={() => {
+                              // Determine whether this click is turning the
+                              // class ON so we know whether to also auto-add
+                              // its reporting group.
+                              let wasToggledOn = false;
+                              setSelectedClasses((prev) => {
+                                // Starting from "all" (null) with a click
+                                // means "only this class" is what the user
+                                // likely wants — so seed from the full set
+                                // and toggle off the clicked one? No:
+                                // when prev is null, treat as "everything
+                                // selected" and toggling flips to "all
+                                // except this one." That's confusing.
+                                // Simpler: when prev is null and the user
+                                // clicks, treat it as "show only this one."
+                                if (prev === null) {
+                                  wasToggledOn = true;
+                                  return new Set([c.class]);
+                                }
+                                const next = new Set(prev);
+                                if (next.has(c.class)) {
+                                  next.delete(c.class);
+                                } else {
+                                  next.add(c.class);
+                                  wasToggledOn = true;
+                                }
+                                return next.size === 0 ? null : next;
+                              });
+                              // If the class turning on belongs to a
+                              // reporting group that's currently hidden,
+                              // auto-enable that group so its bars render.
+                              // Only meaningful when grouping by reporting
+                              // group (master-type buckets always hold the
+                              // class regardless of which master is shown).
+                              if (
+                                wasToggledOn &&
+                                groupBy === "reporting_group"
+                              ) {
+                                const g = groupForClass.get(c.class);
+                                if (g && allGroups.includes(g)) {
+                                  setSelectedGroups((prev) => {
+                                    if (prev.has(g)) return prev;
+                                    const next = new Set(prev);
+                                    next.add(g);
+                                    return next;
+                                  });
+                                }
+                              }
+                            }}
+                            className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent"
+                          >
+                            <span
+                              className={
+                                "h-3 w-3 shrink-0 rounded-sm border " +
+                                (active
+                                  ? "bg-primary border-primary"
+                                  : "bg-background border-muted-foreground/40")
+                              }
+                            />
+                            <span className="font-mono text-[11px] text-muted-foreground w-8 shrink-0">
+                              {c.class}
+                            </span>
+                            <span className="flex-1 text-left truncate">
+                              {c.className}
+                            </span>
+                            {active && selectedClasses && (
+                              <Check className="h-3 w-3 shrink-0" />
+                            )}
+                          </button>
+                        );
+                      }
+                      return nodes;
+                    })()}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
+
+            <Button
+              variant={compareMode ? "default" : "outline"}
+              size="sm"
+              className="h-8"
+              onClick={() => {
+                setCompareMode((v) => {
+                  if (v) setComparePoints([]);
+                  return !v;
+                });
+              }}
+              title="Click two points on the chart to compare their values"
+            >
+              Compare
+              {compareMode && comparePoints.length > 0 && (
+                <Badge variant="secondary" className="ml-1.5">
+                  {comparePoints.length}/2
+                </Badge>
+              )}
+            </Button>
 
             <div className="flex-1" />
 
@@ -1012,9 +1416,9 @@ export function TrendsTab({
               <Download className="mr-1.5 h-3.5 w-3.5" />
               CSV
             </Button>
-          </div>
+          </ControlRow>
 
-          <p className="mt-3 text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground pt-1 border-t">
             {currentMetric.description}
             {yoyMode ? (
               <>
@@ -1042,6 +1446,15 @@ export function TrendsTab({
                     ? "quarter"
                     : "year"}
                 {series.length === 1 ? "" : "s"}
+              </>
+            )}
+            {selectedClasses && selectedClasses.size > 0 && (
+              <>
+                {" · "}
+                <span className="text-foreground">
+                  Filtered to {selectedClasses.size} class
+                  {selectedClasses.size === 1 ? "" : "es"}
+                </span>
               </>
             )}
           </p>
@@ -1076,6 +1489,18 @@ export function TrendsTab({
             )}
           </div>
         </CardHeader>
+        {/* Compare strip — thin, in-card. Delta renders directly on the
+            chart, so this bar only handles state + series picker + clear. */}
+        {compareMode && (
+          <CompareBar
+            points={comparePoints}
+            activeGroups={activeGroups}
+            viewMode={viewMode}
+            effectiveSeries={effectiveCompareSeries}
+            setCompareSeries={setCompareSeries}
+            onClear={() => setComparePoints([])}
+          />
+        )}
         <CardContent>
           <div
             className={`relative h-[380px] transition-opacity ${
@@ -1104,7 +1529,11 @@ export function TrendsTab({
                   secondaryYFormat: secondaryMetricDef?.yFormat,
                   secondaryLabel: secondaryMetricDef?.label,
                   stacked,
-                  onDrill: openDrill,
+                  onDrill: handlePointClick,
+                  compare: compareValues,
+                  isPercentMetric:
+                    metric === "utilizationPct" || metric === "finUtilPct",
+                  colorOverrides,
                 })}
               </ResponsiveContainer>
             )}
@@ -1133,7 +1562,7 @@ export function TrendsTab({
           >
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {activeGroups.map((g, idx) => {
-                const color = colorFor(g, idx);
+                const color = colorFor(g, idx, colorOverrides);
                 const groupData = series.map((p) => ({
                   period: p.period,
                   label: p.label,
@@ -1167,7 +1596,7 @@ export function TrendsTab({
                             if (idx == null) return;
                             const row = groupData[idx];
                             if (row)
-                              openDrill(
+                              handlePointClick(
                                 String(row.period),
                                 String(row.label),
                                 g
@@ -1228,6 +1657,9 @@ function renderChart({
   secondaryLabel,
   stacked,
   onDrill,
+  compare,
+  isPercentMetric,
+  colorOverrides,
 }: {
   data: Record<string, string | number>[];
   style: ChartStyle;
@@ -1241,6 +1673,12 @@ function renderChart({
   secondaryLabel?: string;
   stacked: boolean;
   onDrill?: (period: string, label: string, group: string | null) => void;
+  compare: {
+    a: { label: string; value: number };
+    b: { label: string; value: number };
+  } | null;
+  isPercentMetric: boolean;
+  colorOverrides: Record<string, string>;
 }) {
   const hasSecondary = secondaryMetric != null;
 
@@ -1314,8 +1752,8 @@ function renderChart({
                   ? secondaryYFormat ?? yFormat
                   : yFormat;
                 const name = isSecondary
-                  ? `${secondaryLabel} (2°)`
-                  : (p.dataKey as string);
+                  ? secondaryLabel ?? "Secondary"
+                  : (p.name as string) ?? (p.dataKey as string);
                 return (
                   <div
                     key={p.dataKey as string}
@@ -1343,12 +1781,13 @@ function renderChart({
     </>
   );
 
+  const aggregateColor = colorOverrides["Total"] ?? "#6366f1";
   const seriesConfig =
     viewMode === "aggregate"
-      ? [{ key: "total", color: "#6366f1", name: "Total" }]
+      ? [{ key: "total", color: aggregateColor, name: "Total" }]
       : activeGroups.map((g, idx) => ({
           key: g,
-          color: colorFor(g, idx),
+          color: colorFor(g, idx, colorOverrides),
           name: g,
         }));
 
@@ -1437,6 +1876,32 @@ function renderChart({
       }
     : null;
 
+  // In-chart overlay that bridges the two compare points with a dotted line
+  // and a floating % delta badge. Wrapped in Customized so Recharts mounts
+  // it inside a <Layer class="recharts-customized-wrapper"> appended AFTER
+  // the series layers — guarantees the dashed line and badge sit above any
+  // bar or filled area beneath them.
+  // When a bar series is present (BarChart, or ComposedChart where either
+  // axis carries bars) Recharts uses a band scale on the X axis; line/area
+  // charts use an even point scale.
+  const hasBarSeries =
+    style === "bar" || (hasSecondary && secondaryStyle === "bar");
+  const compareScaleType: "band" | "point" = hasBarSeries ? "band" : "point";
+  const compareOverlay =
+    compare != null ? (
+      <Customized
+        component={() => (
+          <CompareOverlay
+            a={compare.a}
+            b={compare.b}
+            yFormat={yFormat}
+            isPercent={isPercentMetric}
+            scaleType={compareScaleType}
+          />
+        )}
+      />
+    ) : null;
+
   // When a secondary metric is active, ComposedChart lets us mix Line + Bar
   // + Area freely on the same chart with two independent Y-axes.
   if (hasSecondary) {
@@ -1457,6 +1922,7 @@ function renderChart({
           renderSeries(secondaryConfig, secondaryStyle, "right", {
             dashed: secondaryStyle === "line",
           })}
+        {compareOverlay}
       </ComposedChart>
     );
   }
@@ -1472,6 +1938,7 @@ function renderChart({
         {seriesConfig.map((s) =>
           renderSeries(s, "line", "left", { drillable: true })
         )}
+        {compareOverlay}
       </LineChart>
     );
   }
@@ -1489,6 +1956,7 @@ function renderChart({
             drillable: true,
           })
         )}
+        {compareOverlay}
       </AreaChart>
     );
   }
@@ -1505,6 +1973,7 @@ function renderChart({
           drillable: true,
         })
       )}
+      {compareOverlay}
     </BarChart>
   );
 }
@@ -1534,6 +2003,447 @@ function IndeterminateBar() {
         />
       </div>
     </>
+  );
+}
+
+// ──────────── compare bar ────────────
+// Thin strip rendered inside the chart card above the canvas while compare
+// mode is on. Conveys state, lets the user pick which series to compare,
+// and clears the selection. The % change itself renders directly on the
+// chart via CompareOverlay — so this bar stays minimal by design.
+
+function CompareBar({
+  points,
+  activeGroups,
+  viewMode,
+  effectiveSeries,
+  setCompareSeries,
+  onClear,
+}: {
+  points: { period: string; label: string; group: string | null }[];
+  activeGroups: string[];
+  viewMode: "aggregate" | "by_group";
+  effectiveSeries: string;
+  setCompareSeries: (s: string | null) => void;
+  onClear: () => void;
+}) {
+  // Sort chronologically so the bar reads "earlier → later" regardless of
+  // the order the user clicked them in. Matches the overlay's orientation.
+  const sortedPoints = [...points].sort((x, y) =>
+    x.period.localeCompare(y.period)
+  );
+  const a = sortedPoints[0] ?? null;
+  const b = sortedPoints[1] ?? null;
+
+  const statusText =
+    points.length === 0
+      ? "Click any point on the chart to begin."
+      : points.length === 1
+        ? "One point picked — click another to compare."
+        : null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 border-y border-primary/15 bg-primary/[0.03] px-6 py-2">
+      <div className="flex items-center gap-2">
+        <span className="relative flex h-2 w-2">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/50 opacity-60" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+        </span>
+        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">
+          Compare
+        </span>
+        <Badge variant="secondary" className="font-normal tabular-nums">
+          {points.length}/2
+        </Badge>
+      </div>
+
+      <div className="min-w-0 flex-1 text-xs text-muted-foreground tabular-nums">
+        {statusText ? (
+          statusText
+        ) : (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="font-medium text-foreground">{a?.label}</span>
+            <ArrowRight className="h-3 w-3 text-muted-foreground" />
+            <span className="font-medium text-foreground">{b?.label}</span>
+          </span>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2">
+        {viewMode === "by_group" && activeGroups.length > 0 && (
+          <Select
+            value={effectiveSeries}
+            onValueChange={(v) => setCompareSeries(v)}
+          >
+            <SelectTrigger className="h-7 w-[168px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="total">Total (all groups)</SelectItem>
+              {activeGroups.map((g) => (
+                <SelectItem key={g} value={g}>
+                  {g}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          onClick={onClear}
+          disabled={points.length === 0}
+        >
+          <X className="mr-1 h-3 w-3" />
+          Clear
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ──────────── compare overlay ────────────
+// SVG overlay rendered inside the chart. Draws a dashed line connecting the
+// two picked data points and a pill at the midpoint showing the percent
+// change. Direction is colored: green for up, rose for down, slate for flat.
+//
+// Positioning is computed from the plot area + axis domains rather than by
+// grabbing the internal scale, since the public hooks API only exposes the
+// domains. For categorical X we pick band-centering (for BarChart) or even
+// point-spacing (for LineChart/AreaChart) based on `scaleType`.
+
+function CompareOverlay({
+  a,
+  b,
+  yFormat,
+  isPercent,
+  scaleType,
+}: {
+  a: { label: string; value: number };
+  b: { label: string; value: number };
+  yFormat: (v: number) => string;
+  isPercent: boolean;
+  scaleType: "band" | "point";
+}) {
+  const plot = usePlotArea();
+  const xDomain = useXAxisDomain(0);
+  const yDomain = useYAxisDomain("left");
+  if (!plot || !xDomain || !yDomain) return null;
+
+  // Categorical X-axis domain — array of label strings.
+  const labels = xDomain as ReadonlyArray<string | number>;
+  const idxA = labels.indexOf(a.label);
+  const idxB = labels.indexOf(b.label);
+  if (idxA < 0 || idxB < 0) return null;
+  const n = labels.length;
+  if (n === 0) return null;
+
+  const plotW = plot.width;
+  const plotH = plot.height;
+  const plotLeft = plot.x;
+  const plotTop = plot.y;
+
+  // Band scales position points at band centers: (i + 0.5) * (W / n).
+  // Point scales position them at even divisions: i * (W / (n - 1)).
+  const xFor = (idx: number): number => {
+    if (scaleType === "band") {
+      return plotLeft + ((idx + 0.5) * plotW) / n;
+    }
+    if (n === 1) return plotLeft + plotW / 2;
+    return plotLeft + (idx * plotW) / (n - 1);
+  };
+
+  // Y-axis domain is a numeric tuple [min, max] for linear scales.
+  const [yMinRaw, yMaxRaw] = (yDomain as ReadonlyArray<number>) ?? [];
+  const yMin = typeof yMinRaw === "number" ? yMinRaw : 0;
+  const yMax = typeof yMaxRaw === "number" ? yMaxRaw : 1;
+  const ySpan = yMax - yMin || 1;
+  const yFor = (v: number): number =>
+    plotTop + plotH * (1 - (v - yMin) / ySpan);
+
+  const xA = xFor(idxA);
+  const xB = xFor(idxB);
+  const yA = yFor(a.value);
+  const yB = yFor(b.value);
+
+  const absDelta = b.value - a.value;
+  const relDelta =
+    a.value !== 0 ? (absDelta / Math.abs(a.value)) * 100 : null;
+  const EPS = 1e-6;
+  const dir =
+    absDelta > EPS ? "up" : absDelta < -EPS ? "down" : "flat";
+
+  const color =
+    dir === "up" ? "#10b981" : dir === "down" ? "#f43f5e" : "#64748b";
+  const tint =
+    dir === "up"
+      ? "rgba(16, 185, 129, 0.08)"
+      : dir === "down"
+        ? "rgba(244, 63, 94, 0.08)"
+        : "rgba(100, 116, 139, 0.08)";
+
+  const relText =
+    relDelta == null
+      ? "—"
+      : `${relDelta > 0 ? "+" : ""}${relDelta.toFixed(1)}%`;
+
+  const absText = isPercent
+    ? `${absDelta > 0 ? "+" : absDelta < 0 ? "−" : ""}${Math.abs(
+        absDelta
+      ).toFixed(1)} pts`
+    : `${absDelta > 0 ? "+" : absDelta < 0 ? "−" : ""}${yFormat(
+        Math.abs(absDelta)
+      )}`;
+
+  const arrow = dir === "up" ? "▲" : dir === "down" ? "▼" : "—";
+
+  // Midpoint for the badge. Nudge the pill slightly above the line so it
+  // doesn't overlap the connection on shallow deltas.
+  const midX = (xA + xB) / 2;
+  const midY = (yA + yB) / 2;
+  const badgeY = midY - 26;
+
+  // Rough width estimation so the <foreignObject> hosts the pill nicely
+  // centered. A few pixels of slack prevents text from clipping on edge cases.
+  const badgeWidth = 160;
+  const badgeHeight = 44;
+
+  return (
+    <g pointerEvents="none">
+      {/* connecting dashed line */}
+      <line
+        x1={xA}
+        y1={yA}
+        x2={xB}
+        y2={yB}
+        stroke={color}
+        strokeWidth={1.5}
+        strokeDasharray="4 5"
+        opacity={0.9}
+      />
+      {/* endpoint ring + dot, A */}
+      <circle cx={xA} cy={yA} r={7} fill={tint} />
+      <circle
+        cx={xA}
+        cy={yA}
+        r={5}
+        fill="white"
+        stroke={color}
+        strokeWidth={2}
+      />
+      <circle cx={xA} cy={yA} r={2.25} fill={color} />
+      {/* endpoint ring + dot, B */}
+      <circle cx={xB} cy={yB} r={7} fill={tint} />
+      <circle
+        cx={xB}
+        cy={yB}
+        r={5}
+        fill="white"
+        stroke={color}
+        strokeWidth={2}
+      />
+      <circle cx={xB} cy={yB} r={2.25} fill={color} />
+      {/* center pill with % change */}
+      <foreignObject
+        x={midX - badgeWidth / 2}
+        y={badgeY - badgeHeight / 2}
+        width={badgeWidth}
+        height={badgeHeight}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            width: "100%",
+            height: "100%",
+          }}
+        >
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "4px 10px 4px 8px",
+              borderRadius: "9999px",
+              background: "white",
+              border: `1.5px solid ${color}`,
+              boxShadow: "0 4px 10px rgba(15, 23, 42, 0.12)",
+              fontFeatureSettings: '"tnum" 1',
+              whiteSpace: "nowrap",
+              lineHeight: 1,
+            }}
+          >
+            <span
+              style={{
+                color,
+                fontSize: "11px",
+                fontWeight: 700,
+              }}
+            >
+              {arrow}
+            </span>
+            <span
+              style={{
+                color,
+                fontSize: "13px",
+                fontWeight: 700,
+                letterSpacing: "-0.01em",
+              }}
+            >
+              {relText}
+            </span>
+            <span
+              style={{
+                color: "#64748b",
+                fontSize: "10px",
+                fontWeight: 500,
+                marginLeft: "2px",
+              }}
+            >
+              {absText}
+            </span>
+          </div>
+        </div>
+      </foreignObject>
+    </g>
+  );
+}
+
+// ──────────── color swatch picker ────────────
+// Clickable swatch that opens an inline palette for the given group. Uses
+// stopPropagation on its Popover so the surrounding group-toggle button
+// doesn't also fire when the user interacts with the picker.
+
+function ColorSwatchPicker({
+  group,
+  color,
+  active,
+  onChange,
+  onReset,
+  hasOverride,
+}: {
+  group: string;
+  color: string;
+  active: boolean;
+  onChange: (hex: string) => void;
+  onReset: () => void;
+  hasOverride: boolean;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          onClick={(e) => e.stopPropagation()}
+          className="relative h-4 w-4 shrink-0 rounded-sm ring-1 ring-border transition hover:ring-2 hover:ring-primary/60"
+          style={{
+            backgroundColor: color,
+            opacity: active ? 1 : 0.35,
+          }}
+          aria-label={`Change color for ${group}`}
+          title="Click to change color"
+        />
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-auto p-3"
+        side="right"
+        align="start"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          {group}
+        </div>
+        <div className="grid grid-cols-6 gap-1.5">
+          {COLOR_PALETTE.map((c) => (
+            <button
+              key={c}
+              onClick={() => onChange(c)}
+              className="h-6 w-6 rounded-sm ring-1 ring-border transition hover:ring-2 hover:ring-primary"
+              style={{ backgroundColor: c }}
+              aria-label={c}
+              title={c}
+            />
+          ))}
+        </div>
+        <div className="mt-3 flex items-center gap-2 border-t pt-3">
+          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            Custom
+            <input
+              type="color"
+              value={color}
+              onChange={(e) => onChange(e.target.value)}
+              className="h-6 w-8 cursor-pointer rounded border p-0"
+            />
+          </label>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="ml-auto h-6 px-2 text-[11px]"
+            onClick={onReset}
+            disabled={!hasOverride}
+          >
+            Reset
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// ──────────── control layout primitives ────────────
+
+function ControlRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground w-[64px] shrink-0">
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+function SegmentedGroup({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="inline-flex items-center rounded-md border bg-muted/40 p-0.5">
+      {children}
+    </div>
+  );
+}
+
+function SegmentedButton({
+  active,
+  onClick,
+  title,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  title?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-pressed={active}
+      className={
+        "px-2.5 py-1 text-xs font-medium rounded-[5px] transition-colors " +
+        (active
+          ? "bg-background shadow-sm text-foreground"
+          : "text-muted-foreground hover:text-foreground")
+      }
+    >
+      {children}
+    </button>
   );
 }
 

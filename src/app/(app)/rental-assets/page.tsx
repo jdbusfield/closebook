@@ -48,6 +48,7 @@ import { toast } from "sonner";
 import { formatCurrency, formatIsoDateLocal, getCurrentPeriod } from "@/lib/utils/dates";
 import { useRentalAssetData } from "./use-rental-asset-data";
 import { TrendsTab } from "./trends-tab";
+import { VehicleLookup } from "./vehicle-lookup";
 
 const MONTH_NAMES = [
   "",
@@ -170,15 +171,88 @@ export default function RentalAssetsPage() {
     [computed.groups]
   );
 
+  // ────────── TTM by-group breakdown ──────────
+  // The "By Reporting Group" tab shows trailing-twelve-month totals, not
+  // the selected month's numbers. Fetched from its own endpoint so the
+  // hero tiles / Maintenance / Activity tabs stay on the monthly picker.
+  interface TtmGroup {
+    group: string;
+    fleetSize: number;
+    bopFleet: number;
+    additions: number;
+    dispositions: number;
+    rentalDays: number;
+    fleetDays: number;
+    utilDbr: number;
+    revenue: number;
+    maintenance: number;
+  }
+  type TtmTotals = Omit<TtmGroup, "group">;
+  interface TtmWindow {
+    startYear: number;
+    startMonth: number;
+    endYear: number;
+    endMonth: number;
+  }
+  const [ttmLoading, setTtmLoading] = useState(false);
+  const [ttmGroups, setTtmGroups] = useState<TtmGroup[]>([]);
+  const [ttmTotals, setTtmTotals] = useState<TtmTotals | null>(null);
+  const [ttmWindow, setTtmWindow] = useState<TtmWindow | null>(null);
+
+  useEffect(() => {
+    if (!organizationId) return;
+    const controller = new AbortController();
+    setTtmLoading(true);
+    const params = new URLSearchParams({
+      organization_id: organizationId,
+      period_year: String(period.year),
+      period_month: String(period.month),
+      include_service: String(includeService),
+    });
+    if (scopeEntityId !== "all") params.set("entity_id", scopeEntityId);
+    if (groupFilter && groupFilter.length > 0) {
+      params.set("reporting_groups", groupFilter.join(","));
+    }
+    fetch(`/api/rental-assets/trailing-12?${params.toString()}`, {
+      signal: controller.signal,
+    })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+        const j = (await r.json()) as {
+          groups: TtmGroup[];
+          totals: TtmTotals;
+          window: TtmWindow;
+        };
+        setTtmGroups(j.groups);
+        setTtmTotals(j.totals);
+        setTtmWindow(j.window);
+      })
+      .catch((e) => {
+        if (e.name !== "AbortError") {
+          // Fall back to empty state — the tab will render "No data" rather
+          // than the whole page erroring.
+          setTtmGroups([]);
+          setTtmTotals(null);
+          setTtmWindow(null);
+        }
+      })
+      .finally(() => setTtmLoading(false));
+    return () => controller.abort();
+  }, [
+    organizationId,
+    period.year,
+    period.month,
+    includeService,
+    scopeEntityId,
+    groupFilter,
+  ]);
+
   const syncStateByResource = useMemo(() => {
     const m = new Map<string, (typeof syncState)[number]>();
     for (const s of syncState) m.set(s.resource, s);
     return m;
   }, [syncState]);
 
-  const lastVehicleSync =
-    syncStateByResource.get("vehicles")?.last_incremental_sync_at ??
-    syncStateByResource.get("vehicles")?.last_full_sync_at;
   const lastMaintSync =
     syncStateByResource.get("service_entries")?.last_incremental_sync_at;
 
@@ -239,7 +313,6 @@ export default function RentalAssetsPage() {
   }
 
   const { totals } = computed;
-  const netFleetChange = totals.additions - totals.dispositions;
 
   return (
     <div className="space-y-6">
@@ -259,6 +332,8 @@ export default function RentalAssetsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <VehicleLookup organizationId={organizationId} />
+
           <PeriodPicker
             period={period}
             available={availablePeriods.length > 0 ? availablePeriods : [period]}
@@ -353,52 +428,39 @@ export default function RentalAssetsPage() {
           icon={<Car className="h-4 w-4" />}
           label="Fleet Size (EOP)"
           value={totals.fleetSize.toString()}
-          hint={`${totals.bopFleet} at start · ${netFleetChange >= 0 ? "+" : ""}${netFleetChange} MoM`}
           loading={loading}
         />
         <HeroTile
           icon={<TrendingUp className="h-4 w-4" />}
           label="Weighted DBR Utilization"
           value={fmtPct(totals.weightedDbrUtil)}
-          hint={`${totals.rentalDays.toFixed(0)} / ${totals.fleetDays.toFixed(0)} fleet days`}
           loading={loading}
         />
         <HeroTile
           icon={<DollarSign className="h-4 w-4" />}
           label="Total Rental Revenue"
           value={formatCurrency(totals.revenue)}
-          hint={`Financial util (annualized): ${fmtPct(totals.finUtilPct * 12, 1)} · ${formatCurrency(totals.financialCost)} cost base`}
           loading={loading}
         />
         <HeroTile
           icon={<Wrench className="h-4 w-4" />}
           label="Maintenance Spend"
           value={formatCurrency(totals.maintenance)}
-          hint={
-            lastMaintSync
-              ? `Last sync ${new Date(lastMaintSync).toLocaleDateString()}`
-              : "Not yet synced"
-          }
           loading={loading}
         />
         <HeroTile
           icon={<Link2Off className="h-4 w-4" />}
           label="Fleetio Coverage"
           value={`${totals.fleetLinked} / ${totals.fleetSize}`}
-          hint={
-            lastVehicleSync
-              ? `Last sync ${new Date(lastVehicleSync).toLocaleDateString()}`
-              : "Never synced"
-          }
           loading={loading}
         />
       </div>
 
       {/* ────────── Tabs ────────── */}
-      <Tabs defaultValue="by-group">
+      <Tabs defaultValue="trends">
         <TabsList>
-          <TabsTrigger value="by-group">By Reporting Group</TabsTrigger>
           <TabsTrigger value="trends">Trends</TabsTrigger>
+          <TabsTrigger value="by-group">By Reporting Group</TabsTrigger>
           <TabsTrigger value="activity">Fleet Activity</TabsTrigger>
           <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
           <TabsTrigger value="orphans">
@@ -419,8 +481,12 @@ export default function RentalAssetsPage() {
                 <div>
                   <CardTitle>Reporting Group Breakdown</CardTitle>
                   <CardDescription>
-                    Fleet size, utilization, revenue and maintenance by reporting group for{" "}
-                    {MONTH_NAMES[period.month]} {period.year}.
+                    Trailing 12 months
+                    {ttmWindow
+                      ? ` · ${MONTH_SHORT[ttmWindow.startMonth]} ${ttmWindow.startYear} → ${MONTH_SHORT[ttmWindow.endMonth]} ${ttmWindow.endYear}`
+                      : ""}
+                    . Fleet EOP reflects the end of the window; additions and
+                    disposals are net change vs 12 months prior.
                   </CardDescription>
                 </div>
                 {allGroups.length > 0 && (
@@ -464,8 +530,8 @@ export default function RentalAssetsPage() {
                   <TableRow>
                     <TableHead>Reporting Group</TableHead>
                     <TableHead className="text-right">Fleet EOP</TableHead>
-                    <TableHead className="text-right">Adds</TableHead>
-                    <TableHead className="text-right">Disposals</TableHead>
+                    <TableHead className="text-right">Adds (TTM)</TableHead>
+                    <TableHead className="text-right">Disposals (TTM)</TableHead>
                     <TableHead className="text-right">Rental Days</TableHead>
                     <TableHead className="text-right">Fleet Days</TableHead>
                     <TableHead className="text-right">DBR Util</TableHead>
@@ -474,29 +540,29 @@ export default function RentalAssetsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {loading && (
+                  {ttmLoading && ttmGroups.length === 0 && (
                     <TableRow>
                       <TableCell
                         colSpan={9}
                         className="py-8 text-center text-muted-foreground"
                       >
-                        Loading…
+                        Loading trailing 12 months…
                       </TableCell>
                     </TableRow>
                   )}
-                  {!loading && computed.groups.length === 0 && (
+                  {!ttmLoading && ttmGroups.length === 0 && (
                     <TableRow>
                       <TableCell
                         colSpan={9}
                         className="py-8 text-center text-muted-foreground"
                       >
-                        No KPI data for this period. Upload a DBR utilization
-                        spreadsheet with{" "}
+                        No KPI data in the trailing 12-month window. Upload a
+                        DBR utilization spreadsheet with{" "}
                         <code>node scripts/ingest-kpis.mjs &lt;file.xlsx&gt;</code>.
                       </TableCell>
                     </TableRow>
                   )}
-                  {computed.groups.map((g) => (
+                  {ttmGroups.map((g) => (
                     <TableRow key={g.group}>
                       <TableCell className="font-medium">{g.group}</TableCell>
                       <TableCell className="text-right">{g.fleetSize}</TableCell>
@@ -507,10 +573,10 @@ export default function RentalAssetsPage() {
                         {g.dispositions > 0 ? `-${g.dispositions}` : "—"}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {g.rentalDays.toFixed(0)}
+                        {g.rentalDays.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {g.fleetDays.toFixed(0)}
+                        {g.fleetDays.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {fmtPct(g.utilDbr)}
@@ -524,33 +590,33 @@ export default function RentalAssetsPage() {
                     </TableRow>
                   ))}
                 </TableBody>
-                {computed.groups.length > 0 && (
+                {ttmGroups.length > 0 && ttmTotals && (
                   <TableFooter>
                     <TableRow className="font-medium">
                       <TableCell>Total</TableCell>
                       <TableCell className="text-right">
-                        {totals.fleetSize}
+                        {ttmTotals.fleetSize}
                       </TableCell>
                       <TableCell className="text-right text-emerald-600">
-                        +{totals.additions}
+                        +{ttmTotals.additions}
                       </TableCell>
                       <TableCell className="text-right text-rose-600">
-                        -{totals.dispositions}
+                        -{ttmTotals.dispositions}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {totals.rentalDays.toFixed(0)}
+                        {ttmTotals.rentalDays.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {totals.fleetDays.toFixed(0)}
+                        {ttmTotals.fleetDays.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {fmtPct(totals.weightedDbrUtil)}
+                        {fmtPct(ttmTotals.utilDbr)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {formatCurrency(totals.revenue)}
+                        {formatCurrency(ttmTotals.revenue)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {formatCurrency(totals.maintenance)}
+                        {formatCurrency(ttmTotals.maintenance)}
                       </TableCell>
                     </TableRow>
                   </TableFooter>
@@ -561,7 +627,15 @@ export default function RentalAssetsPage() {
         </TabsContent>
 
         {/* ─── Trends ─── */}
-        <TabsContent value="trends">
+        {/* forceMount keeps the Trends tree alive across tab switches so
+            its fetched data + filter state persist — and so it can begin
+            fetching as soon as availablePeriods resolves, even if the user
+            is parked on another tab. */}
+        <TabsContent
+          value="trends"
+          forceMount
+          className="data-[state=inactive]:hidden"
+        >
           <TrendsTab
             organizationId={organizationId}
             includeService={includeService}
@@ -691,10 +765,20 @@ export default function RentalAssetsPage() {
                           {k.orphan_bridge_vin}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {k.rental_dbr_days?.toFixed(1) ?? "—"}
+                          {k.rental_dbr_days != null
+                            ? k.rental_dbr_days.toLocaleString("en-US", {
+                                minimumFractionDigits: 1,
+                                maximumFractionDigits: 1,
+                              })
+                            : "—"}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {k.fleet_days?.toFixed(1) ?? "—"}
+                          {k.fleet_days != null
+                            ? k.fleet_days.toLocaleString("en-US", {
+                                minimumFractionDigits: 1,
+                                maximumFractionDigits: 1,
+                              })
+                            : "—"}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
                           {formatCurrency(k.total_revenue ?? 0)}
@@ -837,28 +921,25 @@ function HeroTile({
   icon,
   label,
   value,
-  hint,
   loading,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
-  hint?: string;
   loading?: boolean;
 }) {
   return (
     <Card>
-      <CardContent className="pt-6">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>{label}</span>
-          {icon}
+      <CardContent className="py-5">
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground leading-tight">
+            {label}
+          </p>
+          <span className="text-muted-foreground shrink-0">{icon}</span>
         </div>
-        <div className="mt-2 text-2xl font-semibold tabular-nums">
+        <div className="mt-3 text-[28px] font-semibold tabular-nums tracking-tight leading-none">
           {loading ? "—" : value}
         </div>
-        {hint && (
-          <div className="mt-1 text-xs text-muted-foreground">{hint}</div>
-        )}
       </CardContent>
     </Card>
   );
