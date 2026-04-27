@@ -70,6 +70,20 @@ export async function GET(request: NextRequest) {
     | "quarterly"
     | "yearly";
 
+  // Optional class filter — comma-separated list of vehicle_class codes.
+  // When provided, restricts both KPI rows and maintenance rows to assets
+  // whose vehicle_class is in the set. Case-insensitive match on the class
+  // code, matching how groupFromClass normalizes keys below.
+  const classesParam = sp.get("classes");
+  const classFilter = classesParam
+    ? new Set(
+        classesParam
+          .split(",")
+          .map((c) => c.trim().toUpperCase())
+          .filter(Boolean)
+      )
+    : null;
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = createAdminClient() as any;
 
@@ -278,6 +292,14 @@ export async function GET(request: NextRequest) {
     if (k.grain === "equipment_pool") continue;
     // For asset-grain rows linked to a fixed_asset, enforce category filter
     if (k.fixed_asset_id && !allowedAssetIds.has(k.fixed_asset_id)) continue;
+    // Class filter — skip rows whose linked asset isn't in the selected
+    // class set. Orphans and unmatched rows are excluded when a class
+    // filter is active since they have no class to compare against.
+    if (classFilter) {
+      if (!k.fixed_asset_id) continue;
+      const cls = classByAssetId.get(k.fixed_asset_id);
+      if (!cls || !classFilter.has(String(cls).trim().toUpperCase())) continue;
+    }
     // Prefer the stored reporting_group (filled at ingest). Fallback to
     // deriving from the linked asset's vehicle_class.
     let group = k.reporting_group;
@@ -339,6 +361,13 @@ export async function GET(request: NextRequest) {
       continue;
     if (endYear && (y > endYear || (y === endYear && mo > (endMonth ?? 12))))
       continue;
+    // Apply the same class filter used above on KPIs so maintenance
+    // spend in the chart matches the filtered KPI scope.
+    if (classFilter) {
+      if (!m.fixed_asset_id) continue;
+      const cls = classByAssetId.get(m.fixed_asset_id);
+      if (!cls || !classFilter.has(String(cls).trim().toUpperCase())) continue;
+    }
     const p = ensurePeriod(y, mo);
     let group = "Unclassified";
     if (m.fixed_asset_id) {
@@ -371,9 +400,11 @@ export async function GET(request: NextRequest) {
           finUtilPct: number;
           avgDailyRate: number;
           vehicleCount: number;
+          revenuePerActiveAsset: number;
         }
       > = {};
       for (const [g, b] of p.byGroup) {
+        const vc = b.vehicleKeys.size;
         byGroup[g] = {
           revenue: round2(b.revenue),
           rentalDays: round2(b.rentalDays),
@@ -390,9 +421,11 @@ export async function GET(request: NextRequest) {
             b.actualRentalDays > 0
               ? round2(b.revenue / b.actualRentalDays)
               : 0,
-          vehicleCount: b.vehicleKeys.size,
+          vehicleCount: vc,
+          revenuePerActiveAsset: vc > 0 ? round2(b.revenue / vc) : 0,
         };
       }
+      const totalVc = total.vehicleKeys.size;
       return {
         period: p.key,
         label: p.label,
@@ -412,7 +445,9 @@ export async function GET(request: NextRequest) {
             total.actualRentalDays > 0
               ? round2(total.revenue / total.actualRentalDays)
               : 0,
-          vehicleCount: total.vehicleKeys.size,
+          vehicleCount: totalVc,
+          revenuePerActiveAsset:
+            totalVc > 0 ? round2(total.revenue / totalVc) : 0,
         },
         byGroup,
       };

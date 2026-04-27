@@ -51,6 +51,18 @@ export async function GET(request: NextRequest) {
     | "master_type";
   const includeService = sp.get("include_service") === "true";
   const entityId = sp.get("entity_id");
+  // Optional class filter — mirrors the one on /api/rental-assets/trends
+  // so drilling into a class-filtered chart shows only that class, not
+  // every asset in the reporting group.
+  const classesParam = sp.get("classes");
+  const classFilter = classesParam
+    ? new Set(
+        classesParam
+          .split(",")
+          .map((c) => c.trim().toUpperCase())
+          .filter(Boolean)
+      )
+    : null;
 
   // Parse period into month range
   const months: { year: number; month: number }[] = [];
@@ -202,6 +214,17 @@ export async function GET(request: NextRequest) {
       if (entityId && asset.entity_id !== entityId) continue;
     } else {
       if (entityId) continue; // orphans have no entity
+    }
+    // Class filter — when active, skip rows whose asset's class isn't in
+    // the set. Orphans are excluded since they have no class to compare.
+    if (classFilter) {
+      if (!asset) continue;
+      if (
+        !asset.vehicle_class ||
+        !classFilter.has(String(asset.vehicle_class).trim().toUpperCase())
+      ) {
+        continue;
+      }
     }
     if (!reportingGroup && asset) reportingGroup = "Unclassified";
     const master = masterTypeOf(reportingGroup);

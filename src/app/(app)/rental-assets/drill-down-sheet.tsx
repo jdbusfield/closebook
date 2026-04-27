@@ -73,6 +73,8 @@ export interface DrillParams {
   includeService: boolean;
   entityId: string | null;
   entityName: string | null;
+  /** Optional class-code filter forwarded from the Trends tab. */
+  classes?: string[] | null;
 }
 
 function fmtPct(n: number, digits = 1) {
@@ -124,6 +126,9 @@ export function DrillDownSheet({
     });
     if (params.group) q.set("group", params.group);
     if (params.entityId) q.set("entity_id", params.entityId);
+    if (params.classes && params.classes.length > 0) {
+      q.set("classes", params.classes.join(","));
+    }
     const pending = fetch(
       `/api/rental-assets/drill-down?${q.toString()}`,
       { signal: controller.signal }
@@ -200,10 +205,13 @@ export function DrillDownSheet({
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
       <SheetContent
         side="right"
-        className="flex w-full flex-col gap-0 p-0 sm:max-w-4xl"
+        // Widen on large screens so the 10-column table fits without the
+        // operator scrolling sideways. Clamps to 95vw so laptops still see
+        // a comfortable gutter next to the main page content.
+        className="flex w-full flex-col gap-0 p-0 sm:!max-w-[min(1440px,95vw)]"
       >
-        <SheetHeader className="border-b px-6 py-4">
-          <SheetTitle>
+        <SheetHeader className="border-b px-8 py-5">
+          <SheetTitle className="text-lg">
             {params?.group ?? "All Groups"}
             <span className="ml-2 text-sm font-normal text-muted-foreground">
               · {params?.periodLabel}
@@ -217,16 +225,16 @@ export function DrillDownSheet({
 
         {/* Summary tiles */}
         {data && (
-          <div className="grid grid-cols-3 gap-3 border-b bg-muted/30 px-6 py-3">
+          <div className="grid grid-cols-3 gap-4 border-b bg-muted/30 px-8 py-4">
             <SummaryBox
               label="Assets"
               value={data.summary.asset_count.toString()}
-              hint={`${data.summary.fleet_days.toFixed(0)} fleet days`}
+              hint={`${data.summary.fleet_days.toLocaleString("en-US", { maximumFractionDigits: 0 })} fleet days`}
             />
             <SummaryBox
               label="Revenue"
               value={formatCurrency(data.summary.revenue)}
-              hint={`${data.summary.rental_days.toFixed(0)} rental days · ADR ${data.summary.avg_daily_rate > 0 ? formatCurrency(data.summary.avg_daily_rate) : "—"}`}
+              hint={`${data.summary.rental_days.toLocaleString("en-US", { maximumFractionDigits: 0 })} rental days · ADR ${data.summary.avg_daily_rate > 0 ? formatCurrency(data.summary.avg_daily_rate) : "—"}`}
             />
             <SummaryBox
               label="Utilization"
@@ -239,7 +247,7 @@ export function DrillDownSheet({
           </div>
         )}
 
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-8 pb-6 pt-2">
           {loading && (
             <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
               Loading rows…
@@ -257,46 +265,50 @@ export function DrillDownSheet({
             </div>
           )}
           {data && sortedRows.length > 0 && (
-            <Table>
-              <TableHeader className="sticky top-0 bg-background shadow-[inset_0_-1px_0_hsl(var(--border))]">
+            <Table className="w-full table-auto">
+              <TableHeader className="sticky top-0 z-10 bg-background shadow-[inset_0_-1px_0_hsl(var(--border))]">
                 <TableRow>
                   <TableHead
-                    className="cursor-pointer select-none"
+                    className="cursor-pointer select-none whitespace-nowrap"
                     onClick={() => toggleSort("reporting_group")}
                   >
                     Group{sortIndicator("reporting_group")}
                   </TableHead>
-                  <TableHead>Veh # / Tag</TableHead>
+                  <TableHead className="whitespace-nowrap">
+                    Veh # / Tag
+                  </TableHead>
                   <TableHead>Vehicle</TableHead>
                   <TableHead>Entity</TableHead>
                   <TableHead
-                    className="cursor-pointer select-none text-right"
+                    className="cursor-pointer select-none whitespace-nowrap text-right"
                     onClick={() => toggleSort("fleet_days")}
                   >
                     Fleet Days{sortIndicator("fleet_days")}
                   </TableHead>
-                  <TableHead className="text-right">Rental Days</TableHead>
+                  <TableHead className="whitespace-nowrap text-right">
+                    Rental Days
+                  </TableHead>
                   <TableHead
-                    className="cursor-pointer select-none text-right"
+                    className="cursor-pointer select-none whitespace-nowrap text-right"
                     onClick={() => toggleSort("utilization_pct")}
                   >
                     Util %{sortIndicator("utilization_pct")}
                   </TableHead>
                   <TableHead
-                    className="cursor-pointer select-none text-right"
+                    className="cursor-pointer select-none whitespace-nowrap text-right"
                     onClick={() => toggleSort("revenue")}
                   >
                     Revenue{sortIndicator("revenue")}
                   </TableHead>
                   <TableHead
-                    className="cursor-pointer select-none text-right"
+                    className="cursor-pointer select-none whitespace-nowrap text-right"
                     onClick={() => toggleSort("avg_daily_rate")}
                     title="Revenue ÷ actual rental days"
                   >
                     ADR{sortIndicator("avg_daily_rate")}
                   </TableHead>
                   <TableHead
-                    className="cursor-pointer select-none text-right"
+                    className="cursor-pointer select-none whitespace-nowrap text-right"
                     onClick={() => toggleSort("financial_util_pct")}
                     title={
                       finFactor > 1
@@ -304,14 +316,15 @@ export function DrillDownSheet({
                         : undefined
                     }
                   >
-                    Fin Util %{finSuffix.replace(" ", "")}{sortIndicator("financial_util_pct")}
+                    Fin Util %{finSuffix.replace(" ", "")}
+                    {sortIndicator("financial_util_pct")}
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {sortedRows.map((r) => (
                   <TableRow key={r.key}>
-                    <TableCell className="text-xs">
+                    <TableCell className="whitespace-nowrap text-xs">
                       <Badge variant="outline">{r.reporting_group}</Badge>
                       {r.kind === "orphan" && (
                         <Badge
@@ -322,41 +335,50 @@ export function DrillDownSheet({
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell className="text-xs font-mono">
+                    <TableCell className="whitespace-nowrap font-mono text-xs">
                       {r.veh_number ?? "—"}
                     </TableCell>
                     <TableCell className="text-xs">
-                      {r.year ? `${r.year} ` : ""}
-                      {r.make ?? ""} {r.model ?? ""}
+                      <span className="whitespace-nowrap">
+                        {r.year ? `${r.year} ` : ""}
+                        {r.make ?? ""} {r.model ?? ""}
+                      </span>
                       {r.vin && (
-                        <span className="ml-1 text-muted-foreground">
+                        <span className="ml-1 whitespace-nowrap text-muted-foreground">
                           · VIN …{r.vin.slice(-6)}
                         </span>
                       )}
                     </TableCell>
                     <TableCell className="text-xs">
-                      {r.entity_name ?? <span className="text-muted-foreground">—</span>}
+                      {r.entity_name ?? (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {r.fleet_days.toFixed(0)}
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">
+                      {r.fleet_days.toLocaleString("en-US", {
+                        maximumFractionDigits: 0,
+                      })}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {r.rental_days.toFixed(1)}
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">
+                      {r.rental_days.toLocaleString("en-US", {
+                        minimumFractionDigits: 1,
+                        maximumFractionDigits: 1,
+                      })}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">
                       {fmtPct(r.utilization_pct)}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">
                       {formatCurrency(r.revenue)}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">
                       {r.avg_daily_rate > 0 ? (
                         formatCurrency(r.avg_daily_rate)
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">
                       {r.acquisition_cost > 0 ? (
                         fmtPct(r.financial_util_pct * finFactor, 2)
                       ) : (
