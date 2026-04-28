@@ -133,6 +133,11 @@ export interface FinancialModelConfig {
   entityId?: string;
   organizationId?: string;
   reportingEntityId?: string;
+  /**
+   * Master GL chart to roll up by. Omit to use the organization's
+   * default (management) chart.
+   */
+  chartId?: string;
   startYear: number;
   startMonth: number;
   endYear: number;

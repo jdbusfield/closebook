@@ -84,6 +84,7 @@ export function useDrillDown(config: FinancialModelConfig): UseDrillDownReturn {
         params.set("organizationId", config.organizationId);
       if (config.reportingEntityId)
         params.set("reportingEntityId", config.reportingEntityId);
+      if (config.chartId) params.set("chartId", config.chartId);
 
       try {
         const response = await fetch(

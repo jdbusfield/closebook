@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getPeriodsInRange, type PeriodBucket } from "@/lib/utils/dates";
 import { fetchAllPaginated } from "@/lib/utils/paginated-fetch";
+import { resolveChartIdOrDefault } from "@/lib/master-charts/resolve";
 import {
   INCOME_STATEMENT_SECTIONS,
   INCOME_STATEMENT_COMPUTED,
@@ -46,12 +47,14 @@ async function resolveSectionToMasterAccountIds(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   admin: any,
   organizationId: string,
+  chartId: string,
   sectionConfig: StatementSectionConfig
 ): Promise<string[]> {
   const { data: accounts } = await admin
     .from("master_accounts")
     .select("id, classification, account_type")
     .eq("organization_id", organizationId)
+    .eq("chart_id", chartId)
     .eq("is_active", true)
     .eq("classification", sectionConfig.classification)
     .in("account_type", sectionConfig.accountTypes);
@@ -94,6 +97,7 @@ export async function GET(request: Request) {
   const columnType = (searchParams.get("columnType") ?? "actual") as "actual" | "budget";
   const includeProForma = searchParams.get("includeProForma") === "true";
   const includeAllocations = searchParams.get("includeAllocations") === "true";
+  const chartIdParam = searchParams.get("chartId");
 
   if (!lineId || !statementId || !periodKey) {
     return NextResponse.json(
@@ -132,6 +136,16 @@ export async function GET(request: Request) {
     return NextResponse.json(
       { error: "Could not resolve organization" },
       { status: 400 }
+    );
+  }
+
+  let chartId: string;
+  try {
+    chartId = await resolveChartIdOrDefault(admin, resolvedOrgId, chartIdParam);
+  } catch (e) {
+    return NextResponse.json(
+      { error: (e as Error).message },
+      { status: 400 },
     );
   }
 
@@ -196,7 +210,7 @@ export async function GET(request: Request) {
     for (const { sectionId, sign } of computedConfig.formula) {
       const sectionConfig = sectionConfigs.find((s) => s.id === sectionId);
       if (sectionConfig) {
-        const maIds = await resolveSectionToMasterAccountIds(admin, resolvedOrgId, sectionConfig);
+        const maIds = await resolveSectionToMasterAccountIds(admin, resolvedOrgId, chartId, sectionConfig);
         drillTargets.push({
           masterAccountIds: maIds,
           sign,
@@ -210,7 +224,7 @@ export async function GET(request: Request) {
     const sectionId = lineId.replace(/-total$/, "");
     const sectionConfig = sectionConfigs.find((s) => s.id === sectionId);
     if (sectionConfig) {
-      const maIds = await resolveSectionToMasterAccountIds(admin, resolvedOrgId, sectionConfig);
+      const maIds = await resolveSectionToMasterAccountIds(admin, resolvedOrgId, chartId, sectionConfig);
       drillTargets.push({
         masterAccountIds: maIds,
         sign: 1,

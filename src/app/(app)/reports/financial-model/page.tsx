@@ -53,6 +53,13 @@ interface ReportingEntityOption {
   code: string;
 }
 
+interface MasterChart {
+  id: string;
+  name: string;
+  kind: "management" | "accountant";
+  is_default: boolean;
+}
+
 export default function FinancialModelPage() {
   const supabase = createClient();
   const currentPeriod = getCurrentPeriod();
@@ -68,6 +75,8 @@ export default function FinancialModelPage() {
   const [selectedReportingEntityId, setSelectedReportingEntityId] = useState<
     string | null
   >(null);
+  const [charts, setCharts] = useState<MasterChart[]>([]);
+  const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
 
   // Config state
   const [startYear, setStartYear] = useState(currentPeriod.year);
@@ -175,6 +184,32 @@ export default function FinancialModelPage() {
     loadOrg();
   }, [loadOrg]);
 
+  // Load Master GL charts and default to the management chart
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/master-charts")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => {
+        if (cancelled || !body?.charts) return;
+        setCharts(body.charts);
+        if (!selectedChartId) {
+          const mgmt = body.charts.find(
+            (c: MasterChart) => c.kind === "management",
+          );
+          if (mgmt) setSelectedChartId(mgmt.id);
+        }
+      })
+      .catch(() => {
+        // non-fatal — falls back to API default (management)
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedChartId]);
+
+  const activeChart = charts.find((c) => c.id === selectedChartId);
+  const isAccountantView = activeChart?.kind === "accountant";
+
   const config: FinancialModelConfig = {
     scope,
     entityId: scope === "entity" ? (selectedEntityId ?? undefined) : undefined,
@@ -184,15 +219,19 @@ export default function FinancialModelPage() {
       scope === "reporting_entity"
         ? (selectedReportingEntityId ?? undefined)
         : undefined,
+    chartId: selectedChartId ?? undefined,
     startYear,
     startMonth,
     endYear,
     endMonth,
     granularity,
-    includeBudget,
     includeYoY,
-    includeProForma,
-    includeAllocations,
+    // Pro forma, budgets, and allocations are management-only by design —
+    // auto-disable on the accountant view so the toggles don't silently
+    // produce wrong data.
+    includeBudget: isAccountantView ? false : includeBudget,
+    includeProForma: isAccountantView ? false : includeProForma,
+    includeAllocations: isAccountantView ? false : includeAllocations,
     includeTotal,
   };
 
@@ -243,6 +282,9 @@ export default function FinancialModelPage() {
     }
     if (scope === "reporting_entity" && selectedReportingEntityId) {
       exportParams.set("reportingEntityId", selectedReportingEntityId);
+    }
+    if (selectedChartId) {
+      exportParams.set("chartId", selectedChartId);
     }
     return `/api/financial-statements/export?${exportParams.toString()}`;
   }
@@ -413,7 +455,43 @@ export default function FinancialModelPage() {
             </Select>
           </div>
         )}
+
+        {charts.length > 1 && (
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">
+              Master GL Chart
+            </Label>
+            <Select
+              value={selectedChartId ?? undefined}
+              onValueChange={(v) => setSelectedChartId(v)}
+            >
+              <SelectTrigger className="w-[200px] h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {charts.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.kind === "management"
+                      ? "Company-prepared"
+                      : "Accountant-prepared"}
+                    {c.name && c.name !== "Management" && c.name !== "Accountant"
+                      ? ` (${c.name})`
+                      : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
+
+      {isAccountantView && (
+        <div className="stmt-no-print rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Showing the accountant-prepared view. Pro forma adjustments,
+          budgets, and allocations are management-only and have been
+          temporarily disabled.
+        </div>
+      )}
 
       {/* Config toolbar */}
       <ConfigToolbar
@@ -823,13 +901,14 @@ export default function FinancialModelPage() {
                   ? selectedReportingEntityId
                   : undefined
               }
+              chartId={selectedChartId}
               startYear={startYear}
               startMonth={startMonth}
               endYear={endYear}
               endMonth={endMonth}
               granularity={granularity}
-              includeProForma={includeProForma}
-              includeAllocations={includeAllocations}
+              includeProForma={config.includeProForma}
+              includeAllocations={config.includeAllocations}
               ebitdaOnly={ebitdaOnly}
             />
           </TabsContent>
@@ -839,13 +918,14 @@ export default function FinancialModelPage() {
             <TabsContent value="re-breakdown">
               <ReportingEntityBreakdownTab
                 organizationId={organizationId}
+                chartId={selectedChartId}
                 startYear={startYear}
                 startMonth={startMonth}
                 endYear={endYear}
                 endMonth={endMonth}
                 granularity={granularity}
-                includeProForma={includeProForma}
-                includeAllocations={includeAllocations}
+                includeProForma={config.includeProForma}
+                includeAllocations={config.includeAllocations}
                 ebitdaOnly={ebitdaOnly}
               />
             </TabsContent>

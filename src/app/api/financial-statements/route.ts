@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getPeriodsInRange, type PeriodBucket } from "@/lib/utils/dates";
 import { fetchAllMappings, fetchAllPaginated } from "@/lib/utils/paginated-fetch";
+import { resolveChartIdOrDefault } from "@/lib/master-charts/resolve";
 import {
   INCOME_STATEMENT_SECTIONS,
   INCOME_STATEMENT_COMPUTED,
@@ -2162,6 +2163,7 @@ interface ConsolidatedStatementsParams {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   admin: any;
   organizationId: string;
+  chartId: string;
   entityIds: string[];
   buckets: PeriodBucket[];
   allMonths: Array<{ year: number; month: number }>;
@@ -2182,6 +2184,7 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
   const {
     admin,
     organizationId,
+    chartId,
     entityIds,
     buckets,
     allMonths,
@@ -2198,12 +2201,14 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     fiscalYearStartMonth,
   } = params;
 
-  // Get master accounts (paginated to avoid PostgREST row-limit truncation)
+  // Get master accounts in the active chart (paginated to avoid PostgREST row-limit truncation)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const masterAccounts = await fetchAllPaginated<any>((offset, limit) =>
     admin
       .from("master_accounts")
       .select("*")
       .eq("organization_id", organizationId)
+      .eq("chart_id", chartId)
       .eq("is_active", true)
       .order("display_order")
       .order("account_number")
@@ -2901,6 +2906,7 @@ export async function GET(request: Request) {
   const includeProForma = searchParams.get("includeProForma") === "true";
   const includeAllocations = searchParams.get("includeAllocations") === "true";
   const includeTotal = searchParams.get("includeTotal") === "true";
+  const chartIdParam = searchParams.get("chartId");
 
   if (scope === "entity" && !entityId) {
     return NextResponse.json(
@@ -2974,12 +2980,28 @@ export async function GET(request: Request) {
       .eq("id", entity.organization_id)
       .single();
 
-    // Get master accounts for the organization (paginated to avoid row-limit truncation)
+    let chartId: string;
+    try {
+      chartId = await resolveChartIdOrDefault(
+        admin,
+        entity.organization_id,
+        chartIdParam,
+      );
+    } catch (e) {
+      return NextResponse.json(
+        { error: (e as Error).message },
+        { status: 400 },
+      );
+    }
+
+    // Get master accounts in the active chart (paginated to avoid row-limit truncation)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const masterAccounts = await fetchAllPaginated<any>((offset, limit) =>
       admin
         .from("master_accounts")
         .select("*")
         .eq("organization_id", entity.organization_id)
+        .eq("chart_id", chartId)
         .eq("is_active", true)
         .order("display_order")
         .order("account_number")
@@ -3412,9 +3434,24 @@ export async function GET(request: Request) {
     const orgFyEnd = (orgEntities ?? [])[0]?.fiscal_year_end_month ?? 12;
     const orgFiscalYearStartMonth = (orgFyEnd % 12) + 1;
 
+    let orgChartId: string;
+    try {
+      orgChartId = await resolveChartIdOrDefault(
+        admin,
+        organizationId,
+        chartIdParam,
+      );
+    } catch (e) {
+      return NextResponse.json(
+        { error: (e as Error).message },
+        { status: 400 },
+      );
+    }
+
     const result = await buildConsolidatedStatements({
       admin,
       organizationId,
+      chartId: orgChartId,
       entityIds: orgEntityIds,
       buckets,
       allMonths,
@@ -3518,9 +3555,24 @@ export async function GET(request: Request) {
     const reFyEnd = (reMemberEntities ?? [])[0]?.fiscal_year_end_month ?? 12;
     const reFiscalYearStartMonth = (reFyEnd % 12) + 1;
 
+    let reChartId: string;
+    try {
+      reChartId = await resolveChartIdOrDefault(
+        admin,
+        reportingEntity.organization_id,
+        chartIdParam,
+      );
+    } catch (e) {
+      return NextResponse.json(
+        { error: (e as Error).message },
+        { status: 400 },
+      );
+    }
+
     const result = await buildConsolidatedStatements({
       admin,
       organizationId: reportingEntity.organization_id,
+      chartId: reChartId,
       entityIds: memberEntityIds,
       buckets,
       allMonths,
