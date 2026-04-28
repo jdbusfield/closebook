@@ -5,6 +5,7 @@ import type { EntityBreakdownResponse } from "./types";
 
 interface UseREBreakdownConfig {
   organizationId?: string;
+  chartId?: string;
   startYear: number;
   startMonth: number;
   endYear: number;
@@ -47,6 +48,8 @@ export function useReportingEntityBreakdown(
       includeAllocations: String(config.includeAllocations ?? false),
     });
 
+    if (config.chartId) params.set("chartId", config.chartId);
+
     setLoading(true);
     setError(null);
 
@@ -84,6 +87,7 @@ export function useReportingEntityBreakdown(
   }, [
     enabled,
     config.organizationId,
+    config.chartId,
     config.startYear,
     config.startMonth,
     config.endYear,

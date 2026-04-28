@@ -74,11 +74,27 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get Master GL accounts for matching (P&L only)
+    // Budgets are management-only, so match against the management chart only.
+    const { data: mgmtChart } = await admin
+      .from("master_charts")
+      .select("id")
+      .eq("organization_id", entity.organization_id)
+      .eq("kind", "management")
+      .single();
+
+    if (!mgmtChart) {
+      return NextResponse.json(
+        { error: "Management chart not found for this organization" },
+        { status: 500 },
+      );
+    }
+
+    // Get Master GL accounts for matching (P&L only) in the management chart
     const { data: masterAccounts } = await admin
       .from("master_accounts")
       .select("id, name, account_number, classification, account_type")
       .eq("organization_id", entity.organization_id)
+      .eq("chart_id", mgmtChart.id)
       .eq("is_active", true)
       .in("classification", ["Revenue", "Expense"])
       .order("account_number");

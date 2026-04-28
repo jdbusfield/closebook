@@ -48,6 +48,7 @@ function useFetchStatements(
       params.set("organizationId", config.organizationId);
     if (config.reportingEntityId)
       params.set("reportingEntityId", config.reportingEntityId);
+    if (config.chartId) params.set("chartId", config.chartId);
 
     setLoading(true);
     setError(null);
@@ -83,7 +84,7 @@ function useFetchStatements(
     return () => {
       controller.abort();
     };
-  }, [enabled, trigger, config.scope, config.entityId, config.organizationId, config.reportingEntityId, config.startYear, config.startMonth, config.endYear, config.endMonth, config.granularity, config.includeBudget, config.includeYoY, config.includeProForma, config.includeAllocations, config.includeTotal]);
+  }, [enabled, trigger, config.scope, config.entityId, config.organizationId, config.reportingEntityId, config.chartId, config.startYear, config.startMonth, config.endYear, config.endMonth, config.granularity, config.includeBudget, config.includeYoY, config.includeProForma, config.includeAllocations, config.includeTotal]);
 
   return { data, loading, error };
 }

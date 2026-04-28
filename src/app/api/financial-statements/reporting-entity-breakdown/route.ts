@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getPeriodsInRange } from "@/lib/utils/dates";
 import { fetchAllMappings, fetchAllPaginated } from "@/lib/utils/paginated-fetch";
+import { resolveChartIdOrDefault } from "@/lib/master-charts/resolve";
 import {
   INCOME_STATEMENT_SECTIONS,
   INCOME_STATEMENT_COMPUTED,
@@ -501,6 +502,7 @@ export async function GET(request: Request) {
     (searchParams.get("granularity") as Granularity) ?? "monthly";
   const includeProForma = searchParams.get("includeProForma") === "true";
   const includeAllocations = searchParams.get("includeAllocations") === "true";
+  const chartIdParam = searchParams.get("chartId");
 
   if (!organizationId) {
     return NextResponse.json(
@@ -636,11 +638,22 @@ export async function GET(request: Request) {
     });
   }
 
-  // Get master accounts
+  let chartId: string;
+  try {
+    chartId = await resolveChartIdOrDefault(admin, organizationId, chartIdParam);
+  } catch (e) {
+    return NextResponse.json(
+      { error: (e as Error).message },
+      { status: 400 },
+    );
+  }
+
+  // Get master accounts in the active chart
   const { data: masterAccounts } = await admin
     .from("master_accounts")
     .select("*")
     .eq("organization_id", organizationId)
+    .eq("chart_id", chartId)
     .eq("is_active", true)
     .order("display_order")
     .order("account_number");

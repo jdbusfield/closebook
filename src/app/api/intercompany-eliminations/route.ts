@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchAllMappings } from "@/lib/utils/paginated-fetch";
+import { resolveChartIdOrDefault } from "@/lib/master-charts/resolve";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -105,6 +106,7 @@ export async function GET(request: Request) {
   const organizationId = searchParams.get("organizationId");
   const endYear = parseInt(searchParams.get("endYear") ?? "0");
   const endMonth = parseInt(searchParams.get("endMonth") ?? "0");
+  const chartIdParam = searchParams.get("chartId");
 
   if (!organizationId) {
     return NextResponse.json(
@@ -174,12 +176,23 @@ export async function GET(request: Request) {
     return NextResponse.json(emptyResponse);
   }
 
-  // Fetch intercompany master accounts by name pattern
+  let chartId: string;
+  try {
+    chartId = await resolveChartIdOrDefault(admin, organizationId, chartIdParam);
+  } catch (e) {
+    return NextResponse.json(
+      { error: (e as Error).message },
+      { status: 400 },
+    );
+  }
+
+  // Fetch intercompany master accounts by name pattern, scoped to active chart
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: icMasterAccounts } = await (admin as any)
     .from("master_accounts")
     .select("id, account_number, name, classification")
     .eq("organization_id", organizationId)
+    .eq("chart_id", chartId)
     .eq("is_active", true)
     .or("name.ilike.Due from%,name.ilike.Due to%")
     .order("account_number");
