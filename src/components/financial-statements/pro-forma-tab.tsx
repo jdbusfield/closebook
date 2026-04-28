@@ -280,10 +280,25 @@ export function ProFormaTab({
   const loadMasterAccounts = useCallback(async () => {
     if (!organizationId) return;
 
+    // Pro forma is a management-prepared adjustment, so the dropdown is
+    // scoped to the management chart only.
+    const { data: mgmtChart } = await supabase
+      .from("master_charts")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("kind", "management")
+      .single();
+
+    if (!mgmtChart) {
+      setMasterAccounts([]);
+      return;
+    }
+
     const { data } = await supabase
       .from("master_accounts")
       .select("id, account_number, name, classification, account_type")
       .eq("organization_id", organizationId)
+      .eq("chart_id", mgmtChart.id)
       .eq("is_active", true)
       .order("display_order")
       .order("account_number");

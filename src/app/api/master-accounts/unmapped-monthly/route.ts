@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchAllMappings, fetchAllAccounts, fetchAllPaginated } from "@/lib/utils/paginated-fetch";
+import { resolveChartIdOrDefault } from "@/lib/master-charts/resolve";
 
 export async function GET(request: Request) {
   const supabase = await createClient();
@@ -16,6 +17,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const organizationId = searchParams.get("organizationId");
   const year = searchParams.get("year");
+  const chartIdParam = searchParams.get("chartId");
 
   if (!organizationId || !year) {
     return NextResponse.json(
@@ -38,6 +40,16 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
+  let chartId: string;
+  try {
+    chartId = await resolveChartIdOrDefault(supabase, organizationId, chartIdParam);
+  } catch (e) {
+    return NextResponse.json(
+      { error: (e as Error).message },
+      { status: 400 },
+    );
+  }
+
   const adminClient = createAdminClient();
 
   // Get all entities for this organization
@@ -57,12 +69,16 @@ export async function GET(request: Request) {
   const entityIds = entities.map((e) => e.id);
   const entityMap = new Map(entities.map((e) => [e.id, e]));
 
-  // Get all master accounts for the org to find mappings
+  // Get all master accounts in the selected chart to find mappings.
+  // Filtering by chart means an account mapped only in another chart is
+  // still "unmapped" from the perspective of the chart we're looking at.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const masterAccounts = await fetchAllPaginated<any>((offset, limit) =>
     adminClient
       .from("master_accounts")
       .select("id")
       .eq("organization_id", organizationId)
+      .eq("chart_id", chartId)
       .eq("is_active", true)
       .range(offset, offset + limit - 1)
   );

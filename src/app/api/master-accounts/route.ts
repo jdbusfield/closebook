@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAllPaginated } from "@/lib/utils/paginated-fetch";
+import { resolveChartIdOrDefault } from "@/lib/master-charts/resolve";
 
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -12,7 +13,6 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Get user's organization
   const { data: membership } = await supabase
     .from("organization_members")
     .select("organization_id")
@@ -26,18 +26,37 @@ export async function GET() {
     );
   }
 
+  const { searchParams } = new URL(request.url);
+  const chartIdParam = searchParams.get("chartId");
+
+  let chartId: string;
+  try {
+    chartId = await resolveChartIdOrDefault(
+      supabase,
+      membership.organization_id,
+      chartIdParam,
+    );
+  } catch (e) {
+    return NextResponse.json(
+      { error: (e as Error).message },
+      { status: 400 },
+    );
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const accounts = await fetchAllPaginated<any>((offset, limit) =>
     supabase
       .from("master_accounts")
       .select("*")
       .eq("organization_id", membership.organization_id)
+      .eq("chart_id", chartId)
       .order("classification")
       .order("display_order")
       .order("account_number")
       .range(offset, offset + limit - 1)
   );
 
-  return NextResponse.json({ accounts });
+  return NextResponse.json({ accounts, chartId });
 }
 
 export async function POST(request: Request) {
@@ -53,6 +72,7 @@ export async function POST(request: Request) {
   const body = await request.json();
   const {
     organizationId,
+    chartId: chartIdInput,
     accountNumber,
     name,
     description,
@@ -72,10 +92,21 @@ export async function POST(request: Request) {
     );
   }
 
+  let chartId: string;
+  try {
+    chartId = await resolveChartIdOrDefault(supabase, organizationId, chartIdInput);
+  } catch (e) {
+    return NextResponse.json(
+      { error: (e as Error).message },
+      { status: 400 },
+    );
+  }
+
   const { data: account, error } = await supabase
     .from("master_accounts")
     .insert({
       organization_id: organizationId,
+      chart_id: chartId,
       account_number: accountNumber,
       name,
       description: description || null,

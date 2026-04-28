@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { resolveChartIdOrDefault } from "@/lib/master-charts/resolve";
 import * as XLSX from "xlsx";
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -87,6 +88,7 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const file = formData.get("file") as File | null;
   const entityId = formData.get("entityId") as string;
+  const chartIdInput = (formData.get("chartId") as string | null) || null;
   const mode = (formData.get("mode") as string) ?? "preview";
 
   if (!file || !entityId) {
@@ -118,6 +120,16 @@ export async function POST(request: NextRequest) {
   }
 
   const orgId = membership.organization_id;
+
+  let chartId: string;
+  try {
+    chartId = await resolveChartIdOrDefault(supabase, orgId, chartIdInput);
+  } catch (e) {
+    return NextResponse.json(
+      { error: (e as Error).message },
+      { status: 400 },
+    );
+  }
 
   const { data: entity } = await supabase
     .from("entities")
@@ -185,11 +197,12 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // Master accounts
+  // Master accounts in the selected chart only
   const { data: masterAccounts } = await supabase
     .from("master_accounts")
     .select("id, account_number, name")
     .eq("organization_id", orgId)
+    .eq("chart_id", chartId)
     .eq("is_active", true);
 
   const maByNameLower = new Map<
@@ -205,11 +218,14 @@ export async function POST(request: NextRequest) {
     maByNumber.set(ma.account_number, ma);
   }
 
-  // Existing mappings for this entity
+  // Existing mappings for this entity in the selected chart. The same entity
+  // account can be mapped in another chart; that doesn't count as already-mapped
+  // for this import.
   const { data: existingMappings } = await supabase
     .from("master_account_mappings")
     .select("account_id, master_account_id")
-    .eq("entity_id", entityId);
+    .eq("entity_id", entityId)
+    .eq("chart_id", chartId);
 
   const existingByAccountId = new Map<string, string>();
   for (const m of existingMappings ?? []) {
@@ -374,10 +390,12 @@ export async function POST(request: NextRequest) {
       }));
 
     if (toInsert.length > 0) {
+      // chart_id is set by the BEFORE-INSERT trigger; conflict target uses
+      // the new (entity_id, account_id, chart_id) unique key.
       const { data: inserted, error: mapError } = await supabase
         .from("master_account_mappings")
         .upsert(toInsert, {
-          onConflict: "entity_id,account_id",
+          onConflict: "entity_id,account_id,chart_id",
           ignoreDuplicates: true,
         })
         .select("id");

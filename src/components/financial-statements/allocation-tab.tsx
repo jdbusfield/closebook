@@ -369,10 +369,25 @@ export function AllocationTab({
   const loadMasterAccounts = useCallback(async () => {
     if (!organizationId) return;
 
+    // Allocations are management-only, so scope the dropdown to the
+    // management chart.
+    const { data: mgmtChart } = await supabase
+      .from("master_charts")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("kind", "management")
+      .single();
+
+    if (!mgmtChart) {
+      setMasterAccounts([]);
+      return;
+    }
+
     const { data } = await supabase
       .from("master_accounts")
       .select("id, account_number, name, classification, account_type")
       .eq("organization_id", organizationId)
+      .eq("chart_id", mgmtChart.id)
       .eq("is_active", true)
       .order("display_order")
       .order("account_number");

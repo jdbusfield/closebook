@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
   Card,
@@ -101,7 +101,10 @@ const CLASSIFICATIONS: AccountClassification[] = [
 
 export default function ConsolidatedPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
+
+  const chartIdParam = searchParams.get("chartId");
 
   const currentPeriod = getCurrentPeriod();
   const [organizationId, setOrganizationId] = useState<string | null>(null);
@@ -143,8 +146,9 @@ export default function ConsolidatedPage() {
     if (!organizationId) return;
     setLoading(true);
 
+    const chartParam = chartIdParam ? `&chartId=${chartIdParam}` : "";
     const response = await fetch(
-      `/api/master-accounts/consolidated?organizationId=${organizationId}&periodYear=${periodYear}&periodMonth=${periodMonth}`
+      `/api/master-accounts/consolidated?organizationId=${organizationId}&periodYear=${periodYear}&periodMonth=${periodMonth}${chartParam}`
     );
     const data = await response.json();
 
@@ -159,7 +163,7 @@ export default function ConsolidatedPage() {
     }
 
     setLoading(false);
-  }, [organizationId, periodYear, periodMonth]);
+  }, [organizationId, periodYear, periodMonth, chartIdParam]);
 
   useEffect(() => {
     loadOrganization();

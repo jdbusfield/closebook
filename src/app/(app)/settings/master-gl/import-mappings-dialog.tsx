@@ -73,6 +73,8 @@ interface ImportMappingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   entities: Entity[];
+  chartId: string | null;
+  chartName: string | null;
   onComplete: () => void;
 }
 
@@ -114,6 +116,8 @@ export function ImportMappingsDialog({
   open,
   onOpenChange,
   entities,
+  chartId,
+  chartName,
   onComplete,
 }: ImportMappingsDialogProps) {
   const [step, setStep] = useState<Step>(1);
@@ -180,6 +184,7 @@ export function ImportMappingsDialog({
       formData.append("file", file);
       formData.append("entityId", entityId);
       formData.append("mode", "preview");
+      if (chartId) formData.append("chartId", chartId);
 
       const response = await fetch("/api/master-accounts/mappings/import", {
         method: "POST",
@@ -212,6 +217,7 @@ export function ImportMappingsDialog({
       formData.append("file", file);
       formData.append("entityId", entityId);
       formData.append("mode", "commit");
+      if (chartId) formData.append("chartId", chartId);
 
       const response = await fetch("/api/master-accounts/mappings/import", {
         method: "POST",

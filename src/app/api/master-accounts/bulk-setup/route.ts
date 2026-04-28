@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAllPaginated } from "@/lib/utils/paginated-fetch";
 import { findMasterForEntityAccount } from "@/lib/config/master-gl-template";
+import { resolveChartIdOrDefault } from "@/lib/master-charts/resolve";
 
 /**
  * POST /api/master-accounts/bulk-setup
@@ -9,9 +10,10 @@ import { findMasterForEntityAccount } from "@/lib/config/master-gl-template";
  * Auto-maps entity accounts to existing master GL accounts using
  * predefined mapping rules (matched by account number / name).
  *
- * Body: { entityId: string }
+ * Body: { entityId: string, chartId?: string }
  *
- * Idempotent — existing mappings are preserved (unique constraint).
+ * Defaults to the management chart if chartId is omitted. Idempotent:
+ * existing mappings in the same chart are preserved via upsert.
  */
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -24,7 +26,7 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json();
-  const { entityId } = body;
+  const { entityId, chartId: chartIdInput } = body;
 
   if (!entityId) {
     return NextResponse.json(
@@ -49,6 +51,16 @@ export async function POST(request: Request) {
 
   const orgId = membership.organization_id;
 
+  let chartId: string;
+  try {
+    chartId = await resolveChartIdOrDefault(supabase, orgId, chartIdInput);
+  } catch (e) {
+    return NextResponse.json(
+      { error: (e as Error).message },
+      { status: 400 },
+    );
+  }
+
   // Verify entity belongs to the org
   const { data: entity } = await supabase
     .from("entities")
@@ -64,19 +76,20 @@ export async function POST(request: Request) {
     );
   }
 
-  // ── 2. Load existing master accounts ─────────────────────────────────
+  // ── 2. Load existing master accounts in the selected chart ───────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const masterAccounts = await fetchAllPaginated<any>((offset, limit) =>
     supabase
       .from("master_accounts")
       .select("id, account_number, name")
       .eq("organization_id", orgId)
+      .eq("chart_id", chartId)
       .range(offset, offset + limit - 1)
   );
 
   if (masterAccounts.length === 0) {
     return NextResponse.json(
-      { error: "No master accounts found. Create them first." },
+      { error: "No master accounts found in this chart. Create them first." },
       { status: 400 }
     );
   }
@@ -154,10 +167,12 @@ export async function POST(request: Request) {
   let mappingsCreated = 0;
 
   if (mappingsToInsert.length > 0) {
+    // chart_id is set by the BEFORE-INSERT trigger from master_account.chart_id.
+    // Conflict target matches the new (entity_id, account_id, chart_id) unique key.
     const { data: inserted, error: mapError } = await supabase
       .from("master_account_mappings")
       .upsert(mappingsToInsert, {
-        onConflict: "entity_id,account_id",
+        onConflict: "entity_id,account_id,chart_id",
         ignoreDuplicates: true,
       })
       .select("id");
