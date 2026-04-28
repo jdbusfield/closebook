@@ -120,6 +120,14 @@ interface UnmappedAccountMonthly {
   monthlyBalances: Record<number, number>;
 }
 
+interface MasterChart {
+  id: string;
+  organization_id: string;
+  name: string;
+  kind: "management" | "accountant";
+  is_default: boolean;
+}
+
 const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -165,6 +173,8 @@ export default function MasterGLPage() {
   const supabase = createClient();
 
   const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const [charts, setCharts] = useState<MasterChart[]>([]);
+  const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
   const [masterAccounts, setMasterAccounts] = useState<MasterAccount[]>([]);
   const [mappings, setMappings] = useState<Mapping[]>([]);
   const [entities, setEntities] = useState<Entity[]>([]);
@@ -239,27 +249,44 @@ export default function MasterGLPage() {
     }
   }, [supabase]);
 
-  const loadMasterAccounts = useCallback(async () => {
-    if (!organizationId) return;
+  const loadCharts = useCallback(async () => {
+    const response = await fetch("/api/master-charts");
+    const data = await response.json();
+    if (data.charts) {
+      setCharts(data.charts);
+      // Default to the management chart on first load
+      if (!selectedChartId) {
+        const mgmt = data.charts.find(
+          (c: MasterChart) => c.kind === "management"
+        );
+        if (mgmt) setSelectedChartId(mgmt.id);
+      }
+    }
+  }, [selectedChartId]);
 
-    const response = await fetch("/api/master-accounts");
+  const loadMasterAccounts = useCallback(async () => {
+    if (!organizationId || !selectedChartId) return;
+
+    const response = await fetch(
+      `/api/master-accounts?chartId=${selectedChartId}`
+    );
     const data = await response.json();
     if (data.accounts) {
       setMasterAccounts(data.accounts);
     }
-  }, [organizationId]);
+  }, [organizationId, selectedChartId]);
 
   const loadMappings = useCallback(async () => {
-    if (!organizationId) return;
+    if (!organizationId || !selectedChartId) return;
 
     const response = await fetch(
-      `/api/master-accounts/mappings?organizationId=${organizationId}`
+      `/api/master-accounts/mappings?organizationId=${organizationId}&chartId=${selectedChartId}`
     );
     const data = await response.json();
     if (data.mappings) {
       setMappings(data.mappings);
     }
-  }, [organizationId]);
+  }, [organizationId, selectedChartId]);
 
   const loadEntities = useCallback(async () => {
     if (!organizationId) return;
@@ -297,12 +324,12 @@ export default function MasterGLPage() {
   }, [supabase, organizationId]);
 
   const loadUnmappedMonthly = useCallback(async () => {
-    if (!organizationId) return;
+    if (!organizationId || !selectedChartId) return;
     setUnmappedLoading(true);
 
     try {
       const response = await fetch(
-        `/api/master-accounts/unmapped-monthly?organizationId=${organizationId}&year=${unmappedYear}`
+        `/api/master-accounts/unmapped-monthly?organizationId=${organizationId}&year=${unmappedYear}&chartId=${selectedChartId}`
       );
       const data = await response.json();
       if (data.unmappedAccounts) {
@@ -312,25 +339,32 @@ export default function MasterGLPage() {
       // silently fail — the section will just show empty
     }
     setUnmappedLoading(false);
-  }, [organizationId, unmappedYear]);
+  }, [organizationId, selectedChartId, unmappedYear]);
 
   useEffect(() => {
     loadOrganization();
-  }, [loadOrganization]);
+    loadCharts();
+  }, [loadOrganization, loadCharts]);
 
   useEffect(() => {
-    if (organizationId) {
+    if (organizationId && selectedChartId) {
       Promise.all([loadMasterAccounts(), loadMappings(), loadEntities()]).then(
         () => setLoading(false)
       );
     }
-  }, [organizationId, loadMasterAccounts, loadMappings, loadEntities]);
+  }, [
+    organizationId,
+    selectedChartId,
+    loadMasterAccounts,
+    loadMappings,
+    loadEntities,
+  ]);
 
   useEffect(() => {
-    if (organizationId) {
+    if (organizationId && selectedChartId) {
       loadUnmappedMonthly();
     }
-  }, [organizationId, loadUnmappedMonthly]);
+  }, [organizationId, selectedChartId, loadUnmappedMonthly]);
 
   function resetForm() {
     setFormData({
@@ -403,6 +437,7 @@ export default function MasterGLPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             organizationId,
+            chartId: selectedChartId,
             accountNumber: formData.accountNumber,
             name: formData.name,
             description: formData.description || null,
@@ -524,7 +559,7 @@ export default function MasterGLPage() {
       const response = await fetch("/api/master-accounts/bulk-setup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entityId: bulkEntityId }),
+        body: JSON.stringify({ entityId: bulkEntityId, chartId: selectedChartId }),
       });
 
       const data = await response.json();
@@ -610,6 +645,9 @@ export default function MasterGLPage() {
     );
   }
 
+  const activeChart = charts.find((c) => c.id === selectedChartId);
+  const isAccountantChart = activeChart?.kind === "accountant";
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -618,14 +656,37 @@ export default function MasterGLPage() {
             Master General Ledger
           </h1>
           <p className="text-muted-foreground">
-            Define a consolidated chart of accounts and map entity accounts from
-            QuickBooks
+            {isAccountantChart
+              ? "Accountant-prepared chart of accounts. Aggregations may differ from the management view."
+              : "Define a consolidated chart of accounts and map entity accounts from QuickBooks."}
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {charts.length > 0 && (
+            <Select
+              value={selectedChartId ?? undefined}
+              onValueChange={(v) => setSelectedChartId(v)}
+            >
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Chart" />
+              </SelectTrigger>
+              <SelectContent>
+                {charts.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                    {c.kind === "accountant" ? " (Accountant)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Button
             variant="outline"
-            onClick={() => router.push("/settings/master-gl/consolidated")}
+            onClick={() =>
+              router.push(
+                `/settings/master-gl/consolidated?chartId=${selectedChartId ?? ""}`
+              )
+            }
           >
             <BarChart3 className="mr-2 h-4 w-4" />
             Consolidated View
@@ -1200,6 +1261,10 @@ export default function MasterGLPage() {
         open={showImportDialog}
         onOpenChange={setShowImportDialog}
         entities={entities}
+        chartId={selectedChartId}
+        chartName={
+          charts.find((c) => c.id === selectedChartId)?.name ?? null
+        }
         onComplete={() => {
           Promise.all([loadMasterAccounts(), loadMappings(), loadUnmappedMonthly()]);
         }}

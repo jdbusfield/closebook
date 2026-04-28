@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchAllMappings, fetchAllAccounts, fetchAllPaginated } from "@/lib/utils/paginated-fetch";
+import { resolveChartIdOrDefault } from "@/lib/master-charts/resolve";
 
 // ---------------------------------------------------------------------------
 // Paginated GL balance fetcher.
@@ -87,6 +88,7 @@ export async function GET(request: Request) {
   const organizationId = searchParams.get("organizationId");
   const periodYear = searchParams.get("periodYear");
   const periodMonth = searchParams.get("periodMonth");
+  const chartIdParam = searchParams.get("chartId");
 
   if (!organizationId || !periodYear || !periodMonth) {
     return NextResponse.json(
@@ -107,15 +109,26 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
+  let chartId: string;
+  try {
+    chartId = await resolveChartIdOrDefault(supabase, organizationId, chartIdParam);
+  } catch (e) {
+    return NextResponse.json(
+      { error: (e as Error).message },
+      { status: 400 },
+    );
+  }
+
   const adminClient = createAdminClient();
 
-  // Get all master accounts for the organization
+  // Get all master accounts for the organization in the selected chart
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const masterAccounts = await fetchAllPaginated<any>((offset, limit) =>
     adminClient
       .from("master_accounts")
       .select("*")
       .eq("organization_id", organizationId)
+      .eq("chart_id", chartId)
       .eq("is_active", true)
       .order("classification")
       .order("display_order")

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { resolveChartIdOrDefault } from "@/lib/master-charts/resolve";
 
 export async function GET(request: Request) {
   const supabase = await createClient();
@@ -14,6 +15,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const organizationId = searchParams.get("organizationId");
+  const chartIdParam = searchParams.get("chartId");
 
   if (!organizationId) {
     return NextResponse.json(
@@ -34,6 +36,16 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
+  let chartId: string;
+  try {
+    chartId = await resolveChartIdOrDefault(supabase, organizationId, chartIdParam);
+  } catch (e) {
+    return NextResponse.json(
+      { error: (e as Error).message },
+      { status: 400 },
+    );
+  }
+
   // Use admin client to bypass RLS — the !inner joins with RLS can
   // silently drop mapping rows when nested table access is restricted.
   // Access is already verified above via organization membership.
@@ -51,6 +63,7 @@ export async function GET(request: Request) {
         `
         id,
         master_account_id,
+        chart_id,
         entity_id,
         account_id,
         created_by,
@@ -58,6 +71,7 @@ export async function GET(request: Request) {
         master_accounts!inner (
           id,
           organization_id,
+          chart_id,
           account_number,
           name,
           classification
@@ -78,6 +92,7 @@ export async function GET(request: Request) {
       `
       )
       .eq("master_accounts.organization_id", organizationId)
+      .eq("chart_id", chartId)
       .range(from, from + PAGE_SIZE - 1);
 
     if (error) {
@@ -90,7 +105,7 @@ export async function GET(request: Request) {
     from += PAGE_SIZE;
   }
 
-  return NextResponse.json({ mappings: allMappings });
+  return NextResponse.json({ mappings: allMappings, chartId });
 }
 
 export async function POST(request: Request) {
@@ -116,6 +131,8 @@ export async function POST(request: Request) {
     );
   }
 
+  // chart_id is set by the database trigger from master_account.chart_id —
+  // we don't need to pass it explicitly.
   const { data: mapping, error } = await supabase
     .from("master_account_mappings")
     .insert({
@@ -132,7 +149,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "This entity account is already mapped to a master account",
+            "This entity account is already mapped to a master account in this chart",
         },
         { status: 409 }
       );
@@ -163,9 +180,12 @@ export async function PUT(request: Request) {
     );
   }
 
+  // The trigger will recompute chart_id from the new master_account_id.
+  // If callers tried to repoint a mapping into a different chart, the
+  // (entity_id, account_id, chart_id) unique constraint protects us.
   const { data: mapping, error } = await supabase
     .from("master_account_mappings")
-    .update({ master_account_id: masterAccountId })
+    .update({ master_account_id: masterAccountId, chart_id: null })
     .eq("id", id)
     .select()
     .single();
