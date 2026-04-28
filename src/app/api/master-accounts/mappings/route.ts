@@ -180,12 +180,13 @@ export async function PUT(request: Request) {
     );
   }
 
-  // The trigger will recompute chart_id from the new master_account_id.
-  // If callers tried to repoint a mapping into a different chart, the
-  // (entity_id, account_id, chart_id) unique constraint protects us.
+  // Repointing a mapping within the same chart is the common case and the
+  // trigger will allow it (existing chart_id still matches the new master
+  // account's chart_id). Cross-chart repointing would violate the trigger's
+  // consistency check; callers should delete + recreate instead.
   const { data: mapping, error } = await supabase
     .from("master_account_mappings")
-    .update({ master_account_id: masterAccountId, chart_id: null })
+    .update({ master_account_id: masterAccountId })
     .eq("id", id)
     .select()
     .single();
