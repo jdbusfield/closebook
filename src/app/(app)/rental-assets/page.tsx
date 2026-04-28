@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   Car,
@@ -15,6 +15,7 @@ import {
   Clock,
   ChevronLeft,
   ChevronRight,
+  Upload,
 } from "lucide-react";
 import {
   Card,
@@ -104,6 +105,8 @@ export default function RentalAssetsPage() {
   const [syncing, setSyncing] = useState<null | "vehicles" | "maintenance">(
     null
   );
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load org membership
   useEffect(() => {
@@ -256,6 +259,63 @@ export default function RentalAssetsPage() {
   const lastMaintSync =
     syncStateByResource.get("service_entries")?.last_incremental_sync_at;
 
+  async function handleUploadKpis(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !organizationId) return;
+
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("organization_id", organizationId);
+
+      const res = await fetch("/api/rental-assets/upload-kpis", {
+        method: "POST",
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+
+      const sheets: Array<{
+        sheetName: string;
+        period: { year: number; month: number };
+        matched: number;
+        orphans: number;
+        equipment: number;
+        upserted: number;
+      }> = data.sheets ?? [];
+
+      if (sheets.length === 0) {
+        toast.warning("No month-tagged sheets found in the workbook.");
+      } else if (sheets.length === 1) {
+        const s = sheets[0];
+        toast.success(
+          `Loaded ${s.upserted} rows for ${MONTH_SHORT[s.period.month]} ${s.period.year} — ${s.matched} matched, ${s.orphans} orphans, ${s.equipment} equipment.`
+        );
+        // Jump to the period we just refreshed.
+        setPeriod({ year: s.period.year, month: s.period.month });
+      } else {
+        toast.success(
+          `Loaded ${data.totalUpserted} rows across ${sheets.length} sheets.`
+        );
+        // Default to the latest sheet uploaded.
+        const latest = [...sheets].sort((a, b) =>
+          a.period.year !== b.period.year
+            ? b.period.year - a.period.year
+            : b.period.month - a.period.month
+        )[0];
+        setPeriod({ year: latest.period.year, month: latest.period.month });
+      }
+
+      await reload();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
   async function runSync(kind: "vehicles" | "maintenance") {
     if (!organizationId) return;
     setSyncing(kind);
@@ -373,6 +433,25 @@ export default function RentalAssetsPage() {
 
           {isAdmin && (
             <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={handleUploadKpis}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                title="Upload a DBR utilization spreadsheet to refresh KPIs for the months in the workbook"
+              >
+                <Upload
+                  className={`mr-1.5 h-3.5 w-3.5 ${uploading ? "animate-pulse" : ""}`}
+                />
+                {uploading ? "Uploading…" : "Upload Utilization"}
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
