@@ -2120,6 +2120,7 @@ export type Database = {
         Row: {
           id: string
           organization_id: string
+          chart_id: string
           account_number: string
           name: string
           description: string | null
@@ -2137,6 +2138,7 @@ export type Database = {
         Insert: {
           id?: string
           organization_id: string
+          chart_id: string
           account_number: string
           name: string
           description?: string | null
@@ -2154,6 +2156,7 @@ export type Database = {
         Update: {
           id?: string
           organization_id?: string
+          chart_id?: string
           account_number?: string
           name?: string
           description?: string | null
@@ -2176,6 +2179,12 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "master_accounts_chart_id_fkey"
+            columns: ["chart_id"]
+            referencedRelation: "master_charts"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "master_accounts_parent_account_id_fkey"
             columns: ["parent_account_id"]
             referencedRelation: "master_accounts"
@@ -2187,6 +2196,7 @@ export type Database = {
         Row: {
           id: string
           master_account_id: string
+          chart_id: string
           entity_id: string
           account_id: string
           created_by: string | null
@@ -2195,6 +2205,7 @@ export type Database = {
         Insert: {
           id?: string
           master_account_id: string
+          chart_id?: string
           entity_id: string
           account_id: string
           created_by?: string | null
@@ -2203,6 +2214,7 @@ export type Database = {
         Update: {
           id?: string
           master_account_id?: string
+          chart_id?: string
           entity_id?: string
           account_id?: string
           created_by?: string | null
@@ -2216,6 +2228,12 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "master_account_mappings_chart_id_fkey"
+            columns: ["chart_id"]
+            referencedRelation: "master_charts"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "master_account_mappings_entity_id_fkey"
             columns: ["entity_id"]
             referencedRelation: "entities"
@@ -2225,6 +2243,46 @@ export type Database = {
             foreignKeyName: "master_account_mappings_account_id_fkey"
             columns: ["account_id"]
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      master_charts: {
+        Row: {
+          id: string
+          organization_id: string
+          name: string
+          kind: string
+          is_default: boolean
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          name: string
+          kind: string
+          is_default?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          name?: string
+          kind?: string
+          is_default?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "master_charts_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
