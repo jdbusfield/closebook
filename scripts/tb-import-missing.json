@@ -1,0 +1,372 @@
+[
+  {
+    "ad": "1100-2F",
+    "reason": "no number 1100 or name \"1st Source Bank Checking\" for entity Two Family Enterprises, Inc,",
+    "sub": "B-01"
+  },
+  {
+    "ad": "1100-NCNT",
+    "reason": "no number 1100 or name \"NCNT Bank Account\" for entity NCNT Holdings, LLC",
+    "sub": "B-01"
+  },
+  {
+    "ad": "1105-2F",
+    "reason": "no number 1105 or name \"Certificate of Deposit-Manufact\" for entity Two Family Enterprises, Inc,",
+    "sub": "B-01"
+  },
+  {
+    "ad": "1110-2F",
+    "reason": "no number 1110 or name \"Manufacturers Bank-General\" for entity Two Family Enterprises, Inc,",
+    "sub": "B-01"
+  },
+  {
+    "ad": "1120-2F",
+    "reason": "no number 1120 or name \"Money Market at Manufacturers\" for entity Two Family Enterprises, Inc,",
+    "sub": "B-01"
+  },
+  {
+    "ad": "1120-SVC",
+    "reason": "no number 1120 or name \"Chase Business Checking\" for entity Silverco Enterprises, LLC",
+    "sub": "B-01"
+  },
+  {
+    "ad": "1130-SVC",
+    "reason": "no number 1130 or name \"Manufacturers Bank-Money Market x2573\" for entity Silverco Enterprises, LLC",
+    "sub": "B-01"
+  },
+  {
+    "ad": "1260-SVC",
+    "reason": "no number 1260 or name \"Accounts Receivable-Credit Card\" for entity Silverco Enterprises, LLC",
+    "sub": "E-01"
+  },
+  {
+    "ad": "1290-SVC",
+    "reason": "no number 1290 or name \"Vehicle Receivable\" for entity Silverco Enterprises, LLC",
+    "sub": "E-01"
+  },
+  {
+    "ad": "1253-SVC",
+    "reason": "no number 1253 or name \"Allowance for Doubtful Accounts - Damage\" for entity Silverco Enterprises, LLC",
+    "sub": "E-02"
+  },
+  {
+    "ad": "NEW-03-2F",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "E2-02"
+  },
+  {
+    "ad": "NEW-05-SVC",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "E2-02"
+  },
+  {
+    "ad": "NEW-03-SVC",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "E2-01"
+  },
+  {
+    "ad": "NEW-09-2F",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "E2-01"
+  },
+  {
+    "ad": "NEW-13-SVC",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "E2-01"
+  },
+  {
+    "ad": "NEW-07-SVC",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "E4-03"
+  },
+  {
+    "ad": "1270",
+    "reason": "unknown entity tag \"OTHER\"",
+    "sub": "G-02"
+  },
+  {
+    "ad": "1400-2F",
+    "reason": "no number 1400 or name \"Refundable Vehicle Deposits\" for entity Two Family Enterprises, Inc,",
+    "sub": "G-02"
+  },
+  {
+    "ad": "NEW-06-SVC",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "G-02"
+  },
+  {
+    "ad": "1501-2F",
+    "reason": "no number 1501 or name \"Construction in progress\" for entity Two Family Enterprises, Inc,",
+    "sub": "I-06"
+  },
+  {
+    "ad": "1550-2F",
+    "reason": "no number 1550 or name \"Accumulated Depreciation-Rental\" for entity Two Family Enterprises, Inc,",
+    "sub": "I1-01"
+  },
+  {
+    "ad": "1897-NCNT",
+    "reason": "no number 1897 or name \"Accumulated Depreciation - Trailer Batteries\" for entity NCNT Holdings, LLC",
+    "sub": "I1-01"
+  },
+  {
+    "ad": "1898-NCNT",
+    "reason": "no number 1898 or name \"Accumulated Depreciation - Trailers\" for entity NCNT Holdings, LLC",
+    "sub": "I1-01"
+  },
+  {
+    "ad": "1899-NCNT",
+    "reason": "no number 1899 or name \"Accumulated Depreciation - Vehicles\" for entity NCNT Holdings, LLC",
+    "sub": "I1-01"
+  },
+  {
+    "ad": "NEW-10-2F",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "I1-01"
+  },
+  {
+    "ad": "1530-2F",
+    "reason": "no number 1530 or name \"Accumulated Depreciation-Non Vehicle\" for entity Two Family Enterprises, Inc,",
+    "sub": "I1-02"
+  },
+  {
+    "ad": "1620-2F",
+    "reason": "no number 1620 or name \"Accumulated Depreciation, ROU\" for entity Two Family Enterprises, Inc,",
+    "sub": "I2-01"
+  },
+  {
+    "ad": "1899-SVC",
+    "reason": "no number 1899 or name \"Accumulated Depreciation, ROU\" for entity Silverco Enterprises, LLC",
+    "sub": "I2-01"
+  },
+  {
+    "ad": "2350.3-NCNT",
+    "reason": "no number 2350.3 or name \"First Source Line of Credit - L/T\" for entity NCNT Holdings, LLC",
+    "sub": "M-02"
+  },
+  {
+    "ad": "2550-2F",
+    "reason": "no number 2550 or name \"First Source Line of Credit - L/T\" for entity Two Family Enterprises, Inc,",
+    "sub": "M-02"
+  },
+  {
+    "ad": "NEW-06-NCNT",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "M-02"
+  },
+  {
+    "ad": "2300-2F",
+    "reason": "no number 2300 or name \"First Source Line of Credit - S/T\" for entity Two Family Enterprises, Inc,",
+    "sub": "M-01"
+  },
+  {
+    "ad": "2350.1-NCNT",
+    "reason": "no number 2350.1 or name \"First Source Line of Credit - S/T\" for entity NCNT Holdings, LLC",
+    "sub": "M-01"
+  },
+  {
+    "ad": "NEW-02-NCNT",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "M-01"
+  },
+  {
+    "ad": "NEW-05-NCNT",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "M-01"
+  },
+  {
+    "ad": "NEW-09-SVC",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "O-01"
+  },
+  {
+    "ad": "2022-SVC",
+    "reason": "no number 2022 or name \"Payroll Taxes Payable\" for entity Silverco Enterprises, LLC",
+    "sub": "O-02"
+  },
+  {
+    "ad": "2025-SVC",
+    "reason": "no number 2025 or name \"Accrued Salaries\" for entity Silverco Enterprises, LLC",
+    "sub": "O-02"
+  },
+  {
+    "ad": "NEW-12-SVC",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "O-09"
+  },
+  {
+    "ad": "NEW-04-NCNT",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "O-08"
+  },
+  {
+    "ad": "NEW-07-NCNT",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "O-08"
+  },
+  {
+    "ad": "NEW-08-SVC",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "O1"
+  },
+  {
+    "ad": "NEW-01-2F",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "O3-01"
+  },
+  {
+    "ad": "NEW-01-SVC",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "O3-01"
+  },
+  {
+    "ad": "NEW-02-2F",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "O3-02"
+  },
+  {
+    "ad": "NEW-02-SVC",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "O3-02"
+  },
+  {
+    "ad": "NEW-11-SVC",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "O5-02"
+  },
+  {
+    "ad": "NEW-04-2F",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "P-01"
+  },
+  {
+    "ad": "NEW-07-2F",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "P2-01"
+  },
+  {
+    "ad": "4701-SVC",
+    "reason": "no number 4701 or name \"Accounts Receivable Collected (deleted):Card Connect - Merchant-Deposit (deleted)\" for entity Silverco Enterprises, LLC",
+    "sub": "X-08"
+  },
+  {
+    "ad": "4710-SVC",
+    "reason": "no number 4710 or name \"Accounts Receivable Collected (deleted):Checks Deposited Office Deposit-A/R (deleted)\" for entity Silverco Enterprises, LLC",
+    "sub": "X-08"
+  },
+  {
+    "ad": "4715-SVC",
+    "reason": "no number 4715 or name \"Accounts Receivable Collected (deleted):Direct ACH / Wire (deleted)\" for entity Silverco Enterprises, LLC",
+    "sub": "X-08"
+  },
+  {
+    "ad": "5094-SVC",
+    "reason": "no number 5094 or name \"Vehicle Repairs-Body\" for entity Silverco Enterprises, LLC",
+    "sub": "Y002"
+  },
+  {
+    "ad": "NEW-10-SVC",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "Y-080"
+  },
+  {
+    "ad": "5040-SVC",
+    "reason": "no number 5040 or name \"Direct Salaries:Outside Services-Costs\" for entity Silverco Enterprises, LLC",
+    "sub": "Y007"
+  },
+  {
+    "ad": "5053-SVC",
+    "reason": "no number 5053 or name \"Direct Salaries:Salaries and Wages-PTO\" for entity Silverco Enterprises, LLC",
+    "sub": "Y007"
+  },
+  {
+    "ad": "5059-SVC",
+    "reason": "no number 5059 or name \"Direct Salaries:Salaries-Holiday\" for entity Silverco Enterprises, LLC",
+    "sub": "Y007"
+  },
+  {
+    "ad": "5076-SVC",
+    "reason": "no number 5076 or name \"Direct Salaries:Salaries and Wages-Covid\" for entity Silverco Enterprises, LLC",
+    "sub": "Y007"
+  },
+  {
+    "ad": "NEW-01-NCNT",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "Y080"
+  },
+  {
+    "ad": "NEW-08-2F",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "Y080"
+  },
+  {
+    "ad": "NEW-04-SVC",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "Y403"
+  },
+  {
+    "ad": "NEW-09-NCNT",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "Y406"
+  },
+  {
+    "ad": "NEW-12-2F",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "Y406"
+  },
+  {
+    "ad": "NEW-03-NCNT",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "Y417"
+  },
+  {
+    "ad": "NEW-08-NCNT",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "Y426"
+  },
+  {
+    "ad": "NEW-10-NCNT",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "Y426"
+  },
+  {
+    "ad": "NEW-13-2F",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "Y426"
+  },
+  {
+    "ad": "NEW-11-2F",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "Y439"
+  },
+  {
+    "ad": "9000-SVC",
+    "reason": "no number 9000 or name \"Other Income Expense\" for entity Silverco Enterprises, LLC",
+    "sub": "Y502"
+  },
+  {
+    "ad": "9010-2F",
+    "reason": "no number 9010 or name \"Other Income / Expense\" for entity Two Family Enterprises, Inc,",
+    "sub": "Y502"
+  },
+  {
+    "ad": "NEW-14-2F",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "Y502"
+  },
+  {
+    "ad": "6200-2F",
+    "reason": "no number 6200 or name \"Other Income / Expense\" for entity Two Family Enterprises, Inc,",
+    "sub": "Y602"
+  },
+  {
+    "ad": "NEW-05-2F",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "Y901"
+  },
+  {
+    "ad": "NEW-06-2F",
+    "reason": "accountant placeholder (no matching QBO account)",
+    "sub": "Y901"
+  }
+]

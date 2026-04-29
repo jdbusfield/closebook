@@ -1,0 +1,4300 @@
+[
+  {
+    "letter": "B",
+    "title": "Cash",
+    "classification": "Asset",
+    "subgroups": [
+      {
+        "code": "B-01",
+        "title": "Cash",
+        "accounts": [
+          {
+            "code": "1100-2F",
+            "name": "1st Source Bank Checking",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "1100-NCNT",
+            "name": "NCNT Bank Account",
+            "entity": "NCNT",
+            "consol": 0
+          },
+          {
+            "code": "1100-SVC",
+            "name": "MB - General x1194",
+            "entity": "SVC",
+            "consol": 68449
+          },
+          {
+            "code": "1101-2F",
+            "name": "1st Source Bank Checking - x1354",
+            "entity": "2F",
+            "consol": 3810
+          },
+          {
+            "code": "1101-NCNT",
+            "name": "1st Source NCNT x1735",
+            "entity": "NCNT",
+            "consol": 547
+          },
+          {
+            "code": "1105-2F",
+            "name": "Certificate of Deposit-Manufact",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "1105-SVC",
+            "name": "MB Chking x6199",
+            "entity": "SVC",
+            "consol": -5975
+          },
+          {
+            "code": "1106-2F",
+            "name": "Certificate of Deposit-Manufacturer's - x4556",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "1110-2F",
+            "name": "Manufacturers Bank-General",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "1111-2F",
+            "name": "Manufacturers Bank-General x1380",
+            "entity": "2F",
+            "consol": 3220
+          },
+          {
+            "code": "1120-2F",
+            "name": "Money Market at Manufacturers",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "1120-SVC",
+            "name": "Chase Business Checking",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "1130-SVC",
+            "name": "Manufacturers Bank-Money Market x2573",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "1140-SVC",
+            "name": "Manufacturers Bank-Payroll x1283",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "1150-SVC",
+            "name": "Petty Cash",
+            "entity": "SVC",
+            "consol": 5706
+          },
+          {
+            "code": "1170-SVC",
+            "name": "1st Source Cking x5676",
+            "entity": "SVC",
+            "consol": 225106
+          },
+          {
+            "code": "1171-SVC",
+            "name": "1st Source Sweep x5650",
+            "entity": "SVC",
+            "consol": 700
+          }
+        ]
+      },
+      {
+        "code": "B-03",
+        "title": "Restricted Cash",
+        "accounts": [
+          {
+            "code": "1500-SVC",
+            "name": "Restricted Cash",
+            "entity": "SVC",
+            "consol": 76800
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "E",
+    "title": "Accounts Receivable",
+    "classification": "Asset",
+    "subgroups": [
+      {
+        "code": "E-01",
+        "title": "Accounts Receivable",
+        "accounts": [
+          {
+            "code": "1200-2F",
+            "name": "Accounts Receivable",
+            "entity": "2F",
+            "consol": -15000
+          },
+          {
+            "code": "1250-SVC",
+            "name": "Trade Receivable",
+            "entity": "SVC",
+            "consol": 1335740
+          },
+          {
+            "code": "1260-SVC",
+            "name": "Accounts Receivable-Credit Card",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "1290-SVC",
+            "name": "Vehicle Receivable",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "E-02",
+        "title": "Allowance for Doubtful Accounts",
+        "accounts": [
+          {
+            "code": "1251-SVC",
+            "name": "Allowance For Uncollectible",
+            "entity": "SVC",
+            "consol": -743810
+          },
+          {
+            "code": "1253-SVC",
+            "name": "Allowance for Doubtful Accounts - Damage",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "1254-SVC",
+            "name": "Allowance For Uncollectible - Cars+",
+            "entity": "SVC",
+            "consol": -17670
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "E2",
+    "title": "Due from related parties",
+    "classification": "Asset",
+    "subgroups": [
+      {
+        "code": "E2-02",
+        "title": "Due from parent",
+        "accounts": [
+          {
+            "code": "1320-2F",
+            "name": "Due from Avon Rental Holdings",
+            "entity": "2F",
+            "consol": 591582
+          },
+          {
+            "code": "1345-SVC",
+            "name": "Due from Avon Rental Holdings",
+            "entity": "SVC",
+            "consol": 143864
+          },
+          {
+            "code": "2511-SVC",
+            "name": "Due to Avon Rental Holdings",
+            "entity": "SVC",
+            "consol": -501650
+          },
+          {
+            "code": "2551-SVC",
+            "name": "Due to Avon Rental Holdings",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "NEW-03-2F",
+            "name": "Due from ARH",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "NEW-05-SVC",
+            "name": "Due from ARH",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "E2-01",
+        "title": "Due from related parties",
+        "accounts": [
+          {
+            "code": "1355-SVC",
+            "name": "Due from Bearcat",
+            "entity": "SVC",
+            "consol": 72453
+          },
+          {
+            "code": "2561-SVC",
+            "name": "Due to Versatile",
+            "entity": "SVC",
+            "consol": 132179
+          },
+          {
+            "code": "NEW-03-SVC",
+            "name": "Due from Bearcat",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "NEW-09-2F",
+            "name": "Due from Versatile Studios",
+            "entity": "2F",
+            "consol": -15000
+          },
+          {
+            "code": "NEW-13-SVC",
+            "name": "Due from Versatile",
+            "entity": "SVC",
+            "consol": 273947
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "E4",
+    "title": "Other Receivables",
+    "classification": "Asset",
+    "subgroups": [
+      {
+        "code": "E4-03",
+        "title": "Deferred Rent Receivable",
+        "accounts": [
+          {
+            "code": "1710-SVC",
+            "name": "Deferred Rent Receivable",
+            "entity": "SVC",
+            "consol": 143137
+          },
+          {
+            "code": "NEW-07-SVC",
+            "name": "Deferred Rent Receivable",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "G",
+    "title": "Prepaids",
+    "classification": "Asset",
+    "subgroups": [
+      {
+        "code": "G-01",
+        "title": "Prepaid expenses",
+        "accounts": [
+          {
+            "code": "1600-SVC",
+            "name": "Prepaid Expenses",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "1601-SVC",
+            "name": "Prepaid Expenses:Prepaid Vehicle Registrations",
+            "entity": "SVC",
+            "consol": 182210
+          },
+          {
+            "code": "1602-SVC",
+            "name": "Prepaid Expenses:Prepaid Insurance",
+            "entity": "SVC",
+            "consol": 80573
+          },
+          {
+            "code": "1603-SVC",
+            "name": "Prepaid Expenses:Prepaid - Other",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "1630-SVC",
+            "name": "Prepaid Expenses:Prepaid - Other",
+            "entity": "SVC",
+            "consol": 55638
+          }
+        ]
+      },
+      {
+        "code": "G-02",
+        "title": "Other current assets",
+        "accounts": [
+          {
+            "code": "1190-2F",
+            "name": "Deposits",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "1250-NCNT",
+            "name": "Deposits",
+            "entity": "NCNT",
+            "consol": 0
+          },
+          {
+            "code": "1251-NCNT",
+            "name": "Accounts Receivable (A/R):Vehicle Accounts Receivable (A/R)",
+            "entity": "NCNT",
+            "consol": 0
+          },
+          {
+            "code": "1270",
+            "name": "Deposits",
+            "entity": "OTHER",
+            "consol": 0
+          },
+          {
+            "code": "1400-2F",
+            "name": "Refundable Vehicle Deposits",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "1499-SVC",
+            "name": "Undeposited Funds",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "1700-SVC",
+            "name": "Rent receivable",
+            "entity": "SVC",
+            "consol": 3154
+          },
+          {
+            "code": "NEW-06-SVC",
+            "name": "Deposits",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "I",
+    "title": "Fixed assets",
+    "classification": "Asset",
+    "subgroups": [
+      {
+        "code": "I-01",
+        "title": "Equipment",
+        "accounts": [
+          {
+            "code": "1500-2F",
+            "name": "Office Equipment",
+            "entity": "2F",
+            "consol": 6512
+          },
+          {
+            "code": "1610-2F",
+            "name": "Machinery & Equipment",
+            "entity": "2F",
+            "consol": 338546
+          },
+          {
+            "code": "1805-SVC",
+            "name": "Equipment",
+            "entity": "SVC",
+            "consol": 147805
+          }
+        ]
+      },
+      {
+        "code": "I-02",
+        "title": "Rental Vehicles",
+        "accounts": [
+          {
+            "code": "1510-2F",
+            "name": "Rental Vehicles",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "1519-2F",
+            "name": "Vehicles",
+            "entity": "2F",
+            "consol": -54799
+          },
+          {
+            "code": "1522-2F",
+            "name": "Vehicles:Vehicle Retrofits",
+            "entity": "2F",
+            "consol": 42508
+          },
+          {
+            "code": "1523-2F",
+            "name": "Vehicles:Rental Vehicles",
+            "entity": "2F",
+            "consol": 15156691
+          },
+          {
+            "code": "1802-NCNT",
+            "name": "Vehicles:Class 11 - Cargo Van Low Roof",
+            "entity": "NCNT",
+            "consol": 63336
+          },
+          {
+            "code": "1803-NCNT",
+            "name": "Vehicles:Class 12 - Luxury",
+            "entity": "NCNT",
+            "consol": -89705
+          },
+          {
+            "code": "1804-NCNT",
+            "name": "Vehicles:Class 13 - Cube Trucks",
+            "entity": "NCNT",
+            "consol": 3764842
+          },
+          {
+            "code": "1805-NCNT",
+            "name": "Vehicles:Class 13 - Cube Trucks:Retrofits",
+            "entity": "NCNT",
+            "consol": 113250
+          },
+          {
+            "code": "1806-NCNT",
+            "name": "Vehicles:Class 15 - 12 Ft' Stakebeds",
+            "entity": "NCNT",
+            "consol": 1380335
+          },
+          {
+            "code": "1807-NCNT",
+            "name": "Vehicles:Class 21 - Minivan",
+            "entity": "NCNT",
+            "consol": 600455
+          },
+          {
+            "code": "1808-NCNT",
+            "name": "Vehicles:Class 24 - 24' Box Truck",
+            "entity": "NCNT",
+            "consol": 1304266
+          },
+          {
+            "code": "1809-NCNT",
+            "name": "Vehicles:Class 28 - 15 Passenger Vans",
+            "entity": "NCNT",
+            "consol": 1168475
+          },
+          {
+            "code": "1810-NCNT",
+            "name": "Vehicles:Class 29 - High Roof Cargo Vans",
+            "entity": "NCNT",
+            "consol": 1133113
+          },
+          {
+            "code": "1811-NCNT",
+            "name": "Vehicles:Class 3 - Midsize",
+            "entity": "NCNT",
+            "consol": 0
+          },
+          {
+            "code": "1812-NCNT",
+            "name": "Vehicles:Class 31 - 144\" Sprinter Cargo",
+            "entity": "NCNT",
+            "consol": 57266
+          },
+          {
+            "code": "1813-NCNT",
+            "name": "Vehicles:Class 31 - 144\" Sprinter Cargo:Shelving",
+            "entity": "NCNT",
+            "consol": 11285
+          },
+          {
+            "code": "1814-NCNT",
+            "name": "Vehicles:Class 32 - 170\" Sprinter Cargo",
+            "entity": "NCNT",
+            "consol": -37012
+          },
+          {
+            "code": "1815-NCNT",
+            "name": "Vehicles:Class 32 - 170\" Sprinter Cargo:Shelving",
+            "entity": "NCNT",
+            "consol": 36960
+          },
+          {
+            "code": "1816-NCNT",
+            "name": "Vehicles:Class 33 - 170\" EXT Sprinter Cargo",
+            "entity": "NCNT",
+            "consol": 0
+          },
+          {
+            "code": "1817-NCNT",
+            "name": "Vehicles:Class 34 - Promaster With Shelves",
+            "entity": "NCNT",
+            "consol": 117100
+          },
+          {
+            "code": "1818-NCNT",
+            "name": "Vehicles:Class 35 - Short Cargo Van",
+            "entity": "NCNT",
+            "consol": 26620
+          },
+          {
+            "code": "1819-NCNT",
+            "name": "Vehicles:Class 36 - Short Cargo with Shelves",
+            "entity": "NCNT",
+            "consol": 212182
+          },
+          {
+            "code": "1820-NCNT",
+            "name": "Vehicles:Class 38 - Ext Cargo Van",
+            "entity": "NCNT",
+            "consol": 60846
+          },
+          {
+            "code": "1821-NCNT",
+            "name": "Vehicles:Class 40 - Shorty 40",
+            "entity": "NCNT",
+            "consol": 1754393
+          },
+          {
+            "code": "1822-NCNT",
+            "name": "Vehicles:Class 41 - Box Truck with Tuckaway",
+            "entity": "NCNT",
+            "consol": 80226
+          },
+          {
+            "code": "1823-NCNT",
+            "name": "Vehicles:Class 51 - 4x4 Stakebeds",
+            "entity": "NCNT",
+            "consol": 103725
+          },
+          {
+            "code": "1824-NCNT",
+            "name": "Vehicles:Class 52 - 5th Wheel Stake",
+            "entity": "NCNT",
+            "consol": 0
+          },
+          {
+            "code": "1825-NCNT",
+            "name": "Vehicles:Class 6 - Full Size",
+            "entity": "NCNT",
+            "consol": 56842
+          },
+          {
+            "code": "1826-NCNT",
+            "name": "Vehicles:Class 7 - Large SUV",
+            "entity": "NCNT",
+            "consol": 451615
+          },
+          {
+            "code": "1827-NCNT",
+            "name": "Vehicles:Class 8 - Low Roof 15 Pass Vans",
+            "entity": "NCNT",
+            "consol": -126604
+          },
+          {
+            "code": "1828-NCNT",
+            "name": "Vehicles:Class 28 - 15 Passenger Vans:Class 28S- 15 Passenger Sprinter",
+            "entity": "NCNT",
+            "consol": -5788
+          },
+          {
+            "code": "1829-NCNT",
+            "name": "Vehicles:Class 28 - 15 Passenger Vans:Class 28P - 15 Passenger Van Dual Wheels",
+            "entity": "NCNT",
+            "consol": 92500
+          },
+          {
+            "code": "1830-NCNT",
+            "name": "Vehicles:Class 23 - Large Stakebed",
+            "entity": "NCNT",
+            "consol": 223817
+          },
+          {
+            "code": "1830-SVC",
+            "name": "Rental Vehicles",
+            "entity": "SVC",
+            "consol": 270776
+          },
+          {
+            "code": "1831-NCNT",
+            "name": "Vehicles:Class 17 - Pickup (Car)",
+            "entity": "NCNT",
+            "consol": 74390
+          },
+          {
+            "code": "1831-SVC",
+            "name": "Rental Vehicles:Retrofits",
+            "entity": "SVC",
+            "consol": 6314
+          },
+          {
+            "code": "1832-NCNT",
+            "name": "Vehicles:Class 18 - Pickup (Car)",
+            "entity": "NCNT",
+            "consol": 63627
+          },
+          {
+            "code": "1833-NCNT",
+            "name": "Vehicles:Class 20 - F-550 Box Truck",
+            "entity": "NCNT",
+            "consol": 667075
+          },
+          {
+            "code": "1834-NCNT",
+            "name": "Vehicles:15L - Large Stakebed",
+            "entity": "NCNT",
+            "consol": 234615
+          },
+          {
+            "code": "1835-NCNT",
+            "name": "Vehicles:Class 12 - Luxury:Class 12H - Hybrid SUV",
+            "entity": "NCNT",
+            "consol": 15328
+          },
+          {
+            "code": "1840-NCNT",
+            "name": "Vehicles",
+            "entity": "NCNT",
+            "consol": 49
+          }
+        ]
+      },
+      {
+        "code": "I-06",
+        "title": "Software",
+        "accounts": [
+          {
+            "code": "1501-2F",
+            "name": "Construction in progress",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "1880-SVC",
+            "name": "Software Costs",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "I-04",
+        "title": "Trailer Equipment",
+        "accounts": [
+          {
+            "code": "1515-2F",
+            "name": "Vehicles:Trailers:Class 1R - Single Cast Trailers",
+            "entity": "2F",
+            "consol": 1114529
+          },
+          {
+            "code": "1516-2F",
+            "name": "Vehicles:Trailers:Class 2T - 2 Room Trailers",
+            "entity": "2F",
+            "consol": 5836939
+          },
+          {
+            "code": "1517-2F",
+            "name": "Vehicles:Trailers:Class 3M - 3 Room Trailers",
+            "entity": "2F",
+            "consol": 4134831
+          },
+          {
+            "code": "1518-2F",
+            "name": "Vehicles:Trailers:Class 8M - 8 Station Makeup",
+            "entity": "2F",
+            "consol": 695400
+          },
+          {
+            "code": "1570-2F",
+            "name": "Trailer Batteries",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "1801-NCNT",
+            "name": "Trailers:Class 8M - 8 Station Makeup",
+            "entity": "NCNT",
+            "consol": 372527
+          },
+          {
+            "code": "1801.01-NCNT",
+            "name": "Trailers:Class 2T - 2 Room Trailers",
+            "entity": "NCNT",
+            "consol": 54053
+          },
+          {
+            "code": "1801.02-NCNT",
+            "name": "Trailers",
+            "entity": "NCNT",
+            "consol": 653455
+          },
+          {
+            "code": "1835-SVC",
+            "name": "2R - 2 Room Cast Trailer",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "1836-NCNT",
+            "name": "Trailer Batteries",
+            "entity": "NCNT",
+            "consol": 44010
+          },
+          {
+            "code": "1837-NCNT",
+            "name": "Trailers",
+            "entity": "NCNT",
+            "consol": 0
+          },
+          {
+            "code": "1838-NCNT",
+            "name": "Trailers:Class 2T - 2 Room Trailers",
+            "entity": "NCNT",
+            "consol": 0
+          },
+          {
+            "code": "1839-NCNT",
+            "name": "Trailers:Class 4BR - Bathroom Trailers",
+            "entity": "NCNT",
+            "consol": 305649
+          },
+          {
+            "code": "1840-SVC",
+            "name": "Trailer Equipment",
+            "entity": "SVC",
+            "consol": 30767
+          },
+          {
+            "code": "1841-SVC",
+            "name": "Batteries",
+            "entity": "SVC",
+            "consol": 948561
+          },
+          {
+            "code": "1896-NCNT",
+            "name": "Trailer Batteries",
+            "entity": "NCNT",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "I-05",
+        "title": "Leasehold improvement",
+        "accounts": [
+          {
+            "code": "1600-2F",
+            "name": "Leasehold Improvements",
+            "entity": "2F",
+            "consol": 13285
+          },
+          {
+            "code": "1820-SVC",
+            "name": "Leasehold Improvements",
+            "entity": "SVC",
+            "consol": 123534
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "I1",
+    "title": "Accumulated depreciation",
+    "classification": "Asset",
+    "subgroups": [
+      {
+        "code": "I1-01",
+        "title": "A/D - Rental",
+        "accounts": [
+          {
+            "code": "1521-2F",
+            "name": "Vehicles:Trailers:Accumulated Depreciation-Trailer",
+            "entity": "2F",
+            "consol": -2790253
+          },
+          {
+            "code": "1550-2F",
+            "name": "Accumulated Depreciation-Rental",
+            "entity": "2F",
+            "consol": -10201772
+          },
+          {
+            "code": "1874-SVC",
+            "name": "Accum Depr - Vehicles Retrofits",
+            "entity": "SVC",
+            "consol": -756
+          },
+          {
+            "code": "1875-SVC",
+            "name": "Accum Depr - Vehicles",
+            "entity": "SVC",
+            "consol": -553488
+          },
+          {
+            "code": "1877-SVC",
+            "name": "Accum Depr - Vehicles Retrofits",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "1877.1-SVC",
+            "name": "Accum Depr - Vehicles",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "1897-NCNT",
+            "name": "Accumulated Depreciation - Trailer Batteries",
+            "entity": "NCNT",
+            "consol": 0
+          },
+          {
+            "code": "1898-NCNT",
+            "name": "Accumulated Depreciation - Trailers",
+            "entity": "NCNT",
+            "consol": -315539
+          },
+          {
+            "code": "1898.1-NCNT",
+            "name": "Accum Depr - Trailer Batteries",
+            "entity": "NCNT",
+            "consol": -17945
+          },
+          {
+            "code": "1899-NCNT",
+            "name": "Accumulated Depreciation - Vehicles",
+            "entity": "NCNT",
+            "consol": -2472855
+          },
+          {
+            "code": "NEW-10-2F",
+            "name": "Accum Depr -Vehicle Retrofits",
+            "entity": "2F",
+            "consol": -14760
+          }
+        ]
+      },
+      {
+        "code": "I1-02",
+        "title": "A/D - Non rental",
+        "accounts": [
+          {
+            "code": "1530-2F",
+            "name": "Accumulated Depreciation-Non Vehicle",
+            "entity": "2F",
+            "consol": -217989
+          },
+          {
+            "code": "1876-SVC",
+            "name": "Accum Depr - Fixed Assets",
+            "entity": "SVC",
+            "consol": -402435
+          },
+          {
+            "code": "1878-SVC",
+            "name": "Accum Depr - Fixed Assets",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "I2",
+    "title": "Right of Use Asset",
+    "classification": "Asset",
+    "subgroups": [
+      {
+        "code": "I2-01",
+        "title": "Right of Use Asset & Accum. Depreciation",
+        "accounts": [
+          {
+            "code": "1520-2F",
+            "name": "Right of Use Asset",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "1620-2F",
+            "name": "Accumulated Depreciation, ROU",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "1879-SVC",
+            "name": "Accum Depr, ROU",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "1890-SVC",
+            "name": "Right of Use Assets",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "1899-SVC",
+            "name": "Accumulated Depreciation, ROU",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "1990-SVC",
+            "name": "Right of Use Assets",
+            "entity": "SVC",
+            "consol": 34944513
+          },
+          {
+            "code": "1991-SVC",
+            "name": "Accum Depr, ROU",
+            "entity": "SVC",
+            "consol": -10305717
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "K",
+    "title": "Intercompany Balances",
+    "classification": "Asset",
+    "subgroups": [
+      {
+        "code": "K-01",
+        "title": "Intercompany Balances",
+        "accounts": [
+          {
+            "code": "1200-NCNT",
+            "name": "Accounts Receivable (A/R):Due from Silverco Enterprises, LLC",
+            "entity": "NCNT",
+            "consol": 0
+          },
+          {
+            "code": "1300-NCNT",
+            "name": "Due from Two Family",
+            "entity": "NCNT",
+            "consol": 8237716
+          },
+          {
+            "code": "1303-NCNT",
+            "name": "Due from Silverco Enterprises, LLC",
+            "entity": "NCNT",
+            "consol": -611808
+          },
+          {
+            "code": "1315-2F",
+            "name": "Due from NCNT Holdings",
+            "entity": "2F",
+            "consol": 429722
+          },
+          {
+            "code": "1325-2F",
+            "name": "Due from Silverco Enterprises",
+            "entity": "2F",
+            "consol": -495614
+          },
+          {
+            "code": "1335-SVC",
+            "name": "Due from Two Family",
+            "entity": "SVC",
+            "consol": 6237700
+          },
+          {
+            "code": "1336-SVC",
+            "name": "Due from NCNT Holdings, LLC",
+            "entity": "SVC",
+            "consol": 4395885
+          },
+          {
+            "code": "1350-SVC",
+            "name": "Due from NCNT Holdings, LLC",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "2340-2F",
+            "name": "Due to Silverco Enterprises",
+            "entity": "2F",
+            "consol": -7098625
+          },
+          {
+            "code": "2510-SVC",
+            "name": "Due to Two Family",
+            "entity": "SVC",
+            "consol": 1356539
+          },
+          {
+            "code": "2550-NCNT",
+            "name": "Due to Silverco Enterprises, LLC",
+            "entity": "NCNT",
+            "consol": 4522478
+          },
+          {
+            "code": "2550-SVC",
+            "name": "Due to NCNT Holdings, LLC",
+            "entity": "SVC",
+            "consol": -8306555
+          },
+          {
+            "code": "2551-NCNT",
+            "name": "Due to Two Family Enterprises",
+            "entity": "NCNT",
+            "consol": -360188
+          },
+          {
+            "code": "2600-2F",
+            "name": "Due to NCNT Holdings",
+            "entity": "2F",
+            "consol": -8307249
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "L",
+    "title": "Other non current assets",
+    "classification": "Asset",
+    "subgroups": [
+      {
+        "code": "L-03",
+        "title": "Other",
+        "accounts": [
+          {
+            "code": "1270-SVC",
+            "name": "Deposits",
+            "entity": "SVC",
+            "consol": 240404
+          },
+          {
+            "code": "1900-SVC",
+            "name": "Deposits Due to Avon",
+            "entity": "SVC",
+            "consol": 519187
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "M",
+    "title": "Line of credit",
+    "classification": "Liability",
+    "subgroups": [
+      {
+        "code": "M-02",
+        "title": "Line of Credit - long term",
+        "accounts": [
+          {
+            "code": "2350.2-NCNT",
+            "name": "First Source Line of Credit",
+            "entity": "NCNT",
+            "consol": -20730114
+          },
+          {
+            "code": "2350.3-NCNT",
+            "name": "First Source Line of Credit - L/T",
+            "entity": "NCNT",
+            "consol": 1559826
+          },
+          {
+            "code": "2351-NCNT",
+            "name": "US Bank Line of Credit",
+            "entity": "NCNT",
+            "consol": -75364
+          },
+          {
+            "code": "2500-2F",
+            "name": "Note Payable-1st Source Bank",
+            "entity": "2F",
+            "consol": -4988301
+          },
+          {
+            "code": "2502-SVC",
+            "name": "Related Party Line of Credit:Adcock Line of Credit",
+            "entity": "SVC",
+            "consol": -329772
+          },
+          {
+            "code": "2505-SVC",
+            "name": "Related Party Line of Credit:Johanna Byer Line of Credit",
+            "entity": "SVC",
+            "consol": -925000
+          },
+          {
+            "code": "2550-2F",
+            "name": "First Source Line of Credit - L/T",
+            "entity": "2F",
+            "consol": 727726
+          },
+          {
+            "code": "2800-2F",
+            "name": "Note Payable-Less Current Porti",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "NEW-06-NCNT",
+            "name": "First Source Line of Credit - Note B",
+            "entity": "NCNT",
+            "consol": -1994566
+          }
+        ]
+      },
+      {
+        "code": "M-01",
+        "title": "Line of credit- current",
+        "accounts": [
+          {
+            "code": "2200-SVC",
+            "name": "Current Portion Long Term Debt",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "2300-2F",
+            "name": "First Source Line of Credit - S/T",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "2350.1-NCNT",
+            "name": "First Source Line of Credit - S/T",
+            "entity": "NCNT",
+            "consol": -1559826
+          },
+          {
+            "code": "2400-2F",
+            "name": "Current Portion of LTD",
+            "entity": "2F",
+            "consol": -727726
+          },
+          {
+            "code": "2503-SVC",
+            "name": "Related Party Line of Credit:LGJ Line of Credit",
+            "entity": "SVC",
+            "consol": -1000000
+          },
+          {
+            "code": "2503.1-SVC",
+            "name": "Related Party Line of Credit:LGJ Line of Credit:Sheakley Line of Credit",
+            "entity": "SVC",
+            "consol": -1500000
+          },
+          {
+            "code": "2504-SVC",
+            "name": "Related Party Line of Credit:Adcock Properties Line of Credit",
+            "entity": "SVC",
+            "consol": -250000
+          },
+          {
+            "code": "2506-SVC",
+            "name": "Related Party Line of Credit:Lou Lauch Line of Credit",
+            "entity": "SVC",
+            "consol": -250000
+          },
+          {
+            "code": "2506.1-SVC",
+            "name": "Related Party Line of Credit:LGJ Line of Credit:Sheakley Line of Credit",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "2507-SVC",
+            "name": "Related Party Line of Credit:Blutter Line of Credit",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "2508-SVC",
+            "name": "Related Party Line of Credit:Bossart Line of Credit",
+            "entity": "SVC",
+            "consol": -500000
+          },
+          {
+            "code": "2509-SVC",
+            "name": "First Source Working Capital Line of Credit",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "2509.1-SVC",
+            "name": "First Source Working Capital Line of Credit:First Source Working Capital Interest",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "2513-SVC",
+            "name": "Related Party Line of Credit:Alexander Tang Line of Credit",
+            "entity": "SVC",
+            "consol": -150000
+          },
+          {
+            "code": "2549-SVC",
+            "name": "Related Party Line of Credit:Related Party Accrued Interest",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "2670-SVC",
+            "name": "Note Payable-Current Portion",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "NEW-02-NCNT",
+            "name": "US Bank LOC (Current)",
+            "entity": "NCNT",
+            "consol": 0
+          },
+          {
+            "code": "NEW-05-NCNT",
+            "name": "US Bank Line of Credit - Short Term",
+            "entity": "NCNT",
+            "consol": -32037
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "N",
+    "title": "Accounts payable",
+    "classification": "Liability",
+    "subgroups": [
+      {
+        "code": "N-01",
+        "title": "Accounts payable",
+        "accounts": [
+          {
+            "code": "2000-2F",
+            "name": "Accounts Payable",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "2000-NCNT",
+            "name": "Accounts Payable (A/P)",
+            "entity": "NCNT",
+            "consol": 0
+          },
+          {
+            "code": "2000-SVC",
+            "name": "Accounts Payable",
+            "entity": "SVC",
+            "consol": -1026248
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "O",
+    "title": "Accrued expenses",
+    "classification": "Liability",
+    "subgroups": [
+      {
+        "code": "O-01",
+        "title": "Accrued expenses",
+        "accounts": [
+          {
+            "code": "2010-NCNT",
+            "name": "Accrued Interest",
+            "entity": "NCNT",
+            "consol": -69244
+          },
+          {
+            "code": "2011-NCNT",
+            "name": "Accrued Expense",
+            "entity": "NCNT",
+            "consol": 0
+          },
+          {
+            "code": "2015-SVC",
+            "name": "Accrued Expenses",
+            "entity": "SVC",
+            "consol": -104008
+          },
+          {
+            "code": "2050-SVC",
+            "name": "Commissions Payable",
+            "entity": "SVC",
+            "consol": -150000
+          },
+          {
+            "code": "2100-2F",
+            "name": "Accrued Expenses",
+            "entity": "2F",
+            "consol": -57702
+          },
+          {
+            "code": "2310-SVC",
+            "name": "Credits due to Customers",
+            "entity": "SVC",
+            "consol": -19226
+          },
+          {
+            "code": "NEW-09-SVC",
+            "name": "Credits due customers",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "O-02",
+        "title": "Accrued payroll",
+        "accounts": [
+          {
+            "code": "2022-SVC",
+            "name": "Payroll Taxes Payable",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "2025-SVC",
+            "name": "Accrued Salaries",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "2030-SVC",
+            "name": "Accrued PTO",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "2035-SVC",
+            "name": "Employee 401K W/H",
+            "entity": "SVC",
+            "consol": -10591
+          },
+          {
+            "code": "2035.1-SVC",
+            "name": "Employee 401K W/H:Employee FSA Withheld",
+            "entity": "SVC",
+            "consol": -154
+          },
+          {
+            "code": "2040-SVC",
+            "name": "Garnishment Withheld",
+            "entity": "SVC",
+            "consol": -627
+          },
+          {
+            "code": "2100-SVC",
+            "name": "Payroll Liabilities",
+            "entity": "SVC",
+            "consol": -30676
+          },
+          {
+            "code": "2110-SVC",
+            "name": "Accrued PTO",
+            "entity": "SVC",
+            "consol": -114412
+          }
+        ]
+      },
+      {
+        "code": "O-03",
+        "title": "Credit Card",
+        "accounts": [
+          {
+            "code": "2006-SVC",
+            "name": "Ramp Card",
+            "entity": "SVC",
+            "consol": -113562
+          }
+        ]
+      },
+      {
+        "code": "O-09",
+        "title": "Related party accrued interest",
+        "accounts": [
+          {
+            "code": "NEW-12-SVC",
+            "name": "Related party accrued interest",
+            "entity": "SVC",
+            "consol": -879139
+          }
+        ]
+      },
+      {
+        "code": "O-07",
+        "title": "Accrued sales tax",
+        "accounts": [
+          {
+            "code": "2201-2F",
+            "name": "Sales tax payable",
+            "entity": "2F",
+            "consol": -26961
+          },
+          {
+            "code": "2500-NCNT",
+            "name": "Sales tax to pay",
+            "entity": "NCNT",
+            "consol": -370540
+          }
+        ]
+      },
+      {
+        "code": "O-08",
+        "title": "Accrued sales tax - long-term",
+        "accounts": [
+          {
+            "code": "NEW-04-NCNT",
+            "name": "Sales tax to pay - non current",
+            "entity": "NCNT",
+            "consol": 0
+          },
+          {
+            "code": "NEW-07-NCNT",
+            "name": "Sales Tax to pay - Long Term",
+            "entity": "NCNT",
+            "consol": -392927
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "O1",
+    "title": "Deferred sublease income",
+    "classification": "Liability",
+    "subgroups": [
+      {
+        "code": "O1",
+        "title": "Deferred sublease income",
+        "accounts": [
+          {
+            "code": "2020-SVC",
+            "name": "Deferred sublease Income",
+            "entity": "SVC",
+            "consol": -248739
+          },
+          {
+            "code": "NEW-08-SVC",
+            "name": "Deferred Sublease income",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "O2",
+    "title": "Customer deposits",
+    "classification": "Liability",
+    "subgroups": [
+      {
+        "code": "O2-01",
+        "title": "Customer deposits",
+        "accounts": [
+          {
+            "code": "2300-SVC",
+            "name": "Customer Deposits",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "O3",
+    "title": "Lease Liability",
+    "classification": "Liability",
+    "subgroups": [
+      {
+        "code": "O3-01",
+        "title": "Current lease liabilities",
+        "accounts": [
+          {
+            "code": "2350-2F",
+            "name": "Lease Liability",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "2650-2F",
+            "name": "Lease Liabilities, Short-Term",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "2675-SVC",
+            "name": "Lease Liability, Short Term",
+            "entity": "SVC",
+            "consol": -5621538
+          },
+          {
+            "code": "2765-SVC",
+            "name": "Lease Liability, Short Term",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "NEW-01-2F",
+            "name": "Lease liabilities, short-term",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "NEW-01-SVC",
+            "name": "Lease liabilities, short-term",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "O3-02",
+        "title": "Non-current lease liabilities",
+        "accounts": [
+          {
+            "code": "2800-SVC",
+            "name": "Lease Liability, Long Term",
+            "entity": "SVC",
+            "consol": -20100208
+          },
+          {
+            "code": "NEW-02-2F",
+            "name": "Lease liabilities, long-term",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "NEW-02-SVC",
+            "name": "Lease liabilities, long-term",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "O4",
+    "title": "Other Liabilities",
+    "classification": "Liability",
+    "subgroups": [
+      {
+        "code": "O4-01",
+        "title": "Subtenant Security Deposits",
+        "accounts": [
+          {
+            "code": "2311-SVC",
+            "name": "Sublease Security Deposits",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "2400-SVC",
+            "name": "Sublease Security Deposits",
+            "entity": "SVC",
+            "consol": -163351
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "O5",
+    "title": "Due to related party",
+    "classification": "Liability",
+    "subgroups": [
+      {
+        "code": "O5-01",
+        "title": "Due to related party",
+        "accounts": [
+          {
+            "code": "1301-NCNT",
+            "name": "Due from HDR",
+            "entity": "NCNT",
+            "consol": -122000
+          },
+          {
+            "code": "1302-NCNT",
+            "name": "Due from HSS",
+            "entity": "NCNT",
+            "consol": -115000
+          },
+          {
+            "code": "1326-2F",
+            "name": "Due from HDR",
+            "entity": "2F",
+            "consol": -55827
+          },
+          {
+            "code": "1337-SVC",
+            "name": "Due from HDR",
+            "entity": "SVC",
+            "consol": -2079396
+          },
+          {
+            "code": "1338-SVC",
+            "name": "Due from HSS",
+            "entity": "SVC",
+            "consol": -17838
+          },
+          {
+            "code": "1356-SVC",
+            "name": "Due from HDR",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "1357-SVC",
+            "name": "Due from HSS",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "2552-NCNT",
+            "name": "Due to HSS",
+            "entity": "NCNT",
+            "consol": 60205
+          },
+          {
+            "code": "2552-SVC",
+            "name": "Due to HDR",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "2560-SVC",
+            "name": "Due to HDR",
+            "entity": "SVC",
+            "consol": -215762
+          }
+        ]
+      },
+      {
+        "code": "O5-02",
+        "title": "Due to parent",
+        "accounts": [
+          {
+            "code": "2562-SVC",
+            "name": "Due to MT Studio Services",
+            "entity": "SVC",
+            "consol": -737000
+          },
+          {
+            "code": "NEW-11-SVC",
+            "name": "Due to MT Studio Services",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "P",
+    "title": "Income tax liabilities",
+    "classification": "Liability",
+    "subgroups": [
+      {
+        "code": "P-01",
+        "title": "Income taxes payable",
+        "accounts": [
+          {
+            "code": "2200-2F",
+            "name": "Income Taxes Payable",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "NEW-04-2F",
+            "name": "Income Tax Payable",
+            "entity": "2F",
+            "consol": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "P2",
+    "title": "Deferred income taxes, long-term",
+    "classification": "Liability",
+    "subgroups": [
+      {
+        "code": "P2-01",
+        "title": "Deferred income taxes,  long-term",
+        "accounts": [
+          {
+            "code": "2950-2F",
+            "name": "Deferred Income Tax",
+            "entity": "2F",
+            "consol": -5140000
+          },
+          {
+            "code": "NEW-07-2F",
+            "name": "Deferred Tax Liabilities",
+            "entity": "2F",
+            "consol": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "S",
+    "title": "Common stock",
+    "classification": "Equity",
+    "subgroups": [
+      {
+        "code": "S-01",
+        "title": "Common stock",
+        "accounts": [
+          {
+            "code": "3000-2F",
+            "name": "Common Stock",
+            "entity": "2F",
+            "consol": -1000
+          },
+          {
+            "code": "3200-SVC",
+            "name": "Common Stock",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "S1",
+    "title": "Retained earnings",
+    "classification": "Equity",
+    "subgroups": [
+      {
+        "code": "S1-01",
+        "title": "Retained earnings",
+        "accounts": [
+          {
+            "code": "3010-2F",
+            "name": "Retained Earnings",
+            "entity": "2F",
+            "consol": 8902484
+          },
+          {
+            "code": "3100-NCNT",
+            "name": "Retained Earnings",
+            "entity": "NCNT",
+            "consol": -2319241
+          },
+          {
+            "code": "3100-SVC",
+            "name": "Retained Earnings",
+            "entity": "SVC",
+            "consol": 2064003
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "S2",
+    "title": "Additional Paid Capital",
+    "classification": "Equity",
+    "subgroups": [
+      {
+        "code": "S2-01",
+        "title": "Additional Paid In Capital",
+        "accounts": [
+          {
+            "code": "3300-SVC",
+            "name": "Additional Paid in Capital",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "S3",
+    "title": "Distributions",
+    "classification": "Equity",
+    "subgroups": [
+      {
+        "code": "S3-01",
+        "title": "Distributions",
+        "accounts": [
+          {
+            "code": "3100-2F",
+            "name": "Shareholder Distributions",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "3400-SVC",
+            "name": "Shareholder Distributions",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "X",
+    "title": "Revenues",
+    "classification": "Revenue",
+    "subgroups": [
+      {
+        "code": "X-01",
+        "title": "Rental Revenue",
+        "accounts": [
+          {
+            "code": "4001-SVC",
+            "name": "Rental Revenue:Daily Rental",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4001.01-SVC",
+            "name": "Rental Revenue:Daily Rental:Hollywood",
+            "entity": "SVC",
+            "consol": -1190915
+          },
+          {
+            "code": "4001.2-SVC",
+            "name": "Rental Revenue:Daily Rental:Burbank",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4001.20-SVC",
+            "name": "Rental Revenue:Daily Rental:Burbank",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4001.3-SVC",
+            "name": "Rental Revenue:Daily Rental:Santa Monica",
+            "entity": "SVC",
+            "consol": -17287
+          },
+          {
+            "code": "4001.30-SVC",
+            "name": "Rental Revenue:Daily Rental:Santa Monica",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4001.4-SVC",
+            "name": "Rental Revenue:Daily Rental:Beverly Hills",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4001.40-SVC",
+            "name": "Rental Revenue:Daily Rental:Beverly Hills",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4001.6-SVC",
+            "name": "Rental Revenue:Daily Rental:Santa Clarita",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4001.60-SVC",
+            "name": "Rental Revenue:Daily Rental:Santa Clarita",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4001.7-SVC",
+            "name": "Rental Revenue:Daily Rental:Glen Oaks",
+            "entity": "SVC",
+            "consol": -28480
+          },
+          {
+            "code": "4001.8-SVC",
+            "name": "Rental Revenue:Daily Rental:Saticoy",
+            "entity": "SVC",
+            "consol": -8587019
+          },
+          {
+            "code": "4001.9-SVC",
+            "name": "Rental Revenue:Daily Rental:HDR",
+            "entity": "SVC",
+            "consol": -1219
+          },
+          {
+            "code": "4050-SVC",
+            "name": "Rental Revenue:Rental Equipment",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4050.01-SVC",
+            "name": "Service Revenue:Rental Equipment:Hollywood",
+            "entity": "SVC",
+            "consol": -48801
+          },
+          {
+            "code": "4050.2-SVC",
+            "name": "Rental Revenue:Rental Equipment:Burbank",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4050.20-SVC",
+            "name": "Rental Revenue:Rental Equipment:Burbank",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4050.3-SVC",
+            "name": "Rental Revenue:Rental Equipment:Santa Monica",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4050.30-SVC",
+            "name": "Rental Revenue:Rental Equipment:Santa Monica",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4050.4-SVC",
+            "name": "Rental Revenue:Rental Equipment:Beverly Hills",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4050.40-SVC",
+            "name": "Rental Revenue:Rental Equipment:Beverly Hills",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4050.6-SVC",
+            "name": "Rental Revenue:Rental Equipment:Santa Clarita",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4050.60-SVC",
+            "name": "Rental Revenue:Rental Equipment:Santa Clarita",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4050.7-SVC",
+            "name": "Rental Revenue:Rental Equipment:Glen Oaks",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4050.8-SVC",
+            "name": "Service Revenue:Rental Equipment:Saticoy",
+            "entity": "SVC",
+            "consol": -240020
+          },
+          {
+            "code": "4300-2F",
+            "name": "Leasing Income",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "4775-NCNT",
+            "name": "Leasing Income",
+            "entity": "NCNT",
+            "consol": 0
+          },
+          {
+            "code": "9020-NCNT",
+            "name": "Leasing Income",
+            "entity": "NCNT",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "X-02",
+        "title": "Customer Insurance Revenue",
+        "accounts": [
+          {
+            "code": "4060-SVC",
+            "name": "Rental Revenue:Rental Liability Insurance",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4060.01-SVC",
+            "name": "Service Revenue:Rental Liability Insurance:Hollywood",
+            "entity": "SVC",
+            "consol": -44774
+          },
+          {
+            "code": "4060.2-SVC",
+            "name": "Rental Revenue:Rental Liability Insurance:Burbank",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4060.20-SVC",
+            "name": "Rental Revenue:Rental Liability Insurance:Burbank",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4060.3-SVC",
+            "name": "Service Revenue:Rental Liability Insurance:Santa Monica",
+            "entity": "SVC",
+            "consol": -4617
+          },
+          {
+            "code": "4060.30-SVC",
+            "name": "Rental Revenue:Rental Liability Insurance:Santa Monica",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4060.4-SVC",
+            "name": "Rental Revenue:Rental Liability Insurance:Beverly Hills",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4060.40-SVC",
+            "name": "Rental Revenue:Rental Liability Insurance:Beverly Hills",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4060.6-SVC",
+            "name": "Rental Revenue:Rental Liability Insurance:Santa Clarita",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4060.60-SVC",
+            "name": "Rental Revenue:Rental Liability Insurance:Santa Clarita",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4060.7-SVC",
+            "name": "Rental Revenue:Rental Liability Insurance:Glen Oaks",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4060.8-SVC",
+            "name": "Service Revenue:Rental Liability Insurance:Saticoy",
+            "entity": "SVC",
+            "consol": -113929
+          }
+        ]
+      },
+      {
+        "code": "X-08",
+        "title": "Miscellaneous",
+        "accounts": [
+          {
+            "code": "4002-SVC",
+            "name": "Service Revenue:Delivery Fee",
+            "entity": "SVC",
+            "consol": -84865
+          },
+          {
+            "code": "4017-SVC",
+            "name": "Service Revenue:Cleaning Fee",
+            "entity": "SVC",
+            "consol": -700
+          },
+          {
+            "code": "4070-SVC",
+            "name": "Rental Revenue:Surcharges",
+            "entity": "SVC",
+            "consol": -3915
+          },
+          {
+            "code": "4100-SVC",
+            "name": "Other Income:Miscellaneous Revenue",
+            "entity": "SVC",
+            "consol": -72065
+          },
+          {
+            "code": "4400-SVC",
+            "name": "Rental Revenue:Commissions Income",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4501-SVC",
+            "name": "Trailers Income",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4701-SVC",
+            "name": "Accounts Receivable Collected (deleted):Card Connect - Merchant-Deposit (deleted)",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4710-SVC",
+            "name": "Accounts Receivable Collected (deleted):Checks Deposited Office Deposit-A/R (deleted)",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4715-SVC",
+            "name": "Accounts Receivable Collected (deleted):Direct ACH / Wire (deleted)",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4720-SVC",
+            "name": "Office Deposit-A/R-Deposit",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4920-SVC",
+            "name": "Damage Revenue:CITATION REIMBURSEMENT",
+            "entity": "SVC",
+            "consol": -8862
+          },
+          {
+            "code": "6001-SVC",
+            "name": "Reconciliation Discrepancies:Miscellaneous Income/Expense",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6002-SVC",
+            "name": "Reconciliation Discrepancies:Prior Period Adjustment",
+            "entity": "SVC",
+            "consol": -220888
+          }
+        ]
+      },
+      {
+        "code": "X-03",
+        "title": "Parking Revenue",
+        "accounts": [
+          {
+            "code": "4200-SVC",
+            "name": "Parking Income",
+            "entity": "SVC",
+            "consol": -47943
+          },
+          {
+            "code": "4200.01-SVC",
+            "name": "Parking Income:Hollywood",
+            "entity": "SVC",
+            "consol": -151462
+          },
+          {
+            "code": "4200.2-SVC",
+            "name": "Parking Income:Burbank",
+            "entity": "SVC",
+            "consol": -57900
+          },
+          {
+            "code": "4200.20-SVC",
+            "name": "Parking Income:Burbank",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4200.3-SVC",
+            "name": "Parking Income:Santa Monica",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4200.30-SVC",
+            "name": "Parking Income:Santa Monica",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4200.4-SVC",
+            "name": "Parking Income:Beverly Hills",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4200.40-SVC",
+            "name": "Parking Income:Beverly Hills",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4200.6-SVC",
+            "name": "Parking Income:Santa Clarita",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4200.60-SVC",
+            "name": "Parking Income:Santa Clarita",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4200.7-SVC",
+            "name": "Parking Income:Glen Oaks",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4200.8-SVC",
+            "name": "Parking Income:Saticoy",
+            "entity": "SVC",
+            "consol": -384772
+          }
+        ]
+      },
+      {
+        "code": "X-04",
+        "title": "Loss/Damage Waiver",
+        "accounts": [
+          {
+            "code": "4010-SVC",
+            "name": "Damage Revenue:Damage Reimbursements",
+            "entity": "SVC",
+            "consol": -711489
+          },
+          {
+            "code": "4011-SVC",
+            "name": "Damage Revenue:Damage Reimbursements:Admin Fee",
+            "entity": "SVC",
+            "consol": 819
+          },
+          {
+            "code": "4013-SVC",
+            "name": "Damage Revenue:Damage Reimbursements:Damage Admin Fee Income",
+            "entity": "SVC",
+            "consol": -30268
+          },
+          {
+            "code": "4030-SVC",
+            "name": "Rental Revenue:Loss Damage Waiver",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4030.01-SVC",
+            "name": "Service Revenue:Loss Damage Waiver:Hollywood",
+            "entity": "SVC",
+            "consol": -79842
+          },
+          {
+            "code": "4030.2-SVC",
+            "name": "Rental Revenue:Loss Damage Waiver:Burbank",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4030.20-SVC",
+            "name": "Rental Revenue:Loss Damage Waiver:Burbank",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4030.3-SVC",
+            "name": "Service Revenue:Loss Damage Waiver:Santa Monica",
+            "entity": "SVC",
+            "consol": -3613
+          },
+          {
+            "code": "4030.30-SVC",
+            "name": "Rental Revenue:Loss Damage Waiver:Santa Monica",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4030.4-SVC",
+            "name": "Rental Revenue:Loss Damage Waiver:Beverly Hills",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4030.40-SVC",
+            "name": "Rental Revenue:Loss Damage Waiver:Beverly Hills",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4030.6-SVC",
+            "name": "Rental Revenue:Loss Damage Waiver:Santa Clarita",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4030.60-SVC",
+            "name": "Rental Revenue:Loss Damage Waiver:Santa Clarita",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4030.7-SVC",
+            "name": "Rental Revenue:Loss Damage Waiver:Glen Oaks",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4030.8-SVC",
+            "name": "Service Revenue:Loss Damage Waiver:Saticoy",
+            "entity": "SVC",
+            "consol": -285559
+          }
+        ]
+      },
+      {
+        "code": "X-05",
+        "title": "Fuel reimbursement",
+        "accounts": [
+          {
+            "code": "4020-SVC",
+            "name": "Rental Revenue:Fuel Charge",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4020.01-SVC",
+            "name": "Service Revenue:Fuel Charge:Hollywood",
+            "entity": "SVC",
+            "consol": -35608
+          },
+          {
+            "code": "4020.2-SVC",
+            "name": "Rental Revenue:Fuel Charge:Burbank",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4020.20-SVC",
+            "name": "Rental Revenue:Fuel Charge:Burbank",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4020.3-SVC",
+            "name": "Service Revenue:Fuel Charge:Santa Monica",
+            "entity": "SVC",
+            "consol": -360
+          },
+          {
+            "code": "4020.30-SVC",
+            "name": "Rental Revenue:Fuel Charge:Santa Monica",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4020.4-SVC",
+            "name": "Rental Revenue:Fuel Charge:Beverly Hills",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4020.40-SVC",
+            "name": "Rental Revenue:Fuel Charge:Beverly Hills",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4020.6-SVC",
+            "name": "Rental Revenue:Fuel Charge:Santa Clarita",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4020.60-SVC",
+            "name": "Rental Revenue:Fuel Charge:Santa Clarita",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4020.7-SVC",
+            "name": "Rental Revenue:Fuel Charge:Glen Oaks",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4020.8-SVC",
+            "name": "Service Revenue:Fuel Charge:Saticoy",
+            "entity": "SVC",
+            "consol": -141554
+          },
+          {
+            "code": "4040-SVC",
+            "name": "Rental Revenue:Mileage Income",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4040.01-SVC",
+            "name": "Service Revenue:Mileage Income:Hollywood",
+            "entity": "SVC",
+            "consol": -20874
+          },
+          {
+            "code": "4040.2-SVC",
+            "name": "Rental Revenue:Mileage Income:Burbank",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4040.20-SVC",
+            "name": "Rental Revenue:Mileage Income:Burbank",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4040.3-SVC",
+            "name": "Rental Revenue:Mileage Income:Santa Monica",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4040.30-SVC",
+            "name": "Rental Revenue:Mileage Income:Santa Monica",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4040.4-SVC",
+            "name": "Rental Revenue:Mileage Income:Beverly Hills",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4040.40-SVC",
+            "name": "Rental Revenue:Mileage Income:Beverly Hills",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4040.6-SVC",
+            "name": "Rental Revenue:Mileage Income:Santa Clarita",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4040.60-SVC",
+            "name": "Rental Revenue:Mileage Income:Santa Clarita",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4040.7-SVC",
+            "name": "Rental Revenue:Mileage Income:Glen Oaks",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4040.8-SVC",
+            "name": "Service Revenue:Mileage Income:Saticoy",
+            "entity": "SVC",
+            "consol": -106083
+          }
+        ]
+      },
+      {
+        "code": "X-06",
+        "title": "Rental Services Revenue",
+        "accounts": [
+          {
+            "code": "4065-SVC",
+            "name": "Service Revenue:Service Charge",
+            "entity": "SVC",
+            "consol": -12495
+          },
+          {
+            "code": "4065.01-SVC",
+            "name": "Service Revenue:Service Charge:Hollywood",
+            "entity": "SVC",
+            "consol": -108118
+          },
+          {
+            "code": "4065.2-SVC",
+            "name": "Rental Revenue:Service Charge:Burbank",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4065.20-SVC",
+            "name": "Rental Revenue:Service Charge:Burbank",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4065.3-SVC",
+            "name": "Service Revenue:Service Charge:Santa Monica",
+            "entity": "SVC",
+            "consol": -2743
+          },
+          {
+            "code": "4065.30-SVC",
+            "name": "Rental Revenue:Service Charge:Santa Monica",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4065.4-SVC",
+            "name": "Rental Revenue:Service Charge:Beverly Hills",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4065.40-SVC",
+            "name": "Rental Revenue:Service Charge:Beverly Hills",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4065.6-SVC",
+            "name": "Rental Revenue:Service Charge:Santa Clarita",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4065.60-SVC",
+            "name": "Rental Revenue:Service Charge:Santa Clarita",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4065.7-SVC",
+            "name": "Service Revenue:Service Charge:Glen Oaks",
+            "entity": "SVC",
+            "consol": 346
+          },
+          {
+            "code": "4065.8-SVC",
+            "name": "Service Revenue:Service Charge:Saticoy",
+            "entity": "SVC",
+            "consol": -474013
+          },
+          {
+            "code": "4065.9-SVC",
+            "name": "Rental Revenue:Service Charge:HDR",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4080-SVC",
+            "name": "Service Revenue:Service Charge:Vehicle License Fees",
+            "entity": "SVC",
+            "consol": 4932
+          },
+          {
+            "code": "4760-SVC",
+            "name": "Other Income:Services",
+            "entity": "SVC",
+            "consol": -57206
+          }
+        ]
+      },
+      {
+        "code": "X-07",
+        "title": "Fleet Management (RP)",
+        "accounts": [
+          {
+            "code": "4650-SVC",
+            "name": "Fleet Management Revenue",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "X1",
+    "title": "Discounts",
+    "classification": "Revenue",
+    "subgroups": [
+      {
+        "code": "X1-01",
+        "title": "Discounts",
+        "accounts": [
+          {
+            "code": "4071-SVC",
+            "name": "Rental Revenue:Refunds",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "4075-SVC",
+            "name": "Rental Revenue:Time & Mileage Discount",
+            "entity": "SVC",
+            "consol": 614086
+          },
+          {
+            "code": "4320-SVC",
+            "name": "Rental Revenue:Charge Backs and NSF",
+            "entity": "SVC",
+            "consol": 399
+          },
+          {
+            "code": "4500-SVC",
+            "name": "Rental Revenue:Customer Refunds",
+            "entity": "SVC",
+            "consol": 5703
+          },
+          {
+            "code": "4740-SVC",
+            "name": "Other Income:Refunds",
+            "entity": "SVC",
+            "consol": -39136
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "Y",
+    "title": "Cost of Sales",
+    "classification": "Expense",
+    "subgroups": [
+      {
+        "code": "Y090",
+        "title": "Insurance",
+        "accounts": [
+          {
+            "code": "5001-SVC",
+            "name": "Vehicle Insurance:Auto Insurance",
+            "entity": "SVC",
+            "consol": 191066
+          },
+          {
+            "code": "5010-SVC",
+            "name": "Vehicle Insurance:Auto Insurance-RLI",
+            "entity": "SVC",
+            "consol": 156089
+          }
+        ]
+      },
+      {
+        "code": "Y001",
+        "title": "Maintenance & Repair",
+        "accounts": [
+          {
+            "code": "5009-SVC",
+            "name": "Maintenance and Repair",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5035-SVC",
+            "name": "Maintenance and Repair:Oil & Filters",
+            "entity": "SVC",
+            "consol": 9166
+          },
+          {
+            "code": "5035.1-SVC",
+            "name": "Maintenance and Repair:Oil & Filters:Parts",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5035.2-SVC",
+            "name": "Maintenance and Repair:Oil & Filters:Labor",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5070-SVC",
+            "name": "Maintenance and Repair:Tires",
+            "entity": "SVC",
+            "consol": 2723
+          },
+          {
+            "code": "5070.1-SVC",
+            "name": "Maintenance and Repair:Tires:Parts",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5070.2-SVC",
+            "name": "Maintenance and Repair:Tires:Labor",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5090-SVC",
+            "name": "Maintenance and Repair:Vehicle Maintenance",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5090.1-SVC",
+            "name": "Maintenance and Repair:Vehicle Maintenance:Parts",
+            "entity": "SVC",
+            "consol": 65777
+          },
+          {
+            "code": "5090.2-SVC",
+            "name": "Maintenance and Repair:Vehicle Maintenance:Labor",
+            "entity": "SVC",
+            "consol": 42742
+          },
+          {
+            "code": "5096-SVC",
+            "name": "Maintenance and Repair:Vehicle Repairs-Liftgate",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5096.1-SVC",
+            "name": "Maintenance and Repair:Vehicle Repairs-Liftgate:Parts",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5096.2-SVC",
+            "name": "Maintenance and Repair:Vehicle Repairs-Liftgate:Labor",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "Y002",
+        "title": "Vehicle Repairs - Body",
+        "accounts": [
+          {
+            "code": "5094-SVC",
+            "name": "Vehicle Repairs-Body",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5094.1-SVC",
+            "name": "Vehicle Repairs - Body:Parts",
+            "entity": "SVC",
+            "consol": 13998
+          },
+          {
+            "code": "5094.2-SVC",
+            "name": "Vehicle Repairs - Body:Labor",
+            "entity": "SVC",
+            "consol": 27326
+          },
+          {
+            "code": "5094.3-SVC",
+            "name": "Vehicle Repairs-Body:Labor",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5095-SVC",
+            "name": "Vehicle Repairs-Body:Employee Accidents",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "Y-080",
+        "title": "Inventory changes",
+        "accounts": [
+          {
+            "code": "NEW-10-SVC",
+            "name": "PPE Adjustment",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "Y007",
+        "title": "Direct Labor Costs",
+        "accounts": [
+          {
+            "code": "5040-SVC",
+            "name": "Direct Salaries:Outside Services-Costs",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5051.1-SVC",
+            "name": "Personnel Costs:Fleet:Salaries",
+            "entity": "SVC",
+            "consol": 1277162
+          },
+          {
+            "code": "5051.2-SVC",
+            "name": "Personnel Costs:Fleet:Overtime",
+            "entity": "SVC",
+            "consol": 16048
+          },
+          {
+            "code": "5051.3-SVC",
+            "name": "Personnel Costs:Fleet:Double Overtime",
+            "entity": "SVC",
+            "consol": 1600
+          },
+          {
+            "code": "5051.4-SVC",
+            "name": "Personnel Costs:Fleet:PTO",
+            "entity": "SVC",
+            "consol": 34497
+          },
+          {
+            "code": "5052.1-SVC",
+            "name": "Personnel Costs:Sales:Salaries",
+            "entity": "SVC",
+            "consol": 812345
+          },
+          {
+            "code": "5052.2-SVC",
+            "name": "Personnel Costs:Sales:Overtime",
+            "entity": "SVC",
+            "consol": 63
+          },
+          {
+            "code": "5052.3-SVC",
+            "name": "Direct Salaries:Sales:Double Overtime",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5052.4-SVC",
+            "name": "Personnel Costs:Sales:PTO",
+            "entity": "SVC",
+            "consol": 24296
+          },
+          {
+            "code": "5053-SVC",
+            "name": "Direct Salaries:Salaries and Wages-PTO",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5054-SVC",
+            "name": "Direct Salaries:Lot Ops",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5054.1-SVC",
+            "name": "Personnel Costs:Lot Ops:Salaries",
+            "entity": "SVC",
+            "consol": 1301639
+          },
+          {
+            "code": "5054.2-SVC",
+            "name": "Personnel Costs:Lot Ops:Overtime",
+            "entity": "SVC",
+            "consol": 67218
+          },
+          {
+            "code": "5054.3-SVC",
+            "name": "Personnel Costs:Lot Ops:Double Overtime",
+            "entity": "SVC",
+            "consol": 249
+          },
+          {
+            "code": "5054.4-SVC",
+            "name": "Personnel Costs:Lot Ops:PTO",
+            "entity": "SVC",
+            "consol": 72125
+          },
+          {
+            "code": "5058-SVC",
+            "name": "Personnel Costs:Salaries-Meal",
+            "entity": "SVC",
+            "consol": 5956
+          },
+          {
+            "code": "5059-SVC",
+            "name": "Direct Salaries:Salaries-Holiday",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5076-SVC",
+            "name": "Direct Salaries:Salaries and Wages-Covid",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "Y003",
+        "title": "Vehicle Depreciation",
+        "accounts": [
+          {
+            "code": "5100-NCNT",
+            "name": "Depreciation",
+            "entity": "NCNT",
+            "consol": 1164174
+          },
+          {
+            "code": "5100-SVC",
+            "name": "Fleet Depreciation",
+            "entity": "SVC",
+            "consol": 1161
+          },
+          {
+            "code": "5550-2F",
+            "name": "Vehicle Depreciation Expense",
+            "entity": "2F",
+            "consol": 1667703
+          }
+        ]
+      },
+      {
+        "code": "Y004",
+        "title": "Vehicle Operating Costs",
+        "accounts": [
+          {
+            "code": "4000-2F",
+            "name": "Bank Charge",
+            "entity": "2F",
+            "consol": 111756
+          },
+          {
+            "code": "5002-SVC",
+            "name": "Vehicle Logistics",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5020-SVC",
+            "name": "Equipment Rental Costs",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5021-SVC",
+            "name": "Equipment Rental Costs:Two Family Equipment",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5022-SVC",
+            "name": "Equipment Rental Costs:NCNT Equipment",
+            "entity": "SVC",
+            "consol": -34079
+          },
+          {
+            "code": "5025-SVC",
+            "name": "Other Operating Costs:Vehicle Logistics:Gasoline Costs",
+            "entity": "SVC",
+            "consol": 246816
+          },
+          {
+            "code": "5030-SVC",
+            "name": "Miscellaneous Costs",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5041-SVC",
+            "name": "Vehicle Logistics:Vehicle Acquisition / Disposition",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5046-SVC",
+            "name": "Other Operating Costs:Vehicle Logistics:Vehicle Transportation",
+            "entity": "SVC",
+            "consol": 34400
+          },
+          {
+            "code": "5060-SVC",
+            "name": "Other Operating Costs:Selling Expenses:Sublease vehicle rentals",
+            "entity": "SVC",
+            "consol": 105335
+          },
+          {
+            "code": "5075-SVC",
+            "name": "Maintenance and Repair:Towing",
+            "entity": "SVC",
+            "consol": 30267
+          },
+          {
+            "code": "5085-SVC",
+            "name": "Vehicle Logistics:Vehicle Impound Fees",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5087-SVC",
+            "name": "Other Operating Costs:Vehicle License",
+            "entity": "SVC",
+            "consol": 484181
+          },
+          {
+            "code": "5088-SVC",
+            "name": "Maintenance and Repair:Vehicle Inspections",
+            "entity": "SVC",
+            "consol": 6304
+          },
+          {
+            "code": "5091-SVC",
+            "name": "Other Operating Costs:Selling Expenses:Subrental Equipment for Rentals",
+            "entity": "SVC",
+            "consol": 15700
+          },
+          {
+            "code": "5110-SVC",
+            "name": "Other Operating Costs:Vehicle Logistics:Automobile Expense",
+            "entity": "SVC",
+            "consol": 28231
+          },
+          {
+            "code": "5125-2F",
+            "name": "Citations",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "5500-2F",
+            "name": "Sales Taxes",
+            "entity": "2F",
+            "consol": 79910
+          },
+          {
+            "code": "5600-2F",
+            "name": "Vehicle Sales Expenses",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "5925-2F",
+            "name": "Fleet Management Expense",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "5950-SVC",
+            "name": "Vehicle Logistics:Gasoline",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "Y005",
+        "title": "Parts & Supplies",
+        "accounts": [
+          {
+            "code": "5004-SVC",
+            "name": "Parts & Supplies",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5045-SVC",
+            "name": "Parts & Supplies:Parts",
+            "entity": "SVC",
+            "consol": 631164
+          },
+          {
+            "code": "5047-SVC",
+            "name": "Parts & Supplies:Spare Keys",
+            "entity": "SVC",
+            "consol": 1971
+          },
+          {
+            "code": "5048-SVC",
+            "name": "Parts & Supplies:GPS Units",
+            "entity": "SVC",
+            "consol": 1510
+          },
+          {
+            "code": "5049-SVC",
+            "name": "Parts & Supplies:Trailer Parts",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "5055-SVC",
+            "name": "Other Fixed Expenses:Office Supplies & Equipment:Shop Supplies",
+            "entity": "SVC",
+            "consol": 52674
+          },
+          {
+            "code": "5065-SVC",
+            "name": "Other Fixed Expenses:Supplies",
+            "entity": "SVC",
+            "consol": 3034
+          },
+          {
+            "code": "5080-SVC",
+            "name": "Other Fixed Expenses:Uniforms",
+            "entity": "SVC",
+            "consol": 2939
+          },
+          {
+            "code": "5260-SVC",
+            "name": "Parts & Supplies:Printing and Reproduction",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "Y006",
+        "title": "Commissions",
+        "accounts": [
+          {
+            "code": "5610-2F",
+            "name": "Commission Expense",
+            "entity": "2F",
+            "consol": 86350
+          },
+          {
+            "code": "5925-SVC",
+            "name": "Other Operating Costs:Selling Expenses:Commissions",
+            "entity": "SVC",
+            "consol": 266670
+          }
+        ]
+      },
+      {
+        "code": "Y080",
+        "title": "Inventory change",
+        "accounts": [
+          {
+            "code": "NEW-01-NCNT",
+            "name": "PPE Adjustment",
+            "entity": "NCNT",
+            "consol": 0
+          },
+          {
+            "code": "NEW-08-2F",
+            "name": "PPE Adjustment",
+            "entity": "2F",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "Y008",
+        "title": "Gain/loss from sale of asset",
+        "accounts": [
+          {
+            "code": "4300-NCNT",
+            "name": "Gain / Loss on Sale of Vehicles",
+            "entity": "NCNT",
+            "consol": 810156
+          },
+          {
+            "code": "4300-SVC",
+            "name": "Gain From Asset Disposition",
+            "entity": "SVC",
+            "consol": -97358
+          },
+          {
+            "code": "9020-2F",
+            "name": "Gain on sale of vehicles",
+            "entity": "2F",
+            "consol": -1607524
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "Y2",
+    "title": "Selling expense",
+    "classification": "Expense",
+    "subgroups": [
+      {
+        "code": "Y202",
+        "title": "Sales meeting",
+        "accounts": [
+          {
+            "code": "5099-SVC",
+            "name": "Other Operating Costs:Selling Expenses",
+            "entity": "SVC",
+            "consol": 888
+          }
+        ]
+      },
+      {
+        "code": "Y203",
+        "title": "Merchant Fees",
+        "accounts": [
+          {
+            "code": "5120-SVC",
+            "name": "Other Fixed Expenses:Bank Service Charges",
+            "entity": "SVC",
+            "consol": 10694
+          },
+          {
+            "code": "5125-SVC",
+            "name": "Other Operating Costs:Merchant fees",
+            "entity": "SVC",
+            "consol": 275204
+          },
+          {
+            "code": "5126-SVC",
+            "name": "Other Operating Costs:Merchant fees:QuickBooks Payments Fees",
+            "entity": "SVC",
+            "consol": 12247
+          }
+        ]
+      },
+      {
+        "code": "Y204",
+        "title": "Showroom expenses",
+        "accounts": [
+          {
+            "code": "5980-SVC",
+            "name": "Other Operating Costs:Selling Expenses:Citations",
+            "entity": "SVC",
+            "consol": 7112
+          }
+        ]
+      },
+      {
+        "code": "Y206",
+        "title": "Citation Late Fees",
+        "accounts": [
+          {
+            "code": "6981-SVC",
+            "name": "Selling Expenses:Citations Late Fees",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "Y4",
+    "title": "General & administrative",
+    "classification": "Expense",
+    "subgroups": [
+      {
+        "code": "Y401",
+        "title": "Auto/Trans expense",
+        "accounts": [
+          {
+            "code": "6953-2F",
+            "name": "Vehicle Lease Payment",
+            "entity": "2F",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "Y402",
+        "title": "Advertising",
+        "accounts": [
+          {
+            "code": "6900-SVC",
+            "name": "Other Fixed Expenses:Advertisement",
+            "entity": "SVC",
+            "consol": 1270
+          },
+          {
+            "code": "6901-SVC",
+            "name": "Advertisement:Customer Entertainment",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6964-SVC",
+            "name": "Advertisement:Promotion",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "Y403",
+        "title": "Bad Debt Expense",
+        "accounts": [
+          {
+            "code": "6950-SVC",
+            "name": "Bad Debt Expense",
+            "entity": "SVC",
+            "consol": 450364
+          },
+          {
+            "code": "NEW-04-SVC",
+            "name": "Bad Debt Expense",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "Y404",
+        "title": "Depreciation and amortization",
+        "accounts": [
+          {
+            "code": "6000-2F",
+            "name": "Fixed Asset Depreciation",
+            "entity": "2F",
+            "consol": 71669
+          },
+          {
+            "code": "6150-SVC",
+            "name": "Asset Depreciation",
+            "entity": "SVC",
+            "consol": 312650
+          }
+        ]
+      },
+      {
+        "code": "Y406",
+        "title": "Dues and subscriptions",
+        "accounts": [
+          {
+            "code": "6160-SVC",
+            "name": "Other Fixed Expenses:Dues and Subscriptions",
+            "entity": "SVC",
+            "consol": 298217
+          },
+          {
+            "code": "6165-SVC",
+            "name": "Dues and Subscriptions:Software Development",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6567-SVC",
+            "name": "Other Fixed Expenses:Dues and Subscriptions:Payroll Service Fees",
+            "entity": "SVC",
+            "consol": 26506
+          },
+          {
+            "code": "6930-SVC",
+            "name": "Dues and Subscriptions:Computer Support (deleted)",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "NEW-09-NCNT",
+            "name": "General business expenses:Memberships & subscriptions",
+            "entity": "NCNT",
+            "consol": 3
+          },
+          {
+            "code": "NEW-12-2F",
+            "name": "Dues and Subscriptions",
+            "entity": "2F",
+            "consol": 3
+          }
+        ]
+      },
+      {
+        "code": "Y407",
+        "title": "Office Rent",
+        "accounts": [
+          {
+            "code": "4775-SVC",
+            "name": "Rent:Rent Expense:Sublease Income",
+            "entity": "SVC",
+            "consol": -4172227
+          },
+          {
+            "code": "6290-SVC",
+            "name": "Rent:Rent Expense",
+            "entity": "SVC",
+            "consol": 5800349
+          },
+          {
+            "code": "6291-SVC",
+            "name": "Lease Accounting Adjustments",
+            "entity": "SVC",
+            "consol": 361211
+          },
+          {
+            "code": "6292-SVC",
+            "name": "Rent:Rent Expense:Lease CAM / NNN",
+            "entity": "SVC",
+            "consol": 236971
+          }
+        ]
+      },
+      {
+        "code": "Y408",
+        "title": "Utilities",
+        "accounts": [
+          {
+            "code": "6390-SVC",
+            "name": "Other Fixed Expenses:Utilities",
+            "entity": "SVC",
+            "consol": 42492
+          },
+          {
+            "code": "6400-SVC",
+            "name": "Rent:Utilities:Gas and Electric",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6420-SVC",
+            "name": "External Services:Exterminator",
+            "entity": "SVC",
+            "consol": 4189
+          },
+          {
+            "code": "6425-SVC",
+            "name": "Other Fixed Expenses:Utilities:Garbage",
+            "entity": "SVC",
+            "consol": 31642
+          },
+          {
+            "code": "6430-SVC",
+            "name": "Rent:Utilities:Garbage",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6431-SVC",
+            "name": "Rent:Utilities:Portable Restrooms",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6440-SVC",
+            "name": "Other Fixed Expenses:Utilities:Water & Power",
+            "entity": "SVC",
+            "consol": 162952
+          },
+          {
+            "code": "6450-SVC",
+            "name": "Rent:Utilities:Phone Service",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6460-SVC",
+            "name": "Other Fixed Expenses:Utilities:Waste Disposal",
+            "entity": "SVC",
+            "consol": 12567
+          },
+          {
+            "code": "6935-SVC",
+            "name": "Other Fixed Expenses:Utilities:Internet Service",
+            "entity": "SVC",
+            "consol": 65556
+          },
+          {
+            "code": "6960-SVC",
+            "name": "Other Operating Costs:Parking Expense",
+            "entity": "SVC",
+            "consol": 190286
+          }
+        ]
+      },
+      {
+        "code": "Y409",
+        "title": "Employee Benefits",
+        "accounts": [
+          {
+            "code": "6295-SVC",
+            "name": "Employee Benefits:Corporate Apts",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6568-SVC",
+            "name": "Employee Benefits:Bonus",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6942-SVC",
+            "name": "Employee Benefits",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6943-SVC",
+            "name": "Personnel Costs:Employee Benefits:Employee Benefits - Other",
+            "entity": "SVC",
+            "consol": 1555
+          },
+          {
+            "code": "6944-SVC",
+            "name": "Personnel Costs:Employee Benefits:Auto Allowance",
+            "entity": "SVC",
+            "consol": 4376
+          },
+          {
+            "code": "6945-SVC",
+            "name": "Personnel Costs:Employee Benefits:Employee Reimbursements",
+            "entity": "SVC",
+            "consol": 2003
+          },
+          {
+            "code": "6962-SVC",
+            "name": "Personnel Costs:Employee Benefits:Employer 401k Contribution",
+            "entity": "SVC",
+            "consol": 77651
+          }
+        ]
+      },
+      {
+        "code": "Y413",
+        "title": "Administrative Salaries",
+        "accounts": [
+          {
+            "code": "6561-SVC",
+            "name": "Administrative Salaries:Salaries Not Yet Allocated",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6562-SVC",
+            "name": "Administrative Salaries",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6562.1-SVC",
+            "name": "Personnel Costs:Administrative Salaries:Salaries",
+            "entity": "SVC",
+            "consol": 580466
+          },
+          {
+            "code": "6562.2-SVC",
+            "name": "Personnel Costs:Administrative Salaries:Overtime",
+            "entity": "SVC",
+            "consol": 256
+          },
+          {
+            "code": "6562.3-SVC",
+            "name": "Administrative Salaries:Double Time",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6562.4-SVC",
+            "name": "Personnel Costs:Administrative Salaries:PTO",
+            "entity": "SVC",
+            "consol": 25924
+          },
+          {
+            "code": "6563-SVC",
+            "name": "Officer Salaries:Salaries",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6563.1-SVC",
+            "name": "Personnel Costs:Officer Salaries:Salaries",
+            "entity": "SVC",
+            "consol": 415101
+          },
+          {
+            "code": "6563.4-SVC",
+            "name": "Personnel Costs:Officer Salaries:PTO",
+            "entity": "SVC",
+            "consol": 5769
+          }
+        ]
+      },
+      {
+        "code": "Y415",
+        "title": "Insurance expense",
+        "accounts": [
+          {
+            "code": "6180-SVC",
+            "name": "Insurance",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6183-SVC",
+            "name": "Insurance:Liability Insurance",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6185-SVC",
+            "name": "Other Fixed Expenses:Insurance:Liability Insurance",
+            "entity": "SVC",
+            "consol": 194256
+          },
+          {
+            "code": "6195-SVC",
+            "name": "Other Fixed Expenses:Insurance:Work Comp",
+            "entity": "SVC",
+            "consol": 78169
+          },
+          {
+            "code": "6201-SVC",
+            "name": "Other Fixed Expenses:Insurance:Vehicles",
+            "entity": "SVC",
+            "consol": 9225
+          },
+          {
+            "code": "6205-SVC",
+            "name": "Personnel Costs:Employee Benefits:Health & Dental",
+            "entity": "SVC",
+            "consol": 257717
+          }
+        ]
+      },
+      {
+        "code": "Y417",
+        "title": "Office & general expense",
+        "accounts": [
+          {
+            "code": "6170-SVC",
+            "name": "Other Fixed Expenses:Office Supplies & Equipment:Equipment Rental",
+            "entity": "SVC",
+            "consol": 22864
+          },
+          {
+            "code": "6220-SVC",
+            "name": "Other Fixed Expenses:Office Supplies & Equipment:Landscaping",
+            "entity": "SVC",
+            "consol": 600
+          },
+          {
+            "code": "6250-SVC",
+            "name": "Other Fixed Expenses:Office Supplies & Equipment:Postage and Delivery",
+            "entity": "SVC",
+            "consol": 2457
+          },
+          {
+            "code": "6300-SVC",
+            "name": "Office Supplies & Equipment:Repairs",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6310-SVC",
+            "name": "Office Supplies & Equipment:Repairs:Building Repairs",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6330-SVC",
+            "name": "Office Supplies & Equipment:Office Supplies",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6331-SVC",
+            "name": "Office Supplies & Equipment:Repairs:Equipment Repairs",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6400-NCNT",
+            "name": "Registration Overpayments",
+            "entity": "NCNT",
+            "consol": 0
+          },
+          {
+            "code": "6500-NCNT",
+            "name": "Vehicle expenses:Vehicle registration",
+            "entity": "NCNT",
+            "consol": 0
+          },
+          {
+            "code": "6550-SVC",
+            "name": "Other Fixed Expenses:Office Supplies & Equipment:Office Supplies",
+            "entity": "SVC",
+            "consol": 84949
+          },
+          {
+            "code": "6655-SVC",
+            "name": "Office Supplies & Equipment",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6656-SVC",
+            "name": "Office Supplies & Equipment:Bathroom Trailers",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6670-SVC",
+            "name": "Other Fixed Expenses:Office Supplies & Equipment:IT Equipment",
+            "entity": "SVC",
+            "consol": 712
+          },
+          {
+            "code": "6750-SVC",
+            "name": "External Services:Janitorial Exp",
+            "entity": "SVC",
+            "consol": 37196
+          },
+          {
+            "code": "6954-SVC",
+            "name": "Other Fixed Expenses:Office Supplies & Equipment:Office Expenses",
+            "entity": "SVC",
+            "consol": 22901
+          },
+          {
+            "code": "6955-SVC",
+            "name": "Office Supplies & Equipment:Technology Equipment",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "NEW-03-NCNT",
+            "name": "Penalties",
+            "entity": "NCNT",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "Y418",
+        "title": "Payroll, payroll taxes and services",
+        "accounts": [
+          {
+            "code": "6870-SVC",
+            "name": "Personnel Costs:Payroll",
+            "entity": "SVC",
+            "consol": -149949
+          },
+          {
+            "code": "6871-SVC",
+            "name": "Personnel Costs:Social Security Tax",
+            "entity": "SVC",
+            "consol": 265296
+          },
+          {
+            "code": "6872-SVC",
+            "name": "Personnel Costs:Medicare Tax Expense",
+            "entity": "SVC",
+            "consol": 66336
+          },
+          {
+            "code": "6873-SVC",
+            "name": "Personnel Costs:Unemployment Insurance",
+            "entity": "SVC",
+            "consol": 26669
+          }
+        ]
+      },
+      {
+        "code": "Y419",
+        "title": "Postage and mailing",
+        "accounts": [
+          {
+            "code": "6600-NCNT",
+            "name": "Office expenses:Shipping & postage",
+            "entity": "NCNT",
+            "consol": 0
+          },
+          {
+            "code": "6700-2F",
+            "name": "Postage and Delivery",
+            "entity": "2F",
+            "consol": 21545
+          }
+        ]
+      },
+      {
+        "code": "Y420",
+        "title": "Professional fees",
+        "accounts": [
+          {
+            "code": "6150-2F",
+            "name": "Professional Fees:Accounting",
+            "entity": "2F",
+            "consol": 13961
+          },
+          {
+            "code": "6270-SVC",
+            "name": "Professional Fees",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6280-SVC",
+            "name": "External Services:Professional Fees:Legal Fees",
+            "entity": "SVC",
+            "consol": 325780
+          },
+          {
+            "code": "6281-SVC",
+            "name": "Professional Fees:Legal Fees:Court Costs",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6286-SVC",
+            "name": "External Services:Professional Fees:Legal Fees:Lawsuits",
+            "entity": "SVC",
+            "consol": 12500
+          },
+          {
+            "code": "6650-SVC",
+            "name": "External Services:Professional Fees:Accounting",
+            "entity": "SVC",
+            "consol": 515418
+          },
+          {
+            "code": "6660-SVC",
+            "name": "External Services:Professional Fees:Others",
+            "entity": "SVC",
+            "consol": 92595
+          },
+          {
+            "code": "6700-NCNT",
+            "name": "Commissions & fees",
+            "entity": "NCNT",
+            "consol": 0
+          },
+          {
+            "code": "6800-2F",
+            "name": "Management Consultants",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "6954-2F",
+            "name": "Reimbursements",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "6955-2F",
+            "name": "Professional Fees:Legal",
+            "entity": "2F",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "Y421",
+        "title": "Outside Services",
+        "accounts": [
+          {
+            "code": "6241-SVC",
+            "name": "Outside Services:Miscellaneous",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6915-SVC",
+            "name": "Personnel Costs:Background Checks",
+            "entity": "SVC",
+            "consol": 811
+          },
+          {
+            "code": "6948-SVC",
+            "name": "External Services:Employment Placement Fee",
+            "entity": "SVC",
+            "consol": 49800
+          },
+          {
+            "code": "6952-SVC",
+            "name": "Outside Services:Management consultants",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6958-SVC",
+            "name": "External Services:Outside Services",
+            "entity": "SVC",
+            "consol": 50386
+          },
+          {
+            "code": "6959-SVC",
+            "name": "External Services:Outside Services:Human Resources",
+            "entity": "SVC",
+            "consol": 87430
+          }
+        ]
+      },
+      {
+        "code": "Y422",
+        "title": "Office Utilities",
+        "accounts": [
+          {
+            "code": "6800-NCNT",
+            "name": "Rent:Equipment rental",
+            "entity": "NCNT",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "Y423",
+        "title": "Repairs and maintenance",
+        "accounts": [
+          {
+            "code": "6956-2F",
+            "name": "Repairs",
+            "entity": "2F",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "Y424",
+        "title": "Security",
+        "accounts": [
+          {
+            "code": "6098-SVC",
+            "name": "Yard Security",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "Y426",
+        "title": "Taxes and licenses",
+        "accounts": [
+          {
+            "code": "6230-SVC",
+            "name": "Other Fixed Expenses:Licenses and Permits",
+            "entity": "SVC",
+            "consol": 8487
+          },
+          {
+            "code": "6300-NCNT",
+            "name": "Sales Taxes",
+            "entity": "NCNT",
+            "consol": 250740
+          },
+          {
+            "code": "6820-SVC",
+            "name": "Taxes & Licenses",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6850-SVC",
+            "name": "Rent:Property",
+            "entity": "SVC",
+            "consol": 54861
+          },
+          {
+            "code": "6860-SVC",
+            "name": "Taxes:State",
+            "entity": "SVC",
+            "consol": 12751
+          },
+          {
+            "code": "6957-2F",
+            "name": "Taxes",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "NEW-08-NCNT",
+            "name": "Business licenses",
+            "entity": "NCNT",
+            "consol": 20
+          },
+          {
+            "code": "NEW-10-NCNT",
+            "name": "Taxes paid",
+            "entity": "NCNT",
+            "consol": 300
+          },
+          {
+            "code": "NEW-13-2F",
+            "name": "Licenses and Permits",
+            "entity": "2F",
+            "consol": 193
+          }
+        ]
+      },
+      {
+        "code": "Y430",
+        "title": "Meals and entertainment",
+        "accounts": [
+          {
+            "code": "6350-SVC",
+            "name": "Other Fixed Expenses:Travel & Ent",
+            "entity": "SVC",
+            "consol": 8
+          },
+          {
+            "code": "6360-SVC",
+            "name": "Other Fixed Expenses:Travel & Ent:Entertainment",
+            "entity": "SVC",
+            "consol": 954
+          },
+          {
+            "code": "6370-SVC",
+            "name": "Other Fixed Expenses:Travel & Ent:Meals",
+            "entity": "SVC",
+            "consol": 9083
+          },
+          {
+            "code": "6380-SVC",
+            "name": "Other Fixed Expenses:Travel & Ent:Travel",
+            "entity": "SVC",
+            "consol": 42543
+          },
+          {
+            "code": "6968-SVC",
+            "name": "Travel & Ent:Seminars and Training",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "Y436",
+        "title": "Merchant Fees",
+        "accounts": [
+          {
+            "code": "6125.01-SVC",
+            "name": "Merchant fees:Hollywood",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6125.02-SVC",
+            "name": "Merchant fees:Burbank",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "Y438",
+        "title": "Medical Insurance",
+        "accounts": [
+          {
+            "code": "6340-SVC",
+            "name": "Rent:Utilities:Telephone",
+            "entity": "SVC",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "Y439",
+        "title": "Bank Service Charges",
+        "accounts": [
+          {
+            "code": "5130-2F",
+            "name": "Bank Charge:Merchant Fee",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "5200-NCNT",
+            "name": "General business expenses:Bank fees & service charges",
+            "entity": "NCNT",
+            "consol": 401008
+          },
+          {
+            "code": "6951-SVC",
+            "name": "Bank Late Fees",
+            "entity": "SVC",
+            "consol": 25204
+          },
+          {
+            "code": "NEW-11-2F",
+            "name": "Bank Charge:Check Fees",
+            "entity": "2F",
+            "consol": 7
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "Y5",
+    "title": "Other income & expense",
+    "classification": "Expense",
+    "subgroups": [
+      {
+        "code": "Y502",
+        "title": "Misc. Income",
+        "accounts": [
+          {
+            "code": "9000-SVC",
+            "name": "Other Income Expense",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "9010-2F",
+            "name": "Other Income / Expense",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "9100-2F",
+            "name": "Miscellaneous Income",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "9200-2F",
+            "name": "Miscellaneous Expense",
+            "entity": "2F",
+            "consol": 193
+          },
+          {
+            "code": "NEW-14-2F",
+            "name": "Other Income/Expense",
+            "entity": "2F",
+            "consol": -444
+          }
+        ]
+      },
+      {
+        "code": "Y503",
+        "title": "Misc. Expense",
+        "accounts": [
+          {
+            "code": "6240-SVC",
+            "name": "Outside Services:Miscellaneous",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6940-SVC",
+            "name": "Customer reimb./dmgs.",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6973-SVC",
+            "name": "Uncategorized Expense",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "9000-NCNT",
+            "name": "Other Income/Expense",
+            "entity": "NCNT",
+            "consol": -350
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "Y6",
+    "title": "Interest income and expense",
+    "classification": "Expense",
+    "subgroups": [
+      {
+        "code": "Y601",
+        "title": "Interest income",
+        "accounts": [
+          {
+            "code": "4101-SVC",
+            "name": "Miscellaneous Revenue:Interest Income",
+            "entity": "SVC",
+            "consol": 0
+          },
+          {
+            "code": "6300-2F",
+            "name": "Interest Income",
+            "entity": "2F",
+            "consol": -141
+          },
+          {
+            "code": "7100-SVC",
+            "name": "Other Income:Other Interest Income",
+            "entity": "SVC",
+            "consol": -1800
+          },
+          {
+            "code": "9000-2F",
+            "name": "Interest Income",
+            "entity": "2F",
+            "consol": 0
+          }
+        ]
+      },
+      {
+        "code": "Y602",
+        "title": "Interest expense",
+        "accounts": [
+          {
+            "code": "6200-2F",
+            "name": "Other Income / Expense",
+            "entity": "2F",
+            "consol": 497815
+          },
+          {
+            "code": "6200-NCNT",
+            "name": "Interest paid",
+            "entity": "NCNT",
+            "consol": 1862832
+          },
+          {
+            "code": "6200-SVC",
+            "name": "Interest Expense",
+            "entity": "SVC",
+            "consol": 836437
+          },
+          {
+            "code": "6952-2F",
+            "name": "Interest Expense",
+            "entity": "2F",
+            "consol": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "letter": "Y9",
+    "title": "Provision for income taxes",
+    "classification": "Expense",
+    "subgroups": [
+      {
+        "code": "Y901",
+        "title": "Income tax expense",
+        "accounts": [
+          {
+            "code": "6958-2F",
+            "name": "Taxes:State",
+            "entity": "2F",
+            "consol": -906
+          },
+          {
+            "code": "NEW-05-2F",
+            "name": "Income Tax Provision - Current",
+            "entity": "2F",
+            "consol": 0
+          },
+          {
+            "code": "NEW-06-2F",
+            "name": "Income Tax Provision - Deferred",
+            "entity": "2F",
+            "consol": 812000
+          }
+        ]
+      }
+    ]
+  }
+]
