@@ -1,0 +1,771 @@
+Pages: 22
+
+=== TEXT ===
+
+SILVERCO ENTERPRISES, LLC, TWO FAMILY ENTERPRISES, INC. AND NCNT
+HOLDINGS LLC
+Combined Financial Statements
+and Independent Accountants’ Compilation Report
+For the year ended December 31, 2025
+
+-- 1 of 22 --
+
+TABLE OF CONTENTS
+Page
+INDEPENDENT ACCOUNTANTS’ COMPILATION REPORT 1
+COMBINED FINANCIAL STATEMENTS
+Balance sheet 2
+Statement of operations 3
+Statement of owner’s deficit 4
+Statement of cash flows 5
+Notes to combined financial statements 6-20
+
+-- 2 of 22 --
+
+1
+INDEPENDENT ACCOUNTANTS’ COMPILATION REPORT
+To the Owner
+Silverco Enterprises, LLC, Two Family Enterprises, Inc., and NCNT Holdings LLC
+Burbank, CA
+Management is responsible for the accompanying combined financial statements of Silverco
+Enterprises, LLC, Two Family Enterprises, Inc. and NCNT Holdings LLC (the “Companies”), which
+comprise the combined balance sheet as of December 31, 2025, and the related combined statements of
+operations, owner’s deficit, and cash flows for the year then ended, and the related notes to the
+combined financial statements in accordance with accounting principles generally accepted in the
+United States of America. We have performed a compilation engagement in accordance with
+Statements on Standards for Accounting and Review Services promulgated by the Accounting and
+Review Services Committee of the AICPA. We did not audit or review the combined financial
+statements nor were we required to perform any procedures to verify the accuracy or completeness of
+the information provided by management. We do not express an opinion, a conclusion, nor provide
+any assurance on these combined financial statements.
+The accompanying combined financial statements have been prepared assuming that the
+Companies will continue as a going concern. As discussed in Note 13 to the combined financial
+statements, the Companies have sustained recurring net losses, reported negative working capital,
+have a net capital deficiency, and have stated that substantial doubt exists about the Companies’
+ability to continue as a going concern. Management’s evaluation of the conditions and events and
+management’s plans regarding these matters are also described in Note 13. The accompanying
+combined financial statements do not include any adjustments that might be necessary if the
+Companies are unable to continue as a going concern.
+April 30, 2026
+
+-- 3 of 22 --
+
+SILVERCO ENTERPRISES, LLC, TWO FAMILY ENTERPRISES, INC. AND NCNT
+HOLDINGS LLC
+COMBINED BALANCE SHEET
+DECEMBER 31, 2025
+See accompanying notes and independent accountants’ compilation report. 2
+CURRENT ASSETS
+Cash 	301,563	$
+Restricted cash 	76,800
+Accounts receivable, net of allowance for credit losses of $761,480 	559,260
+Prepaid expenses and other current assets 	321,575
+Total current assets 	1,259,198
+DEFERRED RENT RECEIVABLE 	143,137
+DUE FROM RELATED PARTIES 	697,375
+REVENUE GENERATING VEHICLES, net 	26,854,267
+PROPERTY AND EQUIPMENT, net 	9,258
+OPERATING LEASE RIGHT-OF-USE ASSETS 	24,638,796
+DEPOSITS 	759,591
+Total assets 	54,361,622	$
+CURRENT LIABILITIES
+Accounts payable 	1,026,248	$
+Accrued expenses 	1,549,341
+Due to related parties 	3,282,617
+Current portion of sales tax liability 	397,501
+Current portion of notes payable 	2,319,589
+Current portion of operating lease liabilities 	5,621,538
+Current portion of related party lines of credit 	3,650,000
+Total current liabilities 	17,846,834
+SALES TAX LIABILITY, net of current portion 	392,927
+NOTES PAYABLE, net of current portion 	25,500,793
+OPERATING LEASE LIABILITIES, net of current portion 	20,100,208
+RELATED PARTY LINES OF CREDIT, net of current portion 	1,254,772
+SUBLEASE SECURITY DEPOSITS 	163,351
+DEFERRED SUBLEASE INCOME 	248,739
+DEFERRED INCOME TAXES 	5,140,000
+Total liabilities 	70,647,624
+CONTINGENCIES
+OWNER'S DEFICIT
+Two Family Enterprises, Inc.
+Common stock, no par value
+100,000 shares authorized, 37,500 issued and outstanding 	1,000
+Accumulated deficit 	(11,113,277)
+Total stockholder's deficit in Two Family Enterprises, Inc. 	(11,112,277)
+Member's deficit - Silverco Enterprises, LLC 	(5,353,662)
+Member's equity - NCNT Holdings LLC 	179,937
+Total owner's deficit 	(16,286,002)
+Total liabilities and owner's deficit 	54,361,622	$
+ASSETS
+LIABILITIES AND OWNER'S DEFICIT
+
+-- 4 of 22 --
+
+SILVERCO ENTERPRISES, LLC, TWO FAMILY ENTERPRISES, INC. AND NCNT
+HOLDINGS LLC
+COMBINED STATEMENT OF OPERATIONS
+FOR THE YEAR ENDED DECEMBER 31, 2025
+See accompanying notes and independent accountants’ compilation report. 3
+REVENUES
+Vehicle rental 10,181,986	$
+Other 2,611,123
+Total revenues 12,793,109
+OPERATING EXPENSES
+Direct operating expenses 8,215,530
+General and administrative expenses 8,211,699
+16,427,229
+Loss from operations (3,634,120)
+INTEREST AND OTHER EXPENSE (INCOME)
+Other expense (601)
+Interest income (1,941)
+Interest expense 3,197,084
+3,194,542
+LOSS BEFORE INCOME TAXES (6,828,662)
+INCOME TAX PROVISION 811,094
+NET LOSS (7,639,756)	$
+
+-- 5 of 22 --
+
+SILVERCO ENTERPRISES, LLC, TWO FAMILY ENTERPRISES, INC. AND NCNT HOLDINGS LLC
+COMBINED STATEMENT OF OWNER’S DEFICIT
+FOR THE YEAR ENDED DECEMBER 31, 2025
+See accompanying notes and independent accountants’ compilation report. 4
+Silverco Enterprises, NCNT Holdings
+LLC 	LLC
+Shares 	Accumulated 	Member's 	Member's 	Total
+outstanding 	Amount 	deficit 	deficit 	equity 	owner's deficit
+BALANCE, December 31, 2024 	37,500 	1,000	$ 	(8,902,484)	$ 	(2,064,003)	$ 	2,319,241	$ 	(8,646,246)	$
+Net loss 	- 	- 	(2,210,793) 	(3,289,659) 	(2,139,304) 	(7,639,756)
+BALANCE, December 31, 2025 	37,500 	1,000	$ 	(11,113,277)	$ 	(5,353,662)	$ 	179,937	$ 	(16,286,002)	$
+Common stock, no par value,
+100,000 shares authorized
+Two Family Enterprises, Inc.
+
+-- 6 of 22 --
+
+SILVERCO ENTERPRISES, LLC, TWO FAMILY ENTERPRISES, INC. AND NCNT
+HOLDINGS LLC
+COMBINED STATEMENT OF CASH FLOWS
+FOR THE YEAR ENDED DECEMBER 31, 2025
+See accompanying notes and independent accountants’ review report. 5
+CASH FLOWS FROM OPERATING ACTIVITIES
+Net loss 	(7,639,756)	$
+Adjustments to reconcile net loss to net cash used in operating activities:
+Reduction in the carrying amount of operating lease right-of-use assets 	5,484,871
+Non-cash operating lease expense 	1,136,547
+Depreciation of revenue generating vehicles 	2,833,038
+Depreciation and amortization of property and equipment 	384,319
+Provision for expected credit losses 	450,364
+Gain on sale of revenue generating vehicles 	(894,726)
+Increase in deferred income taxes 	812,000
+Increase (decrease) in cash due to changes in operating assets and liabilities:
+Accounts receivable 	254,047
+Prepaid expenses and other current assets 	119,989
+Deposits 	(113,811)
+Accounts payable 	(53,784)
+Accrued expenses 	342,171
+Sales tax liability 	(238,333)
+Sublease security deposits 	88,355
+Deferred sublease income 	56,616
+Operating lease liabilities 	(6,253,219)
+Net cash used in operating activities 	(3,231,312)
+CASH FLOWS FROM INVESTING ACTIVITIES
+Purchases of revenue generating vehicles 	(1,507,226)
+Purchases of property and equipment 	(33,805)
+Proceeds from sale of revenue generating vehicles 	3,513,397
+Net cash provided by investing activities 	1,972,366
+CASH FLOWS FROM FINANCING ACTIVITIES
+Advances of notes payable 	3,576,608
+Repayments of notes payable 	(4,756,057)
+Borrowings under related party lines of credit 	900,000
+Collection of advances to related parties 	110,224
+Advances from related parties 	1,396,723
+Repayments of advances from related parties 	(76,245)
+Net cash provided by financing activities 	1,151,253
+NET CHANGE IN CASH 	(107,693)
+CASH, beginning of year
+Cash 	486,056
+Restricted cash 	-
+486,056
+CASH, end of year
+Cash 	301,563
+Restricted cash 	76,800
+378,363	$
+SUPPLEMENTAL DISCLOSURE OF CASH FLOW INFORMATION
+Cash paid during the year for:
+Interest 	2,697,893	$
+Income taxes refunded 	(906)	$
+
+-- 7 of 22 --
+
+SILVERCO ENTERPRISES, LLC, TWO FAMILY ENTERPRISES, INC. AND NCNT
+HOLDINGS LLC
+NOTES TO COMBINED FINANCIAL STATEMENTS
+6
+NOTE 1 - NATURE OF BUSINESS
+Silverco Enterprises, LLC, Two Family Enterprises, Inc., and NCNT Holdings LLC (collectively
+the “Companies”) operate a car and truck rental service out of several locations in the greater Los
+Angeles, California region under the “Avon Rent-A-Car, Truck & Van” name.
+Silverco Enterprises, LLC (“Silverco”) was initially incorporated in the state of California on April
+23, 1984 and was converted to an LLC on May 17, 2022. Silverco serves as the primary operating
+entity which rents vehicles to the general public.
+Two Family Enterprises, Inc. (“Two Family”) was initially incorporated in the state of California on
+April 14, 1994. Two Family owns revenue generating vehicles which it leases to Silverco.
+NCNT Holdings LLC (“NCNT”) was formed as a limited liability company in Delaware effective
+December 10, 2021. NCNT owns revenue generating vehicles which it leases to Silverco.
+The Companies are wholly owned by MT Studio Services, LLC (“MT Studio”).
+NOTE 2 - SUMMARY OF SIGNIFICANT ACCOUNTING POLICIES
+Basis of accounting
+The accompanying combined financial statements are prepared using the accrual basis of accounting
+in accordance with accounting principles generally accepted in the United States of America (“U.S.
+GAAP”). References to the “ASC” hereafter refer to the Accounting Standards Codification
+established by the Financial Accounting Standards Board (“FASB”) as the source of authoritative
+U.S. GAAP. At times, the FASB updates the ASC with Accounting Standards Updates (“ASU”).
+Principles of combination
+The accompanying combined financial statements include the accounts of Silverco, NCNT, and Two
+Family. The Companies are affiliated through a common owner (MT Studio) and shared
+management. All significant intercompany balances and transactions have been eliminated in
+combination.
+Use of estimates
+The preparation of combined financial statements in conformity with U.S. GAAP requires
+management to make estimates and assumptions that affect the amounts reported in the combined
+financial statements and accompanying notes. Actual results could differ from those estimates.
+Significant estimates inherent in the preparation of the combined financial statements include useful
+lives and the residual values for revenue generating vehicles.
+
+-- 8 of 22 --
+
+SILVERCO ENTERPRISES, LLC, TWO FAMILY ENTERPRISES, INC. AND NCNT
+HOLDINGS LLC
+NOTES TO COMBINED FINANCIAL STATEMENTS
+7
+NOTE 2 - SUMMARY OF SIGNIFICANT ACCOUNTING POLICIES (Continued)
+Cash and cash equivalents
+For purposes of the combined balance sheet and combined statement of cash flows, the Companies
+consider all highly liquid investments which are readily convertible into known amounts of cash and
+have a maturity of three months or less when acquired, to be cash equivalents. At December 31,
+2025, the Companies did not hold any cash equivalents.
+Restricted cash
+Restricted cash is comprised of cash required to be held aside for California Department of Motor
+Vehicles insurance purposes. As of December 31, 2025, restricted cash amounted to $76,800.
+Accounts receivable
+The Companies carry their accounts receivable at invoiced amounts less an allowance for credit
+losses. The Companies do not accrue interest on accounts receivable. An allowance for credit
+losses is maintained for estimated losses resulting from the inability of customers to make their
+required payments. The Companies estimate the allowance for credit losses based upon historical
+account write off trends, facts about the current trends, and other macroeconomic factors. The
+Companies elected a practical expedient that allows the Companies to assume that current
+conditions as of the combined balance sheet date will not change for the remaining life of the asset.
+Additionally, the Companies have made the accounting policy election to consider collection
+activity subsequent to the balance sheet date when making its assessment of the allowance for
+credit losses. Subsequent collection activity was considered through April 9, 2026. Credit quality
+is monitored through the timing of payments compared to payment terms and known facts
+regarding the financial condition of customers. There were no changes to the methods or factors
+that influence the current estimate for the allowance for credit losses during the year ended
+December 31, 2025. Accounts receivable balances are written off against the allowance for credit
+losses after all methods of collection are exhausted.
+The activity in the allowance for credit losses for accounts receivable was as follows for the year
+ended December 31, 2025:
+Balance, December 31, 2024 886,249	$
+Provision for expected losses 450,364
+Write-offs (575,133)
+Balance, December 31, 2025 761,480	$
+Gross accounts receivable amounted to $2,149,920 as of December 31, 2024.
+
+-- 9 of 22 --
+
+SILVERCO ENTERPRISES, LLC, TWO FAMILY ENTERPRISES, INC. AND NCNT
+HOLDINGS LLC
+NOTES TO COMBINED FINANCIAL STATEMENTS
+8
+NOTE 2 - SUMMARY OF SIGNIFICANT ACCOUNTING POLICIES (Continued)
+Prepaid expenses and other current assets
+Prepaid expenses and other current assets consist of revenue generating vehicle registrations, prepaid
+insurance, and prepaid property taxes.
+Revenue generating vehicles and depreciation
+Revenue generating vehicles are stated at cost, net of related discounts and incentives from
+manufacturers, if any. Holding periods typically range from two to ten years. Generally, the
+Companies estimate the period that the Companies will hold the assets, primarily based on
+historical measures of the amount of rental-years-in-service or automobile mileage. The
+Companies also estimate the residual value of the applicable revenue generating vehicles at the
+expected time of disposal, taking into consideration factors such as make, model and options, age,
+physical condition, mileage, sale location, time of the year and market conditions. Depreciation is
+recorded on a straight-line basis over the estimated holding period. Depreciable lives are reviewed
+annually based on management’s ongoing assessment of present and estimated future market
+conditions, their effect on residual values at the expected time of disposal and the estimated holding
+periods. Depreciation expense of revenue generating vehicles for the year ended December 31, 2025
+amounted to $2,833,038. The cost of normal maintenance, repairs, and minor replacements are
+recorded as an expense when incurred. Major overhauls or modifications are generally capitalized
+as they occur prior to the revenue generating vehicles being placed in service. Gains and losses on
+the sale of vehicles, including the costs associated with disposals, and depreciation of revenue
+generating vehicles are included within direct operating expenses on the accompanying combined
+statement of operations.
+Property and equipment and depreciation and amortization
+Property and equipment is recorded at cost, net of accumulated depreciation and amortization. The
+cost of normal maintenance and repairs and minor replacements are charged to expense when
+incurred. Major replacements or betterments of properties are capitalized.
+Depreciation of property and equipment is provided using the straight-line method over the estimated
+useful lives of the assets of five years. Leasehold improvements are amortized using the straight-line
+method over the estimated useful lives of the assets or the lease term, whichever is less. Depreciation
+and amortization expense of property and equipment for the year ended December 31, 2025 amounted
+to $384,319.
+
+-- 10 of 22 --
+
+SILVERCO ENTERPRISES, LLC, TWO FAMILY ENTERPRISES, INC. AND NCNT
+HOLDINGS LLC
+NOTES TO COMBINED FINANCIAL STATEMENTS
+9
+NOTE 2 - SUMMARY OF SIGNIFICANT ACCOUNTING POLICIES (Continued)
+Leases
+The Companies determine if an arrangement is a lease at contract inception and reassesses that
+conclusion if the agreement is modified. The Companies begin recording lease activity at the
+commencement date, which is generally the date the Companies take possession of or controls the
+physical use of the asset. Leases with an initial term of 12 months or less are not recorded in the
+combined balance sheet and the Companies recognize lease expense for these leases on a straight-
+line basis over the lease term.
+Leases with a term greater than one year are accounted for either as an operating or finance lease
+based on certain criteria. A lease liability and right-of-use asset are recognized at the
+commencement of the lease. The lease term includes the non-cancelable period of the lease and
+options to renew, extend, or terminate the lease that the Companies are reasonably certain to
+exercise. The Companies determine the term of each lease at lease commencement and revisits
+that term in subsequent periods if an event would require reassessment. The Companies have
+elected to use the risk-free rate to determine the present value of future lease payments unless the
+implicit rate is readily determinable. The right-of-use asset is initially measured at the lease
+liability amount adjusted for lease payments made at or before lease commencement, lease
+incentives, and any initial direct costs. Right-of-use assets and lease liabilities are recognized based
+on the present value of lease payments over the lease term with lease expense recognized on a
+straight-line basis.
+Sublease income for operating leases is classified as a reduction of rent expense within operating
+expenses and is recorded on a straight-line basis over the contracted term of the sublease. The
+difference between sublease income recorded and cash received from the subtenant accrues as a
+deferred rent receivable. During the year ended December 31, 2025, management reassessed the
+probability of collection of the deferred rent receivable from the subtenants over the remaining
+term of the sublease and has concluded that collection is probable.
+Impairment of long-lived assets and goodwill
+When facts and circumstances indicate that the carrying values of long-lived assets (including
+operating lease right-of-use assets) may be impaired, the Companies perform an evaluation of
+recoverability by comparing the carrying values of the assets to projected future cash flows in
+addition to other quantitative and qualitative analyses. If the estimated future cash flows
+(undiscounted and without interest charges) from the use of an asset are less than the carrying
+value, a write-down would be recorded to reduce the related asset to its estimated fair value. No
+write-downs were recorded for the year ended December 31, 2025.
+
+-- 11 of 22 --
+
+SILVERCO ENTERPRISES, LLC, TWO FAMILY ENTERPRISES, INC. AND NCNT
+HOLDINGS LLC
+NOTES TO COMBINED FINANCIAL STATEMENTS
+10
+NOTE 2 - SUMMARY OF SIGNIFICANT ACCOUNTING POLICIES (Continued)
+Revenue recognition
+The Companies’ primary source of revenue is from the operation of facilities providing vehicle
+rentals to businesses and individuals. Other revenue includes the sale of loss damage waivers,
+insurance products, fuel and mileage services and charges, and daily-rental charges for parking
+space at various company facilities. The Companies recognize revenue from vehicle rental
+operations when persuasive evidence of a contract exists, the performance obligations have been
+satisfied, the transaction price is fixed and determinable, and collection is reasonably assured.
+Performance obligations associated with vehicle rental transactions are satisfied over the rental
+period and rental periods are short term in nature, with a maximum contract term of seven days.
+Performance obligations associated with other rental related activities, such as charges to the
+customer for fueling of vehicles and value-added services such as loss damage waivers and
+insurance products are also satisfied over the rental period. Revenue from elements that are
+charged to the customer, such as gasoline, vehicle licensing, tolls and citations are recorded on a
+gross basis with a corresponding charge to direct operating expenses. Payments are due from
+customers at the completion of the rental, except for customers with negotiated payments terms,
+generally 30 to 60 days, which are invoiced and remain in accounts receivable until collected.
+The Companies recognize receivables resulting from contracts with customers. Contract
+receivables primarily consist of receivables from customers for vehicle rentals. The Companies do
+not typically have contract assets or contract liabilities due to the nature of operations and invoicing
+practices.
+Taxes collected from customers remitted to governmental authorities
+Sales taxes are collected from customers on applicable transactions and the entire amount is
+remitted to the related taxing authorities. Taxes collected are recorded on a net basis and are
+excluded from revenue and expenses.
+In April 2024, NCNT entered into a repayment plan with the California Department of Tax and
+Fee Administration related to unpaid 2023 sales taxes. The agreement requires monthly
+installments of $21,774 over a 24-month period. In 2025, NCNT revised the repayment plan to
+include the 2024 unpaid sales tax obligation within the consolidated repayment plan. The
+consolidated repayment plan has similar terms and the monthly payment was increased to
+approximately $41,000 per month. In 2026, NCNT revised the repayment plan to decrease the
+monthly payment to $32,744. The 2023 and 2024 sales tax repayment plan balance as of December
+31, 2025 amounted to $763,467, inclusive of interest and penalties. The current portion of sales
+tax liability represents the amounts expected to be repaid in 2026 under the 2026 revised payment
+plan.
+
+-- 12 of 22 --
+
+SILVERCO ENTERPRISES, LLC, TWO FAMILY ENTERPRISES, INC. AND NCNT
+HOLDINGS LLC
+NOTES TO COMBINED FINANCIAL STATEMENTS
+11
+NOTE 2 - SUMMARY OF SIGNIFICANT ACCOUNTING POLICIES (Continued)
+Direct operating expenses
+The Companies’ direct operating expenses include depreciation and gains and losses associated
+with the Companies’ revenue generating vehicles, repairs and maintenance, vehicle logistics
+(transportation, towing, impound fees, licenses, etc.), consumable vehicle parts and supplies,
+salaries associated with employees directly assisting in vehicle rental activities and state use taxes
+associated with the Companies’ fleet usage.
+Advertising
+Advertising costs are generally expensed as incurred. Advertising expense amounted to $1,270 for
+the year ended December 31, 2025.
+Income taxes
+Silverco and NCNT are single member LLCs which are disregarded entities for U.S. federal
+income tax purposes and profits and losses are reported directly by their sole member. Silverco
+and NCNT plan to pay the necessary amount of distributions in order to satisfy the member’s
+estimated income tax liabilities arising from their profits, if any. The state of California imposes
+an annual fee on LLCs based on the level of gross revenue of the LLC and an $800 minimum tax.
+The combined financial statements for the year ended December 31, 2025 include a provision for
+the minimum tax and LLC fee within operating expenses.
+Two Family is a domestic corporation that files a standalone U.S. federal and California state
+income tax return. Two Family income taxes are accounted for using an asset and liability approach
+that requires the recognition of deferred tax assets and liabilities for the expected future tax
+consequences of temporary differences between Two Family’s financial statement and tax bases
+of assets and liabilities at the applicable enacted tax rates. A valuation allowance is provided when
+it is more likely than not that some portion or all of the deferred tax assets will not be realized.
+The Companies recognize tax benefits from uncertain tax positions when it is more likely than not
+that the position will be sustained upon examination, including resolutions of any related appeals
+or litigations processes, based on the technical merits of the tax position. The Companies recognize
+any accrued interest and penalties related to unrecognized tax benefits as a component of operating
+expense. As of December 31, 2025, the Companies did not have a liability for unrecognized tax
+benefits.
+The Companies file income tax returns in the U.S. federal jurisdiction as well as in the state of
+California, to the extent they are not disregarded. The Companies’ federal income tax returns are
+subject to examination by the Internal Revenue Service for a period of three years from the filing
+of a federal return. California income tax returns are subject to examination by the Franchise Tax
+Board for a period of four years from the filing of a return.
+
+-- 13 of 22 --
+
+SILVERCO ENTERPRISES, LLC, TWO FAMILY ENTERPRISES, INC. AND NCNT
+HOLDINGS LLC
+NOTES TO COMBINED FINANCIAL STATEMENTS
+12
+NOTE 2 - SUMMARY OF SIGNIFICANT ACCOUNTING POLICIES (Continued)
+Concentration of credit risk
+Financial instruments which potentially subject the Companies to concentration of credit risk
+consist primarily of cash, restricted cash and accounts receivable. The Companies maintain their
+cash with a high-credit quality financial institution. At times, such account balances may be in
+excess of federally insured limits. At December 31, 2025, no customer comprised greater than ten
+percent of accounts receivable. Concentration of credit risk with respect to accounts receivable is
+generally mitigated by the Companies’ credit policies and the overall credit worthiness of its
+customers.
+Geographic concentration
+The Companies have a significant geographic concentration in the state of California. Substantially
+all revenues for the year ended December 31, 2025 comprised of customers in the state of
+California.
+Economic and operational risk for film and entertainment industry customers
+The Companies depend on revenue generated from usage of revenue generating vehicles by the film
+and entertainment industry. For the year ended December 31, 2025, approximately 39% of revenue
+was derived from customers operating within this industry.
+Variable interest entities
+In accordance with ASU 2018-17, Targeted Improvements to Related Party Guidance for Variable
+Interest Entities, the Companies made the accounting policy election to not apply the variable interest
+entity guidance to legally related entities if both the parent and the legal entity being evaluated for
+consolidating meet specific criteria.
+
+-- 14 of 22 --
+
+SILVERCO ENTERPRISES, LLC, TWO FAMILY ENTERPRISES, INC. AND NCNT
+HOLDINGS LLC
+NOTES TO COMBINED FINANCIAL STATEMENTS
+13
+NOTE 3 - REVENUE GENERATING VEHICLES
+As of December 31, 2025, the components of revenue generating vehicles consisted of the
+following:
+Revenue generating vehicles 43,221,635	$
+Less: accumulated depreciation (16,367,368)
+Revenue generating vehicles, net 26,854,267	$
+NOTE 4 - PROPERTY AND EQUIPMENT
+As of December 31, 2025, property and equipment consisted of the following:
+Machinery and equipment 492,863	$
+Leasehold improvements 136,819
+629,682
+Accumulated depreciation and amortization (620,424)
+9,258	$
+NOTE 5 - ACCRUED EXPENSES
+As of December 31, 2025, accrued expenses consisted of the following:
+Accrued interest - related party 879,139	$
+Accrued payroll 156,460
+Accrued expenses 161,710
+Commissions payable 150,000
+Credit cards 113,562
+Accrued interest - third party 69,244
+Credits due customers 19,226
+1,549,341	$
+
+-- 15 of 22 --
+
+SILVERCO ENTERPRISES, LLC, TWO FAMILY ENTERPRISES, INC. AND NCNT
+HOLDINGS LLC
+NOTES TO COMBINED FINANCIAL STATEMENTS
+14
+NOTE 6 - NOTES PAYABLE
+In May 2022, Two Family assumed outstanding lending arrangements with 1st Source Bank to permit
+borrowing, subject to bank approval, to acquire revenue generating vehicles. In May 2022, NCNT
+entered into a similar arrangement with 1st Source Bank. No further advances were made to Two
+Family and instead all notes and borrowings were issued to NCNT. The notes issued to NCNT could
+not exceed $29 million. The principal amount, interest rate, payment amount, payment due dates, the
+maturity date and other particulars for each loan were set forth in a promissory note, addendum,
+schedule or other separate document containing such terms (each a “Note”). NCNT and Two Family
+were provided with the option of choosing either a fixed interest rate or a floating interest rate at the
+loan funding date for each such Note. Floating interest rates were charged at a rate equal to the prime
+rate, as published in the Wall Street Journal, plus an interest rate margin of 2.75% with a floor of 7.50%
+per annum. Fixed interest rates were determined by the lender at the date of loan funding. The monthly
+amortization of the Notes were dependent on the make and model of the revenue generating vehicle
+purchased and ranged from 2.00% to 3.00% per month.
+In December 2024, the Companies entered into a reschedule agreement which amended the schedule
+of payments under the lending arrangements (for both Two Family and NCNT), such that beginning
+November 25, 2024, interest-only payments were due November and December, annually. Monthly
+payments of principal equal to 2.00% of the original amount advanced on the remaining collateral plus
+interest on the entire principal balance at the then-applicable interest rate, were due January through
+October annually, commencing on January 25, 2025 and then on the same day of each succeeding
+month through the maturity dates. The Notes matured at various dates through October 2029.
+In December 2025, Two Family and NCNT consolidated outstanding lending agreements with 1st
+Source Bank in the amount of $5,044,955 and $20,730,114, respectively (“Notes”). Monthly payments
+of principal and interest begin February 2026 and the entire unpaid principal balance, including
+interest, shall be due in August 2027. Fixed interest rates are charged at 9.25% per annum.
+In December 2025, the Companies entered into a promissory note with 1st Source Bank (“Notes”) in
+the amount of $2,000,000. The unpaid principal balance and interest, if not sooner paid or declared to
+be due in accordance with the terms, shall be due and payable in full in August 2027. No interest rate
+is charged.
+The Notes are secured by all assets advanced against and are cross collateralized by and amongst the
+Companies. The Notes are also guaranteed by Silverco and related party entities. The unpaid principal
+balance for the 1st Source Bank Notes as of December 31, 2025 amounted to $27,712,981.
+In January 2024, NCNT entered into a note payable agreement with US Bank in order to secure
+additional financing to acquire revenue generating vehicles for operations, separate from the 1st Source
+Bank agreement. The note amounted to $162,219, has a five-year term, bears a fixed interest rate of
+7.85% per annum, and requires monthly payment amounting to $3,278. The note payable is secured
+by all assets advanced against. The unpaid principal balance for the US Bank loan as of December 31,
+2025 amounted to $107,401 and is included as part of the notes payable balances within the
+accompanying combined balance sheet.
+
+-- 16 of 22 --
+
+SILVERCO ENTERPRISES, LLC, TWO FAMILY ENTERPRISES, INC. AND NCNT
+HOLDINGS LLC
+NOTES TO COMBINED FINANCIAL STATEMENTS
+15
+NOTE 6 - NOTES PAYABLE (Continued)
+Scheduled annual principal maturities of the notes payable to 1st Source Bank and US Bank for future
+fiscal years ending December 31 are as follows:
+NCNT Holdings
+LLC
+Two Family
+Enterprises, Inc. Total
+2026 1,591,863	$ 727,726	$ 2,319,589	$
+2027 21,199,498 4,260,575 25,460,073
+2028 37,464 37,464
+2029 3,256 - 3,256
+22,832,081 4,988,301 27,820,382
+Less: current portion (1,591,863) (727,726) (2,319,589)
+Long-term portion 21,240,218	$ 4,260,575	$ 25,500,793	$
+NOTE 7 - LEASES
+The Companies lease various facilities associated with their rental operations under non-cancellable
+operating lease agreements expiring through 2033. Lease expense is recorded within general and
+administrative expenses within the accompanying combined statement of operations, net of sublease
+income. The Companies’ sublease agreements expire at various dates through November 2031 and
+do not grant any rights to the tenants to purchase the underlying assets.
+The components of lease expense recorded in operating expenses in the accompanying combined
+statement of operations for the year ended December 31, 2025 were as follows:
+Operating lease expense 6,621,418	$
+Short-term lease 142,500
+Variable lease expense 72,761
+Sublease income (4,172,227)
+Total lease expense 2,664,452	$
+
+-- 17 of 22 --
+
+SILVERCO ENTERPRISES, LLC, TWO FAMILY ENTERPRISES, INC. AND NCNT
+HOLDINGS LLC
+NOTES TO COMBINED FINANCIAL STATEMENTS
+16
+NOTE 7 - LEASES (Continued)
+Future minimum lease payments under operating lease agreements for future fiscal years ending
+December 31 are as follows:
+2026 6,556,890	$
+2027 6,166,558
+2028 4,951,780
+2029 3,551,527
+2030 3,701,621
+Thereafter 3,536,089
+Total lease payments 28,464,465
+Less: amount representing interest (2,742,719)
+Present value of lease liabilities 25,721,746
+Less: current portion (5,621,538)
+Long-term portion 20,100,208	$
+As of December 31, 2025, the weighted average remaining lease term and weighted average discount
+rate for operating leases were 4.85 years and 4.07%, respectively.
+During the year ended December 31, 2025, the cash paid for leases included in the measurement of
+lease liabilities and the operating cash flows amounted to $6,253,219. During the year, the total
+operating right-of-use assets obtained in exchange for new leases amounted to $1,609,441.
+Future minimum rental income under the non-cancellable operating lease for future years ended
+December 31 is as follows:
+2026 2,122,205	$
+2027 2,165,794
+2028 464,101
+2029 484,960
+2030 506,775
+Thereafter 483,679
+6,227,514	$
+
+-- 18 of 22 --
+
+SILVERCO ENTERPRISES, LLC, TWO FAMILY ENTERPRISES, INC. AND NCNT
+HOLDINGS LLC
+NOTES TO COMBINED FINANCIAL STATEMENTS
+17
+NOTE 8 - RELATED PARTY LINES OF CREDIT
+Related party lines of credit were composed of borrowings under nine different agreements with
+various individuals that are ultimately members of MT Studio’s parent entities. The lines of credit are
+secured by substantially all of the Companies’ assets and provide revolving advances with a combined
+maximum limit of $5,400,000. Interest on the lines of credit are charged at a rate of 15.00% per annum.
+Interest on unpaid principal is due monthly with all outstanding principal and accrued interest due and
+payable on demand or at maturity based on the individual agreement. For two of the lines of credit, an
+exit premium equal to 3.00% and 13.00% of the original loan principal are due and payable in full
+upon the earlier of the maturity date or any prepayment or acceleration of the loan. The maturity dates
+for the lines of credit that have scheduled repayment dates in January and March 2028 are classified as
+long term on the accompanying combined balance sheet. All other line of credit balances are due on
+demand, as the original maturities dates have passed, and are presented as current liabilities on the
+accompanying combined balance sheet. All lines of credit are subordinated to the 1st Source Bank
+notes. As of December 31, 2025, the outstanding lines of credit balance amounted to $4,904,772,
+collectively. Interest expense associated with the related party lines of credit for the year amounted to
+$738,787. As of December 31, 2025, accrued interest related to the lines of credit amounted to
+$759,659 and is included within accrued expenses on the accompanying combined balance sheet.
+NOTE 9 - INCOME TAXES
+For the year ended December 31, 2025, the income tax benefits consisted of the following:
+Current tax benefit:
+State (906)	$
+Deferred tax provision:
+Federal 607,000
+State 205,000
+812,000
+811,094	$
+The income tax provision differs from the amount that would result from applying the maximum
+federal and state statutory rates to the pre-tax loss due to the impact of net operating losses generated
+during the current year for which the Companies have recorded a full valuation allowance against,
+the flow-through tax status of Silverco and NCNT, and due to Two Family, a tax paying corporation,
+representing only a portion of the combined whole.
+As of December 31, 2025, Two Family’s deferred income tax liabilities consisted entirely of book-
+to-tax differences for gross revenue generating vehicles and the related accumulated depreciation.
+
+-- 19 of 22 --
+
+SILVERCO ENTERPRISES, LLC, TWO FAMILY ENTERPRISES, INC. AND NCNT
+HOLDINGS LLC
+NOTES TO COMBINED FINANCIAL STATEMENTS
+18
+NOTE 9 - INCOME TAXES (Continued)
+As of December 31, 2025, Two Family had federal and California net operating loss (“NOL”)
+carryforward benefits of approximately $2.3 million and $6.4 million, respectively, which may be
+utilized to offset future taxable income in accordance with applicable tax laws. The federal NOLs
+will carry forward indefinitely and the deduction is limited to 80% of taxable income for any single
+year. The California NOLs will carry forward for a period of 20 years from the date of origination
+and begin to expire in 2042. As management of the Companies cannot determine that it is more
+likely than not that the Companies will fully realize the benefit of the deferred tax asset stemming
+from the NOLs, a full valuation allowance equal to the deferred tax asset has been established. The
+valuation allowance increased by approximately $261,000 for the year ended December 31, 2025.
+Realization of the NOL carryforward is dependent on generating sufficient taxable income prior to
+expiration of the loss carryforward.
+NOTE 10 - RELATED PARTY TRANSACTIONS AND BALANCES
+Due to the related party nature of the relationships with the following entities, the Companies’
+financial position and operating results as of and for the year ended December 31, 2025 may be
+different from that which would have been obtained if the entities were autonomous.
+Due from Avon Rental Holdings, LLC
+Advances to Avon Rental Holdings, LLC (“Avon”), MT Studio’s majority owner, are unsecured,
+non-interest bearing and due on demand. The balances due from Avon have been presented as a non-
+current asset on the accompanying combined balance sheet as collection within the next operating
+cycle is not probable. Balances due from Avon amounted to $233,796 and as of December 31, 2025.
+Due from Bearcat Holdings, LLC
+Advances to Bearcat Holdings, LLC (“Bearcat”), a member of Avon, are unsecured, non-interest
+bearing and due on demand. The balances due from Bearcat have been presented as a non-current
+asset on the accompanying combined balance sheet as collection within the next operating cycle is
+not probable. Balances due from Bearcat amounted to $72,453 as of December 31, 2025.
+Due from VS Rentals Opco LLC
+Advances to VS Rentals Opco LLC (“Versatile”), a related party affiliated through common
+ownership by MT Studio, are unsecured, non-interest bearing and due on demand. The balances due
+from Versatile have been presented as a non-current asset on the accompanying combined balance
+sheet as collection within the next operating cycle is not probable. Balances due from Versatile
+amounted to $391,126 as of December 31, 2025.
+
+-- 20 of 22 --
+
+SILVERCO ENTERPRISES, LLC, TWO FAMILY ENTERPRISES, INC. AND NCNT
+HOLDINGS LLC
+NOTES TO COMBINED FINANCIAL STATEMENTS
+19
+NOTE 10 - RELATED PARTY TRANSACTIONS AND BALANCES (Continued)
+Due to Hollywood Site Services, LLC
+Advances from Hollywood Site Services, LLC (“HSS”), a related party affiliated through common
+ownership by MT Studio, are unsecured, non-interest bearing and due on demand. The balances due
+to HSS have been presented as a current liability on the accompanying combined balance sheet due
+to the on-demand feature of the advances. Balances due to HSS amounted to $72,633 as of December
+31, 2025.
+Due to Hollywood Depot Rentals, LLC
+Advances from Hollywood Depot Rentals, LLC (“HDR”), a related party affiliated through common
+ownership by MT Studio, are unsecured, non-interest bearing and due on demand. The balance due
+to HDR has been presented as a current liability on the accompanying combined balance sheet due
+to the on-demand feature of the advances. Due to HDR amounted to $2,472,984 as of December 31,
+2025.
+Due to MT Studio Services, LLC
+In September 2024, MT Studio advanced the Companies $737,000. The outstanding balance of the
+advance bears interest at 12.00% per annum with accrued interest on the unpaid principal balance due
+monthly in arrears. The advances and any unpaid interest are due on demand. The balance due to MT
+Studio has been presented as a current liability on the accompanying combined balance sheet due to
+the on-demand feature of the advance. As of December 31, 2025, amount due to MT Studio amounted
+to $737,000. As of December 31, 2025, accrued interest related to the related party payable amounted
+to $119,480 and is included within accrued expenses on the accompanying combined balance sheet.
+Interest expense for the year ended December 31, 2025, amounted to $88,440.
+NOTE 11 - EMPLOYEE BENEFIT PLAN
+The Companies maintain a 401(k) plan (the “Plan”) which is qualified under the Internal Revenue
+Code. Employees who have reached the age of 18 and have been employed for at least 90 days are
+eligible to participate in the Plan. The Plan allows participants to make salary deferral contributions
+within certain statutory limitations. The Companies make matching contributions of 100% of a
+participant’s salary deferrals up to 3% of eligible compensation. Employer contributions for the year
+ended December 31, 2025 amounted to $77,651.
+
+-- 21 of 22 --
+
+SILVERCO ENTERPRISES, LLC, TWO FAMILY ENTERPRISES, INC. AND NCNT
+HOLDINGS LLC
+NOTES TO COMBINED FINANCIAL STATEMENTS
+20
+NOTE 12 - CONTINGENCIES
+Two Family and Silverco, along with other related parties, were involved in a dispute arising from
+rental agreements in place with a member of Avon. The dispute also included other matters that did
+not directly involve Two Family and Silverco. The dispute was settled in April 2025 and the
+resolution and settlement occurred by and between various members in the organizational chart
+above MT Studio. Accordingly, the Companies have determined that there is no provision or accrual
+for legal matters in the combined financial statements as of and for the year ended December 31,
+2025.
+From time to time and in the ordinary course of its business, the Companies may be named as a party
+to legal proceedings, investigations and claims related to various issues. Management does not
+believe that any of these legal issues will have a material adverse impact on the business, financial
+condition, or results of operations of the Companies due to the nature of the claims.
+NOTE 13 - GOING CONCERN
+The Companies’ management has identified conditions or events that give rise to substantial doubt
+about the Companies’ ability to continue as a going concern. On a combined basis, the Companies
+incurred substantial losses from operations during the year, are in a negative working capital
+position and are reporting a significant owner’s deficit as of December 31, 2025. These conditions
+raise substantial doubt about the Companies’ ability to continue as a going concern.
+Management has implemented a plan to strengthen its cash flow, liquidity and financial position,
+including cost cutting initiatives and negotiating favorable terms with the Companies’ third party
+and related party lenders, as well as pursuing complementary acquisitions of businesses within
+their industry to expand the Companies’ revenue base and customer relationships. Management
+believes the plan to improve operating performance and strengthening future cash flows will
+position the Companies to be able to meet their obligations as they come due in the ordinary course
+of business for the 12-month period following the date the combined financial statements were
+available to be issued. However, there can be no assurance that the Companies’ plans to improve
+their operating performance and financial position will be successful. Any inability to execute the
+mitigating plans could have an adverse effect on the business and their operations and the effect
+could be material. Due to the uncertainty surrounding the ability of the Companies to successfully
+execute the mitigating plans, there is substantial doubt that the Companies will be able to continue
+as a going concern. The accompanying combined financial statements do not include any
+adjustments that might be necessary if the Companies are unable to continue as a going concern.
+NOTE 14 - SUBSEQUENT EVENTS
+Subsequent events have been evaluated by the Companies through April 30, 2026, which is the date
+the combined financial statements were available to be issued.
+
+-- 22 of 22 --
+
+
