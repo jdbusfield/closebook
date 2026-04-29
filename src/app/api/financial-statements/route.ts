@@ -713,6 +713,7 @@ interface AccountInfo {
   classification: string;
   accountType: string;
   isIntercompany?: boolean;
+  parentAccountId?: string | null;
 }
 
 interface BucketedAmounts {
@@ -722,6 +723,69 @@ interface BucketedAmounts {
   endingBalance: Record<string, number>;
   /** BS: beginning_balance of first month in bucket (for cash flow) */
   beginningBalance: Record<string, number>;
+}
+
+/**
+ * Roll children's bucketed amounts up into their parent's row, then return
+ * the filtered list of "displayable" accounts (parents + orphan-leaves).
+ *
+ * Used by charts that organize master accounts in a parent → children
+ * hierarchy (the accountant chart). Charts without any parent assignments
+ * are unaffected — every account is its own row, exactly as before.
+ *
+ * Mutates `aggregated` in place (children's entries are removed and the
+ * parent's entry is replaced with the summed amounts).
+ */
+function applyParentRollup(
+  accounts: AccountInfo[],
+  aggregated: Map<string, BucketedAmounts>,
+  buckets: PeriodBucket[],
+): AccountInfo[] {
+  const childrenByParent = new Map<string, AccountInfo[]>();
+  for (const acct of accounts) {
+    if (acct.parentAccountId) {
+      const list = childrenByParent.get(acct.parentAccountId) ?? [];
+      list.push(acct);
+      childrenByParent.set(acct.parentAccountId, list);
+    }
+  }
+  if (childrenByParent.size === 0) return accounts; // no parents — no-op
+
+  // Sum each parent's children into the parent's BucketedAmounts.
+  for (const [parentId, children] of childrenByParent) {
+    const parentAmounts: BucketedAmounts = aggregated.get(parentId) ?? {
+      netChange: {},
+      endingBalance: {},
+      beginningBalance: {},
+    };
+    for (const bucket of buckets) {
+      let nc = parentAmounts.netChange[bucket.key] ?? 0;
+      let eb = parentAmounts.endingBalance[bucket.key] ?? 0;
+      let bb = parentAmounts.beginningBalance[bucket.key] ?? 0;
+      for (const child of children) {
+        const ca = aggregated.get(child.id);
+        if (!ca) continue;
+        nc += ca.netChange[bucket.key] ?? 0;
+        eb += ca.endingBalance[bucket.key] ?? 0;
+        bb += ca.beginningBalance[bucket.key] ?? 0;
+      }
+      parentAmounts.netChange[bucket.key] = nc;
+      parentAmounts.endingBalance[bucket.key] = eb;
+      parentAmounts.beginningBalance[bucket.key] = bb;
+    }
+    aggregated.set(parentId, parentAmounts);
+
+    // Remove children from the aggregated map so they don't double-count
+    // anywhere downstream that iterates over `aggregated`.
+    for (const child of children) aggregated.delete(child.id);
+  }
+
+  // Drop children from the displayable account list. Parents stay; orphan-
+  // leaves (no parent, no children) stay.
+  const childIds = new Set(
+    accounts.filter((a) => a.parentAccountId).map((a) => a.id),
+  );
+  return accounts.filter((a) => !childIds.has(a.id));
 }
 
 function aggregateByBucket(
@@ -2277,7 +2341,7 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
   // Auto-detect intercompany accounts by name pattern ("Due from ..." / "Due to ...")
   // as a reliable fallback — the DB flag may not be set on legacy accounts.
   const consolidatedAccounts: AccountInfo[] = masterAccounts.map(
-    (ma: { id: string; name: string; account_number: string | null; classification: string; account_type: string; is_intercompany?: boolean }) => {
+    (ma: { id: string; name: string; account_number: string | null; classification: string; account_type: string; is_intercompany?: boolean; parent_account_id?: string | null }) => {
       const nameLower = ma.name.toLowerCase();
       const isIC =
         ma.is_intercompany === true ||
@@ -2290,6 +2354,7 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
         classification: ma.classification,
         accountType: ma.account_type,
         isIntercompany: isIC,
+        parentAccountId: ma.parent_account_id ?? null,
       };
     }
   );
@@ -2748,13 +2813,18 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     }
   }
 
+  // Roll children's amounts into their parent rows. No-op for charts that
+  // don't use the parent_account_id hierarchy (e.g. management chart).
+  const displayAccounts = applyParentRollup(consolidatedAccounts, aggregated, buckets);
+  if (pyAggregated) applyParentRollup(consolidatedAccounts, pyAggregated, buckets);
+
   // Build statements
   const incomeStatement = buildStatement(
     "income_statement",
     "Income Statement",
     INCOME_STATEMENT_SECTIONS,
     INCOME_STATEMENT_COMPUTED,
-    consolidatedAccounts,
+    displayAccounts,
     aggregated,
     buckets,
     true,
@@ -2779,7 +2849,7 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     "Balance Sheet",
     BALANCE_SHEET_SECTIONS,
     BALANCE_SHEET_COMPUTED,
-    consolidatedAccounts,
+    displayAccounts,
     aggregated,
     buckets,
     false,
@@ -2790,7 +2860,7 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
   // Inject Net Income into BS equity so Assets = L + E
   injectNetIncomeIntoBalanceSheet(
     balanceSheet,
-    consolidatedAccounts,
+    displayAccounts,
     aggregated,
     buckets,
     pyAggregated
@@ -2819,7 +2889,7 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
   ];
 
   const cashFlowStatement = buildCashFlowStatement(
-    consolidatedAccounts,
+    displayAccounts,
     aggregated,
     buckets,
     netIncomeByBucket,
@@ -3084,6 +3154,8 @@ export async function GET(request: Request) {
       accountNumber: ma.account_number,
       classification: ma.classification,
       accountType: ma.account_type,
+      isIntercompany: ma.is_intercompany ?? false,
+      parentAccountId: ma.parent_account_id ?? null,
     }));
 
     const consolidatedBalances: RawGLBalance[] = [];
@@ -3244,13 +3316,18 @@ export async function GET(request: Request) {
       }
     }
 
+    // Roll children's amounts into their parent rows. No-op when no
+    // parent_account_id is set (the management chart).
+    const displayAccounts = applyParentRollup(consolidatedAccounts, aggregated, buckets);
+    if (pyAggregated) applyParentRollup(consolidatedAccounts, pyAggregated, buckets);
+
     // Build Income Statement
     const incomeStatement = buildStatement(
       "income_statement",
       "Income Statement",
       INCOME_STATEMENT_SECTIONS,
       INCOME_STATEMENT_COMPUTED,
-      consolidatedAccounts,
+      displayAccounts,
       aggregated,
       buckets,
       true, // use net_change
@@ -3284,7 +3361,7 @@ export async function GET(request: Request) {
       "Balance Sheet",
       BALANCE_SHEET_SECTIONS,
       BALANCE_SHEET_COMPUTED,
-      consolidatedAccounts,
+      displayAccounts,
       aggregated,
       buckets,
       false, // use ending_balance
@@ -3295,7 +3372,7 @@ export async function GET(request: Request) {
     // Inject Net Income into BS equity so Assets = L + E
     injectNetIncomeIntoBalanceSheet(
       balanceSheet,
-      consolidatedAccounts,
+      displayAccounts,
       aggregated,
       buckets,
       pyAggregated
@@ -3325,7 +3402,7 @@ export async function GET(request: Request) {
 
     // Build Cash Flow Statement
     const cashFlowStatement = buildCashFlowStatement(
-      consolidatedAccounts,
+      displayAccounts,
       aggregated,
       buckets,
       netIncomeByBucket,
