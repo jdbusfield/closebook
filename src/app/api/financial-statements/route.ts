@@ -2340,13 +2340,32 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
   // Consolidate: For each master account, sum the GL balances of all mapped entity accounts.
   // Auto-detect intercompany accounts by name pattern ("Due from ..." / "Due to ...")
   // as a reliable fallback — the DB flag may not be set on legacy accounts.
+  //
+  // Important: skip the name-based auto-flag when the account participates in
+  // a parent-child rollup (either has a parent assigned, or is itself a parent).
+  // Those accounts represent FS line items that the user explicitly chose to
+  // surface; auto-eliminating them would zero out a line that should remain
+  // visible (e.g., the accountant chart's "Due from related parties" parent,
+  // which represents balances with parties outside the combined entities and
+  // therefore should NOT be eliminated).
+  const accountsAsChild = new Set(
+    masterAccounts
+      .filter((m: { parent_account_id?: string | null }) => m.parent_account_id)
+      .map((m: { id: string }) => m.id),
+  );
+  const accountsAsParent = new Set(
+    masterAccounts
+      .filter((m: { parent_account_id?: string | null }) => m.parent_account_id)
+      .map((m: { parent_account_id?: string | null }) => m.parent_account_id as string),
+  );
   const consolidatedAccounts: AccountInfo[] = masterAccounts.map(
     (ma: { id: string; name: string; account_number: string | null; classification: string; account_type: string; is_intercompany?: boolean; parent_account_id?: string | null }) => {
       const nameLower = ma.name.toLowerCase();
+      const inHierarchy = accountsAsChild.has(ma.id) || accountsAsParent.has(ma.id);
       const isIC =
         ma.is_intercompany === true ||
-        nameLower.startsWith("due from ") ||
-        nameLower.startsWith("due to ");
+        (!inHierarchy &&
+          (nameLower.startsWith("due from ") || nameLower.startsWith("due to ")));
       return {
         id: ma.id,
         name: ma.name,
