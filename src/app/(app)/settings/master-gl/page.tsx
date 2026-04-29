@@ -199,6 +199,7 @@ export default function MasterGLPage() {
     classification: "Asset" as AccountClassification,
     accountType: "",
     accountSubType: "",
+    parentAccountId: "" as string,
     isIntercompany: false,
   });
   const [saving, setSaving] = useState(false);
@@ -374,6 +375,7 @@ export default function MasterGLPage() {
       classification: "Asset",
       accountType: "",
       accountSubType: "",
+      parentAccountId: "",
       isIntercompany: false,
     });
   }
@@ -393,6 +395,7 @@ export default function MasterGLPage() {
       classification: account.classification as AccountClassification,
       accountType: account.account_type,
       accountSubType: account.account_sub_type ?? "",
+      parentAccountId: account.parent_account_id ?? "",
       isIntercompany: account.is_intercompany ?? false,
     });
     setShowAddDialog(true);
@@ -420,6 +423,7 @@ export default function MasterGLPage() {
             classification: formData.classification,
             accountType: formData.accountType,
             accountSubType: formData.accountSubType || null,
+            parentAccountId: formData.parentAccountId || null,
             isIntercompany: formData.isIntercompany,
           }),
         });
@@ -444,6 +448,7 @@ export default function MasterGLPage() {
             classification: formData.classification,
             accountType: formData.accountType,
             accountSubType: formData.accountSubType || null,
+            parentAccountId: formData.parentAccountId || null,
             isIntercompany: formData.isIntercompany,
           }),
         });
@@ -832,6 +837,20 @@ export default function MasterGLPage() {
                                         IC Elim
                                       </Badge>
                                     )}
+                                    {account.parent_account_id && (() => {
+                                      const parent = masterAccounts.find(
+                                        (m) => m.id === account.parent_account_id,
+                                      );
+                                      if (!parent) return null;
+                                      return (
+                                        <Badge
+                                          variant="outline"
+                                          className="ml-2 text-[10px] px-1.5 py-0 border-blue-400 text-blue-700 bg-blue-50"
+                                        >
+                                          → {parent.account_number}
+                                        </Badge>
+                                      );
+                                    })()}
                                     {account.description && (
                                       <span className="text-xs block text-muted-foreground">
                                         {account.description}
@@ -1025,6 +1044,47 @@ export default function MasterGLPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Parent Account (rollup)</Label>
+              <p className="text-xs text-muted-foreground">
+                Optional. Roll this account into a parent line on the
+                financial model. Pick from accounts in this chart that share
+                the same classification.
+              </p>
+              <Select
+                value={formData.parentAccountId || "__none"}
+                onValueChange={(v) =>
+                  setFormData({
+                    ...formData,
+                    parentAccountId: v === "__none" ? "" : v,
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="No parent" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">— No parent —</SelectItem>
+                  {masterAccounts
+                    .filter(
+                      (m) =>
+                        m.classification === formData.classification &&
+                        m.id !== editingAccount?.id,
+                    )
+                    .sort((a, b) =>
+                      (a.account_number || "").localeCompare(
+                        b.account_number || "",
+                      ),
+                    )
+                    .map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.account_number} — {m.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {(formData.classification === "Revenue" ||
