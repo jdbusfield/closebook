@@ -4962,6 +4962,153 @@ export type Database = {
         }
         Relationships: []
       }
+      rw_invoices_cache: {
+        Row: {
+          rw_invoice_id: string
+          invoice_number: string | null
+          invoice_date: string | null
+          billing_start_date: string | null
+          billing_end_date: string | null
+          status: string | null
+          customer: string | null
+          customer_id: string | null
+          warehouse: string | null
+          deal: string | null
+          order_number: string | null
+          order_description: string | null
+          invoice_description: string | null
+          list_total: number
+          gross_total: number
+          sub_total: number
+          tax_amount: number
+          discount_amount: number
+          rw_modified_at: string | null
+          items_synced_at: string | null
+          header_synced_at: string
+        }
+        Insert: {
+          rw_invoice_id: string
+          invoice_number?: string | null
+          invoice_date?: string | null
+          billing_start_date?: string | null
+          billing_end_date?: string | null
+          status?: string | null
+          customer?: string | null
+          customer_id?: string | null
+          warehouse?: string | null
+          deal?: string | null
+          order_number?: string | null
+          order_description?: string | null
+          invoice_description?: string | null
+          list_total?: number
+          gross_total?: number
+          sub_total?: number
+          tax_amount?: number
+          discount_amount?: number
+          rw_modified_at?: string | null
+          items_synced_at?: string | null
+          header_synced_at?: string
+        }
+        Update: {
+          rw_invoice_id?: string
+          invoice_number?: string | null
+          invoice_date?: string | null
+          billing_start_date?: string | null
+          billing_end_date?: string | null
+          status?: string | null
+          customer?: string | null
+          customer_id?: string | null
+          warehouse?: string | null
+          deal?: string | null
+          order_number?: string | null
+          order_description?: string | null
+          invoice_description?: string | null
+          list_total?: number
+          gross_total?: number
+          sub_total?: number
+          tax_amount?: number
+          discount_amount?: number
+          rw_modified_at?: string | null
+          items_synced_at?: string | null
+          header_synced_at?: string
+        }
+        Relationships: []
+      }
+      rw_invoice_items: {
+        Row: {
+          id: string
+          rw_invoice_id: string
+          rw_invoice_item_id: string
+          invoice_number: string | null
+          invoice_date: string | null
+          billing_start_date: string | null
+          billing_end_date: string | null
+          customer: string | null
+          warehouse: string | null
+          status: string | null
+          i_code: string | null
+          description: string | null
+          quantity: number
+          rate: number
+          extended: number
+          rec_type: string | null
+          item_class: string | null
+          inventory_id: string | null
+          item_id: string | null
+          deal: string | null
+          order_number: string | null
+          synced_at: string
+        }
+        Insert: {
+          id?: string
+          rw_invoice_id: string
+          rw_invoice_item_id: string
+          invoice_number?: string | null
+          invoice_date?: string | null
+          billing_start_date?: string | null
+          billing_end_date?: string | null
+          customer?: string | null
+          warehouse?: string | null
+          status?: string | null
+          i_code?: string | null
+          description?: string | null
+          quantity?: number
+          rate?: number
+          extended?: number
+          rec_type?: string | null
+          item_class?: string | null
+          inventory_id?: string | null
+          item_id?: string | null
+          deal?: string | null
+          order_number?: string | null
+          synced_at?: string
+        }
+        Update: {
+          id?: string
+          rw_invoice_id?: string
+          rw_invoice_item_id?: string
+          invoice_number?: string | null
+          invoice_date?: string | null
+          billing_start_date?: string | null
+          billing_end_date?: string | null
+          customer?: string | null
+          warehouse?: string | null
+          status?: string | null
+          i_code?: string | null
+          description?: string | null
+          quantity?: number
+          rate?: number
+          extended?: number
+          rec_type?: string | null
+          item_class?: string | null
+          inventory_id?: string | null
+          item_id?: string | null
+          deal?: string | null
+          order_number?: string | null
+          synced_at?: string
+        }
+        Relationships: []
+      }
       rw_revenue_snapshots: {
         Row: {
           id: string
