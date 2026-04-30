@@ -185,6 +185,9 @@ export default function MasterGLPage() {
   const [search, setSearch] = useState("");
   const [classFilter, setClassFilter] = useState("all");
   const [entityFilter, setEntityFilter] = useState("all");
+  const [viewMode, setViewMode] = useState<"classification" | "rollup">(
+    "classification",
+  );
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   // Dialog state for adding/editing master accounts
@@ -593,6 +596,58 @@ export default function MasterGLPage() {
     setBulkRunning(false);
   }
 
+  // Build a parent → children index. A "parent" master account is one that
+  // any other master account points to via parent_account_id.
+  const childrenByParent = new Map<string, MasterAccount[]>();
+  for (const a of masterAccounts) {
+    if (a.parent_account_id) {
+      const list = childrenByParent.get(a.parent_account_id) ?? [];
+      list.push(a);
+      childrenByParent.set(a.parent_account_id, list);
+    }
+  }
+
+  type RollupRow = { account: MasterAccount; role: "parent" | "child" | "leaf" };
+
+  // For a given list of accounts (within a classification), produce a
+  // hierarchical order: parent → its children → next parent → ... → orphan leaves.
+  function buildRollupOrder(accounts: MasterAccount[]): RollupRow[] {
+    const result: RollupRow[] = [];
+    const seen = new Set<string>();
+    const inputIds = new Set(accounts.map((a) => a.id));
+
+    const parents = accounts
+      .filter((a) => childrenByParent.has(a.id) && !a.parent_account_id)
+      .sort((x, y) =>
+        (x.account_number || "").localeCompare(y.account_number || ""),
+      );
+
+    for (const p of parents) {
+      if (seen.has(p.id)) continue;
+      result.push({ account: p, role: "parent" });
+      seen.add(p.id);
+      const kids = (childrenByParent.get(p.id) ?? [])
+        .filter((k) => inputIds.has(k.id))
+        .sort((x, y) =>
+          (x.account_number || "").localeCompare(y.account_number || ""),
+        );
+      for (const k of kids) {
+        if (seen.has(k.id)) continue;
+        result.push({ account: k, role: "child" });
+        seen.add(k.id);
+      }
+    }
+
+    const orphans = accounts
+      .filter((a) => !seen.has(a.id))
+      .sort((x, y) =>
+        (x.account_number || "").localeCompare(y.account_number || ""),
+      );
+    for (const o of orphans) result.push({ account: o, role: "leaf" });
+
+    return result;
+  }
+
   // Filter accounts
   const filtered = masterAccounts.filter((a) => {
     const matchesSearch =
@@ -746,6 +801,20 @@ export default function MasterGLPage() {
                 ))}
               </SelectContent>
             </Select>
+            <Select
+              value={viewMode}
+              onValueChange={(v) =>
+                setViewMode(v as "classification" | "rollup")
+              }
+            >
+              <SelectTrigger className="w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="classification">By Classification</SelectItem>
+                <SelectItem value="rollup">By Rollup</SelectItem>
+              </SelectContent>
+            </Select>
             <div className="ml-auto text-sm text-muted-foreground">
               {masterAccounts.length} master account
               {masterAccounts.length !== 1 ? "s" : ""} &middot;{" "}
@@ -814,20 +883,48 @@ export default function MasterGLPage() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {classAccounts.map((account) => {
+                          {(viewMode === "rollup"
+                            ? buildRollupOrder(classAccounts)
+                            : classAccounts.map(
+                                (a) =>
+                                  ({ account: a, role: "leaf" }) as RollupRow,
+                              )
+                          ).map(({ account, role }) => {
                             const accountMappings = getMappingsForAccount(
                               account.id
                             );
+                            const childrenCount =
+                              childrenByParent.get(account.id)?.length ?? 0;
                             return (
-                              <TableRow key={account.id}>
+                              <TableRow
+                                key={account.id}
+                                className={
+                                  role === "parent"
+                                    ? "bg-blue-50/40 font-semibold"
+                                    : undefined
+                                }
+                              >
                                 <TableCell className="font-mono text-sm">
+                                  {role === "child" && (
+                                    <span className="text-muted-foreground mr-1">
+                                      ↳
+                                    </span>
+                                  )}
                                   {account.account_number}
                                 </TableCell>
                                 <TableCell>
-                                  <div>
+                                  <div className={role === "child" ? "pl-4" : undefined}>
                                     <span className="font-medium">
                                       {account.name}
                                     </span>
+                                    {role === "parent" && (
+                                      <Badge
+                                        variant="outline"
+                                        className="ml-2 text-[10px] px-1.5 py-0 border-blue-400 text-blue-700 bg-blue-100"
+                                      >
+                                        Rollup ({childrenCount} child{childrenCount === 1 ? "" : "ren"})
+                                      </Badge>
+                                    )}
                                     {account.is_intercompany && (
                                       <Badge
                                         variant="outline"
@@ -837,7 +934,7 @@ export default function MasterGLPage() {
                                         IC Elim
                                       </Badge>
                                     )}
-                                    {account.parent_account_id && (() => {
+                                    {viewMode !== "rollup" && account.parent_account_id && (() => {
                                       const parent = masterAccounts.find(
                                         (m) => m.id === account.parent_account_id,
                                       );
@@ -868,7 +965,12 @@ export default function MasterGLPage() {
                                 </TableCell>
                                 <TableCell>
                                   <div className="flex flex-wrap gap-1">
-                                    {accountMappings.length === 0 ? (
+                                    {role === "parent" ? (
+                                      <span className="text-xs text-muted-foreground">
+                                        Rolls up {childrenCount} master account
+                                        {childrenCount === 1 ? "" : "s"}
+                                      </span>
+                                    ) : accountMappings.length === 0 ? (
                                       <span className="text-xs text-muted-foreground">
                                         No mappings
                                       </span>
@@ -897,16 +999,18 @@ export default function MasterGLPage() {
                                 </TableCell>
                                 <TableCell>
                                   <div className="flex items-center justify-end gap-1">
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() =>
-                                        openMappingSheet(account)
-                                      }
-                                      title="Map entity accounts"
-                                    >
-                                      <Link2 className="h-4 w-4" />
-                                    </Button>
+                                    {role !== "parent" && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() =>
+                                          openMappingSheet(account)
+                                        }
+                                        title="Map entity accounts"
+                                      >
+                                        <Link2 className="h-4 w-4" />
+                                      </Button>
+                                    )}
                                     <Button
                                       variant="ghost"
                                       size="sm"
