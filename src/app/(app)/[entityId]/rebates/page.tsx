@@ -816,7 +816,7 @@ export default function RebateTrackerPage({ entityId: entityIdProp, isEmbed, emb
                     key={c.id}
                     className="cursor-pointer"
                     onClick={() =>
-                      router.push(`/${entityId}/rebates/${c.id}`)
+                      router.push(isEmbed ? `/embed/versatile/rebates/${c.id}` : `/${entityId}/rebates/${c.id}`)
                     }
                   >
                     <TableCell className="font-medium">
@@ -959,7 +959,7 @@ export default function RebateTrackerPage({ entityId: entityIdProp, isEmbed, emb
                     key={c.id}
                     className="cursor-pointer"
                     onClick={() =>
-                      router.push(`/${entityId}/rebates/${c.id}`)
+                      router.push(isEmbed ? `/embed/versatile/rebates/${c.id}` : `/${entityId}/rebates/${c.id}`)
                     }
                   >
                     <TableCell className="font-medium">

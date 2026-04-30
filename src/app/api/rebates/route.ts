@@ -97,6 +97,90 @@ export async function POST(request: Request) {
       });
     }
 
+    case "get_customer_detail": {
+      // Returns everything the customer-detail page needs in one round trip,
+      // so embed views (no logged-in user) can render without going through
+      // the supabase client (which is RLS-gated).
+      const { entityId, customerId } = body;
+      if (!entityId || !customerId) {
+        return NextResponse.json(
+          { error: "entityId and customerId are required" },
+          { status: 400 },
+        );
+      }
+
+      const { data: customer } = await admin
+        .from("rebate_customers")
+        .select("*")
+        .eq("entity_id", entityId)
+        .eq("id", customerId)
+        .single();
+
+      if (!customer) {
+        return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+      }
+
+      const [tiersRes, invoicesRes, summariesRes] = await Promise.all([
+        admin
+          .from("rebate_tiers")
+          .select("*")
+          .eq("rebate_customer_id", customerId)
+          .order("sort_order"),
+        admin
+          .from("rebate_invoices")
+          .select("*")
+          .eq("rebate_customer_id", customerId)
+          .order("billing_end_date", { ascending: true }),
+        admin
+          .from("rebate_quarterly_summaries")
+          .select("*")
+          .eq("rebate_customer_id", customerId)
+          .order("year", { ascending: true }),
+      ]);
+
+      // Excluded I-codes: global if customer opts in, plus customer-specific
+      const excludedICodes = new Set<string>();
+      if (customer.use_global_exclusions) {
+        const { data: globalCodes } = await admin
+          .from("rebate_excluded_icodes")
+          .select("i_code")
+          .eq("entity_id", entityId)
+          .is("rebate_customer_id", null);
+        for (const ic of globalCodes || []) {
+          excludedICodes.add(ic.i_code.trim());
+        }
+      }
+      const { data: customerCodes } = await admin
+        .from("rebate_excluded_icodes")
+        .select("i_code")
+        .eq("rebate_customer_id", customerId);
+      for (const ic of customerCodes || []) {
+        excludedICodes.add(ic.i_code.trim());
+      }
+
+      return NextResponse.json({
+        customer,
+        tiers: tiersRes.data || [],
+        invoices: invoicesRes.data || [],
+        quarterlySummaries: summariesRes.data || [],
+        excludedICodes: Array.from(excludedICodes),
+      });
+    }
+
+    case "get_invoice_items": {
+      // Fetch line items for one or more rebate invoices. Used by the
+      // customer-detail page (drill-down + export) so it works in embed mode.
+      const { invoiceIds } = body as { invoiceIds: string[] };
+      if (!Array.isArray(invoiceIds) || invoiceIds.length === 0) {
+        return NextResponse.json({ items: [] });
+      }
+      const { data } = await admin
+        .from("rebate_invoice_items")
+        .select("*")
+        .in("rebate_invoice_id", invoiceIds);
+      return NextResponse.json({ items: data || [] });
+    }
+
     case "upsert_customer": {
       const { entityId, customer, tiers: tierData, excludedICodes } = body;
 

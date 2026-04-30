@@ -63,7 +63,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { createClient } from "@/lib/supabase/client";
 import {
   getEquipmentLabel,
   getCurrentQuarter,
@@ -199,11 +198,36 @@ function formatPct(n: number | null | undefined): string {
   return `${n.toFixed(2)}%`;
 }
 
-export default function CustomerDetailPage() {
+export default function CustomerDetailPage({
+  entityId: entityIdProp,
+  customerId: customerIdProp,
+  isEmbed,
+  embedKey,
+}: {
+  entityId?: string;
+  customerId?: string;
+  isEmbed?: boolean;
+  embedKey?: string;
+} = {}) {
   const params = useParams();
-  const entityId = params.entityId as string;
-  const customerId = params.customerId as string;
-  const supabase = createClient();
+  const entityId = entityIdProp || (params.entityId as string);
+  const customerId = customerIdProp || (params.customerId as string);
+
+  const apiFetch = useCallback(
+    (url: string, init: RequestInit = {}) => {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        ...((init.headers as Record<string, string>) || {}),
+      };
+      if (embedKey) headers["x-embed-key"] = embedKey;
+      return fetch(url, { ...init, headers });
+    },
+    [embedKey],
+  );
+
+  const backHref = isEmbed
+    ? "/embed/versatile/rebates"
+    : `/${entityId}/rebates`;
 
   const [customer, setCustomer] = useState<CustomerData | null>(null);
   const [tiers, setTiers] = useState<TierData[]>([]);
@@ -235,62 +259,27 @@ export default function CustomerDetailPage() {
 
   const loadData = useCallback(async () => {
     try {
-      // Load customer
-      const { data: cust } = await supabase
-        .from("rebate_customers")
-        .select("*")
-        .eq("id", customerId)
-        .single();
-      setCustomer(cust as CustomerData | null);
-
-      // Load tiers
-      const { data: tierData } = await supabase
-        .from("rebate_tiers")
-        .select("*")
-        .eq("rebate_customer_id", customerId)
-        .order("sort_order");
-      setTiers(tierData || []);
-
-      // Load invoices
-      const { data: invData } = await supabase
-        .from("rebate_invoices")
-        .select("*")
-        .eq("rebate_customer_id", customerId)
-        .order("billing_end_date", { ascending: true });
-      setInvoices(invData || []);
-
-      // Load quarterly summaries
-      const { data: qtrData } = await supabase
-        .from("rebate_quarterly_summaries")
-        .select("*")
-        .eq("rebate_customer_id", customerId)
-        .order("year", { ascending: true });
-      setQuarterlySummaries(qtrData || []);
-
-      // Load excluded I-codes (global + customer-specific) for client-side highlighting
-      const codes = new Set<string>();
-      if (cust?.use_global_exclusions) {
-        const { data: globalCodes } = await supabase
-          .from("rebate_excluded_icodes")
-          .select("i_code")
-          .eq("entity_id", entityId)
-          .is("rebate_customer_id", null);
-        for (const ic of globalCodes || []) {
-          codes.add(ic.i_code.trim());
-        }
+      const res = await apiFetch("/api/rebates", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "get_customer_detail",
+          entityId,
+          customerId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return;
       }
-      const { data: customerCodes } = await supabase
-        .from("rebate_excluded_icodes")
-        .select("i_code")
-        .eq("rebate_customer_id", customerId);
-      for (const ic of customerCodes || []) {
-        codes.add(ic.i_code.trim());
-      }
-      setExcludedICodes(codes);
+      setCustomer((data.customer as CustomerData) || null);
+      setTiers((data.tiers as TierData[]) || []);
+      setInvoices((data.invoices as RebateInvoice[]) || []);
+      setQuarterlySummaries((data.quarterlySummaries as QuarterlySummary[]) || []);
+      setExcludedICodes(new Set<string>(data.excludedICodes || []));
     } finally {
       setLoading(false);
     }
-  }, [supabase, customerId]);
+  }, [apiFetch, entityId, customerId]);
 
   useEffect(() => {
     loadData();
@@ -307,7 +296,7 @@ export default function CustomerDetailPage() {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      const res = await fetch("/api/rebates/sync", {
+      const res = await apiFetch("/api/rebates/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -333,7 +322,7 @@ export default function CustomerDetailPage() {
   const handleCalculate = async () => {
     setCalculating(true);
     try {
-      const res = await fetch("/api/rebates/calculate", {
+      const res = await apiFetch("/api/rebates/calculate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -366,11 +355,18 @@ export default function CustomerDetailPage() {
       next.add(invoiceId);
       // Load items if not cached
       if (!invoiceItems[invoiceId]) {
-        const { data } = await supabase
-          .from("rebate_invoice_items")
-          .select("*")
-          .eq("rebate_invoice_id", invoiceId);
-        setInvoiceItems((prev) => ({ ...prev, [invoiceId]: data || [] }));
+        const res = await apiFetch("/api/rebates", {
+          method: "POST",
+          body: JSON.stringify({
+            action: "get_invoice_items",
+            invoiceIds: [invoiceId],
+          }),
+        });
+        const data = await res.json();
+        setInvoiceItems((prev) => ({
+          ...prev,
+          [invoiceId]: (data.items as InvoiceItem[]) || [],
+        }));
       }
     }
     setExpandedInvoices(next);
@@ -378,7 +374,7 @@ export default function CustomerDetailPage() {
 
   const handleToggleExclusion = async (invoice: RebateInvoice) => {
     try {
-      const res = await fetch("/api/rebates", {
+      const res = await apiFetch("/api/rebates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -406,7 +402,7 @@ export default function CustomerDetailPage() {
 
   const handleMarkPaid = async (summary: QuarterlySummary) => {
     try {
-      const res = await fetch("/api/rebates", {
+      const res = await apiFetch("/api/rebates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -432,7 +428,7 @@ export default function CustomerDetailPage() {
   const loadActiveOrders = async () => {
     setLoadingOrders(true);
     try {
-      const res = await fetch("/api/rebates/sync", {
+      const res = await apiFetch("/api/rebates/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -470,7 +466,7 @@ export default function CustomerDetailPage() {
     }
     setAddingInvoice(true);
     try {
-      const res = await fetch("/api/rebates/sync", {
+      const res = await apiFetch("/api/rebates/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -501,7 +497,7 @@ export default function CustomerDetailPage() {
   const handleDeleteInvoice = async (invoiceId: string, invoiceNumber: string) => {
     if (!confirm(`Remove invoice ${invoiceNumber} from this agreement?`)) return;
     try {
-      const res = await fetch("/api/rebates", {
+      const res = await apiFetch("/api/rebates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -528,16 +524,21 @@ export default function CustomerDetailPage() {
       .map((inv) => inv.id)
       .filter((id) => !invoiceItems[id]);
     if (missingIds.length > 0) {
-      const { data } = await supabase
-        .from("rebate_invoice_items")
-        .select("*")
-        .in("rebate_invoice_id", missingIds);
-      if (data) {
+      const res = await apiFetch("/api/rebates", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "get_invoice_items",
+          invoiceIds: missingIds,
+        }),
+      });
+      const data = await res.json();
+      const items = (data.items as Array<InvoiceItem & { rebate_invoice_id: string }>) || [];
+      if (items.length > 0) {
         const grouped: Record<string, InvoiceItem[]> = {};
-        for (const item of data) {
+        for (const item of items) {
           const invId = item.rebate_invoice_id;
           if (!grouped[invId]) grouped[invId] = [];
-          grouped[invId].push(item as InvoiceItem);
+          grouped[invId].push(item);
         }
         setInvoiceItems((prev) => ({ ...prev, ...grouped }));
         Object.assign(invoiceItems, grouped);
@@ -1141,7 +1142,7 @@ export default function CustomerDetailPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href={`/${entityId}/rebates`}>
+          <Link href={backHref}>
             <Button variant="ghost" size="sm">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back
