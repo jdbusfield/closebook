@@ -218,6 +218,23 @@ export async function GET(request: Request) {
     // RW snapshot failure should not block the sync summary
   }
 
+  // Refresh RentalWorks invoice + line-item cache (used for I-Code revenue analytics).
+  // Skips invoices whose ModifiedDateTime is unchanged, so the daily delta is small.
+  let rwInvoiceItemsSync: Record<string, unknown> | null = null;
+  try {
+    const itemsResp = await fetch(`${baseUrl}/api/rw-invoice-items/sync`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-cron-secret": cronSecret,
+      },
+      body: JSON.stringify({}),
+    });
+    rwInvoiceItemsSync = await itemsResp.json();
+  } catch {
+    // Invoice-item sync failure should not block the sync summary
+  }
+
   // Summary stats
   const totalSyncs = results.reduce((sum, r) => sum + r.months.length, 0);
   const successfulSyncs = results.reduce(
@@ -244,5 +261,6 @@ export async function GET(request: Request) {
     totalRecords,
     results,
     rwRevenueSnapshot: rwSnapshotResult,
+    rwInvoiceItemsSync,
   });
 }

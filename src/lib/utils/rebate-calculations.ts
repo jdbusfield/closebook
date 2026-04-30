@@ -186,7 +186,7 @@ function getTierMaxDisc(tier: RebateTier, equipType: EquipmentType): number {
 // From rebates.html lines 709-734
 
 export function calculateCommercialInvoice(params: {
-  listTotal: number;
+  grossTotal: number;
   taxAmount: number;
   discountAmount: number;
   excludedTotal: number;
@@ -202,14 +202,16 @@ export function calculateCommercialInvoice(params: {
   netRebate: number;
   finalAmount: number;
 } {
-  const { listTotal, taxAmount, discountAmount, excludedTotal, taxRate, rebateRate, maxDiscRate } =
+  const { grossTotal, taxAmount, discountAmount, excludedTotal, taxRate, rebateRate, maxDiscRate } =
     params;
 
   // Back-calculate taxable sales from tax amount
   const taxableSales = taxRate > 0 ? taxAmount / (taxRate / 100) : 0;
 
-  // Before-discount base = list price minus exclusions minus taxable portion minus tax
-  const beforeDiscount = Math.max(0, listTotal - excludedTotal - taxableSales - taxAmount);
+  // Base = gross (contains every line item) minus exclusions, taxable sales portion, and tax.
+  // Using gross_total avoids the asymmetry where excluded labor/misc items would be subtracted
+  // from a list_total base that never contained them.
+  const beforeDiscount = Math.max(0, grossTotal - excludedTotal - taxableSales - taxAmount);
 
   // Discount as percentage of before-discount base
   const discountPercent = beforeDiscount > 0 ? (discountAmount / beforeDiscount) * 100 : 0;
@@ -238,7 +240,7 @@ export function calculateCommercialInvoice(params: {
 // From rebates.html lines 736-756
 
 export function calculateFreelancerInvoice(params: {
-  listTotal: number;
+  grossTotal: number;
   subTotal: number;
   discountAmount: number;
   excludedTotal: number;
@@ -252,15 +254,15 @@ export function calculateFreelancerInvoice(params: {
   netRebate: number;
   finalAmount: number;
 } {
-  const { listTotal, subTotal, discountAmount, excludedTotal, rebateRate, maxDiscountPercent } =
+  const { grossTotal, subTotal, discountAmount, excludedTotal, rebateRate, maxDiscountPercent } =
     params;
 
   const finalAmount = Math.max(0, subTotal - excludedTotal);
   const grossRebate = finalAmount * (rebateRate / 100);
   let netRebate = grossRebate;
 
-  const discountPercent = listTotal > 0 ? (discountAmount / listTotal) * 100 : 0;
-  const beforeDiscount = listTotal - excludedTotal;
+  const discountPercent = grossTotal > 0 ? (discountAmount / grossTotal) * 100 : 0;
+  const beforeDiscount = grossTotal - excludedTotal;
 
   if (maxDiscountPercent != null && maxDiscountPercent > 0) {
     const combinedPct = discountPercent + rebateRate;
@@ -353,7 +355,7 @@ export function calculateCustomerRebates(
     if (customer.agreement_type === "commercial") {
       const maxDiscRate = getTierMaxDisc(tier, equipType);
       const calc = calculateCommercialInvoice({
-        listTotal: inv.list_total,
+        grossTotal: inv.gross_total,
         taxAmount: inv.tax_amount,
         discountAmount: inv.discount_amount,
         excludedTotal,
@@ -399,7 +401,7 @@ export function calculateCustomerRebates(
       // Freelancer — use same commercial formula
       const maxDiscRate = getTierMaxDisc(tier, equipType);
       const calc = calculateCommercialInvoice({
-        listTotal: inv.list_total,
+        grossTotal: inv.gross_total,
         taxAmount: inv.tax_amount,
         discountAmount: inv.discount_amount,
         excludedTotal,
