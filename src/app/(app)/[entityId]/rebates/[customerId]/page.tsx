@@ -162,19 +162,34 @@ interface TierData {
   max_disc_studio: number | null;
 }
 
-// Category grouping for invoice line items
+// Category grouping for invoice line items.
+// Per the WSM rebate agreement (and similar contracts), only Rental items
+// are rebate-eligible. Sales, L&D, and Misc are excluded categories.
 const RECORD_TYPE_CATEGORIES = [
-  { key: "R", label: "Rental", color: "text-blue-700 dark:text-blue-400" },
-  { key: "S", label: "Sales", color: "text-green-700 dark:text-green-400" },
-  { key: "F", label: "Loss & Damage", color: "text-orange-700 dark:text-orange-400" },
-  { key: "L", label: "Loss & Damage", color: "text-orange-700 dark:text-orange-400" },
-  { key: "M", label: "Miscellaneous", color: "text-purple-700 dark:text-purple-400" },
+  { key: "R", label: "Rental", color: "text-blue-700 dark:text-blue-400", excluded: false },
+  { key: "S", label: "Sales", color: "text-green-700 dark:text-green-400", excluded: true },
+  { key: "F", label: "Loss & Damage", color: "text-orange-700 dark:text-orange-400", excluded: true },
+  { key: "L", label: "Loss & Damage", color: "text-orange-700 dark:text-orange-400", excluded: true },
+  { key: "M", label: "Miscellaneous", color: "text-purple-700 dark:text-purple-400", excluded: true },
 ] as const;
 
 function getRecordTypeLabel(rt: string | null): string {
   if (!rt) return "Other";
   const found = RECORD_TYPE_CATEGORIES.find((c) => c.key === rt);
   return found ? found.label : "Other";
+}
+
+// Non-rental record types that are universally excluded from the rebate base.
+function isNonRebatableRecordType(rt: string | null | undefined): boolean {
+  return rt === "S" || rt === "F" || rt === "L" || rt === "M";
+}
+
+// Badge label for an excluded item, scoped by record_type.
+function getExclusionBadgeLabel(rt: string | null | undefined, short = false): string {
+  if (rt === "F" || rt === "L") return short ? "L&D" : "Loss & Damage";
+  if (rt === "S") return "Sales — excluded";
+  if (rt === "M") return "Misc — excluded";
+  return "Excluded";
 }
 
 function groupItemsByCategory(items: InvoiceItem[]) {
@@ -699,9 +714,13 @@ export default function CustomerDetailPage({
             0,
           );
 
+          const catLabel = catConfig?.excluded
+            ? `${label} (${catItems.length} items) — excluded from rebate`
+            : `${label} (${catItems.length} items)`;
+
           detailData.push([]);
           detailData.push([
-            `${label} (${catItems.length} items)`,
+            catLabel,
             "",
             "",
             formatCurrency(catRegular),
@@ -723,12 +742,17 @@ export default function CustomerDetailPage({
 
           for (const item of catItems) {
             const isExcludedByICode = item.i_code != null && excludedICodes.has(item.i_code.trim());
-            const isLossAndDamage = item.record_type === "F" || item.record_type === "L";
-            const isExcluded = item.is_excluded || isExcludedByICode || isLossAndDamage;
+            const isNonRebatable = isNonRebatableRecordType(item.record_type);
+            const isExcluded = item.is_excluded || isExcludedByICode || isNonRebatable;
             const regular = Number(item.extended) || 0;
             const discount = Number(item.discount_amount) || 0;
             const net = regular - discount;
             const discPct = regular > 0 ? discount / regular : 0;
+            const statusLabel = !isExcluded
+              ? ""
+              : isNonRebatable
+                ? getExclusionBadgeLabel(item.record_type)
+                : "Excluded";
             detailData.push([
               item.i_code || "",
               item.description || "",
@@ -737,7 +761,7 @@ export default function CustomerDetailPage({
               discount > 0 ? discPct : "",
               discount > 0 ? discount : "",
               net,
-              isExcluded ? (isLossAndDamage ? "Loss & Damage" : "Excluded") : "",
+              statusLabel,
             ]);
           }
         }
@@ -1061,8 +1085,9 @@ export default function CustomerDetailPage({
 
             doc.setFontSize(9);
             doc.setTextColor(80);
+            const catSuffix = catConfig?.excluded ? " — excluded from rebate" : "";
             doc.text(
-              `${label} (${catItems.length} items) — Regular ${formatCurrency(catRegular)} · Net ${formatCurrency(catNet)}`,
+              `${label} (${catItems.length} items)${catSuffix} — Regular ${formatCurrency(catRegular)} · Net ${formatCurrency(catNet)}`,
               margin,
               yPos,
             );
@@ -1074,12 +1099,17 @@ export default function CustomerDetailPage({
 
             for (const item of catItems) {
               const isExcludedByICode = item.i_code != null && excludedICodes.has(item.i_code.trim());
-              const isLossAndDamage = item.record_type === "F" || item.record_type === "L";
-              const isExcluded = item.is_excluded || isExcludedByICode || isLossAndDamage;
+              const isNonRebatable = isNonRebatableRecordType(item.record_type);
+              const isExcluded = item.is_excluded || isExcludedByICode || isNonRebatable;
               const regular = Number(item.extended) || 0;
               const discount = Number(item.discount_amount) || 0;
               const net = regular - discount;
               const discPct = regular > 0 ? (discount / regular) * 100 : 0;
+              const statusLabel = !isExcluded
+                ? ""
+                : isNonRebatable
+                  ? getExclusionBadgeLabel(item.record_type, true)
+                  : "Excluded";
               itemBody.push([
                 item.i_code || "",
                 (item.description || "").slice(0, 50),
@@ -1088,7 +1118,7 @@ export default function CustomerDetailPage({
                 discount > 0 ? formatPct(discPct) : "—",
                 discount > 0 ? formatCurrency(discount) : "—",
                 formatCurrency(net),
-                isExcluded ? (isLossAndDamage ? "L&D" : "Excluded") : "",
+                statusLabel,
               ]);
             }
 
@@ -1777,10 +1807,11 @@ export default function CustomerDetailPage({
                                               const isExpanded = expandedCategories.has(expandKey);
 
                                               const catTotal = items.reduce((s, it) => s + (it.extended || 0), 0);
+                                              const isCategoryExcluded = catConfig?.excluded ?? false;
                                               const excludedItems = items.filter((it) => {
                                                 const byICode = it.i_code != null && excludedICodes.has(it.i_code.trim());
-                                                const byLossAndDamage = it.record_type === "F" || it.record_type === "L";
-                                                return it.is_excluded || byICode || byLossAndDamage;
+                                                const byCategory = isNonRebatableRecordType(it.record_type);
+                                                return it.is_excluded || byICode || byCategory;
                                               });
                                               const excludedTotal = excludedItems.reduce(
                                                 (s, it) => s + (it.extended || 0),
@@ -1813,9 +1844,17 @@ export default function CustomerDetailPage({
                                                       <span className="text-muted-foreground">
                                                         ({items.length} item{items.length !== 1 ? "s" : ""})
                                                       </span>
+                                                      {isCategoryExcluded && (
+                                                        <Badge
+                                                          variant="outline"
+                                                          className="text-[10px] uppercase tracking-wide text-red-700 border-red-300 dark:text-red-300 dark:border-red-800"
+                                                        >
+                                                          Excluded from rebate
+                                                        </Badge>
+                                                      )}
                                                     </div>
                                                     <div className="flex items-center gap-4 text-xs">
-                                                      {excludedTotal > 0 && (
+                                                      {!isCategoryExcluded && excludedTotal > 0 && (
                                                         <span className="text-red-600 dark:text-red-400 font-medium">
                                                           Excluded: {formatCurrency(excludedTotal)}
                                                         </span>
@@ -1844,15 +1883,15 @@ export default function CustomerDetailPage({
                                                         <TableBody>
                                                           {[...excludedItems, ...items.filter((it) => {
                                                             const byICode = it.i_code != null && excludedICodes.has(it.i_code.trim());
-                                                            const byLossAndDamage = it.record_type === "F" || it.record_type === "L";
-                                                            return !(it.is_excluded || byICode || byLossAndDamage);
+                                                            const byCategory = isNonRebatableRecordType(it.record_type);
+                                                            return !(it.is_excluded || byICode || byCategory);
                                                           })].map((item) => {
                                                             const isExcludedByICode =
                                                               item.i_code != null &&
                                                               excludedICodes.has(item.i_code.trim());
-                                                            const isLossAndDamage = item.record_type === "F" || item.record_type === "L";
+                                                            const isNonRebatable = isNonRebatableRecordType(item.record_type);
                                                             const isExcluded =
-                                                              item.is_excluded || isExcludedByICode || isLossAndDamage;
+                                                              item.is_excluded || isExcludedByICode || isNonRebatable;
                                                             const regular = Number(item.extended) || 0;
                                                             const discount = Number(item.discount_amount) || 0;
                                                             const net = regular - discount;
@@ -1893,7 +1932,9 @@ export default function CustomerDetailPage({
                                                                       variant="destructive"
                                                                       className="text-xs"
                                                                     >
-                                                                      {isLossAndDamage ? "Loss & Damage" : "Excluded"}
+                                                                      {isNonRebatable
+                                                                        ? getExclusionBadgeLabel(item.record_type)
+                                                                        : "Excluded"}
                                                                     </Badge>
                                                                   )}
                                                                 </TableCell>
