@@ -192,6 +192,7 @@ async function calculateForCustomer(
         taxable_sales: r.taxable_sales,
         before_discount: r.before_discount,
         discount_percent: r.discount_percent,
+        discount_eligible_amount: r.discount_eligible_amount,
         final_amount: r.final_amount,
         tier_label: r.tier_label,
         rebate_rate: r.rebate_rate,

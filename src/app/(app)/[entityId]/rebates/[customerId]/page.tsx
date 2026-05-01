@@ -84,6 +84,7 @@ interface RebateInvoice {
   sub_total: number;
   tax_amount: number;
   discount_amount: number;
+  discount_eligible_amount: number | null;
   excluded_total: number | null;
   taxable_sales: number | null;
   before_discount: number | null;
@@ -577,7 +578,7 @@ export default function CustomerDetailPage({
         [`Generated: ${new Date().toLocaleDateString()}`],
         [],
         ["Invoice Summary"],
-        ["Invoice #", "Date", "Quarter", "Deal / Order", "Type", "Gross Total", "Excluded", "Before Disc", "Discount", "Final Amount", "Rebate %", "Net Rebate"],
+        ["Invoice #", "Date", "Quarter", "Deal / Order", "Type", "Gross Total", "Excluded", "Before Disc", "Eligible Discount", "Final Amount", "Rebate %", "Net Rebate"],
       ];
 
       let grandTotalListTotal = 0;
@@ -591,7 +592,7 @@ export default function CustomerDetailPage({
         grandTotalListTotal += inv.gross_total || 0;
         grandTotalExcluded += (inv.gross_total || 0) - (inv.before_discount || 0);
         grandTotalBeforeDisc += (inv.before_discount || 0);
-        grandTotalDiscount += inv.discount_amount || 0;
+        grandTotalDiscount += inv.discount_eligible_amount ?? inv.discount_amount ?? 0;
         grandTotalFinalAmount += inv.final_amount || 0;
         grandTotalNetRebate += (inv.net_rebate || 0);
 
@@ -604,7 +605,7 @@ export default function CustomerDetailPage({
           inv.gross_total,
           (inv.gross_total || 0) - (inv.before_discount || 0),
           inv.before_discount,
-          inv.discount_amount,
+          inv.discount_eligible_amount ?? inv.discount_amount,
           inv.final_amount,
           inv.remaining_rebate_pct != null ? inv.remaining_rebate_pct / 100 : null,
           inv.net_rebate,
@@ -672,7 +673,7 @@ export default function CustomerDetailPage({
           ["", "Tax", inv.tax_amount],
           ["", "Taxable Sales", inv.taxable_sales || 0],
           ["", "Before Discount", inv.before_discount || 0],
-          ["", "Discount", inv.discount_amount],
+          ["", "Eligible Discount", inv.discount_eligible_amount ?? inv.discount_amount],
           ["", "Discount %", inv.discount_percent != null ? inv.discount_percent / 100 : 0],
           ["", "Final Amount", inv.final_amount || 0],
           ["", "Remaining Rebate", inv.remaining_rebate_pct != null ? inv.remaining_rebate_pct / 100 : 0],
@@ -786,7 +787,7 @@ export default function CustomerDetailPage({
       doc.setTextColor(0);
 
       // --- Summary table ---
-      const summaryHead = [["Invoice #", "Date", "Quarter", "Deal / Order", "Type", "Gross Total", "Excluded", "Before Disc", "Discount", "Final Amount", "Rebate %", "Net Rebate"]];
+      const summaryHead = [["Invoice #", "Date", "Quarter", "Deal / Order", "Type", "Gross Total", "Excluded", "Before Disc", "Eligible Discount", "Final Amount", "Rebate %", "Net Rebate"]];
       const summaryBody: (string | number)[][] = [];
 
       let grandTotalList = 0;
@@ -800,7 +801,7 @@ export default function CustomerDetailPage({
         grandTotalList += inv.gross_total || 0;
         grandTotalExcl += (inv.gross_total || 0) - (inv.before_discount || 0);
         grandTotalBefore += inv.before_discount || 0;
-        grandTotalDisc += inv.discount_amount || 0;
+        grandTotalDisc += inv.discount_eligible_amount ?? inv.discount_amount ?? 0;
         grandTotalFinal += inv.final_amount || 0;
         grandTotalRebate += inv.net_rebate || 0;
 
@@ -813,7 +814,7 @@ export default function CustomerDetailPage({
           formatCurrency(inv.gross_total),
           formatCurrency((inv.gross_total || 0) - (inv.before_discount || 0)),
           formatCurrency(inv.before_discount),
-          formatCurrency(inv.discount_amount),
+          formatCurrency(inv.discount_eligible_amount ?? inv.discount_amount),
           formatCurrency(inv.final_amount),
           formatPct(inv.remaining_rebate_pct),
           formatCurrency(inv.net_rebate),
@@ -953,7 +954,7 @@ export default function CustomerDetailPage({
           ["Tax", formatCurrency(inv.tax_amount)],
           ["Taxable Sales", formatCurrency(inv.taxable_sales)],
           ["Before Discount", formatCurrency(inv.before_discount)],
-          ["Discount", formatCurrency(inv.discount_amount)],
+          ["Eligible Discount", formatCurrency(inv.discount_eligible_amount ?? inv.discount_amount)],
           ["Discount %", formatPct(inv.discount_percent)],
           ["Final Amount", formatCurrency(inv.final_amount)],
           ["Remaining Rebate", formatPct(inv.remaining_rebate_pct)],
@@ -1519,7 +1520,7 @@ export default function CustomerDetailPage({
                   <TableHead className="text-right">Gross Total</TableHead>
                   <TableHead className="text-right">Excluded</TableHead>
                   <TableHead className="text-right">Before Disc</TableHead>
-                  <TableHead className="text-right">Discount</TableHead>
+                  <TableHead className="text-right">Eligible Discount</TableHead>
                   <TableHead className="text-right">Final Amount</TableHead>
                   <TableHead className="text-right">Rebate %</TableHead>
                   <TableHead className="text-right">Net Rebate</TableHead>
@@ -1575,7 +1576,7 @@ export default function CustomerDetailPage({
                             {formatCurrency(inv.before_discount)}
                           </TableCell>
                           <TableCell className="text-right">
-                            {formatCurrency(inv.discount_amount)}
+                            {formatCurrency(inv.discount_eligible_amount ?? inv.discount_amount)}
                           </TableCell>
                           <TableCell className="text-right">
                             {formatCurrency(inv.final_amount)}
@@ -1644,7 +1645,7 @@ export default function CustomerDetailPage({
                                               { label: "Tax", value: formatCurrency(inv.tax_amount) },
                                               { label: "Taxable Sales", value: formatCurrency(inv.taxable_sales) },
                                               { label: "Before Discount", value: formatCurrency(inv.before_discount), highlight: "yellow" },
-                                              { label: "Discount", value: formatCurrency(inv.discount_amount) },
+                                              { label: "Eligible Discount", value: formatCurrency(inv.discount_eligible_amount ?? inv.discount_amount) },
                                               { label: "Discount %", value: formatPct(inv.discount_percent) },
                                               { label: "Final Amount", value: formatCurrency(inv.final_amount) },
                                               { label: "Remaining Rebate", value: formatPct(inv.remaining_rebate_pct) },
