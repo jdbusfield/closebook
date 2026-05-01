@@ -111,6 +111,14 @@ export function Header({ entities }: HeaderProps) {
       columns: "instrument_name",
       format: (r) => r.instrument_name as string,
     },
+    rebates: {
+      table: "rebate_customers",
+      columns: "customer_name, rw_customer_number",
+      format: (r) =>
+        r.rw_customer_number
+          ? `${r.customer_name} — #${r.rw_customer_number}`
+          : (r.customer_name as string),
+    },
   };
 
   const detail =
