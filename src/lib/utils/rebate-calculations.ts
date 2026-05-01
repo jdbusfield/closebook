@@ -192,6 +192,7 @@ export function calculateCommercialInvoice(params: {
   taxAmount: number;
   discountAmount: number;
   excludedTotal: number;
+  excludedTaxableTotal: number;
   taxRate: number;
   rebateRate: number;
   maxDiscRate: number;
@@ -204,16 +205,19 @@ export function calculateCommercialInvoice(params: {
   netRebate: number;
   finalAmount: number;
 } {
-  const { grossTotal, taxAmount, discountAmount, excludedTotal, taxRate, rebateRate, maxDiscRate } =
+  const { grossTotal, taxAmount, discountAmount, excludedTotal, excludedTaxableTotal, taxRate, rebateRate, maxDiscRate } =
     params;
 
-  // Back-calculate taxable sales from tax amount
+  // Back-calculate the taxable revenue total from the tax amount.
   const taxableSales = taxRate > 0 ? taxAmount / (taxRate / 100) : 0;
 
-  // Base = gross (contains every line item) minus exclusions, taxable sales portion, and tax.
-  // Using gross_total avoids the asymmetry where excluded labor/misc items would be subtracted
-  // from a list_total base that never contained them.
-  const beforeDiscount = Math.max(0, grossTotal - excludedTotal - taxableSales - taxAmount);
+  // L&D items are taxed AND already counted in excludedTotal. Remove that
+  // overlap from taxableSales so we don't subtract the same dollars twice.
+  const adjustedTaxableSales = Math.max(0, taxableSales - excludedTaxableTotal);
+
+  // Base = gross (contains every line item) minus exclusions, the *non-excluded*
+  // taxable portion (e.g. sales / misc), and the tax itself.
+  const beforeDiscount = Math.max(0, grossTotal - excludedTotal - adjustedTaxableSales - taxAmount);
 
   // Discount as percentage of before-discount base
   const discountPercent = beforeDiscount > 0 ? (discountAmount / beforeDiscount) * 100 : 0;
@@ -320,6 +324,10 @@ export function calculateCustomerRebates(
     // pull rebate-eligible revenue down.
     let excludedTotal = 0;
     let excludedDiscount = 0;
+    // L&D items are universally taxed at Versatile, so they show up in both
+    // excludedTotal AND in the back-calculated taxableSales. Track them
+    // separately so the formula can avoid the double-subtraction.
+    let excludedTaxableTotal = 0;
     const excludedItems: ExcludedItemDetail[] = [];
     const items = invoiceItemsMap.get(inv.id) || [];
     for (const item of items) {
@@ -329,6 +337,7 @@ export function calculateCustomerRebates(
       // Exclude loss & damage items (record_type "F" = forfeited/L&D, or "L" legacy)
       if (item.record_type === "F" || item.record_type === "L") {
         excludedTotal += amt;
+        excludedTaxableTotal += amt;
         excludedDiscount += disc;
         excludedItems.push({
           iCode: item.i_code || "L&D",
@@ -372,6 +381,7 @@ export function calculateCustomerRebates(
         taxAmount: inv.tax_amount,
         discountAmount: effectiveDiscount,
         excludedTotal,
+        excludedTaxableTotal,
         taxRate: customer.tax_rate,
         rebateRate,
         maxDiscRate,
@@ -419,6 +429,7 @@ export function calculateCustomerRebates(
         taxAmount: inv.tax_amount,
         discountAmount: effectiveDiscount,
         excludedTotal,
+        excludedTaxableTotal,
         taxRate: customer.tax_rate,
         rebateRate,
         maxDiscRate,
