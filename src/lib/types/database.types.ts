@@ -3883,6 +3883,7 @@ export type Database = {
           description: string | null
           quantity: number | null
           extended: number | null
+          discount_amount: number | null
           is_excluded: boolean
           record_type: string | null
           created_at: string
@@ -3895,6 +3896,7 @@ export type Database = {
           description?: string | null
           quantity?: number | null
           extended?: number | null
+          discount_amount?: number | null
           is_excluded?: boolean
           record_type?: string | null
           created_at?: string
@@ -3907,6 +3909,7 @@ export type Database = {
           description?: string | null
           quantity?: number | null
           extended?: number | null
+          discount_amount?: number | null
           is_excluded?: boolean
           record_type?: string | null
           created_at?: string

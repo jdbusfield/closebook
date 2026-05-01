@@ -57,6 +57,7 @@ export interface CachedInvoiceItem {
   i_code: string | null;
   description: string | null;
   extended: number | null;
+  discount_amount: number | null;
   record_type: string | null;
 }
 
@@ -312,16 +313,22 @@ export function calculateCustomerRebates(
   const results: RebateCalculationResult[] = [];
 
   for (const inv of filtered) {
-    // Calculate excluded amount from cached line items
+    // Calculate excluded amount from cached line items.
+    // Also sum discount applied to those excluded lines so we can subtract it
+    // from the invoice-level discount — a discount on an L&D walkie shouldn't
+    // pull rebate-eligible revenue down.
     let excludedTotal = 0;
+    let excludedDiscount = 0;
     const excludedItems: ExcludedItemDetail[] = [];
     const items = invoiceItemsMap.get(inv.id) || [];
     for (const item of items) {
       const amt = Number(item.extended) || 0;
+      const disc = Number(item.discount_amount) || 0;
 
       // Exclude loss & damage items (record_type "F" = forfeited/L&D, or "L" legacy)
       if (item.record_type === "F" || item.record_type === "L") {
         excludedTotal += amt;
+        excludedDiscount += disc;
         excludedItems.push({
           iCode: item.i_code || "L&D",
           description: item.description,
@@ -331,6 +338,7 @@ export function calculateCustomerRebates(
       } else if (item.i_code && excludedICodes.has(item.i_code.trim())) {
         // Exclude by I-Code
         excludedTotal += amt;
+        excludedDiscount += disc;
         excludedItems.push({
           iCode: item.i_code,
           description: item.description,
@@ -339,6 +347,10 @@ export function calculateCustomerRebates(
         });
       }
     }
+
+    // Effective discount = invoice-level discount minus the portion that
+    // landed on excluded items. This is what the rebate formula should see.
+    const effectiveDiscount = Math.max(0, (inv.discount_amount || 0) - excludedDiscount);
 
     // Equipment type
     const equipType = inv.equipment_type as EquipmentType;
@@ -357,7 +369,7 @@ export function calculateCustomerRebates(
       const calc = calculateCommercialInvoice({
         grossTotal: inv.gross_total,
         taxAmount: inv.tax_amount,
-        discountAmount: inv.discount_amount,
+        discountAmount: effectiveDiscount,
         excludedTotal,
         taxRate: customer.tax_rate,
         rebateRate,
@@ -403,7 +415,7 @@ export function calculateCustomerRebates(
       const calc = calculateCommercialInvoice({
         grossTotal: inv.gross_total,
         taxAmount: inv.tax_amount,
-        discountAmount: inv.discount_amount,
+        discountAmount: effectiveDiscount,
         excludedTotal,
         taxRate: customer.tax_rate,
         rebateRate,
