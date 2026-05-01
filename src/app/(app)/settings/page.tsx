@@ -22,7 +22,8 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, BookOpen } from "lucide-react";
+import Link from "next/link";
 
 export default function SettingsPage() {
   return (
@@ -35,11 +36,35 @@ export default function SettingsPage() {
       </div>
 
       <div className="grid gap-6">
+        <WikiPointerCard />
         <CreateOrganizationCard />
         <Separator />
         <CreateEntityCard />
       </div>
     </div>
+  );
+}
+
+function WikiPointerCard() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <BookOpen className="h-5 w-5" />
+          Wiki
+        </CardTitle>
+        <CardDescription>
+          Closebook&rsquo;s living documentation. Includes getting started,
+          core concepts, feature reference, configuration, troubleshooting,
+          and a changelog of every PR-driven change.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/settings/wiki">Open Wiki</Link>
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
