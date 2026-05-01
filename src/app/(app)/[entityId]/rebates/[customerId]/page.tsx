@@ -692,21 +692,51 @@ export default function CustomerDetailPage({
           const catItems = grouped[catKey];
           const catConfig = RECORD_TYPE_CATEGORIES.find((c) => c.key === catKey);
           const label = catConfig?.label || "Other";
-          const catTotal = catItems.reduce((s, it) => s + (it.extended || 0), 0);
+          const catRegular = catItems.reduce((s, it) => s + (Number(it.extended) || 0), 0);
+          const catNet = catItems.reduce(
+            (s, it) =>
+              s + ((Number(it.extended) || 0) - (Number(it.discount_amount) || 0)),
+            0,
+          );
 
           detailData.push([]);
-          detailData.push([`${label} (${catItems.length} items)`, "", "", "", formatCurrency(catTotal)]);
-          detailData.push(["I-Code", "Description", "Qty", "Extended", "Status"]);
+          detailData.push([
+            `${label} (${catItems.length} items)`,
+            "",
+            "",
+            formatCurrency(catRegular),
+            "",
+            "",
+            formatCurrency(catNet),
+            "",
+          ]);
+          detailData.push([
+            "I-Code",
+            "Description",
+            "Qty",
+            "Regular",
+            "Disc %",
+            "Discount",
+            "Net",
+            "Status",
+          ]);
 
           for (const item of catItems) {
             const isExcludedByICode = item.i_code != null && excludedICodes.has(item.i_code.trim());
             const isLossAndDamage = item.record_type === "F" || item.record_type === "L";
             const isExcluded = item.is_excluded || isExcludedByICode || isLossAndDamage;
+            const regular = Number(item.extended) || 0;
+            const discount = Number(item.discount_amount) || 0;
+            const net = regular - discount;
+            const discPct = regular > 0 ? discount / regular : 0;
             detailData.push([
               item.i_code || "",
               item.description || "",
               item.quantity,
-              item.extended,
+              regular,
+              discount > 0 ? discPct : "",
+              discount > 0 ? discount : "",
+              net,
               isExcluded ? (isLossAndDamage ? "Loss & Damage" : "Excluded") : "",
             ]);
           }
@@ -714,7 +744,9 @@ export default function CustomerDetailPage({
 
         const detailSheet = XLSX.utils.aoa_to_sheet(detailData);
         detailSheet["!cols"] = [
-          { wch: 16 }, { wch: 45 }, { wch: 8 }, { wch: 14 }, { wch: 16 },
+          { wch: 16 }, { wch: 45 }, { wch: 8 },
+          { wch: 14 }, { wch: 9 }, { wch: 14 }, { wch: 14 },
+          { wch: 16 },
         ];
 
         // Format currency cells in calculation breakdown (column C, rows 9-18)
@@ -732,12 +764,20 @@ export default function CustomerDetailPage({
           }
         }
 
-        // Format extended column in line items
+        // Format the line-item value columns: Regular (3), Disc % (4), Discount (5), Net (6).
+        // Body rows live below the calculation breakdown; iterate the whole sheet and
+        // format any number cell in those columns.
         const range = XLSX.utils.decode_range(detailSheet["!ref"] || "A1");
         for (let r = 25; r <= range.e.r; r++) {
-          const cellRef = XLSX.utils.encode_cell({ r, c: 3 });
-          if (detailSheet[cellRef] && typeof detailSheet[cellRef].v === "number") {
-            detailSheet[cellRef].z = '$#,##0.00';
+          for (const c of [3, 5, 6]) {
+            const cellRef = XLSX.utils.encode_cell({ r, c });
+            if (detailSheet[cellRef] && typeof detailSheet[cellRef].v === "number") {
+              detailSheet[cellRef].z = '$#,##0.00';
+            }
+          }
+          const pctCell = XLSX.utils.encode_cell({ r, c: 4 });
+          if (detailSheet[pctCell] && typeof detailSheet[pctCell].v === "number") {
+            detailSheet[pctCell].z = '0.00%';
           }
         }
 
@@ -1006,7 +1046,12 @@ export default function CustomerDetailPage({
             const catItems = grouped[catKey];
             const catConfig = RECORD_TYPE_CATEGORIES.find((c) => c.key === catKey);
             const label = catConfig?.label || "Other";
-            const catTotal = catItems.reduce((s, it) => s + (it.extended || 0), 0);
+            const catRegular = catItems.reduce((s, it) => s + (Number(it.extended) || 0), 0);
+            const catNet = catItems.reduce(
+              (s, it) =>
+                s + ((Number(it.extended) || 0) - (Number(it.discount_amount) || 0)),
+              0,
+            );
 
             // Check if we need a new page
             if (yPos > doc.internal.pageSize.getHeight() - 80) {
@@ -1016,22 +1061,33 @@ export default function CustomerDetailPage({
 
             doc.setFontSize(9);
             doc.setTextColor(80);
-            doc.text(`${label} (${catItems.length} items) — ${formatCurrency(catTotal)}`, margin, yPos);
+            doc.text(
+              `${label} (${catItems.length} items) — Regular ${formatCurrency(catRegular)} · Net ${formatCurrency(catNet)}`,
+              margin,
+              yPos,
+            );
             doc.setTextColor(0);
             yPos += 8;
 
-            const itemHead = [["I-Code", "Description", "Qty", "Extended", "Status"]];
+            const itemHead = [["I-Code", "Description", "Qty", "Regular", "Disc %", "Discount", "Net", "Status"]];
             const itemBody: (string | number)[][] = [];
 
             for (const item of catItems) {
               const isExcludedByICode = item.i_code != null && excludedICodes.has(item.i_code.trim());
               const isLossAndDamage = item.record_type === "F" || item.record_type === "L";
               const isExcluded = item.is_excluded || isExcludedByICode || isLossAndDamage;
+              const regular = Number(item.extended) || 0;
+              const discount = Number(item.discount_amount) || 0;
+              const net = regular - discount;
+              const discPct = regular > 0 ? (discount / regular) * 100 : 0;
               itemBody.push([
                 item.i_code || "",
-                (item.description || "").slice(0, 55),
+                (item.description || "").slice(0, 50),
                 item.quantity ?? "",
-                formatCurrency(item.extended),
+                formatCurrency(regular),
+                discount > 0 ? formatPct(discPct) : "—",
+                discount > 0 ? formatCurrency(discount) : "—",
+                formatCurrency(net),
                 isExcluded ? (isLossAndDamage ? "L&D" : "Excluded") : "",
               ]);
             }
@@ -1044,16 +1100,19 @@ export default function CustomerDetailPage({
               headStyles: { fillColor: [70, 70, 70], fontSize: 7 },
               bodyStyles: { fontSize: 7 },
               columnStyles: {
-                0: { cellWidth: 70 },
-                1: { cellWidth: 250 },
-                2: { cellWidth: 35, halign: "right" },
-                3: { cellWidth: 65, halign: "right" },
-                4: { cellWidth: 50 },
+                0: { cellWidth: 60 },
+                1: { cellWidth: 175 },
+                2: { cellWidth: 28, halign: "right" },
+                3: { cellWidth: 55, halign: "right" },
+                4: { cellWidth: 40, halign: "right" },
+                5: { cellWidth: 55, halign: "right" },
+                6: { cellWidth: 55, halign: "right" },
+                7: { cellWidth: 50 },
               },
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               didParseCell: (data: any) => {
                 if (data.section === "body") {
-                  const status = itemBody[data.row.index]?.[4];
+                  const status = itemBody[data.row.index]?.[7];
                   if (status) {
                     data.cell.styles.fillColor = [255, 240, 240];
                   }
