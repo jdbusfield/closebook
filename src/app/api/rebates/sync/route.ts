@@ -34,6 +34,7 @@ interface RWInvoiceItem {
   Description: string;
   Quantity: string;
   Extended: string;
+  DiscountAmount: string;
   RecType: string;
   AvailableFor: string;
 }
@@ -255,6 +256,7 @@ export async function POST(request: Request) {
               description: item.Description || null,
               quantity: Number(item.Quantity) || 0,
               extended: Number(item.Extended) || 0,
+              discount_amount: Number(item.DiscountAmount) || 0,
               is_excluded: false,
               record_type: item.RecType === "F" ? "F" : (item.AvailableFor || item.RecType || null),
             }));
@@ -482,6 +484,7 @@ async function syncCustomerInvoices(
           description: item.Description || null,
           quantity: Number(item.Quantity) || 0,
           extended: Number(item.Extended) || 0,
+          discount_amount: Number(item.DiscountAmount) || 0,
           is_excluded: false,
           record_type: item.RecType === "F" ? "F" : (item.AvailableFor || item.RecType || null),
         }));
