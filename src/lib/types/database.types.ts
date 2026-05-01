@@ -3768,6 +3768,7 @@ export type Database = {
           taxable_sales: number | null
           before_discount: number | null
           discount_percent: number | null
+          discount_eligible_amount: number | null
           final_amount: number | null
           tier_label: string | null
           rebate_rate: number | null
@@ -3806,6 +3807,7 @@ export type Database = {
           taxable_sales?: number | null
           before_discount?: number | null
           discount_percent?: number | null
+          discount_eligible_amount?: number | null
           final_amount?: number | null
           tier_label?: string | null
           rebate_rate?: number | null
@@ -3844,6 +3846,7 @@ export type Database = {
           taxable_sales?: number | null
           before_discount?: number | null
           discount_percent?: number | null
+          discount_eligible_amount?: number | null
           final_amount?: number | null
           tier_label?: string | null
           rebate_rate?: number | null

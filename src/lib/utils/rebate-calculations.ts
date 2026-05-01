@@ -85,6 +85,7 @@ export interface RebateCalculationResult {
   sub_total: number;
   tax_amount: number;
   discount_amount: number;
+  discount_eligible_amount: number;
   taxable_sales: number;
   before_discount: number;
   discount_percent: number;
@@ -393,6 +394,7 @@ export function calculateCustomerRebates(
         sub_total: inv.sub_total,
         tax_amount: inv.tax_amount,
         discount_amount: inv.discount_amount,
+        discount_eligible_amount: effectiveDiscount,
         taxable_sales: calc.taxableSales,
         before_discount: calc.beforeDiscount,
         discount_percent: calc.discountPercent,
@@ -439,6 +441,7 @@ export function calculateCustomerRebates(
         sub_total: inv.sub_total,
         tax_amount: inv.tax_amount,
         discount_amount: inv.discount_amount,
+        discount_eligible_amount: effectiveDiscount,
         taxable_sales: calc.taxableSales,
         before_discount: calc.beforeDiscount,
         discount_percent: calc.discountPercent,
