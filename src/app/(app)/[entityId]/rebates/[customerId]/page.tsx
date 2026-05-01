@@ -107,6 +107,7 @@ interface InvoiceItem {
   description: string | null;
   quantity: number | null;
   extended: number | null;
+  discount_amount: number | null;
   is_excluded: boolean;
   record_type: string | null;
 }
@@ -1774,7 +1775,10 @@ export default function CustomerDetailPage({
                                                             <TableHead>I-Code</TableHead>
                                                             <TableHead>Description</TableHead>
                                                             <TableHead className="text-right">Qty</TableHead>
-                                                            <TableHead className="text-right">Extended</TableHead>
+                                                            <TableHead className="text-right">Regular</TableHead>
+                                                            <TableHead className="text-right">Disc %</TableHead>
+                                                            <TableHead className="text-right">Discount</TableHead>
+                                                            <TableHead className="text-right">Net</TableHead>
                                                             <TableHead>Status</TableHead>
                                                           </TableRow>
                                                         </TableHeader>
@@ -1790,6 +1794,10 @@ export default function CustomerDetailPage({
                                                             const isLossAndDamage = item.record_type === "F" || item.record_type === "L";
                                                             const isExcluded =
                                                               item.is_excluded || isExcludedByICode || isLossAndDamage;
+                                                            const regular = Number(item.extended) || 0;
+                                                            const discount = Number(item.discount_amount) || 0;
+                                                            const net = regular - discount;
+                                                            const discountPct = regular > 0 ? (discount / regular) * 100 : 0;
                                                             return (
                                                               <TableRow
                                                                 key={item.id}
@@ -1808,8 +1816,17 @@ export default function CustomerDetailPage({
                                                                 <TableCell className="text-right">
                                                                   {item.quantity}
                                                                 </TableCell>
-                                                                <TableCell className="text-right">
-                                                                  {formatCurrency(item.extended)}
+                                                                <TableCell className="text-right tabular-nums">
+                                                                  {formatCurrency(regular)}
+                                                                </TableCell>
+                                                                <TableCell className="text-right tabular-nums text-muted-foreground">
+                                                                  {discount > 0 ? formatPct(discountPct) : "—"}
+                                                                </TableCell>
+                                                                <TableCell className="text-right tabular-nums text-muted-foreground">
+                                                                  {discount > 0 ? formatCurrency(discount) : "—"}
+                                                                </TableCell>
+                                                                <TableCell className="text-right tabular-nums font-medium">
+                                                                  {formatCurrency(net)}
                                                                 </TableCell>
                                                                 <TableCell>
                                                                   {isExcluded && (
