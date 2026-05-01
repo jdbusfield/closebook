@@ -707,12 +707,15 @@ export default function CustomerDetailPage({
           const catItems = grouped[catKey];
           const catConfig = RECORD_TYPE_CATEGORIES.find((c) => c.key === catKey);
           const label = catConfig?.label || "Other";
-          const catRegular = catItems.reduce((s, it) => s + (Number(it.extended) || 0), 0);
-          const catNet = catItems.reduce(
+          // RW's `extended` is the post-discount line total; `discount_amount`
+          // is the discount in dollars. So list (= qty × days × rate) is
+          // `extended + discount_amount`, and `extended` itself is the net.
+          const catRegular = catItems.reduce(
             (s, it) =>
-              s + ((Number(it.extended) || 0) - (Number(it.discount_amount) || 0)),
+              s + (Number(it.extended) || 0) + (Number(it.discount_amount) || 0),
             0,
           );
+          const catNet = catItems.reduce((s, it) => s + (Number(it.extended) || 0), 0);
 
           const catLabel = catConfig?.excluded
             ? `${label} (${catItems.length} items) — excluded from rebate`
@@ -744,9 +747,9 @@ export default function CustomerDetailPage({
             const isExcludedByICode = item.i_code != null && excludedICodes.has(item.i_code.trim());
             const isNonRebatable = isNonRebatableRecordType(item.record_type);
             const isExcluded = item.is_excluded || isExcludedByICode || isNonRebatable;
-            const regular = Number(item.extended) || 0;
+            const net = Number(item.extended) || 0;        // post-discount line total
             const discount = Number(item.discount_amount) || 0;
-            const net = regular - discount;
+            const regular = net + discount;                // qty × days × rate (list)
             const discPct = regular > 0 ? discount / regular : 0;
             const statusLabel = !isExcluded
               ? ""
@@ -1070,12 +1073,12 @@ export default function CustomerDetailPage({
             const catItems = grouped[catKey];
             const catConfig = RECORD_TYPE_CATEGORIES.find((c) => c.key === catKey);
             const label = catConfig?.label || "Other";
-            const catRegular = catItems.reduce((s, it) => s + (Number(it.extended) || 0), 0);
-            const catNet = catItems.reduce(
+            const catRegular = catItems.reduce(
               (s, it) =>
-                s + ((Number(it.extended) || 0) - (Number(it.discount_amount) || 0)),
+                s + (Number(it.extended) || 0) + (Number(it.discount_amount) || 0),
               0,
             );
+            const catNet = catItems.reduce((s, it) => s + (Number(it.extended) || 0), 0);
 
             // Check if we need a new page
             if (yPos > doc.internal.pageSize.getHeight() - 80) {
@@ -1101,9 +1104,9 @@ export default function CustomerDetailPage({
               const isExcludedByICode = item.i_code != null && excludedICodes.has(item.i_code.trim());
               const isNonRebatable = isNonRebatableRecordType(item.record_type);
               const isExcluded = item.is_excluded || isExcludedByICode || isNonRebatable;
-              const regular = Number(item.extended) || 0;
+              const net = Number(item.extended) || 0;        // post-discount line total
               const discount = Number(item.discount_amount) || 0;
-              const net = regular - discount;
+              const regular = net + discount;                // qty × days × rate (list)
               const discPct = regular > 0 ? (discount / regular) * 100 : 0;
               const statusLabel = !isExcluded
                 ? ""
@@ -1892,9 +1895,9 @@ export default function CustomerDetailPage({
                                                             const isNonRebatable = isNonRebatableRecordType(item.record_type);
                                                             const isExcluded =
                                                               item.is_excluded || isExcludedByICode || isNonRebatable;
-                                                            const regular = Number(item.extended) || 0;
+                                                            const net = Number(item.extended) || 0;        // post-discount line total
                                                             const discount = Number(item.discount_amount) || 0;
-                                                            const net = regular - discount;
+                                                            const regular = net + discount;                // qty × days × rate (list)
                                                             const discountPct = regular > 0 ? (discount / regular) * 100 : 0;
                                                             return (
                                                               <TableRow
