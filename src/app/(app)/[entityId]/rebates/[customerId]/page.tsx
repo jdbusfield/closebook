@@ -577,7 +577,7 @@ export default function CustomerDetailPage({
         [`Generated: ${new Date().toLocaleDateString()}`],
         [],
         ["Invoice Summary"],
-        ["Invoice #", "Date", "Quarter", "Deal / Order", "Type", "List Total", "Excluded", "Before Disc", "Discount", "Final Amount", "Rebate %", "Net Rebate"],
+        ["Invoice #", "Date", "Quarter", "Deal / Order", "Type", "Gross Total", "Excluded", "Before Disc", "Discount", "Final Amount", "Rebate %", "Net Rebate"],
       ];
 
       let grandTotalListTotal = 0;
@@ -588,8 +588,8 @@ export default function CustomerDetailPage({
       let grandTotalNetRebate = 0;
 
       for (const inv of exportInvoices) {
-        grandTotalListTotal += inv.list_total || 0;
-        grandTotalExcluded += (inv.list_total || 0) - (inv.before_discount || 0);
+        grandTotalListTotal += inv.gross_total || 0;
+        grandTotalExcluded += (inv.gross_total || 0) - (inv.before_discount || 0);
         grandTotalBeforeDisc += (inv.before_discount || 0);
         grandTotalDiscount += inv.discount_amount || 0;
         grandTotalFinalAmount += inv.final_amount || 0;
@@ -601,8 +601,8 @@ export default function CustomerDetailPage({
           inv.quarter || "",
           inv.deal || inv.order_description || "",
           getEquipmentLabel(inv.equipment_type as EquipmentType),
-          inv.list_total,
-          (inv.list_total || 0) - (inv.before_discount || 0),
+          inv.gross_total,
+          (inv.gross_total || 0) - (inv.before_discount || 0),
           inv.before_discount,
           inv.discount_amount,
           inv.final_amount,
@@ -667,7 +667,7 @@ export default function CustomerDetailPage({
           [],
           ["Calculation Breakdown"],
           ["", "Field", "Value"],
-          ["", "Gross Invoice Total", inv.list_total],
+          ["", "Gross Invoice Total", inv.gross_total],
           ["", "Excluded", inv.excluded_total || 0],
           ["", "Tax", inv.tax_amount],
           ["", "Taxable Sales", inv.taxable_sales || 0],
@@ -786,7 +786,7 @@ export default function CustomerDetailPage({
       doc.setTextColor(0);
 
       // --- Summary table ---
-      const summaryHead = [["Invoice #", "Date", "Quarter", "Deal / Order", "Type", "List Total", "Excluded", "Before Disc", "Discount", "Final Amount", "Rebate %", "Net Rebate"]];
+      const summaryHead = [["Invoice #", "Date", "Quarter", "Deal / Order", "Type", "Gross Total", "Excluded", "Before Disc", "Discount", "Final Amount", "Rebate %", "Net Rebate"]];
       const summaryBody: (string | number)[][] = [];
 
       let grandTotalList = 0;
@@ -797,8 +797,8 @@ export default function CustomerDetailPage({
       let grandTotalRebate = 0;
 
       for (const inv of exportInvoices) {
-        grandTotalList += inv.list_total || 0;
-        grandTotalExcl += (inv.list_total || 0) - (inv.before_discount || 0);
+        grandTotalList += inv.gross_total || 0;
+        grandTotalExcl += (inv.gross_total || 0) - (inv.before_discount || 0);
         grandTotalBefore += inv.before_discount || 0;
         grandTotalDisc += inv.discount_amount || 0;
         grandTotalFinal += inv.final_amount || 0;
@@ -810,8 +810,8 @@ export default function CustomerDetailPage({
           inv.quarter || "",
           (inv.deal || inv.order_description || "").slice(0, 35),
           getEquipmentLabel(inv.equipment_type as EquipmentType),
-          formatCurrency(inv.list_total),
-          formatCurrency((inv.list_total || 0) - (inv.before_discount || 0)),
+          formatCurrency(inv.gross_total),
+          formatCurrency((inv.gross_total || 0) - (inv.before_discount || 0)),
           formatCurrency(inv.before_discount),
           formatCurrency(inv.discount_amount),
           formatCurrency(inv.final_amount),
@@ -948,7 +948,7 @@ export default function CustomerDetailPage({
         yPos += 5;
 
         const breakdownBody = [
-          ["Gross Invoice Total", formatCurrency(inv.list_total)],
+          ["Gross Invoice Total", formatCurrency(inv.gross_total)],
           ["Excluded", formatCurrency(inv.excluded_total)],
           ["Tax", formatCurrency(inv.tax_amount)],
           ["Taxable Sales", formatCurrency(inv.taxable_sales)],
@@ -1096,7 +1096,7 @@ export default function CustomerDetailPage({
   // Cumulative totals.
   // totalRevenue = rebate-applicable revenue (sum of final_amount). Used for
   // tier selection, tier-progress bar, and gap-to-next-tier math.
-  // totalListRevenue = all revenue generated (sum of list_total). Shown on
+  // totalListRevenue = all revenue generated (sum of gross_total). Shown on
   // the "Total Revenue" summary card so it matches the rebate tracker summary
   // page and reflects actual customer revenue, not the post-exclusion base.
   const totalRevenue = invoices.reduce(
@@ -1104,7 +1104,7 @@ export default function CustomerDetailPage({
     0,
   );
   const totalListRevenue = invoices.reduce(
-    (s, inv) => s + (inv.list_total || 0),
+    (s, inv) => s + (inv.gross_total || 0),
     0,
   );
   const totalRebate = invoices.reduce(
@@ -1516,7 +1516,7 @@ export default function CustomerDetailPage({
                   <TableHead>Quarter</TableHead>
                   <TableHead>Deal / Order</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead className="text-right">List Total</TableHead>
+                  <TableHead className="text-right">Gross Total</TableHead>
                   <TableHead className="text-right">Excluded</TableHead>
                   <TableHead className="text-right">Before Disc</TableHead>
                   <TableHead className="text-right">Discount</TableHead>
@@ -1566,10 +1566,10 @@ export default function CustomerDetailPage({
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
-                            {formatCurrency(inv.list_total)}
+                            {formatCurrency(inv.gross_total)}
                           </TableCell>
                           <TableCell className="text-right">
-                            {formatCurrency((inv.list_total || 0) - (inv.before_discount || 0))}
+                            {formatCurrency((inv.gross_total || 0) - (inv.before_discount || 0))}
                           </TableCell>
                           <TableCell className="text-right">
                             {formatCurrency(inv.before_discount)}
@@ -1639,7 +1639,7 @@ export default function CustomerDetailPage({
                                     <div className="border rounded-md overflow-hidden text-sm">
                                       {(() => {
                                         const rows: { label: string; value: string; highlight?: "red" | "yellow" | "green" }[] = [
-                                              { label: "Gross Invoice Total", value: formatCurrency(inv.list_total) },
+                                              { label: "Gross Invoice Total", value: formatCurrency(inv.gross_total) },
                                               { label: "Excluded", value: formatCurrency(inv.excluded_total), highlight: "red" },
                                               { label: "Tax", value: formatCurrency(inv.tax_amount) },
                                               { label: "Taxable Sales", value: formatCurrency(inv.taxable_sales) },
