@@ -192,6 +192,8 @@ export function calculateCommercialInvoice(params: {
   taxAmount: number;
   discountAmount: number;
   excludedTotal: number;
+  excludedGrossTotal: number;
+  excludedTaxableTotal: number;
   taxRate: number;
   rebateRate: number;
   maxDiscRate: number;
@@ -204,16 +206,28 @@ export function calculateCommercialInvoice(params: {
   netRebate: number;
   finalAmount: number;
 } {
-  const { grossTotal, taxAmount, discountAmount, excludedTotal, taxRate, rebateRate, maxDiscRate } =
-    params;
+  const {
+    grossTotal,
+    taxAmount,
+    discountAmount,
+    excludedGrossTotal,
+    excludedTaxableTotal,
+    taxRate,
+    rebateRate,
+    maxDiscRate,
+  } = params;
 
-  // Back-calculate taxable sales from tax amount
+  // Back-calculate the taxable revenue total from the tax amount.
   const taxableSales = taxRate > 0 ? taxAmount / (taxRate / 100) : 0;
 
-  // Base = gross (contains every line item) minus exclusions, taxable sales portion, and tax.
-  // Using gross_total avoids the asymmetry where excluded labor/misc items would be subtracted
-  // from a list_total base that never contained them.
-  const beforeDiscount = Math.max(0, grossTotal - excludedTotal - taxableSales - taxAmount);
+  // L&D items are taxed AND already counted in excludedGrossTotal. Remove that
+  // overlap from taxableSales so we don't subtract the same dollars twice.
+  const adjustedTaxableSales = Math.max(0, taxableSales - excludedTaxableTotal);
+
+  // Base = gross (sum of every line at list price, pre-tax) minus exclusions
+  // (also at list price) minus the non-excluded taxable portion (sales / misc).
+  // No tax subtraction: gross_total is already pre-tax.
+  const beforeDiscount = Math.max(0, grossTotal - excludedGrossTotal - adjustedTaxableSales);
 
   // Discount as percentage of before-discount base
   const discountPercent = beforeDiscount > 0 ? (discountAmount / beforeDiscount) * 100 : 0;
@@ -318,17 +332,25 @@ export function calculateCustomerRebates(
     // Also sum discount applied to those excluded lines so we can subtract it
     // from the invoice-level discount — a discount on an L&D walkie shouldn't
     // pull rebate-eligible revenue down.
-    let excludedTotal = 0;
+    let excludedTotal = 0;        // sum of excluded items at extended (post-discount), for display
+    let excludedGrossTotal = 0;   // sum of excluded items at gross (extended + discount), for the formula
     let excludedDiscount = 0;
+    // L&D items are universally taxed at Versatile, so they show up in both
+    // excludedGrossTotal AND in the back-calculated taxableSales. Track them
+    // separately so the formula can avoid the double-subtraction.
+    let excludedTaxableTotal = 0;
     const excludedItems: ExcludedItemDetail[] = [];
     const items = invoiceItemsMap.get(inv.id) || [];
     for (const item of items) {
       const amt = Number(item.extended) || 0;
       const disc = Number(item.discount_amount) || 0;
+      const gross = amt + disc;
 
       // Exclude loss & damage items (record_type "F" = forfeited/L&D, or "L" legacy)
       if (item.record_type === "F" || item.record_type === "L") {
         excludedTotal += amt;
+        excludedGrossTotal += gross;
+        excludedTaxableTotal += gross;
         excludedDiscount += disc;
         excludedItems.push({
           iCode: item.i_code || "L&D",
@@ -339,6 +361,7 @@ export function calculateCustomerRebates(
       } else if (item.i_code && excludedICodes.has(item.i_code.trim())) {
         // Exclude by I-Code
         excludedTotal += amt;
+        excludedGrossTotal += gross;
         excludedDiscount += disc;
         excludedItems.push({
           iCode: item.i_code,
@@ -372,6 +395,8 @@ export function calculateCustomerRebates(
         taxAmount: inv.tax_amount,
         discountAmount: effectiveDiscount,
         excludedTotal,
+        excludedGrossTotal,
+        excludedTaxableTotal,
         taxRate: customer.tax_rate,
         rebateRate,
         maxDiscRate,
@@ -419,6 +444,8 @@ export function calculateCustomerRebates(
         taxAmount: inv.tax_amount,
         discountAmount: effectiveDiscount,
         excludedTotal,
+        excludedGrossTotal,
+        excludedTaxableTotal,
         taxRate: customer.tax_rate,
         rebateRate,
         maxDiscRate,
