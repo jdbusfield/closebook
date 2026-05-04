@@ -226,6 +226,14 @@ export default function MasterGLPage() {
   // Unmapped accounts monthly grid state
   const currentPeriod = getCurrentPeriod();
   const [unmappedYear, setUnmappedYear] = useState(currentPeriod.year);
+
+  // Mapped totals state (year-end balances per master account & per mapping)
+  const [totalsYear, setTotalsYear] = useState(2025);
+  const [masterTotals, setMasterTotals] = useState<Record<string, number>>({});
+  const [mappedBalances, setMappedBalances] = useState<Record<string, number>>(
+    {},
+  );
+  const [totalsLoading, setTotalsLoading] = useState(false);
   const [unmappedAccounts, setUnmappedAccounts] = useState<
     UnmappedAccountMonthly[]
   >([]);
@@ -327,6 +335,36 @@ export default function MasterGLPage() {
     setEntityAccounts(accountsByEntity);
   }, [supabase, organizationId]);
 
+  const loadMappedTotals = useCallback(async () => {
+    if (!organizationId || !selectedChartId) return;
+    setTotalsLoading(true);
+    try {
+      const response = await fetch(
+        `/api/master-accounts/consolidated?organizationId=${organizationId}&chartId=${selectedChartId}&periodYear=${totalsYear}&periodMonth=12`,
+      );
+      const data = await response.json();
+      if (data.consolidated) {
+        const masterMap: Record<string, number> = {};
+        const accountMap: Record<string, number> = {};
+        for (const item of data.consolidated as Array<{
+          masterAccountId: string;
+          endingBalance: number;
+          entityBreakdown: Array<{ accountId: string; endingBalance: number }>;
+        }>) {
+          masterMap[item.masterAccountId] = item.endingBalance;
+          for (const eb of item.entityBreakdown) {
+            accountMap[eb.accountId] = eb.endingBalance;
+          }
+        }
+        setMasterTotals(masterMap);
+        setMappedBalances(accountMap);
+      }
+    } catch {
+      // silent — Total column will just show zeros
+    }
+    setTotalsLoading(false);
+  }, [organizationId, selectedChartId, totalsYear]);
+
   const loadUnmappedMonthly = useCallback(async () => {
     if (!organizationId || !selectedChartId) return;
     setUnmappedLoading(true);
@@ -369,6 +407,12 @@ export default function MasterGLPage() {
       loadUnmappedMonthly();
     }
   }, [organizationId, selectedChartId, loadUnmappedMonthly]);
+
+  useEffect(() => {
+    if (organizationId && selectedChartId) {
+      loadMappedTotals();
+    }
+  }, [organizationId, selectedChartId, loadMappedTotals]);
 
   function resetForm() {
     setFormData({
@@ -815,11 +859,43 @@ export default function MasterGLPage() {
                 <SelectItem value="rollup">By Rollup</SelectItem>
               </SelectContent>
             </Select>
-            <div className="ml-auto text-sm text-muted-foreground">
-              {masterAccounts.length} master account
-              {masterAccounts.length !== 1 ? "s" : ""} &middot;{" "}
-              {mappings.length} mapping{mappings.length !== 1 ? "s" : ""} across{" "}
-              {entities.length} entit{entities.length !== 1 ? "ies" : "y"}
+            <div className="flex items-center gap-2 ml-auto">
+              <Label className="text-sm text-muted-foreground whitespace-nowrap">
+                Total year
+              </Label>
+              <Select
+                value={String(totalsYear)}
+                onValueChange={(v) => setTotalsYear(parseInt(v))}
+              >
+                <SelectTrigger className="w-24">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from(
+                    new Set([
+                      currentPeriod.year + 1,
+                      currentPeriod.year,
+                      currentPeriod.year - 1,
+                      currentPeriod.year - 2,
+                      currentPeriod.year - 3,
+                      2025,
+                    ]),
+                  )
+                    .sort((a, b) => b - a)
+                    .map((year) => (
+                      <SelectItem key={year} value={String(year)}>
+                        {year}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <span className="text-sm text-muted-foreground">
+                {masterAccounts.length} master account
+                {masterAccounts.length !== 1 ? "s" : ""} &middot;{" "}
+                {mappings.length} mapping
+                {mappings.length !== 1 ? "s" : ""} across {entities.length}{" "}
+                entit{entities.length !== 1 ? "ies" : "y"}
+              </span>
             </div>
           </div>
         </CardHeader>
@@ -877,6 +953,9 @@ export default function MasterGLPage() {
                             <TableHead>Account Name</TableHead>
                             <TableHead>Type</TableHead>
                             <TableHead>Mapped Entities</TableHead>
+                            <TableHead className="text-right whitespace-nowrap">
+                              Total ({totalsYear})
+                            </TableHead>
                             <TableHead className="w-32 text-right">
                               Actions
                             </TableHead>
@@ -996,6 +1075,43 @@ export default function MasterGLPage() {
                                       }))
                                     }
                                   </div>
+                                </TableCell>
+                                <TableCell className="text-right tabular-nums whitespace-nowrap">
+                                  {(() => {
+                                    if (totalsLoading) {
+                                      return (
+                                        <span className="text-muted-foreground text-xs">
+                                          …
+                                        </span>
+                                      );
+                                    }
+                                    if (role === "parent") {
+                                      const kids =
+                                        childrenByParent.get(account.id) ?? [];
+                                      const sum = kids.reduce(
+                                        (s, k) =>
+                                          s + (masterTotals[k.id] ?? 0),
+                                        0,
+                                      );
+                                      return sum === 0 ? (
+                                        <span className="text-muted-foreground text-xs">
+                                          —
+                                        </span>
+                                      ) : (
+                                        formatCurrency(sum)
+                                      );
+                                    }
+                                    if (accountMappings.length === 0) {
+                                      return (
+                                        <span className="text-muted-foreground text-xs">
+                                          —
+                                        </span>
+                                      );
+                                    }
+                                    return formatCurrency(
+                                      masterTotals[account.id] ?? 0,
+                                    );
+                                  })()}
                                 </TableCell>
                                 <TableCell>
                                   <div className="flex items-center justify-end gap-1">
@@ -1338,8 +1454,17 @@ export default function MasterGLPage() {
                                 ? `#${m.accounts.account_number} - `
                                 : ""}
                               {m.accounts?.name ?? "Unknown Account"}
-                              <span className="ml-2">
-                                ({formatCurrency(m.accounts?.current_balance ?? 0)})
+                            </div>
+                            <div className="text-xs mt-1">
+                              <span className="text-muted-foreground">
+                                Balance as of {totalsYear}-12-31:{" "}
+                              </span>
+                              <span className="font-medium tabular-nums">
+                                {totalsLoading
+                                  ? "…"
+                                  : formatCurrency(
+                                      mappedBalances[m.account_id] ?? 0,
+                                    )}
                               </span>
                             </div>
                           </div>
