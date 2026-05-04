@@ -426,6 +426,57 @@ export async function POST(request: Request) {
       return NextResponse.json({ customers: result.rows });
     }
 
+    case "get_monthly_rebates": {
+      const { entityId, year } = body;
+      if (!entityId || !year) {
+        return NextResponse.json({ error: "entityId and year are required" }, { status: 400 });
+      }
+
+      const { data: customers } = await admin
+        .from("rebate_customers")
+        .select("id")
+        .eq("entity_id", entityId);
+      const customerIds = (customers || []).map((c) => c.id);
+      if (customerIds.length === 0) {
+        return NextResponse.json({ rows: [] });
+      }
+
+      const yearStart = `${year}-01-01`;
+      const yearEnd = `${year}-12-31`;
+
+      const { data: invoices, error } = await admin
+        .from("rebate_invoices")
+        .select("rebate_customer_id, billing_end_date, net_rebate, is_manually_excluded")
+        .in("rebate_customer_id", customerIds)
+        .gte("billing_end_date", yearStart)
+        .lte("billing_end_date", yearEnd);
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      // Aggregate to { rebate_customer_id, month (1-12), total_rebate }
+      const map = new Map<string, number>();
+      for (const inv of invoices || []) {
+        if (inv.is_manually_excluded) continue;
+        if (!inv.billing_end_date || inv.net_rebate == null) continue;
+        const month = parseInt(inv.billing_end_date.slice(5, 7), 10);
+        const key = `${inv.rebate_customer_id}|${month}`;
+        map.set(key, (map.get(key) || 0) + Number(inv.net_rebate));
+      }
+
+      const rows = Array.from(map.entries()).map(([key, total]) => {
+        const [customerId, month] = key.split("|");
+        return {
+          rebate_customer_id: customerId,
+          month: parseInt(month, 10),
+          total_rebate: total,
+        };
+      });
+
+      return NextResponse.json({ rows });
+    }
+
     default:
       return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
   }
