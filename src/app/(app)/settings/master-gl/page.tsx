@@ -245,10 +245,12 @@ export default function MasterGLPage() {
     period_year: number;
     amount: number;
     note: string | null;
+    offset_to_ic_net?: boolean;
   }
   const [yearAdjustments, setYearAdjustments] = useState<YearAdjustment[]>([]);
   const [adjAmountInput, setAdjAmountInput] = useState("");
   const [adjNoteInput, setAdjNoteInput] = useState("");
+  const [adjOffsetIc, setAdjOffsetIc] = useState(false);
   const [adjSaving, setAdjSaving] = useState(false);
   const [unmappedAccounts, setUnmappedAccounts] = useState<
     UnmappedAccountMonthly[]
@@ -591,6 +593,7 @@ export default function MasterGLPage() {
     );
     setAdjAmountInput(existing ? String(existing.amount) : "");
     setAdjNoteInput(existing?.note ?? "");
+    setAdjOffsetIc(existing?.offset_to_ic_net ?? false);
     setMappingSheetOpen(true);
   }
 
@@ -635,6 +638,7 @@ export default function MasterGLPage() {
             periodYear: totalsYear,
             amount: parsed,
             note: adjNoteInput || null,
+            offsetToIcNet: adjOffsetIc,
           }),
         });
         if (!res.ok) {
@@ -1713,6 +1717,27 @@ export default function MasterGLPage() {
                       onChange={(e) => setAdjNoteInput(e.target.value)}
                     />
                   </div>
+                  <div className="flex items-start gap-2 rounded-md border p-3 bg-muted/30">
+                    <Switch
+                      id="adj-offset-ic"
+                      checked={adjOffsetIc}
+                      onCheckedChange={setAdjOffsetIc}
+                    />
+                    <div className="space-y-0.5 flex-1">
+                      <Label
+                        htmlFor="adj-offset-ic"
+                        className="text-sm font-medium cursor-pointer"
+                      >
+                        Apply to Intercompany Eliminations, Net
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Adds the same amount to the synthetic IC net line on
+                        the financial model so this adjustment also zeros out
+                        the residual on that line. Use when the prepared
+                        statements show $0 of IC eliminations.
+                      </p>
+                    </div>
+                  </div>
                   <Button
                     onClick={handleSaveYearAdjustment}
                     disabled={adjSaving}
@@ -1737,14 +1762,22 @@ export default function MasterGLPage() {
                         .map((a) => (
                           <div
                             key={a.id}
-                            className="flex items-center justify-between rounded-md border px-3 py-1.5 text-xs"
+                            className="flex items-center justify-between rounded-md border px-3 py-1.5 text-xs gap-2"
                           >
                             <div className="font-mono">{a.period_year}</div>
                             <div className="tabular-nums">
                               {formatCurrency(Number(a.amount))}
                             </div>
+                            {a.offset_to_ic_net && (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] px-1.5 py-0 border-amber-400 text-amber-700 bg-amber-50"
+                              >
+                                IC offset
+                              </Badge>
+                            )}
                             {a.note && (
-                              <div className="text-muted-foreground truncate max-w-[160px]">
+                              <div className="text-muted-foreground truncate max-w-[140px]">
                                 {a.note}
                               </div>
                             )}
