@@ -2526,10 +2526,16 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     applyProFormaPostAggregation(aggregated, yearAdjEntries, buckets, consolidatedAccounts);
   }
 
-  // Year-end adjustments flagged offset_to_ic_net additionally inject their
-  // amount into a virtual IC account so the IC elimination block folds them
-  // into the synthetic "Intercompany Eliminations, Net" line. Same sign so a
-  // negative source-account adjustment also reduces the displayed IC residual.
+  // Year-end adjustments flagged offset_to_ic_net additionally inject the
+  // OPPOSITE amount into a virtual IC account so the IC elimination block
+  // folds it into the synthetic "Intercompany Eliminations, Net" line.
+  //
+  // Sign convention: the source-account adjustment is one side of a balanced
+  // journal entry; the IC offset is the other side, so it carries the
+  // opposite sign (matches how pro_forma_adjustments.offset_master_account_id
+  // works). Example: source = -$34,079 (reduce expense) → IC offset =
+  // +$34,079, which lands in the IC sum and cancels an existing -$34,079
+  // residual. Without this sign flip the offset would double the residual.
   const offsetEntries: Array<{
     master_account_id: string;
     period_year: number;
@@ -2560,7 +2566,7 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
       master_account_id: virtualId,
       period_year: Number(r.period_year),
       period_month: 12,
-      amount: Number(r.amount),
+      amount: -Number(r.amount),
     });
   }
   if (offsetEntries.length > 0) {
