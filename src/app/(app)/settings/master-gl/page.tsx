@@ -451,6 +451,18 @@ export default function MasterGLPage() {
     }
   }, [organizationId, selectedChartId, loadYearAdjustments]);
 
+  // Default the master account list view based on the active chart's kind:
+  // accountant charts open in "By Rollup" since their structure is built
+  // around parent rollups; management charts default to "By Classification".
+  // Re-runs only when the chart changes — within a session the user can
+  // still flip the toggle and have it stick until the next chart switch.
+  useEffect(() => {
+    if (!selectedChartId || charts.length === 0) return;
+    const chart = charts.find((c) => c.id === selectedChartId);
+    if (!chart) return;
+    setViewMode(chart.kind === "accountant" ? "rollup" : "classification");
+  }, [selectedChartId, charts]);
+
   function resetForm() {
     setFormData({
       accountNumber: "",
