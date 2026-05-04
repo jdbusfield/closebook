@@ -2498,6 +2498,32 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     applyProFormaPostAggregation(aggregated, allocEntries, buckets, consolidatedAccounts);
   }
 
+  // Year-end adjustments (chart-scoped) — applied as Dec-31 entries on the
+  // target master account.  Reuses the pro-forma post-aggregation pipeline
+  // so the impact carries forward correctly for balance-sheet accounts
+  // (cumulative ending_balance) and lands in the correct year for P&L.
+  const yearAdjRows = await fetchAllPaginated<{
+    master_account_id: string;
+    period_year: number;
+    amount: number;
+  }>((offset, limit) =>
+    (admin as any)
+      .from("master_account_year_adjustments")
+      .select("master_account_id, period_year, amount")
+      .eq("organization_id", organizationId)
+      .eq("chart_id", chartId)
+      .range(offset, offset + limit - 1),
+  );
+  const yearAdjEntries = yearAdjRows.map((r) => ({
+    master_account_id: r.master_account_id,
+    period_year: Number(r.period_year),
+    period_month: 12,
+    amount: Number(r.amount),
+  }));
+  if (yearAdjEntries.length > 0) {
+    applyProFormaPostAggregation(aggregated, yearAdjEntries, buckets, consolidatedAccounts);
+  }
+
   // Prior year aggregation for YoY
   let pyAggregated: Map<string, BucketedAmounts> | undefined;
   if (includeYoY) {
@@ -2509,6 +2535,9 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     }
     if (allocEntries.length > 0) {
       applyProFormaPostAggregation(pyAggregated, allocEntries, pyBuckets, consolidatedAccounts);
+    }
+    if (yearAdjEntries.length > 0) {
+      applyProFormaPostAggregation(pyAggregated, yearAdjEntries, pyBuckets, consolidatedAccounts);
     }
   }
 

@@ -184,6 +184,51 @@ export async function GET(request: Request) {
       .range(offset, offset + limit - 1)
   );
 
+  // Year-end adjustments scoped to this chart. Treat each as a Dec-31 entry
+  // on its master account. For Asset/Liability/Equity, the impact carries
+  // forward to all subsequent periods. For Revenue/Expense, the impact
+  // applies only within that fiscal year (showing on Dec accumulation).
+  const reqYear = parseInt(periodYear);
+  const reqMonth = parseInt(periodMonth);
+  const yearAdjRows = await fetchAllPaginated<{
+    master_account_id: string;
+    period_year: number;
+    amount: number;
+  }>((offset, limit) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (adminClient as any)
+      .from("master_account_year_adjustments")
+      .select("master_account_id, period_year, amount")
+      .eq("organization_id", organizationId)
+      .eq("chart_id", chartId)
+      .range(offset, offset + limit - 1),
+  );
+
+  const masterById = new Map(masterAccounts.map((ma) => [ma.id, ma]));
+  const yearAdjByMaster = new Map<string, number>();
+  for (const adj of yearAdjRows) {
+    const ma = masterById.get(adj.master_account_id);
+    if (!ma) continue;
+    const cls = ma.classification as string;
+    const amount = Number(adj.amount);
+    const adjYear = Number(adj.period_year);
+
+    let applies = false;
+    if (cls === "Asset" || cls === "Liability" || cls === "Equity") {
+      // BS: applies on Dec 31 of adjYear forward
+      if (reqYear > adjYear) applies = true;
+      else if (reqYear === adjYear && reqMonth >= 12) applies = true;
+    } else {
+      // P&L: applies within adjYear only (ending_balance is YTD cumulative)
+      if (reqYear === adjYear) applies = true;
+    }
+    if (!applies) continue;
+    yearAdjByMaster.set(
+      adj.master_account_id,
+      (yearAdjByMaster.get(adj.master_account_id) ?? 0) + amount,
+    );
+  }
+
   // Build consolidated data: for each master account, sum the balances
   // of all mapped entity accounts
   const balancesByAccountId = new Map<
@@ -276,6 +321,8 @@ export async function GET(request: Request) {
       };
     });
 
+    const yearAdjAmount = yearAdjByMaster.get(ma.id) ?? 0;
+
     return {
       masterAccountId: ma.id,
       accountNumber: ma.account_number,
@@ -286,11 +333,12 @@ export async function GET(request: Request) {
       normalBalance: ma.normal_balance,
       mappedEntities: entityBreakdown.length,
       entityBreakdown,
-      endingBalance: totalEndingBalance,
+      endingBalance: totalEndingBalance + yearAdjAmount,
       debitTotal: totalDebitTotal,
       creditTotal: totalCreditTotal,
-      netChange: totalNetChange,
+      netChange: totalNetChange + yearAdjAmount,
       beginningBalance: totalBeginningBalance,
+      yearAdjAmount,
     };
   });
 
