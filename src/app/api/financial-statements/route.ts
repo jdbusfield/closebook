@@ -2506,10 +2506,12 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     master_account_id: string;
     period_year: number;
     amount: number;
+    offset_to_ic_net?: boolean | null;
   }>((offset, limit) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin as any)
       .from("master_account_year_adjustments")
-      .select("master_account_id, period_year, amount")
+      .select("master_account_id, period_year, amount, offset_to_ic_net")
       .eq("organization_id", organizationId)
       .eq("chart_id", chartId)
       .range(offset, offset + limit - 1),
@@ -2522,6 +2524,52 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
   }));
   if (yearAdjEntries.length > 0) {
     applyProFormaPostAggregation(aggregated, yearAdjEntries, buckets, consolidatedAccounts);
+  }
+
+  // Year-end adjustments flagged offset_to_ic_net additionally inject their
+  // amount into a virtual IC account so the IC elimination block folds them
+  // into the synthetic "Intercompany Eliminations, Net" line. Same sign so a
+  // negative source-account adjustment also reduces the displayed IC residual.
+  const offsetEntries: Array<{
+    master_account_id: string;
+    period_year: number;
+    period_month: number;
+    amount: number;
+  }> = [];
+  for (let i = 0; i < yearAdjRows.length; i++) {
+    const r = yearAdjRows[i];
+    if (!r.offset_to_ic_net) continue;
+    const sourceMa = masterAccounts.find(
+      (m: { id: string }) => m.id === r.master_account_id,
+    );
+    if (!sourceMa) continue;
+    const cls = sourceMa.classification as string;
+    if (!["Asset", "Liability", "Revenue", "Expense"].includes(cls)) continue;
+
+    const virtualId = `__year_adj_ic_offset_${i}__`;
+    consolidatedAccounts.push({
+      id: virtualId,
+      name: "Intercompany Adjustment",
+      accountNumber: null,
+      classification: cls,
+      accountType: sourceMa.account_type,
+      isIntercompany: true,
+      parentAccountId: null,
+    });
+    offsetEntries.push({
+      master_account_id: virtualId,
+      period_year: Number(r.period_year),
+      period_month: 12,
+      amount: Number(r.amount),
+    });
+  }
+  if (offsetEntries.length > 0) {
+    applyProFormaPostAggregation(
+      aggregated,
+      offsetEntries,
+      buckets,
+      consolidatedAccounts,
+    );
   }
 
   // Prior year aggregation for YoY
@@ -2538,6 +2586,9 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     }
     if (yearAdjEntries.length > 0) {
       applyProFormaPostAggregation(pyAggregated, yearAdjEntries, pyBuckets, consolidatedAccounts);
+    }
+    if (offsetEntries.length > 0) {
+      applyProFormaPostAggregation(pyAggregated, offsetEntries, pyBuckets, consolidatedAccounts);
     }
   }
 
