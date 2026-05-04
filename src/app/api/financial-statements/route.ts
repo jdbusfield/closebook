@@ -1289,6 +1289,291 @@ function injectNetIncomeIntoBalanceSheet(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Per-entity Net Income distribution (accountant-chart presentation).
+//
+// For combined-presentation balance sheets, equity is grouped by entity
+// (e.g., "Accumulated deficit - Two Family", "Member's deficit - Silverco").
+// Instead of surfacing a standalone "Net Income" line, allocate each entity's
+// YTD net income directly into its accumulated-deficit / member's-equity
+// rollup so the section matches the compiled financial-statement layout.
+//
+// Routing is auto-detected: an Equity rollup parent qualifies as an
+// NI absorber when (a) its descendant mappings reference exactly one
+// entity, and (b) its name matches deficit/retained/earnings/member's
+// equity (excluding common stock / paid-in / distributions, which are
+// capital, not earnings).
+// ---------------------------------------------------------------------------
+
+function findEntityNIDestinations(
+  masterAccounts: Array<{
+    id: string;
+    name: string;
+    classification: string;
+    parent_account_id?: string | null;
+  }>,
+  mappings: Array<{ master_account_id: string; entity_id: string }>,
+): Map<string, string> {
+  const result = new Map<string, string>();
+
+  const parentIds = new Set<string>();
+  for (const m of masterAccounts) {
+    if (m.parent_account_id) parentIds.add(m.parent_account_id);
+  }
+
+  const childrenByParent = new Map<string, string[]>();
+  for (const m of masterAccounts) {
+    if (!m.parent_account_id) continue;
+    const arr = childrenByParent.get(m.parent_account_id) ?? [];
+    arr.push(m.id);
+    childrenByParent.set(m.parent_account_id, arr);
+  }
+
+  const mappingsByMaster = new Map<string, string[]>();
+  for (const mp of mappings) {
+    const arr = mappingsByMaster.get(mp.master_account_id) ?? [];
+    arr.push(mp.entity_id);
+    mappingsByMaster.set(mp.master_account_id, arr);
+  }
+
+  for (const parent of masterAccounts) {
+    if ((parent.classification ?? "").toLowerCase() !== "equity") continue;
+    if (!parentIds.has(parent.id)) continue;
+
+    const nameLower = (parent.name ?? "").toLowerCase();
+    const matchesReceiver =
+      /(deficit|retained|earnings|member.s equity)/.test(nameLower) &&
+      !/(common stock|paid.in|distributions)/.test(nameLower);
+    if (!matchesReceiver) continue;
+
+    const queue = [parent.id];
+    const seen = new Set([parent.id]);
+    const entityIds = new Set<string>();
+    while (queue.length) {
+      const cur = queue.shift() as string;
+      for (const eid of mappingsByMaster.get(cur) ?? []) entityIds.add(eid);
+      for (const child of childrenByParent.get(cur) ?? []) {
+        if (!seen.has(child)) {
+          seen.add(child);
+          queue.push(child);
+        }
+      }
+    }
+    if (entityIds.size !== 1) continue;
+    const [eid] = [...entityIds];
+    result.set(eid, parent.id);
+  }
+
+  return result;
+}
+
+function computePerEntityNI(
+  consolidatedAccounts: AccountInfo[],
+  masterAccounts: Array<{ id: string; classification: string }>,
+  mappings: Array<{ master_account_id: string; entity_id: string; account_id: string }>,
+  glBalances: RawGLBalance[],
+  buckets: PeriodBucket[],
+  fiscalYearStartMonth: number,
+): Map<string, Record<string, number>> {
+  const plMasterIds = new Set(
+    masterAccounts
+      .filter(
+        (m) => m.classification === "Revenue" || m.classification === "Expense",
+      )
+      .map((m) => m.id),
+  );
+
+  // entityId -> masterId -> entity-account ids
+  const byEntityMaster = new Map<string, Map<string, string[]>>();
+  for (const mp of mappings) {
+    if (!plMasterIds.has(mp.master_account_id)) continue;
+    let perEntity = byEntityMaster.get(mp.entity_id);
+    if (!perEntity) {
+      perEntity = new Map();
+      byEntityMaster.set(mp.entity_id, perEntity);
+    }
+    const arr = perEntity.get(mp.master_account_id) ?? [];
+    arr.push(mp.account_id);
+    perEntity.set(mp.master_account_id, arr);
+  }
+
+  const result = new Map<string, Record<string, number>>();
+
+  for (const [entityId, masterToAccts] of byEntityMaster) {
+    const eGl = glBalances.filter((b) => b.entity_id === entityId);
+    const byAcct = new Map<string, RawGLBalance[]>();
+    for (const b of eGl) {
+      const arr = byAcct.get(b.account_id) ?? [];
+      arr.push(b);
+      byAcct.set(b.account_id, arr);
+    }
+
+    const eConsolidated: RawGLBalance[] = [];
+    for (const [masterId, acctIds] of masterToAccts) {
+      const periodMap = new Map<
+        string,
+        { beginning: number; ending: number; netChange: number }
+      >();
+      for (const acctId of acctIds) {
+        for (const b of byAcct.get(acctId) ?? []) {
+          const key = `${b.period_year}-${b.period_month}`;
+          const cur = periodMap.get(key) ?? {
+            beginning: 0,
+            ending: 0,
+            netChange: 0,
+          };
+          cur.beginning += b.beginning_balance;
+          cur.ending += b.ending_balance;
+          cur.netChange += b.net_change;
+          periodMap.set(key, cur);
+        }
+      }
+      for (const [key, v] of periodMap) {
+        const [y, m] = key.split("-").map(Number);
+        eConsolidated.push({
+          account_id: masterId,
+          entity_id: entityId,
+          period_year: y,
+          period_month: m,
+          beginning_balance: v.beginning,
+          ending_balance: v.ending,
+          net_change: v.netChange,
+        });
+      }
+    }
+
+    const eAggregated = aggregateByBucket(
+      consolidatedAccounts,
+      eConsolidated,
+      buckets,
+      fiscalYearStartMonth,
+    );
+
+    const niByBucket: Record<string, number> = {};
+    for (const bucket of buckets) {
+      let plEnding = 0;
+      for (const a of consolidatedAccounts) {
+        if (a.classification !== "Revenue" && a.classification !== "Expense")
+          continue;
+        plEnding += eAggregated.get(a.id)?.endingBalance[bucket.key] ?? 0;
+      }
+      niByBucket[bucket.key] = -plEnding;
+    }
+    result.set(entityId, niByBucket);
+  }
+
+  return result;
+}
+
+// Per-entity NI from raw GL won't include adjustments that aren't
+// entity-tagged (year-end adjustments are chart-scoped, not per-entity).
+// Reconcile to the displayed total NI by attributing the residual to the
+// entity carrying the largest |NI| — keeps Assets = L + E with zero standalone
+// adjustment line.
+function reconcileEntityNIToTotal(
+  niByEntity: Map<string, Record<string, number>>,
+  niDestinations: Map<string, string>,
+  totalNIByBucket: Record<string, number>,
+  buckets: PeriodBucket[],
+): void {
+  for (const bucket of buckets) {
+    let sum = 0;
+    let largestEntityId: string | null = null;
+    let largestAbs = -1;
+    for (const eid of niDestinations.keys()) {
+      const v = niByEntity.get(eid)?.[bucket.key] ?? 0;
+      sum += v;
+      if (Math.abs(v) > largestAbs) {
+        largestAbs = Math.abs(v);
+        largestEntityId = eid;
+      }
+    }
+    if (largestEntityId === null) {
+      const first = niDestinations.keys().next();
+      if (first.done) continue;
+      largestEntityId = first.value;
+    }
+    const total = totalNIByBucket[bucket.key] ?? 0;
+    const residual = total - sum;
+    if (Math.abs(residual) < 0.005) continue;
+
+    const ni = niByEntity.get(largestEntityId) ?? {};
+    ni[bucket.key] = (ni[bucket.key] ?? 0) + residual;
+    niByEntity.set(largestEntityId, ni);
+  }
+}
+
+function applyEntityNIToBalanceSheet(
+  balanceSheet: StatementData,
+  niByEntity: Map<string, Record<string, number>>,
+  pyNiByEntity: Map<string, Record<string, number>> | undefined,
+  niDestinations: Map<string, string>,
+  buckets: PeriodBucket[],
+): void {
+  const equitySection = balanceSheet.sections.find((s) => s.id === "equity");
+  if (!equitySection?.subtotalLine) return;
+
+  const totalNI: Record<string, number> = {};
+  const totalPyNI: Record<string, number> = {};
+  for (const bucket of buckets) {
+    totalNI[bucket.key] = 0;
+    totalPyNI[bucket.key] = 0;
+  }
+
+  for (const [entityId, destMasterId] of niDestinations) {
+    const ni = niByEntity.get(entityId);
+    if (!ni) continue;
+    const pyNi = pyNiByEntity?.get(entityId);
+
+    const lineId = `equity-${destMasterId}`;
+    const line = equitySection.lines.find((l) => l.id === lineId);
+    if (!line) continue;
+
+    for (const bucket of buckets) {
+      const v = ni[bucket.key] ?? 0;
+      line.amounts[bucket.key] = (line.amounts[bucket.key] ?? 0) + v;
+      totalNI[bucket.key] += v;
+
+      if (pyNi && line.priorYearAmounts) {
+        const pyV = pyNi[bucket.key] ?? 0;
+        line.priorYearAmounts[bucket.key] =
+          (line.priorYearAmounts[bucket.key] ?? 0) + pyV;
+        totalPyNI[bucket.key] += pyV;
+      }
+    }
+  }
+
+  for (const bucket of buckets) {
+    equitySection.subtotalLine.amounts[bucket.key] =
+      (equitySection.subtotalLine.amounts[bucket.key] ?? 0) +
+      (totalNI[bucket.key] ?? 0);
+    if (pyNiByEntity && equitySection.subtotalLine.priorYearAmounts) {
+      equitySection.subtotalLine.priorYearAmounts[bucket.key] =
+        (equitySection.subtotalLine.priorYearAmounts[bucket.key] ?? 0) +
+        (totalPyNI[bucket.key] ?? 0);
+    }
+  }
+
+  for (const section of balanceSheet.sections) {
+    if (
+      (section.id === "total_equity" ||
+        section.id === "total_liabilities_and_equity") &&
+      section.subtotalLine
+    ) {
+      for (const bucket of buckets) {
+        section.subtotalLine.amounts[bucket.key] =
+          (section.subtotalLine.amounts[bucket.key] ?? 0) +
+          (totalNI[bucket.key] ?? 0);
+        if (pyNiByEntity && section.subtotalLine.priorYearAmounts) {
+          section.subtotalLine.priorYearAmounts[bucket.key] =
+            (section.subtotalLine.priorYearAmounts[bucket.key] ?? 0) +
+            (totalPyNI[bucket.key] ?? 0);
+        }
+      }
+    }
+  }
+}
+
 /**
  * If any pro forma adjustments were redirected away from Bank accounts
  * (into the synthetic PRO_FORMA_ADJ_ACCOUNT_ID), inject a visible
@@ -2965,14 +3250,73 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     pyAggregated
   );
 
-  // Inject Net Income into BS equity so Assets = L + E
-  injectNetIncomeIntoBalanceSheet(
-    balanceSheet,
-    displayAccounts,
-    aggregated,
-    buckets,
-    pyAggregated
+  // Inject Net Income into BS equity so Assets = L + E. For accountant-style
+  // charts (per-entity equity rollups), allocate NI to each entity's own
+  // accumulated-deficit / member's-equity line instead of a standalone row.
+  const niDestinations = findEntityNIDestinations(
+    masterAccounts as Array<{
+      id: string;
+      name: string;
+      classification: string;
+      parent_account_id?: string | null;
+    }>,
+    (mappings ?? []) as Array<{
+      master_account_id: string;
+      entity_id: string;
+    }>,
   );
+
+  if (niDestinations.size > 0) {
+    const niByEntity = computePerEntityNI(
+      consolidatedAccounts,
+      masterAccounts as Array<{ id: string; classification: string }>,
+      mappings ?? [],
+      glBalances,
+      buckets,
+      fiscalYearStartMonth,
+    );
+    reconcileEntityNIToTotal(
+      niByEntity,
+      niDestinations,
+      netIncomeByBucket,
+      buckets,
+    );
+
+    let pyNiByEntity: Map<string, Record<string, number>> | undefined;
+    if (includeYoY) {
+      const pyBuckets = createPriorYearBuckets(buckets);
+      pyNiByEntity = computePerEntityNI(
+        consolidatedAccounts,
+        masterAccounts as Array<{ id: string; classification: string }>,
+        mappings ?? [],
+        glBalances,
+        pyBuckets,
+        fiscalYearStartMonth,
+      );
+      reconcileEntityNIToTotal(
+        pyNiByEntity,
+        niDestinations,
+        pyNetIncomeByBucket,
+        buckets,
+      );
+    }
+
+    applyEntityNIToBalanceSheet(
+      balanceSheet,
+      niByEntity,
+      pyNiByEntity,
+      niDestinations,
+      buckets,
+    );
+  } else {
+    injectNetIncomeIntoBalanceSheet(
+      balanceSheet,
+      displayAccounts,
+      aggregated,
+      buckets,
+      pyAggregated,
+    );
+  }
 
   // Inject "Pro Forma Adjustments" line for amounts redirected from bank accounts
   injectProFormaAdjustmentsIntoBalanceSheet(
