@@ -1743,10 +1743,11 @@ export default function MasterGLPage() {
                         Apply to Intercompany Eliminations, Net
                       </Label>
                       <p className="text-xs text-muted-foreground">
-                        Adds the same amount to the synthetic IC net line on
-                        the financial model so this adjustment also zeros out
-                        the residual on that line. Use when the prepared
-                        statements show $0 of IC eliminations.
+                        Treats this as a balanced journal entry: the source
+                        account gets the amount you entered and the IC
+                        eliminations net line on the financial model gets the
+                        opposite amount. Use to zero out an IC residual that
+                        the prepared statements show as $0.
                       </p>
                     </div>
                   </div>
