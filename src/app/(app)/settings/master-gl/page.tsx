@@ -234,6 +234,22 @@ export default function MasterGLPage() {
     {},
   );
   const [totalsLoading, setTotalsLoading] = useState(false);
+
+  // Year-end adjustments for the active chart, keyed by master_account_id +
+  // period_year. Used to true up the accountant view to externally prepared
+  // statements (e.g., IC residual offsets).
+  interface YearAdjustment {
+    id: string;
+    master_account_id: string;
+    chart_id: string;
+    period_year: number;
+    amount: number;
+    note: string | null;
+  }
+  const [yearAdjustments, setYearAdjustments] = useState<YearAdjustment[]>([]);
+  const [adjAmountInput, setAdjAmountInput] = useState("");
+  const [adjNoteInput, setAdjNoteInput] = useState("");
+  const [adjSaving, setAdjSaving] = useState(false);
   const [unmappedAccounts, setUnmappedAccounts] = useState<
     UnmappedAccountMonthly[]
   >([]);
@@ -335,6 +351,19 @@ export default function MasterGLPage() {
     setEntityAccounts(accountsByEntity);
   }, [supabase, organizationId]);
 
+  const loadYearAdjustments = useCallback(async () => {
+    if (!organizationId || !selectedChartId) return;
+    try {
+      const response = await fetch(
+        `/api/master-accounts/year-adjustments?organizationId=${organizationId}&chartId=${selectedChartId}`,
+      );
+      const data = await response.json();
+      if (data.adjustments) setYearAdjustments(data.adjustments);
+    } catch {
+      // silent
+    }
+  }, [organizationId, selectedChartId]);
+
   const loadMappedTotals = useCallback(async () => {
     if (!organizationId || !selectedChartId) return;
     setTotalsLoading(true);
@@ -413,6 +442,12 @@ export default function MasterGLPage() {
       loadMappedTotals();
     }
   }, [organizationId, selectedChartId, loadMappedTotals]);
+
+  useEffect(() => {
+    if (organizationId && selectedChartId) {
+      loadYearAdjustments();
+    }
+  }, [organizationId, selectedChartId, loadYearAdjustments]);
 
   function resetForm() {
     setFormData({
@@ -550,7 +585,69 @@ export default function MasterGLPage() {
     setMappingAccount(account);
     setSelectedEntityId("");
     setSelectedAccountId("");
+    // Pre-fill year-adjustment inputs from existing record for the totals year
+    const existing = yearAdjustments.find(
+      (a) => a.master_account_id === account.id && a.period_year === totalsYear,
+    );
+    setAdjAmountInput(existing ? String(existing.amount) : "");
+    setAdjNoteInput(existing?.note ?? "");
     setMappingSheetOpen(true);
+  }
+
+  async function handleSaveYearAdjustment() {
+    if (!mappingAccount || !organizationId || !selectedChartId) return;
+    const trimmed = adjAmountInput.trim();
+    setAdjSaving(true);
+    try {
+      const existing = yearAdjustments.find(
+        (a) =>
+          a.master_account_id === mappingAccount.id &&
+          a.period_year === totalsYear,
+      );
+      const parsed = parseFloat(trimmed);
+      if (!trimmed || (Number.isFinite(parsed) && parsed === 0)) {
+        // 0 or empty → delete if there's an existing row
+        if (existing) {
+          const res = await fetch("/api/master-accounts/year-adjustments", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: existing.id, organizationId }),
+          });
+          if (!res.ok) {
+            const d = await res.json().catch(() => ({}));
+            toast.error(d.error || "Failed to clear adjustment");
+            return;
+          }
+          toast.success("Adjustment cleared");
+        }
+      } else {
+        if (!Number.isFinite(parsed)) {
+          toast.error("Amount must be a number");
+          return;
+        }
+        const res = await fetch("/api/master-accounts/year-adjustments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            organizationId,
+            chartId: selectedChartId,
+            masterAccountId: mappingAccount.id,
+            periodYear: totalsYear,
+            amount: parsed,
+            note: adjNoteInput || null,
+          }),
+        });
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}));
+          toast.error(d.error || "Failed to save adjustment");
+          return;
+        }
+        toast.success("Adjustment saved");
+      }
+      await Promise.all([loadYearAdjustments(), loadMappedTotals()]);
+    } finally {
+      setAdjSaving(false);
+    }
   }
 
   async function handleAddMapping() {
@@ -1085,6 +1182,12 @@ export default function MasterGLPage() {
                                         </span>
                                       );
                                     }
+                                    const adj = yearAdjustments.find(
+                                      (a) =>
+                                        a.master_account_id === account.id &&
+                                        a.period_year === totalsYear,
+                                    );
+                                    let valueNode: React.ReactNode;
                                     if (role === "parent") {
                                       const kids =
                                         childrenByParent.get(account.id) ?? [];
@@ -1093,23 +1196,44 @@ export default function MasterGLPage() {
                                           s + (masterTotals[k.id] ?? 0),
                                         0,
                                       );
-                                      return sum === 0 ? (
+                                      valueNode =
+                                        sum === 0 ? (
+                                          <span className="text-muted-foreground text-xs">
+                                            —
+                                          </span>
+                                        ) : (
+                                          formatCurrency(sum)
+                                        );
+                                    } else if (
+                                      accountMappings.length === 0 &&
+                                      !adj
+                                    ) {
+                                      valueNode = (
                                         <span className="text-muted-foreground text-xs">
                                           —
                                         </span>
-                                      ) : (
-                                        formatCurrency(sum)
+                                      );
+                                    } else {
+                                      valueNode = formatCurrency(
+                                        masterTotals[account.id] ?? 0,
                                       );
                                     }
-                                    if (accountMappings.length === 0) {
-                                      return (
-                                        <span className="text-muted-foreground text-xs">
-                                          —
-                                        </span>
-                                      );
-                                    }
-                                    return formatCurrency(
-                                      masterTotals[account.id] ?? 0,
+                                    return (
+                                      <div className="inline-flex items-center gap-1.5 justify-end">
+                                        {valueNode}
+                                        {adj && (
+                                          <Badge
+                                            variant="outline"
+                                            className="text-[10px] px-1.5 py-0 border-amber-400 text-amber-700 bg-amber-50"
+                                            title={
+                                              adj.note ||
+                                              `Year-end adj ${formatCurrency(Number(adj.amount))}`
+                                            }
+                                          >
+                                            adj
+                                          </Badge>
+                                        )}
+                                      </div>
                                     );
                                   })()}
                                 </TableCell>
@@ -1538,6 +1662,96 @@ export default function MasterGLPage() {
                     <Link2 className="mr-2 h-4 w-4" />
                     Map Account
                   </Button>
+                </div>
+
+                <Separator />
+
+                {/* Year-End Adjustment (chart-scoped) */}
+                <div className="space-y-3">
+                  <div>
+                    <h3 className="font-medium text-sm">
+                      Year-End Adjustment
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      One-time adjustment applied as a Dec-31 entry on this
+                      master account in the{" "}
+                      <span className="font-medium">
+                        {charts.find((c) => c.id === selectedChartId)?.name ??
+                          "active"}
+                      </span>{" "}
+                      chart only. Use this to true the consolidated view to
+                      externally prepared statements (e.g., IC residual). Flows
+                      through to the Financial Model when this chart is
+                      selected.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-2 grid-cols-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Year</Label>
+                      <div className="text-sm font-medium px-3 py-2 rounded-md border bg-muted/40">
+                        {totalsYear}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Amount</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        inputMode="decimal"
+                        placeholder="e.g. -34079.00"
+                        value={adjAmountInput}
+                        onChange={(e) => setAdjAmountInput(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Note (optional)</Label>
+                    <Input
+                      placeholder="e.g. IC residual true-up to match prepared statements"
+                      value={adjNoteInput}
+                      onChange={(e) => setAdjNoteInput(e.target.value)}
+                    />
+                  </div>
+                  <Button
+                    onClick={handleSaveYearAdjustment}
+                    disabled={adjSaving}
+                    variant="outline"
+                    className="w-full"
+                  >
+                    {adjSaving ? "Saving..." : "Save Adjustment"}
+                  </Button>
+
+                  {yearAdjustments.filter(
+                    (a) => a.master_account_id === mappingAccount.id,
+                  ).length > 0 && (
+                    <div className="space-y-1 pt-2">
+                      <Label className="text-xs text-muted-foreground">
+                        All adjustments for this account
+                      </Label>
+                      {yearAdjustments
+                        .filter(
+                          (a) => a.master_account_id === mappingAccount.id,
+                        )
+                        .sort((a, b) => b.period_year - a.period_year)
+                        .map((a) => (
+                          <div
+                            key={a.id}
+                            className="flex items-center justify-between rounded-md border px-3 py-1.5 text-xs"
+                          >
+                            <div className="font-mono">{a.period_year}</div>
+                            <div className="tabular-nums">
+                              {formatCurrency(Number(a.amount))}
+                            </div>
+                            {a.note && (
+                              <div className="text-muted-foreground truncate max-w-[160px]">
+                                {a.note}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </>

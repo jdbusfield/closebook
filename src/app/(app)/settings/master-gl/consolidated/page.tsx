@@ -62,6 +62,7 @@ interface ConsolidatedAccount {
   creditTotal: number;
   netChange: number;
   beginningBalance: number;
+  yearAdjAmount?: number;
 }
 
 interface ConsolidatedTotals {
@@ -468,6 +469,16 @@ export default function ConsolidatedPage() {
                                           : "y"}
                                       </Badge>
                                     )}
+                                    {account.yearAdjAmount != null &&
+                                      account.yearAdjAmount !== 0 && (
+                                        <Badge
+                                          variant="outline"
+                                          className="ml-2 text-[10px] px-1.5 py-0 border-amber-400 text-amber-700 bg-amber-50"
+                                          title={`Year-end adjustment: ${formatCurrency(account.yearAdjAmount)}`}
+                                        >
+                                          adj {formatCurrency(account.yearAdjAmount)}
+                                        </Badge>
+                                      )}
                                   </TableCell>
                                   <TableCell className="text-right tabular-nums">
                                     {formatCurrency(account.beginningBalance)}
