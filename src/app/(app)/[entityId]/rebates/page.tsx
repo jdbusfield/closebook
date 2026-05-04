@@ -143,6 +143,10 @@ export default function RebateTrackerPage({ entityId: entityIdProp, isEmbed, emb
   >({});
   const [orderTotals, setOrderTotals] = useState<Record<string, number>>({});
   const [loadingOrders, setLoadingOrders] = useState(false);
+  const [monthlyRebates, setMonthlyRebates] = useState<
+    Record<string, Record<number, number>>
+  >({});
+  const [loadingMonthly, setLoadingMonthly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [calculating, setCalculating] = useState(false);
@@ -580,6 +584,29 @@ export default function RebateTrackerPage({ entityId: entityIdProp, isEmbed, emb
   const currentQtr = getCurrentQuarter();
   const [selectedQuarter, setSelectedQuarter] = useState(currentQtr);
 
+  const loadMonthlyRebates = useCallback(async (year: number) => {
+    setLoadingMonthly(true);
+    try {
+      const res = await apiFetch("/api/rebates", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "get_monthly_rebates",
+          entityId,
+          year,
+        }),
+      });
+      const data = await res.json();
+      const map: Record<string, Record<number, number>> = {};
+      for (const r of data.rows || []) {
+        if (!map[r.rebate_customer_id]) map[r.rebate_customer_id] = {};
+        map[r.rebate_customer_id][r.month] = r.total_rebate;
+      }
+      setMonthlyRebates(map);
+    } finally {
+      setLoadingMonthly(false);
+    }
+  }, [apiFetch, entityId]);
+
   const shiftQuarter = (quarter: string, delta: number): string => {
     const match = quarter.match(/^(\d{4})\s*Q(\d)$/);
     if (!match) return quarter;
@@ -591,6 +618,10 @@ export default function RebateTrackerPage({ entityId: entityIdProp, isEmbed, emb
   };
 
   const selectedYear = parseInt(selectedQuarter.split(" ")[0]);
+
+  useEffect(() => {
+    if (entityId) loadMonthlyRebates(selectedYear);
+  }, [entityId, selectedYear, loadMonthlyRebates]);
 
   // Revenue displays on this page show ALL revenue generated (list_total),
   // not just rebate-applicable revenue. Rebate columns still use total_rebate.
@@ -763,6 +794,130 @@ export default function RebateTrackerPage({ entityId: entityIdProp, isEmbed, emb
           </CardHeader>
         </Card>
       </div>
+
+      {/* Monthly Rebates (for GL posting) */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Monthly Rebates — {selectedYear}</CardTitle>
+              <CardDescription>
+                Rebate amount per customer per month, based on invoice billing-end date. Use this to post to the GL.
+              </CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                const header = ["Customer","Type", ...months, "Total"].join(",");
+                const lines = customers
+                  .filter((c) => {
+                    const m = monthlyRebates[c.id] || {};
+                    return Object.values(m).some((v) => v && v !== 0);
+                  })
+                  .map((c) => {
+                    const m = monthlyRebates[c.id] || {};
+                    const monthVals = Array.from({ length: 12 }, (_, i) => (m[i + 1] || 0).toFixed(2));
+                    const total = monthVals.reduce((s, v) => s + parseFloat(v), 0);
+                    const name = `"${c.customer_name.replace(/"/g, '""')}"`;
+                    return [name, c.agreement_type, ...monthVals, total.toFixed(2)].join(",");
+                  });
+                const csv = [header, ...lines].join("\n");
+                const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `rebates-monthly-${selectedYear}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+            >
+              Export CSV
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loadingMonthly ? (
+            <div className="flex items-center justify-center py-6">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : (() => {
+            const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+            const activeCustomers = customers.filter((c) => {
+              const m = monthlyRebates[c.id] || {};
+              return Object.values(m).some((v) => v && v !== 0);
+            });
+            const monthTotals = Array.from({ length: 12 }, (_, i) =>
+              activeCustomers.reduce((s, c) => s + ((monthlyRebates[c.id] || {})[i + 1] || 0), 0),
+            );
+            const grandTotal = monthTotals.reduce((s, v) => s + v, 0);
+
+            if (activeCustomers.length === 0) {
+              return (
+                <div className="text-center py-6 text-muted-foreground text-sm">
+                  No rebates calculated for {selectedYear}.
+                </div>
+              );
+            }
+
+            return (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="sticky left-0 bg-background">Customer</TableHead>
+                      {months.map((m) => (
+                        <TableHead key={m} className="text-right">{m}</TableHead>
+                      ))}
+                      <TableHead className="text-right font-semibold">Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {activeCustomers.map((c) => {
+                      const m = monthlyRebates[c.id] || {};
+                      const rowTotal = Array.from({ length: 12 }, (_, i) => m[i + 1] || 0).reduce((s, v) => s + v, 0);
+                      return (
+                        <TableRow
+                          key={c.id}
+                          className="cursor-pointer"
+                          onClick={() => router.push(`/${entityId}/rebates/${c.id}`)}
+                        >
+                          <TableCell className="font-medium sticky left-0 bg-background">
+                            {c.customer_name}
+                          </TableCell>
+                          {Array.from({ length: 12 }, (_, i) => {
+                            const v = m[i + 1] || 0;
+                            return (
+                              <TableCell key={i} className="text-right tabular-nums">
+                                {v ? formatCurrency(v) : <span className="text-muted-foreground">—</span>}
+                              </TableCell>
+                            );
+                          })}
+                          <TableCell className="text-right font-semibold tabular-nums">
+                            {formatCurrency(rowTotal)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    <TableRow className="border-t-2 font-semibold bg-muted/40">
+                      <TableCell className="sticky left-0 bg-muted/40">Total</TableCell>
+                      {monthTotals.map((v, i) => (
+                        <TableCell key={i} className="text-right tabular-nums">
+                          {v ? formatCurrency(v) : <span className="text-muted-foreground">—</span>}
+                        </TableCell>
+                      ))}
+                      <TableCell className="text-right tabular-nums">
+                        {formatCurrency(grandTotal)}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            );
+          })()}
+        </CardContent>
+      </Card>
 
       {/* Commercial Agreements Table */}
       <Card>
