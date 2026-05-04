@@ -2666,10 +2666,13 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     consolidatedAccounts.push(...kept);
 
     // If there's a non-zero net effect in any period, inject a synthetic
-    // "Intercompany Eliminations, Net" account into Other Expense.
+    // "Intercompany Eliminations, Net" account into Other Expense. Use a
+    // 50¢ threshold to match the BS side and to suppress sub-dollar
+    // floating-point residuals (e.g., a perfectly-balanced offset can leave
+    // ~$0.15 after summing millions).
     const hasNetEffect =
-      Object.values(netChange).some((v) => Math.abs(v) >= 0.005) ||
-      Object.values(pyNetChange).some((v) => Math.abs(v) >= 0.005);
+      Object.values(netChange).some((v) => Math.abs(v) >= 0.50) ||
+      Object.values(pyNetChange).some((v) => Math.abs(v) >= 0.50);
 
     if (hasNetEffect) {
       const syntheticId = "__intercompany_net__";
