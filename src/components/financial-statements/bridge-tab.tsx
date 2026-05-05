@@ -15,6 +15,7 @@ import Link from "next/link";
 import { ArrowLeftRight, Download, FileText, Printer, Settings, Wallet } from "lucide-react";
 import { StatementCard } from "./statement-card";
 import { BridgeTable } from "./bridge-table";
+import { BridgeMappingDiff } from "./bridge-mapping-diff";
 import type {
   BridgeRequest,
   BridgeResponse,
@@ -247,6 +248,13 @@ export function BridgeTab({
       {data && organizationId && (
         <div className="stmt-bridge-print">
           <BridgeTable data={data} organizationId={organizationId} />
+
+          <div className="mt-4">
+            <BridgeMappingDiff
+              organizationId={organizationId}
+              reportingEntityId={reportingEntityId}
+            />
+          </div>
 
           {/* Side-by-side statements for context */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
