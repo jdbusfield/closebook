@@ -30,5 +30,13 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "accounting-app"]
+  "exclude": [
+    "node_modules",
+    "accounting-app",
+    "accounting-app-charts",
+    "accounting-app-debt-deploy",
+    "accounting-app-deploy",
+    "accounting-app-dwreplay",
+    "accounting-app-worktree"
+  ]
 }

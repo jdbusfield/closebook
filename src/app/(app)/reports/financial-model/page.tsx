@@ -25,6 +25,7 @@ import { ProFormaDetailSchedule } from "@/components/financial-statements/pro-fo
 import { AllocationTab } from "@/components/financial-statements/allocation-tab";
 import { EntityBreakdownTab } from "@/components/financial-statements/entity-breakdown-tab";
 import { ReportingEntityBreakdownTab } from "@/components/financial-statements/reporting-entity-breakdown-tab";
+import { BridgeTab } from "@/components/financial-statements/bridge-tab";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -715,6 +716,9 @@ export default function FinancialModelPage() {
             {scope === "organization" && reportingEntities.length > 0 && (
               <TabsTrigger value="re-breakdown">RE Breakdown</TabsTrigger>
             )}
+            {scope === "organization" && (
+              <TabsTrigger value="bridge">Bridge</TabsTrigger>
+            )}
           </TabsList>
 
           {/* All Statements */}
@@ -928,6 +932,21 @@ export default function FinancialModelPage() {
                 includeProForma={config.includeProForma}
                 includeAllocations={config.includeAllocations}
                 ebitdaOnly={ebitdaOnly}
+              />
+            </TabsContent>
+          )}
+
+          {/* Bridge — accountant ↔ management reconciliation */}
+          {scope === "organization" && (
+            <TabsContent value="bridge">
+              <BridgeTab
+                organizationId={organizationId}
+                startYear={startYear}
+                startMonth={startMonth}
+                endYear={endYear}
+                endMonth={endMonth}
+                granularity={granularity}
+                companyName={companyName}
               />
             </TabsContent>
           )}
