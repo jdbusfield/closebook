@@ -3266,7 +3266,11 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     }>,
   );
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const _niDebug: any = { destinations: {}, preReconcile: {}, postReconcile: {}, totalNI: {} };
   if (niDestinations.size > 0) {
+    for (const [eid, mid] of niDestinations) _niDebug.destinations[eid] = mid;
+
     const niByEntity = computePerEntityNI(
       consolidatedAccounts,
       masterAccounts as Array<{ id: string; classification: string }>,
@@ -3275,12 +3279,16 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
       buckets,
       fiscalYearStartMonth,
     );
+    for (const [eid, ni] of niByEntity) _niDebug.preReconcile[eid] = ni;
+    _niDebug.totalNI = netIncomeByBucket;
+
     reconcileEntityNIToTotal(
       niByEntity,
       niDestinations,
       netIncomeByBucket,
       buckets,
     );
+    for (const [eid, ni] of niByEntity) _niDebug.postReconcile[eid] = ni;
 
     let pyNiByEntity: Map<string, Record<string, number>> | undefined;
     if (includeYoY) {
@@ -3385,6 +3393,7 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     incomeStatement,
     balanceSheet,
     cashFlowStatement,
+    _niDebug,
     diagnostics: {
       masterAccountsLoaded: masterAccounts.length,
       mappingsLoaded: (mappings ?? []).length,
