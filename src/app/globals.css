@@ -196,6 +196,16 @@
   padding-left: 2rem;
 }
 
+/* Compact-labels mode: cap the account-name column width and wrap long
+   labels onto additional lines so the names don't dominate the table. */
+.stmt-compact-labels th:first-child,
+.stmt-compact-labels td:first-child {
+  max-width: 240px;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
 /* Subtotal row (e.g. "Total Revenue") — bold with top border */
 .stmt-subtotal td {
   font-weight: 700;

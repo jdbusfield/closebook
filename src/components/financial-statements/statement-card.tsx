@@ -19,6 +19,7 @@ interface StatementCardProps {
   granularity: Granularity;
   varianceDisplay?: VarianceDisplayMode;
   pageBreak?: boolean;
+  compactLabels?: boolean;
   onCellClick?: (
     line: LineItem,
     periodKey: string,
@@ -42,6 +43,7 @@ export function StatementCard({
   granularity,
   varianceDisplay,
   pageBreak = false,
+  compactLabels = false,
   onCellClick,
 }: StatementCardProps) {
   return (
@@ -63,6 +65,7 @@ export function StatementCard({
             showBudget={showBudget}
             showYoY={showYoY}
             varianceDisplay={varianceDisplay}
+            compactLabels={compactLabels}
             onCellClick={onCellClick}
           />
         </CardContent>
