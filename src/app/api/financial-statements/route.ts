@@ -1442,8 +1442,15 @@ function computePerEntityNI(
       }
     }
 
+    // Use the ORIGINAL masterAccounts list for the iteration shape so that
+    // IC-flagged P&L masters (which the IC-elimination block has already
+    // removed from `consolidatedAccounts`) are still included. At the entity
+    // level, IC revenue/expense is real income/expense — it only cancels at
+    // the consolidated total. Excluding it would shift each entity's NI by
+    // its IC contribution and misallocate equity even though the total stays
+    // correct.
     const eAggregated = aggregateByBucket(
-      consolidatedAccounts,
+      masterAccounts as unknown as AccountInfo[],
       eConsolidated,
       buckets,
       fiscalYearStartMonth,
@@ -1452,7 +1459,7 @@ function computePerEntityNI(
     const niByBucket: Record<string, number> = {};
     for (const bucket of buckets) {
       let plEnding = 0;
-      for (const a of consolidatedAccounts) {
+      for (const a of masterAccounts) {
         if (a.classification !== "Revenue" && a.classification !== "Expense")
           continue;
         plEnding += eAggregated.get(a.id)?.endingBalance[bucket.key] ?? 0;
@@ -3266,11 +3273,7 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     }>,
   );
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const _niDebug: any = { destinations: {}, preReconcile: {}, postReconcile: {}, totalNI: {} };
   if (niDestinations.size > 0) {
-    for (const [eid, mid] of niDestinations) _niDebug.destinations[eid] = mid;
-
     const niByEntity = computePerEntityNI(
       consolidatedAccounts,
       masterAccounts as Array<{ id: string; classification: string }>,
@@ -3279,16 +3282,12 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
       buckets,
       fiscalYearStartMonth,
     );
-    for (const [eid, ni] of niByEntity) _niDebug.preReconcile[eid] = ni;
-    _niDebug.totalNI = netIncomeByBucket;
-
     reconcileEntityNIToTotal(
       niByEntity,
       niDestinations,
       netIncomeByBucket,
       buckets,
     );
-    for (const [eid, ni] of niByEntity) _niDebug.postReconcile[eid] = ni;
 
     let pyNiByEntity: Map<string, Record<string, number>> | undefined;
     if (includeYoY) {
@@ -3393,7 +3392,6 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     incomeStatement,
     balanceSheet,
     cashFlowStatement,
-    _niDebug,
     diagnostics: {
       masterAccountsLoaded: masterAccounts.length,
       mappingsLoaded: (mappings ?? []).length,
