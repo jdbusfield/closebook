@@ -242,6 +242,7 @@ export default function MasterGLPage() {
     id: string;
     master_account_id: string;
     chart_id: string;
+    entity_id?: string | null;
     period_year: number;
     amount: number;
     note: string | null;
@@ -251,6 +252,7 @@ export default function MasterGLPage() {
   const [adjAmountInput, setAdjAmountInput] = useState("");
   const [adjNoteInput, setAdjNoteInput] = useState("");
   const [adjOffsetIc, setAdjOffsetIc] = useState(false);
+  const [adjEntityId, setAdjEntityId] = useState<string>("");
   const [adjSaving, setAdjSaving] = useState(false);
   const [unmappedAccounts, setUnmappedAccounts] = useState<
     UnmappedAccountMonthly[]
@@ -606,6 +608,7 @@ export default function MasterGLPage() {
     setAdjAmountInput(existing ? String(existing.amount) : "");
     setAdjNoteInput(existing?.note ?? "");
     setAdjOffsetIc(existing?.offset_to_ic_net ?? false);
+    setAdjEntityId(existing?.entity_id ?? "");
     setMappingSheetOpen(true);
   }
 
@@ -647,6 +650,7 @@ export default function MasterGLPage() {
             organizationId,
             chartId: selectedChartId,
             masterAccountId: mappingAccount.id,
+            entityId: adjEntityId || null,
             periodYear: totalsYear,
             amount: parsed,
             note: adjNoteInput || null,
@@ -1729,6 +1733,28 @@ export default function MasterGLPage() {
                       onChange={(e) => setAdjNoteInput(e.target.value)}
                     />
                   </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Attribute to entity (optional)</Label>
+                    <select
+                      className="w-full text-sm rounded-md border bg-background px-3 py-2"
+                      value={adjEntityId}
+                      onChange={(e) => setAdjEntityId(e.target.value)}
+                    >
+                      <option value="">Chart-wide (no entity)</option>
+                      {entities.map((e) => (
+                        <option key={e.id} value={e.id}>
+                          {e.code} — {e.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[11px] text-muted-foreground">
+                      P&amp;L adjustments tagged to an entity flow into that
+                      entity&rsquo;s accumulated-deficit / member&rsquo;s-equity
+                      line on the accountant balance sheet. Untagged adjustments
+                      fall back to whichever entity carries the largest
+                      |Net Income|.
+                    </p>
+                  </div>
                   <div className="flex items-start gap-2 rounded-md border p-3 bg-muted/30">
                     <Switch
                       id="adj-offset-ic"
@@ -1787,6 +1813,14 @@ export default function MasterGLPage() {
                                 className="text-[10px] px-1.5 py-0 border-amber-400 text-amber-700 bg-amber-50"
                               >
                                 IC offset
+                              </Badge>
+                            )}
+                            {a.entity_id && (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] px-1.5 py-0 border-blue-400 text-blue-700 bg-blue-50"
+                              >
+                                {entities.find((e) => e.id === a.entity_id)?.code ?? "entity"}
                               </Badge>
                             )}
                             {a.note && (

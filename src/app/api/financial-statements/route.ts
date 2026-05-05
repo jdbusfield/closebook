@@ -1477,6 +1477,49 @@ function computePerEntityNI(
 // Reconcile to the displayed total NI by attributing the residual to the
 // entity carrying the largest |NI| — keeps Assets = L + E with zero standalone
 // adjustment line.
+// Pre-allocate entity-tagged year-end adjustments to per-entity NI before
+// the largest-|NI| residual fallback runs. An adjustment with entity_id
+// set on a P&L master shifts that entity's NI by -amount (amount is added
+// to the master's ending; NI = -plEnding so the sign flips).
+function applyEntityTaggedYearAdjustments(
+  niByEntity: Map<string, Record<string, number>>,
+  yearAdjRows: Array<{
+    master_account_id: string;
+    period_year: number;
+    amount: number;
+    entity_id?: string | null;
+  }>,
+  masterAccounts: Array<{ id: string; classification: string }>,
+  buckets: PeriodBucket[],
+): void {
+  const monthToBucket = new Map<string, string>();
+  const hasTotalBucket = buckets.some((b) => b.key === "TOTAL");
+  for (const bucket of buckets) {
+    if (bucket.key === "TOTAL") continue;
+    for (const m of bucket.months) {
+      monthToBucket.set(`${m.year}-${m.month}`, bucket.key);
+    }
+  }
+  const masterById = new Map(masterAccounts.map((m) => [m.id, m]));
+
+  for (const adj of yearAdjRows) {
+    if (!adj.entity_id) continue;
+    const ma = masterById.get(adj.master_account_id);
+    if (!ma) continue;
+    if (ma.classification !== "Revenue" && ma.classification !== "Expense") continue;
+    const bucketKey = monthToBucket.get(`${adj.period_year}-12`);
+    if (!bucketKey) continue;
+
+    const shift = -Number(adj.amount);
+    const ni = niByEntity.get(adj.entity_id) ?? {};
+    ni[bucketKey] = (ni[bucketKey] ?? 0) + shift;
+    if (hasTotalBucket) {
+      ni["TOTAL"] = (ni["TOTAL"] ?? 0) + shift;
+    }
+    niByEntity.set(adj.entity_id, ni);
+  }
+}
+
 function reconcileEntityNIToTotal(
   niByEntity: Map<string, Record<string, number>>,
   niDestinations: Map<string, string>,
@@ -2799,11 +2842,12 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     period_year: number;
     amount: number;
     offset_to_ic_net?: boolean | null;
+    entity_id?: string | null;
   }>((offset, limit) =>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin as any)
       .from("master_account_year_adjustments")
-      .select("master_account_id, period_year, amount, offset_to_ic_net")
+      .select("master_account_id, period_year, amount, offset_to_ic_net, entity_id")
       .eq("organization_id", organizationId)
       .eq("chart_id", chartId)
       .range(offset, offset + limit - 1),
@@ -3282,6 +3326,12 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
       buckets,
       fiscalYearStartMonth,
     );
+    applyEntityTaggedYearAdjustments(
+      niByEntity,
+      yearAdjRows,
+      masterAccounts as Array<{ id: string; classification: string }>,
+      buckets,
+    );
     reconcileEntityNIToTotal(
       niByEntity,
       niDestinations,
@@ -3299,6 +3349,12 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
         glBalances,
         pyBuckets,
         fiscalYearStartMonth,
+      );
+      applyEntityTaggedYearAdjustments(
+        pyNiByEntity,
+        yearAdjRows,
+        masterAccounts as Array<{ id: string; classification: string }>,
+        pyBuckets,
       );
       reconcileEntityNIToTotal(
         pyNiByEntity,
