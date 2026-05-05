@@ -25,6 +25,8 @@ import type { Granularity } from "./types";
 
 interface BridgeTabProps {
   organizationId: string | null;
+  /** When set, the bridge runs at reporting-entity scope instead of org-wide. */
+  reportingEntityId?: string | null;
   startYear: number;
   startMonth: number;
   endYear: number;
@@ -35,6 +37,7 @@ interface BridgeTabProps {
 
 export function BridgeTab({
   organizationId,
+  reportingEntityId,
   startYear,
   startMonth,
   endYear,
@@ -62,6 +65,7 @@ export function BridgeTab({
         endYear,
         endMonth,
         granularity,
+        ...(reportingEntityId ? { reportingEntityId } : {}),
       };
       const res = await fetch("/api/financial-statements/bridge", {
         method: "POST",
@@ -81,7 +85,7 @@ export function BridgeTab({
       setLoading(false);
     }
   }, [
-    organizationId, statement, direction,
+    organizationId, reportingEntityId, statement, direction,
     startYear, startMonth, endYear, endMonth, granularity,
   ]);
 
@@ -102,6 +106,7 @@ export function BridgeTab({
     const body: BridgeRequest = {
       organizationId, statement, direction,
       startYear, startMonth, endYear, endMonth, granularity,
+      ...(reportingEntityId ? { reportingEntityId } : {}),
     };
     const res = await fetch("/api/financial-statements/bridge/export", {
       method: "POST",

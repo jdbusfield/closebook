@@ -18,6 +18,12 @@ export interface BridgeRequest {
   endYear: number;
   endMonth: number;
   granularity: "monthly" | "quarterly" | "yearly";
+  /**
+   * When set, scope both charts to a reporting entity (e.g., "Avon
+   * Combined" = AVON + NCNT + 2F). The accountant view is typically only
+   * meaningful at this scope, so the bridge supports it directly.
+   */
+  reportingEntityId?: string;
 }
 
 /**

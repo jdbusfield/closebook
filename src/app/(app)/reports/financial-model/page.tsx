@@ -716,7 +716,7 @@ export default function FinancialModelPage() {
             {scope === "organization" && reportingEntities.length > 0 && (
               <TabsTrigger value="re-breakdown">RE Breakdown</TabsTrigger>
             )}
-            {scope === "organization" && (
+            {(scope === "organization" || scope === "reporting_entity") && (
               <TabsTrigger value="bridge">Bridge</TabsTrigger>
             )}
           </TabsList>
@@ -937,10 +937,13 @@ export default function FinancialModelPage() {
           )}
 
           {/* Bridge — accountant ↔ management reconciliation */}
-          {scope === "organization" && (
+          {(scope === "organization" || scope === "reporting_entity") && (
             <TabsContent value="bridge">
               <BridgeTab
                 organizationId={organizationId}
+                reportingEntityId={
+                  scope === "reporting_entity" ? selectedReportingEntityId : undefined
+                }
                 startYear={startYear}
                 startMonth={startMonth}
                 endYear={endYear}

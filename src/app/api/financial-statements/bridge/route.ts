@@ -141,10 +141,14 @@ async function fetchStatementsForChart(args: {
   endYear: number;
   endMonth: number;
   granularity: "monthly" | "quarterly" | "yearly";
+  reportingEntityId?: string;
 }): Promise<FinancialStatementsResponse> {
+  const isReScope = !!args.reportingEntityId;
   const params = new URLSearchParams({
-    scope: "organization",
-    organizationId: args.organizationId,
+    scope: isReScope ? "reporting_entity" : "organization",
+    ...(isReScope
+      ? { reportingEntityId: args.reportingEntityId! }
+      : { organizationId: args.organizationId }),
     chartId: args.chartId,
     startYear: String(args.startYear),
     startMonth: String(args.startMonth),
@@ -253,6 +257,7 @@ export async function POST(request: Request) {
       endYear: body.endYear,
       endMonth: body.endMonth,
       granularity: body.granularity,
+      reportingEntityId: body.reportingEntityId,
     }),
     fetchStatementsForChart({
       cookieHeader,
@@ -265,6 +270,7 @@ export async function POST(request: Request) {
       endYear: body.endYear,
       endMonth: body.endMonth,
       granularity: body.granularity,
+      reportingEntityId: body.reportingEntityId,
     }),
     fetchAllPaginated<MasterAccountRow>((offset, limit) =>
       a
