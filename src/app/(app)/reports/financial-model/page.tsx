@@ -364,6 +364,7 @@ export default function FinancialModelPage() {
     endMonth,
     granularity,
     varianceDisplay,
+    compactLabels: isAccountantView,
   };
 
   const sharedScheduleProps = {

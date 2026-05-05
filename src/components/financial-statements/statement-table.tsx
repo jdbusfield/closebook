@@ -11,6 +11,7 @@ interface StatementTableProps {
   showBudget?: boolean;
   showYoY?: boolean;
   varianceDisplay?: VarianceDisplayMode;
+  compactLabels?: boolean;
   onCellClick?: (
     line: LineItem,
     periodKey: string,
@@ -26,6 +27,7 @@ export function StatementTable({
   showBudget = false,
   showYoY = false,
   varianceDisplay = "dollars",
+  compactLabels = false,
   onCellClick,
 }: StatementTableProps) {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
@@ -291,10 +293,10 @@ export function StatementTable({
 
   return (
     <div className="overflow-x-auto">
-      <table className="stmt-table">
+      <table className={`stmt-table${compactLabels ? " stmt-compact-labels" : ""}`}>
         <thead>
           <tr>
-            <th className="min-w-[280px]"></th>
+            <th className={compactLabels ? "min-w-[180px]" : "min-w-[280px]"}></th>
             {periods.map((period) => (
               <>
                 <th
