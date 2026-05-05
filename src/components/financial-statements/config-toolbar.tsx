@@ -27,6 +27,7 @@ const TAB_LABELS: Record<StatementTab, string> = {
   allocations: "Allocations",
   "entity-breakdown": "Entity Breakdown",
   "re-breakdown": "RE Breakdown",
+  bridge: "Bridge",
   all: "All Statements",
 };
 
