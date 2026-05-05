@@ -1442,8 +1442,15 @@ function computePerEntityNI(
       }
     }
 
+    // Use the ORIGINAL masterAccounts list for the iteration shape so that
+    // IC-flagged P&L masters (which the IC-elimination block has already
+    // removed from `consolidatedAccounts`) are still included. At the entity
+    // level, IC revenue/expense is real income/expense — it only cancels at
+    // the consolidated total. Excluding it would shift each entity's NI by
+    // its IC contribution and misallocate equity even though the total stays
+    // correct.
     const eAggregated = aggregateByBucket(
-      consolidatedAccounts,
+      masterAccounts as unknown as AccountInfo[],
       eConsolidated,
       buckets,
       fiscalYearStartMonth,
@@ -1452,7 +1459,7 @@ function computePerEntityNI(
     const niByBucket: Record<string, number> = {};
     for (const bucket of buckets) {
       let plEnding = 0;
-      for (const a of consolidatedAccounts) {
+      for (const a of masterAccounts) {
         if (a.classification !== "Revenue" && a.classification !== "Expense")
           continue;
         plEnding += eAggregated.get(a.id)?.endingBalance[bucket.key] ?? 0;
