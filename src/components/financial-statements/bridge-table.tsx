@@ -2,14 +2,18 @@
 
 import { Fragment, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { formatStatementAmount } from "./format-utils";
+import { BridgeTier3Drilldown } from "./bridge-tier3-drilldown";
 import type {
   BridgeRow,
   BridgeResponse,
+  BridgeTier2Row,
 } from "@/lib/financial-statements/bridge-types";
 
 interface BridgeTableProps {
   data: BridgeResponse;
+  organizationId: string;
 }
 
 /**
@@ -24,13 +28,33 @@ interface BridgeTableProps {
  * "Total over range" view where each row sums all periods to one column
  * block — matches how an auditor reads a workpaper bridge.
  */
-export function BridgeTable({ data }: BridgeTableProps) {
+export function BridgeTable({ data, organizationId }: BridgeTableProps) {
   const [period, setPeriod] = useState<string | "ALL">(
     data.periods.length === 1 ? data.periods[0].key : "ALL",
   );
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [expandedT2, setExpandedT2] = useState<Set<string>>(new Set());
 
   const visiblePeriods =
     period === "ALL" ? data.periods : data.periods.filter((p) => p.key === period);
+
+  function toggleRow(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleT2(id: string) {
+    setExpandedT2((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   // Group rows by their major group (Assets / Liab / Equity / Revenue / Exp)
   const groups = new Map<string, BridgeRow[]>();
@@ -62,6 +86,67 @@ export function BridgeTable({ data }: BridgeTableProps) {
     return s;
   }
 
+  function renderTier2Row(parent: BridgeRow, t2: BridgeTier2Row) {
+    const proForma = sumOver(t2.deltas.proForma, periodKeys);
+    const allocation = sumOver(t2.deltas.allocation, periodKeys);
+    const yearEnd = sumOver(t2.deltas.yearEnd, periodKeys);
+    const icElim = sumOver(t2.deltas.icElim, periodKeys);
+    const niPres = sumOver(t2.deltas.niPresentation, periodKeys);
+    const mapping = sumOver(t2.deltas.mapping, periodKeys);
+    const isOpen = expandedT2.has(t2.id);
+
+    return (
+      <Fragment key={`${parent.id}_${t2.id}`}>
+        <tr className="bg-muted/10 text-[11px]">
+          <td className="py-0.5 pr-2 pl-6">
+            <button
+              onClick={() => toggleT2(t2.id)}
+              className="inline-flex items-center gap-1 hover:text-foreground text-muted-foreground"
+              title="Show GL accounts behind this master"
+            >
+              {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+              <span>{t2.label}</span>
+              <span
+                className={[
+                  "rounded px-1 text-[9px] uppercase tracking-wider",
+                  t2.side === "both"
+                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
+                    : t2.side === "from"
+                      ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+                      : "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
+                ].join(" ")}
+              >
+                {t2.side}
+              </span>
+            </button>
+          </td>
+          <td />
+          <td className="py-0.5 px-2 text-right tabular-nums">{renderAmount(proForma)}</td>
+          <td className="py-0.5 px-2 text-right tabular-nums">{renderAmount(allocation)}</td>
+          <td className="py-0.5 px-2 text-right tabular-nums">{renderAmount(yearEnd)}</td>
+          <td className="py-0.5 px-2 text-right tabular-nums">{renderAmount(icElim)}</td>
+          <td className="py-0.5 px-2 text-right tabular-nums">{renderAmount(niPres)}</td>
+          <td className="py-0.5 px-2 text-right tabular-nums">{renderAmount(mapping)}</td>
+          <td />
+          <td />
+        </tr>
+        {isOpen && (
+          <tr>
+            <td colSpan={10} className="py-1 px-2 pl-12 bg-muted/5">
+              <BridgeTier3Drilldown
+                organizationId={organizationId}
+                masterAccountId={t2.masterId}
+                statement={data.statement}
+                periods={data.periods}
+                visiblePeriodKeys={periodKeys}
+              />
+            </td>
+          </tr>
+        )}
+      </Fragment>
+    );
+  }
+
   function renderRow(row: BridgeRow) {
     const fromVal = sumOver(row.fromAmounts, periodKeys);
     const toVal = sumOver(row.toAmounts, periodKeys);
@@ -79,45 +164,57 @@ export function BridgeTable({ data }: BridgeTableProps) {
     const unmatched = !row.fromLine || !row.toLine;
     const isSubtotal = row.fromLine?.isTotal || row.toLine?.isTotal;
     const isGrand = row.fromLine?.isGrandTotal || row.toLine?.isGrandTotal;
+    const hasTier2 = (row.tier2?.length ?? 0) > 0 && !isSubtotal && !isGrand;
+    const isOpen = expanded.has(row.id);
 
     return (
-      <tr
-        key={row.id}
-        className={[
-          isGrand ? "border-t-2 border-double font-semibold" : "",
-          isSubtotal ? "border-t font-medium" : "",
-          unmatched ? "bg-amber-50/40 dark:bg-amber-900/10" : "",
-        ].join(" ")}
-      >
-        <td className="py-1 pr-2">
-          <span className={unmatched ? "italic" : ""}>
-            {row.label}
+      <Fragment key={row.id}>
+        <tr
+          className={[
+            isGrand ? "border-t-2 border-double font-semibold" : "",
+            isSubtotal ? "border-t font-medium" : "",
+            unmatched ? "bg-amber-50/40 dark:bg-amber-900/10" : "",
+          ].join(" ")}
+        >
+          <td className="py-1 pr-2">
+            {hasTier2 ? (
+              <button
+                onClick={() => toggleRow(row.id)}
+                className="inline-flex items-center gap-1 hover:text-foreground"
+              >
+                {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                <span className={unmatched ? "italic" : ""}>{row.label}</span>
+              </button>
+            ) : (
+              <span className={unmatched ? "italic" : ""}>{row.label}</span>
+            )}
             {unmatched && (
               <span className="ml-2 rounded bg-amber-200 dark:bg-amber-700 text-amber-900 dark:text-amber-100 px-1 text-[10px] uppercase tracking-wider">
                 {row.fromLine ? "Unmatched (from)" : "Unmatched (to)"}
               </span>
             )}
-          </span>
-        </td>
-        <td className="py-1 px-2 text-right tabular-nums">{renderAmount(fromVal)}</td>
-        <td className="py-1 px-2 text-right tabular-nums">{renderAmount(proForma)}</td>
-        <td className="py-1 px-2 text-right tabular-nums">{renderAmount(allocation)}</td>
-        <td className="py-1 px-2 text-right tabular-nums">{renderAmount(yearEnd)}</td>
-        <td className="py-1 px-2 text-right tabular-nums">{renderAmount(icElim)}</td>
-        <td className="py-1 px-2 text-right tabular-nums">{renderAmount(niPres)}</td>
-        <td className="py-1 px-2 text-right tabular-nums">{renderAmount(mapping)}</td>
-        <td className="py-1 px-2 text-right tabular-nums">{renderAmount(toVal)}</td>
-        <td
-          className="py-1 pl-2 text-right tabular-nums"
-          title="Tie check: should be near zero. Non-zero = unattributed difference."
-        >
-          {Math.abs(tieDelta) >= 0.5 ? (
-            <span className="text-destructive">{formatStatementAmount(tieDelta)}</span>
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          )}
-        </td>
-      </tr>
+          </td>
+          <td className="py-1 px-2 text-right tabular-nums">{renderAmount(fromVal)}</td>
+          <td className="py-1 px-2 text-right tabular-nums">{renderAmount(proForma)}</td>
+          <td className="py-1 px-2 text-right tabular-nums">{renderAmount(allocation)}</td>
+          <td className="py-1 px-2 text-right tabular-nums">{renderAmount(yearEnd)}</td>
+          <td className="py-1 px-2 text-right tabular-nums">{renderAmount(icElim)}</td>
+          <td className="py-1 px-2 text-right tabular-nums">{renderAmount(niPres)}</td>
+          <td className="py-1 px-2 text-right tabular-nums">{renderAmount(mapping)}</td>
+          <td className="py-1 px-2 text-right tabular-nums">{renderAmount(toVal)}</td>
+          <td
+            className="py-1 pl-2 text-right tabular-nums"
+            title="Tie check: should be near zero. Non-zero = unattributed difference."
+          >
+            {Math.abs(tieDelta) >= 0.5 ? (
+              <span className="text-destructive">{formatStatementAmount(tieDelta)}</span>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </td>
+        </tr>
+        {isOpen && hasTier2 && row.tier2!.map((t2) => renderTier2Row(row, t2))}
+      </Fragment>
     );
   }
 

@@ -4,12 +4,14 @@
 import type { LineItem, Period, StatementData } from "@/components/financial-statements/types";
 import {
   type BridgeAmounts,
+  type BridgeCategoryDeltas,
   type BridgeRow,
+  type BridgeTier2Row,
   emptyAmounts,
   emptyDeltas,
   totalExplainedDelta,
 } from "./bridge-types";
-import { indexStatement, linkLines, type IndexedLine } from "./bridge-line-linker";
+import { indexStatement, linkLines, type IndexedLine, type ExplicitLink } from "./bridge-line-linker";
 
 // ---------------------------------------------------------------------------
 // Inputs collected from the database / FS API
@@ -153,6 +155,13 @@ function findBucketForMonth(
  * Revenue/Liability/Equity classifications when surfaced in the bridge so
  * the math matches the displayed statement values.
  */
+interface LineLevelAggregation {
+  /** Per-line totals */
+  byLine: Map<string, BridgeAmounts>;
+  /** Per (lineId, masterId) totals — used for tier-2 attribution */
+  byLineMaster: Map<string, Map<string, BridgeAmounts>>;
+}
+
 function aggregateAdjustmentsByLine(
   rows: Array<{ master_account_id: string; amount: number; period_year: number; period_month: number }>,
   masterToRoot: Map<string, string>,
@@ -160,20 +169,28 @@ function aggregateAdjustmentsByLine(
   classificationByMaster: Map<string, string>,
   periods: PeriodBucketLite[],
   periodKeys: string[],
-): Map<string, BridgeAmounts> {
-  const out = new Map<string, BridgeAmounts>();
+): LineLevelAggregation {
+  const byLine = new Map<string, BridgeAmounts>();
+  const byLineMaster = new Map<string, Map<string, BridgeAmounts>>();
   for (const r of rows) {
     const root = masterToRoot.get(r.master_account_id) ?? r.master_account_id;
     const line = rootToLine.get(root);
     if (!line) continue;
     const bucketKey = findBucketForMonth(periods, r.period_year, r.period_month);
     if (!bucketKey) continue;
-    if (!out.has(line.id)) out.set(line.id, emptyAmounts(periodKeys));
     const cls = classificationByMaster.get(r.master_account_id) ?? "";
     const sign = isCreditNormal(cls) ? -1 : 1;
-    out.get(line.id)![bucketKey] += sign * r.amount;
+    const signed = sign * r.amount;
+
+    if (!byLine.has(line.id)) byLine.set(line.id, emptyAmounts(periodKeys));
+    byLine.get(line.id)![bucketKey] += signed;
+
+    if (!byLineMaster.has(line.id)) byLineMaster.set(line.id, new Map());
+    const masterMap = byLineMaster.get(line.id)!;
+    if (!masterMap.has(r.master_account_id)) masterMap.set(r.master_account_id, emptyAmounts(periodKeys));
+    masterMap.get(r.master_account_id)![bucketKey] += signed;
   }
-  return out;
+  return { byLine, byLineMaster };
 }
 
 function isCreditNormal(classification: string): boolean {
@@ -197,11 +214,18 @@ function lineAmounts(line: LineItem | null, periodKeys: string[]): BridgeAmounts
 // Engine entry point
 // ---------------------------------------------------------------------------
 
+export interface BridgeLinkRow {
+  accountantMasterId: string;
+  managementMasterId: string;
+}
+
 export interface ComputeBridgeArgs {
   fromCtx: ChartContext;
   toCtx: ChartContext;
   periods: Period[];
   periodBuckets: PeriodBucketLite[];
+  /** Explicit cross-chart line links — overrides heuristic when present. */
+  bridgeLinks?: BridgeLinkRow[];
 }
 
 export interface ComputedBridge {
@@ -214,12 +238,24 @@ export function computeBridge({
   toCtx,
   periods,
   periodBuckets,
+  bridgeLinks,
 }: ComputeBridgeArgs): ComputedBridge {
   const periodKeys = periods.map((p) => p.key);
 
   const fromIndex = indexStatement(fromCtx.statement);
   const toIndex = indexStatement(toCtx.statement);
-  const pairs = linkLines(fromIndex, toIndex);
+
+  // Translate accountant/management explicit links into from-→to direction
+  // for the linker. The bridgeLinks rows are stored as
+  // (accountantMasterId, managementMasterId); whichever side the user
+  // chose for "from" determines which master ID becomes the from key.
+  const explicit: ExplicitLink[] = (bridgeLinks ?? []).map((l) =>
+    fromCtx.chartKind === "accountant"
+      ? { fromMasterId: l.accountantMasterId, toMasterId: l.managementMasterId }
+      : { fromMasterId: l.managementMasterId, toMasterId: l.accountantMasterId },
+  );
+
+  const pairs = linkLines(fromIndex, toIndex, explicit);
 
   const fromMasterToRoot = buildMasterToRoot(fromCtx.masters);
   const toMasterToRoot = buildMasterToRoot(toCtx.masters);
@@ -236,7 +272,7 @@ export function computeBridge({
   // Pro forma & allocations exist on management only by current convention.
   // If from = ACC, going to MGT INTRODUCES them (+).
   // If from = MGT, going to ACC REMOVES them (−).
-  const toProFormaByLine = aggregateAdjustmentsByLine(
+  const toProForma = aggregateAdjustmentsByLine(
     toCtx.proForma.map((p) => ({
       master_account_id: p.master_account_id,
       amount: p.amount,
@@ -250,7 +286,7 @@ export function computeBridge({
     periodKeys,
   );
 
-  const fromProFormaByLine = aggregateAdjustmentsByLine(
+  const fromProForma = aggregateAdjustmentsByLine(
     fromCtx.proForma.map((p) => ({
       master_account_id: p.master_account_id,
       amount: p.amount,
@@ -264,7 +300,7 @@ export function computeBridge({
     periodKeys,
   );
 
-  const toAllocationsByLine = aggregateAdjustmentsByLine(
+  const toAllocations = aggregateAdjustmentsByLine(
     toCtx.allocations.map((a) => ({
       master_account_id: a.master_account_id,
       amount: a.amount,
@@ -278,7 +314,7 @@ export function computeBridge({
     periodKeys,
   );
 
-  const fromAllocationsByLine = aggregateAdjustmentsByLine(
+  const fromAllocations = aggregateAdjustmentsByLine(
     fromCtx.allocations.map((a) => ({
       master_account_id: a.master_account_id,
       amount: a.amount,
@@ -292,7 +328,7 @@ export function computeBridge({
     periodKeys,
   );
 
-  const toYearEndByLine = aggregateAdjustmentsByLine(
+  const toYearEnd = aggregateAdjustmentsByLine(
     toCtx.yearEnd.map((y) => ({
       master_account_id: y.master_account_id,
       amount: y.amount,
@@ -306,7 +342,7 @@ export function computeBridge({
     periodKeys,
   );
 
-  const fromYearEndByLine = aggregateAdjustmentsByLine(
+  const fromYearEnd = aggregateAdjustmentsByLine(
     fromCtx.yearEnd.map((y) => ({
       master_account_id: y.master_account_id,
       amount: y.amount,
@@ -319,6 +355,16 @@ export function computeBridge({
     periodBuckets,
     periodKeys,
   );
+
+  // Build a "what masters are under each line" map per chart, walking
+  // parent_account_id chains in the master list and matching against
+  // rootToLine. Lets tier-2 enumerate masters even when no adjustment
+  // touched them.
+  const fromMastersByLine = mastersByLine(fromCtx.masters, fromMasterToRoot, fromRootToLine);
+  const toMastersByLine = mastersByLine(toCtx.masters, toMasterToRoot, toRootToLine);
+
+  const fromMasterById = new Map(fromCtx.masters.map((m) => [m.id, m]));
+  const toMasterById = new Map(toCtx.masters.map((m) => [m.id, m]));
 
   const rows: BridgeRow[] = [];
   for (const p of pairs) {
@@ -336,16 +382,16 @@ export function computeBridge({
     const deltas = emptyDeltas(periodKeys);
 
     // Pro forma: introduced going from-→to (so add to-side, subtract from-side)
-    if (toLine) addAmountsByLine(deltas.proForma, toProFormaByLine.get(toLine.id), 1);
-    if (fromLine) addAmountsByLine(deltas.proForma, fromProFormaByLine.get(fromLine.id), -1);
+    if (toLine) addAmountsByLine(deltas.proForma, toProForma.byLine.get(toLine.id), 1);
+    if (fromLine) addAmountsByLine(deltas.proForma, fromProForma.byLine.get(fromLine.id), -1);
 
     // Allocations: same convention
-    if (toLine) addAmountsByLine(deltas.allocation, toAllocationsByLine.get(toLine.id), 1);
-    if (fromLine) addAmountsByLine(deltas.allocation, fromAllocationsByLine.get(fromLine.id), -1);
+    if (toLine) addAmountsByLine(deltas.allocation, toAllocations.byLine.get(toLine.id), 1);
+    if (fromLine) addAmountsByLine(deltas.allocation, fromAllocations.byLine.get(fromLine.id), -1);
 
     // Year-end: chart-scoped — both charts may have entries; net = to − from
-    if (toLine) addAmountsByLine(deltas.yearEnd, toYearEndByLine.get(toLine.id), 1);
-    if (fromLine) addAmountsByLine(deltas.yearEnd, fromYearEndByLine.get(fromLine.id), -1);
+    if (toLine) addAmountsByLine(deltas.yearEnd, toYearEnd.byLine.get(toLine.id), 1);
+    if (fromLine) addAmountsByLine(deltas.yearEnd, fromYearEnd.byLine.get(fromLine.id), -1);
 
     // IC elimination & NI presentation: detected by line label matching.
     // Both charts run their own IC eliminations, so the residual is captured
@@ -390,6 +436,19 @@ export function computeBridge({
       fromLine?.label ?? toLine?.label ?? "(unknown)";
     const group = (fromIL ?? toIL)!.group;
 
+    const tier2 = buildTier2({
+      fromLine,
+      toLine,
+      fromMastersByLine,
+      toMastersByLine,
+      fromMasterById,
+      toMasterById,
+      proForma: { from: fromProForma, to: toProForma },
+      allocations: { from: fromAllocations, to: toAllocations },
+      yearEnd: { from: fromYearEnd, to: toYearEnd },
+      periodKeys,
+    });
+
     rows.push({
       id: `bridge_${rows.length}`,
       label,
@@ -399,6 +458,7 @@ export function computeBridge({
       fromAmounts,
       toAmounts,
       deltas,
+      tier2,
     });
   }
 
@@ -445,6 +505,160 @@ function addAmountsByLine(
   if (!src) return;
   for (const k of Object.keys(src)) {
     target[k] = (target[k] ?? 0) + sign * src[k];
+  }
+}
+
+/**
+ * Build a Map<lineId, masterIds[]> by walking each master to its root and
+ * looking up which line displays that root. Lets tier 2 enumerate all
+ * masters under a line, not just the ones that received an adjustment.
+ */
+function mastersByLine(
+  masters: { id: string }[],
+  masterToRoot: Map<string, string>,
+  rootToLine: Map<string, LineItem>,
+): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const m of masters) {
+    const root = masterToRoot.get(m.id) ?? m.id;
+    const line = rootToLine.get(root);
+    if (!line) continue;
+    if (!out.has(line.id)) out.set(line.id, []);
+    out.get(line.id)!.push(m.id);
+  }
+  return out;
+}
+
+interface BuildTier2Args {
+  fromLine: LineItem | null;
+  toLine: LineItem | null;
+  fromMastersByLine: Map<string, string[]>;
+  toMastersByLine: Map<string, string[]>;
+  fromMasterById: Map<string, MasterAccountRow>;
+  toMasterById: Map<string, MasterAccountRow>;
+  proForma: { from: LineLevelAggregation; to: LineLevelAggregation };
+  allocations: { from: LineLevelAggregation; to: LineLevelAggregation };
+  yearEnd: { from: LineLevelAggregation; to: LineLevelAggregation };
+  periodKeys: string[];
+}
+
+/**
+ * For a linked pair (or unmatched line), produce one tier-2 row per
+ * master account that contributes to either side. A master might appear
+ * on the from-chart only, the to-chart only, or both.
+ *
+ * Per-master adjustment deltas are looked up from the
+ * (lineId → masterId → BridgeAmounts) maps already produced by
+ * aggregateAdjustmentsByLine.
+ */
+function buildTier2(args: BuildTier2Args): BridgeTier2Row[] {
+  const {
+    fromLine, toLine,
+    fromMastersByLine, toMastersByLine,
+    fromMasterById, toMasterById,
+    proForma, allocations, yearEnd,
+    periodKeys,
+  } = args;
+
+  const fromMasterIds = fromLine ? (fromMastersByLine.get(fromLine.id) ?? []) : [];
+  const toMasterIds = toLine ? (toMastersByLine.get(toLine.id) ?? []) : [];
+
+  // Build a unified set of (chartSide, masterId) → master ref. Names
+  // sometimes match across charts (same chart of accounts seed); when they
+  // do, collapse into a single tier-2 row labelled "both".
+  type Combined = {
+    masterId: string;
+    name: string;
+    accountNumber: string | null;
+    side: "from" | "to" | "both";
+  };
+  const combined: Map<string, Combined> = new Map();
+
+  for (const id of fromMasterIds) {
+    const m = fromMasterById.get(id);
+    if (!m) continue;
+    const key = nameKey(m);
+    const existing = combined.get(key);
+    if (existing) {
+      existing.side = "both";
+    } else {
+      combined.set(key, { masterId: id, name: m.name, accountNumber: m.account_number, side: "from" });
+    }
+  }
+  for (const id of toMasterIds) {
+    const m = toMasterById.get(id);
+    if (!m) continue;
+    const key = nameKey(m);
+    const existing = combined.get(key);
+    if (existing) {
+      existing.side = "both";
+      // Prefer to-side master ID for adjustment lookups when collapsed
+      existing.masterId = id;
+    } else {
+      combined.set(key, { masterId: id, name: m.name, accountNumber: m.account_number, side: "to" });
+    }
+  }
+
+  const out: BridgeTier2Row[] = [];
+
+  for (const [, c] of combined) {
+    const deltas: BridgeCategoryDeltas = emptyDeltas(periodKeys);
+
+    // Sign convention same as line-level: introduced going to-side (+),
+    // removed going from-side (−).
+    if (toLine) {
+      addByMaster(deltas.proForma, proForma.to.byLineMaster.get(toLine.id), c, 1);
+      addByMaster(deltas.allocation, allocations.to.byLineMaster.get(toLine.id), c, 1);
+      addByMaster(deltas.yearEnd, yearEnd.to.byLineMaster.get(toLine.id), c, 1);
+    }
+    if (fromLine) {
+      addByMaster(deltas.proForma, proForma.from.byLineMaster.get(fromLine.id), c, -1);
+      addByMaster(deltas.allocation, allocations.from.byLineMaster.get(fromLine.id), c, -1);
+      addByMaster(deltas.yearEnd, yearEnd.from.byLineMaster.get(fromLine.id), c, -1);
+    }
+
+    out.push({
+      id: `t2_${c.masterId}`,
+      masterId: c.masterId,
+      label: c.accountNumber ? `${c.accountNumber} — ${c.name}` : c.name,
+      side: c.side,
+      // Raw amounts left empty for v1 — populated when the lazy GL endpoint
+      // is wired in. Keeping the shape stable so the UI doesn't need to
+      // change.
+      fromRaw: emptyAmounts(periodKeys),
+      toRaw: emptyAmounts(periodKeys),
+      deltas,
+    });
+  }
+
+  // Sort: matched-on-both first, then by label
+  out.sort((a, b) => {
+    const sideRank = (s: string) => (s === "both" ? 0 : s === "from" ? 1 : 2);
+    const sr = sideRank(a.side) - sideRank(b.side);
+    if (sr !== 0) return sr;
+    return a.label.localeCompare(b.label);
+  });
+
+  return out;
+}
+
+function nameKey(m: MasterAccountRow): string {
+  return `${(m.account_number ?? "").trim()}|${m.name.trim().toLowerCase()}`;
+}
+
+function addByMaster(
+  target: BridgeAmounts,
+  src: Map<string, BridgeAmounts> | undefined,
+  combined: { masterId: string; side: "from" | "to" | "both" },
+  sign: number,
+): void {
+  if (!src) return;
+  // For "both" rows we don't know which sub-side the adjustment came from;
+  // try the masterId we recorded. If absent, no contribution from this side.
+  const amounts = src.get(combined.masterId);
+  if (!amounts) return;
+  for (const k of Object.keys(amounts)) {
+    target[k] = (target[k] ?? 0) + sign * amounts[k];
   }
 }
 

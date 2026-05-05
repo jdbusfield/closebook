@@ -505,4 +505,24 @@
     border-top: 1.5px solid #1a1a1a;
     padding-top: 3pt;
   }
+
+  /* ---- Bridge schedule: landscape orientation, smaller font ---- */
+  .stmt-bridge-print {
+    page: bridge;
+  }
+  .stmt-bridge-print table {
+    font-size: 8pt;
+  }
+  .stmt-bridge-print th,
+  .stmt-bridge-print td {
+    padding: 1pt 3pt;
+  }
+  .stmt-bridge-print [data-slot="card"] {
+    page-break-inside: auto;
+  }
+}
+
+@page bridge {
+  size: letter landscape;
+  margin: 0.3in 0.3in;
 }

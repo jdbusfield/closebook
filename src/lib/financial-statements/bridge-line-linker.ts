@@ -117,20 +117,64 @@ export interface LinePair {
 }
 
 /**
+ * Explicit links override the heuristic. The engine passes a Map keyed by
+ * the from-side master_id with the to-side master_id as the value. The
+ * linker's job is then to find the lines whose `drillDownMeta.masterAccountIds`
+ * contain those masters and pair those lines.
+ */
+export interface ExplicitLink {
+  fromMasterId: string;
+  toMasterId: string;
+}
+
+/**
  * Greedy bipartite match. Each from-line picks its best to-line within the
  * same group, score must clear MIN_SCORE. Unmatched lines on either side
  * become rows with one side null.
+ *
+ * If `explicitLinks` is provided, any from-line whose displayed master is
+ * in the link map is paired with the corresponding to-line first; the
+ * heuristic only fills in lines without an explicit link.
  */
 export function linkLines(
   fromIndex: IndexedLine[],
   toIndex: IndexedLine[],
+  explicitLinks?: ExplicitLink[],
 ): LinePair[] {
   const MIN_SCORE = 0.34;
   const used = new Set<number>();
+  const claimedFrom = new Set<number>();
   const pairs: LinePair[] = [];
 
-  // Pass 1: each from-line claims its best to-line above the threshold.
+  // Build (master → from index) and (master → to index) lookups for
+  // explicit-link resolution.
+  const fromByMaster = new Map<string, number>();
   for (let i = 0; i < fromIndex.length; i++) {
+    const ids = fromIndex[i].line.drillDownMeta?.masterAccountIds ?? [];
+    for (const id of ids) fromByMaster.set(id, i);
+  }
+  const toByMaster = new Map<string, number>();
+  for (let j = 0; j < toIndex.length; j++) {
+    const ids = toIndex[j].line.drillDownMeta?.masterAccountIds ?? [];
+    for (const id of ids) toByMaster.set(id, j);
+  }
+
+  // Pass 0: explicit links take priority. Use score 1 to mark "exact".
+  if (explicitLinks?.length) {
+    for (const link of explicitLinks) {
+      const i = fromByMaster.get(link.fromMasterId);
+      const j = toByMaster.get(link.toMasterId);
+      if (i === undefined || j === undefined) continue;
+      if (claimedFrom.has(i) || used.has(j)) continue;
+      claimedFrom.add(i);
+      used.add(j);
+      pairs.push({ fromIdx: i, toIdx: j, group: fromIndex[i].group, score: 1 });
+    }
+  }
+
+  // Pass 1: each remaining from-line claims its best to-line above the threshold.
+  for (let i = 0; i < fromIndex.length; i++) {
+    if (claimedFrom.has(i)) continue;
     const f = fromIndex[i];
     let bestJ = -1;
     let bestScore = 0;

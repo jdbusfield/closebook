@@ -61,22 +61,48 @@ export interface BridgeRow {
   toAmounts: BridgeAmounts;
   /** Category-level deltas explaining (toAmounts − fromAmounts) */
   deltas: BridgeCategoryDeltas;
-  /** Sub-rows (tier 2 = master accounts) — populated when drill-down is requested */
-  tier2?: BridgeTierRow[];
+  /** Sub-rows (tier 2 = master accounts that compose the from/to lines) */
+  tier2?: BridgeTier2Row[];
   /** Whether this row is a header (not a real line) */
   isHeader?: boolean;
 }
 
 /**
- * Tier 2 / Tier 3 sub-rows. Tier 2 is master accounts under a line; Tier 3
- * is GL accounts under a master.
+ * Tier 2 sub-row — a master account that contributes to a bridge row.
+ * Each tier-2 row knows which side of the bridge it lives on (from / to /
+ * both) since accounts often only exist on one chart.
  */
-export interface BridgeTierRow {
+export interface BridgeTier2Row {
   id: string;
+  /** Master account ID */
+  masterId: string;
+  /** Display label, typically `${number} - ${name}` */
   label: string;
-  fromAmounts: BridgeAmounts;
-  toAmounts: BridgeAmounts;
+  /** "from" | "to" | "both" — which chart(s) this master appears on */
+  side: "from" | "to" | "both";
+  /** Per-period from-side raw aggregation (no adjustments) */
+  fromRaw: BridgeAmounts;
+  /** Per-period to-side raw aggregation (no adjustments) */
+  toRaw: BridgeAmounts;
+  /** Per-period adjustment deltas attributable to this master */
   deltas: BridgeCategoryDeltas;
+}
+
+/**
+ * Tier 3 sub-row — a single GL account (entity-level account_id) that
+ * maps to a master account. Returned lazily by a separate endpoint, not
+ * embedded in the main bridge response.
+ */
+export interface BridgeTier3Row {
+  id: string;
+  glAccountId: string;
+  entityId: string;
+  entityCode: string;
+  entityName: string;
+  accountName: string;
+  accountNumber: string | null;
+  /** Per-period contribution of this GL account to the master's amount */
+  amounts: BridgeAmounts;
 }
 
 export interface BridgeResponse {

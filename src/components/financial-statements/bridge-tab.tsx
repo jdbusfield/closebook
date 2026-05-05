@@ -11,7 +11,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { ArrowLeftRight, FileText, Wallet } from "lucide-react";
+import Link from "next/link";
+import { ArrowLeftRight, Download, FileText, Printer, Settings, Wallet } from "lucide-react";
 import { StatementCard } from "./statement-card";
 import { BridgeTable } from "./bridge-table";
 import type {
@@ -96,6 +97,43 @@ export function BridgeTab({
   const fromTitle =
     statement === "BS" ? "Balance Sheet" : "Income Statement";
 
+  async function exportXlsx() {
+    if (!organizationId) return;
+    const body: BridgeRequest = {
+      organizationId, statement, direction,
+      startYear, startMonth, endYear, endMonth, granularity,
+    };
+    const res = await fetch("/api/financial-statements/bridge/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      setError(`Export failed: ${res.status}`);
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `bridge-${statement.toLowerCase()}-${startYear}${String(startMonth).padStart(2, "0")}-${endYear}${String(endMonth).padStart(2, "0")}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function printBridge() {
+    const original = document.title;
+    document.title = `Bridge ${statement === "BS" ? "Balance Sheet" : "Income Statement"} ${startYear}-${String(startMonth).padStart(2, "0")} to ${endYear}-${String(endMonth).padStart(2, "0")}`;
+    const restore = () => {
+      document.title = original;
+      window.removeEventListener("afterprint", restore);
+    };
+    window.addEventListener("afterprint", restore);
+    window.print();
+  }
+
   return (
     <div className="space-y-4">
       <Card className="stmt-no-print">
@@ -154,7 +192,30 @@ export function BridgeTab({
             </div>
           </div>
 
-          <div className="ml-auto">
+          <div className="ml-auto flex items-end gap-2">
+            <Button asChild variant="outline" size="sm" title="Manage explicit cross-chart line links">
+              <Link href="/settings/master-gl/bridge-links">
+                <Settings className="h-3.5 w-3.5 mr-1" /> Links
+              </Link>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportXlsx}
+              disabled={!data || loading}
+              title="Download as Excel workbook"
+            >
+              <Download className="h-3.5 w-3.5 mr-1" /> XLSX
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={printBridge}
+              disabled={!data}
+              title="Print bridge schedule"
+            >
+              <Printer className="h-3.5 w-3.5 mr-1" /> Print
+            </Button>
             <Button onClick={generate} disabled={loading || !organizationId} size="sm">
               {loading ? "Generating..." : "Refresh"}
             </Button>
@@ -178,9 +239,9 @@ export function BridgeTab({
         </Card>
       )}
 
-      {data && (
-        <>
-          <BridgeTable data={data} />
+      {data && organizationId && (
+        <div className="stmt-bridge-print">
+          <BridgeTable data={data} organizationId={organizationId} />
 
           {/* Side-by-side statements for context */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -223,7 +284,7 @@ export function BridgeTab({
               />
             </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

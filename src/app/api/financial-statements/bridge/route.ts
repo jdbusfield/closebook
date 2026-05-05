@@ -20,6 +20,7 @@ import {
   type AllocationEntryRow,
   type YearAdjRow,
   type PeriodBucketLite,
+  type BridgeLinkRow,
 } from "@/lib/financial-statements/bridge-engine";
 import type {
   BridgeRequest,
@@ -239,6 +240,7 @@ export async function POST(request: Request) {
     proFormaRows,
     allocRows,
     yearEndRows,
+    bridgeLinkRows,
   ] = await Promise.all([
     fetchStatementsForChart({
       cookieHeader,
@@ -305,7 +307,19 @@ export async function POST(request: Request) {
         .eq("organization_id", body.organizationId)
         .range(offset, offset + limit - 1),
     ),
+    fetchAllPaginated<{ accountant_master_id: string; management_master_id: string }>((offset, limit) =>
+      a
+        .from("master_account_bridge_links")
+        .select("accountant_master_id, management_master_id")
+        .eq("organization_id", body.organizationId)
+        .range(offset, offset + limit - 1),
+    ),
   ]);
+
+  const bridgeLinks: BridgeLinkRow[] = bridgeLinkRows.map((r) => ({
+    accountantMasterId: r.accountant_master_id,
+    managementMasterId: r.management_master_id,
+  }));
 
   // Coerce numeric fields (Supabase returns numerics as strings)
   const proForma: ProFormaRow[] = proFormaRows.map((p) => ({
@@ -400,6 +414,7 @@ export async function POST(request: Request) {
     toCtx,
     periods: fromFS.periods,
     periodBuckets,
+    bridgeLinks,
   });
 
   const response: BridgeResponse = {
