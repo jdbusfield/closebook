@@ -37,7 +37,7 @@ export async function GET(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let query = (admin as any)
     .from("master_account_year_adjustments")
-    .select("id, master_account_id, chart_id, period_year, amount, note, offset_to_ic_net, created_at, updated_at")
+    .select("id, master_account_id, chart_id, entity_id, period_year, amount, note, offset_to_ic_net, created_at, updated_at")
     .eq("organization_id", organizationId)
     .order("period_year", { ascending: false });
   if (chartId) query = query.eq("chart_id", chartId);
@@ -50,7 +50,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const supabase = await createClient();
   const body = await request.json();
-  const { organizationId, masterAccountId, chartId, periodYear, amount, note, offsetToIcNet } = body ?? {};
+  const { organizationId, masterAccountId, chartId, entityId, periodYear, amount, note, offsetToIcNet } = body ?? {};
 
   if (!organizationId || !masterAccountId || !chartId || !periodYear) {
     return NextResponse.json(
@@ -73,6 +73,7 @@ export async function POST(request: Request) {
         organization_id: organizationId,
         chart_id: chartId,
         master_account_id: masterAccountId,
+        entity_id: entityId || null,
         period_year: Number(periodYear),
         amount: Number(amount) || 0,
         note: note || null,
@@ -81,7 +82,7 @@ export async function POST(request: Request) {
       },
       { onConflict: "chart_id,master_account_id,period_year" },
     )
-    .select("id, master_account_id, chart_id, period_year, amount, note, offset_to_ic_net")
+    .select("id, master_account_id, chart_id, entity_id, period_year, amount, note, offset_to_ic_net")
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
