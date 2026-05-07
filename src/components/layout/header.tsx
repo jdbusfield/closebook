@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import { detectEntityId } from "@/lib/utils/entity-context";
 import { createClient } from "@/lib/supabase/client";
+import { AskCloseBookToggle } from "@/components/ai/ask-closebook-toggle";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -187,6 +188,9 @@ export function Header({ entities }: HeaderProps) {
           )}
         </BreadcrumbList>
       </Breadcrumb>
+      <div className="ml-auto flex items-center">
+        <AskCloseBookToggle />
+      </div>
     </header>
   );
 }
