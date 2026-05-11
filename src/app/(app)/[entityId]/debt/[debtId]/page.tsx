@@ -82,7 +82,14 @@ import {
   summarizeSchedule,
   interestFactor,
 } from "@/lib/utils/amortization";
-import * as XLSX from "xlsx";
+import {
+  addSheet,
+  createWorkbook,
+  downloadWorkbook,
+  NUMBER_FORMATS,
+  parseIsoDate,
+  type ColumnDef,
+} from "@/lib/utils/excel";
 import type { DebtStatus } from "@/lib/types/database";
 import { AmortizationExportDialog } from "./amortization-export-dialog";
 
@@ -598,35 +605,142 @@ export default function DebtDetailPage() {
     loadData();
   }
 
-  function exportTransactionsToXlsx() {
+  async function exportTransactionsToXlsx() {
     if (transactions.length === 0) {
       toast.error("No transactions to export");
       return;
     }
-    const rows = transactions.map((txn: AnyRow) => ({
-      Date: txn.effective_date ? txn.effective_date.split("T")[0] : "",
-      Type: TRANSACTION_TYPE_LABELS[txn.transaction_type] ?? txn.transaction_type,
-      Description: txn.description ?? "",
-      Amount: txn.amount != null ? Number(txn.amount) : "",
-      "To Principal": txn.to_principal != null ? Number(txn.to_principal) : "",
-      "To Interest": txn.to_interest != null ? Number(txn.to_interest) : "",
-      "To Fees": txn.to_fees != null ? Number(txn.to_fees) : "",
-      Balance: txn.running_balance != null ? Number(txn.running_balance) : "",
-      "Ref #": txn.reference_number ?? "",
-      Reconciled: txn.is_reconciled ? "Yes" : "No",
-    }));
-    const ws = XLSX.utils.json_to_sheet(rows);
-    // Auto-size columns based on header + data widths
-    const colKeys = Object.keys(rows[0]);
-    ws["!cols"] = colKeys.map((key) => {
-      const maxDataLen = rows.reduce((mx, r) => Math.max(mx, String(r[key as keyof typeof r] ?? "").length), 0);
-      return { wch: Math.max(key.length, maxDataLen) + 2 };
-    });
-    const wb = XLSX.utils.book_new();
-    const sheetName = (instrument?.instrument_name || "Transactions").slice(0, 31);
-    XLSX.utils.book_append_sheet(wb, ws, sheetName);
-    const safeName = (instrument?.instrument_name || "transactions").replace(/[^a-zA-Z0-9_-]/g, "_");
-    XLSX.writeFile(wb, `${safeName}_transactions.xlsx`);
+    try {
+      // Title block reads "Entity · Instrument · Lender · Loan #" — matches
+      // the amortization/asset exports so the debt package looks like one
+      // cohesive workbook set.
+      const { data: ent } = await supabase
+        .from("entities")
+        .select("name")
+        .eq("id", entityId)
+        .single();
+      const entityName = (ent as { name?: string } | null)?.name ?? "";
+
+      const instrumentName =
+        instrument?.instrument_name?.trim() || "Debt Instrument";
+      const lenderName = (instrument?.lender_name as string | undefined)?.trim() || null;
+      const loanNumber = (instrument?.loan_number as string | undefined)?.trim() || null;
+
+      // Sort chronologically (oldest first) so the running balance flows
+      // top-to-bottom the way an accountant expects to read it.
+      const sortedTxns = [...transactions].sort((a: AnyRow, b: AnyRow) => {
+        const ad = a.effective_date ?? "";
+        const bd = b.effective_date ?? "";
+        if (ad === bd) return 0;
+        return ad < bd ? -1 : 1;
+      });
+
+      const subtitleBits: string[] = [instrumentName];
+      if (lenderName) subtitleBits.push(lenderName);
+      if (loanNumber) subtitleBits.push(`Loan #${loanNumber}`);
+
+      const firstDate = sortedTxns[0]?.effective_date?.split("T")[0] ?? "";
+      const lastDate =
+        sortedTxns[sortedTxns.length - 1]?.effective_date?.split("T")[0] ?? "";
+      const periodLine =
+        firstDate && lastDate
+          ? `${firstDate} through ${lastDate} — ${sortedTxns.length} transaction${sortedTxns.length === 1 ? "" : "s"}`
+          : `${sortedTxns.length} transaction${sortedTxns.length === 1 ? "" : "s"}`;
+
+      const columns: ColumnDef<AnyRow>[] = [
+        {
+          header: "Date",
+          width: 12,
+          format: NUMBER_FORMATS.date,
+          value: (r) => parseIsoDate(r.effective_date) ?? null,
+        },
+        {
+          header: "Type",
+          width: 20,
+          value: (r) =>
+            TRANSACTION_TYPE_LABELS[r.transaction_type] ?? r.transaction_type ?? "",
+        },
+        {
+          header: "Description",
+          width: 36,
+          value: (r) => r.description ?? "",
+        },
+        {
+          header: "Amount",
+          width: 16,
+          format: NUMBER_FORMATS.currency,
+          total: "sum",
+          value: (r) => (r.amount != null ? Number(r.amount) : null),
+        },
+        {
+          header: "To Principal",
+          width: 16,
+          format: NUMBER_FORMATS.currency,
+          total: "sum",
+          value: (r) => (r.to_principal != null ? Number(r.to_principal) : null),
+        },
+        {
+          header: "To Interest",
+          width: 16,
+          format: NUMBER_FORMATS.currency,
+          total: "sum",
+          value: (r) => (r.to_interest != null ? Number(r.to_interest) : null),
+        },
+        {
+          header: "To Fees",
+          width: 14,
+          format: NUMBER_FORMATS.currency,
+          total: "sum",
+          value: (r) => (r.to_fees != null ? Number(r.to_fees) : null),
+        },
+        {
+          header: "Balance",
+          width: 18,
+          format: NUMBER_FORMATS.currency,
+          value: (r) =>
+            r.running_balance != null ? Number(r.running_balance) : null,
+        },
+        {
+          header: "Ref #",
+          width: 14,
+          value: (r) => r.reference_number ?? "",
+        },
+        {
+          header: "Reconciled",
+          width: 12,
+          align: "center",
+          value: (r) => (r.is_reconciled ? "Yes" : "No"),
+        },
+      ];
+
+      const wb = createWorkbook({
+        company: entityName,
+        title: `${instrumentName} — Transactions`,
+      });
+      addSheet(wb, {
+        name: "Transactions",
+        columns,
+        rows: sortedTxns,
+        title: {
+          entityName,
+          reportTitle: "Debt Transactions",
+          subtitle: subtitleBits.join(" · "),
+          period: periodLine,
+        },
+        grandTotal: true,
+        footnote:
+          "Amount is the gross cash movement; To Principal / To Interest / To Fees show the allocation. Balance is the running principal balance after each posting.",
+      });
+
+      const safeName = instrumentName.replace(/[^a-zA-Z0-9_-]/g, "_");
+      await downloadWorkbook(wb, `${safeName}_transactions`);
+      toast.success("Transactions downloaded");
+    } catch (err) {
+      console.error("Transaction export failed:", err);
+      toast.error(
+        err instanceof Error ? err.message : "Export failed — check console"
+      );
+    }
   }
 
   const loadData = useCallback(async () => {
