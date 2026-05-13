@@ -256,7 +256,7 @@ export function AllocationTab({
   const [formDescription, setFormDescription] = useState("");
   const [formNotes, setFormNotes] = useState("");
   const [formScheduleType, setFormScheduleType] = useState<
-    "single_month" | "monthly_spread"
+    "single_month" | "monthly_spread" | "per_month_bulk"
   >("single_month");
   // Single month fields
   const [formYear, setFormYear] = useState(endYear);
@@ -488,7 +488,10 @@ export function AllocationTab({
       return;
     }
 
-    if (formScheduleType === "monthly_spread") {
+    if (
+      formScheduleType === "monthly_spread" ||
+      formScheduleType === "per_month_bulk"
+    ) {
       const months = countMonthsInRange(
         formStartYear,
         formStartMonth,
@@ -518,6 +521,61 @@ export function AllocationTab({
     }
 
     setSaving(true);
+
+    // Per-month bulk: create N single_month rows in one insert
+    if (formScheduleType === "per_month_bulk") {
+      const rows: Record<string, unknown>[] = [];
+      let y = formStartYear;
+      let m = formStartMonth;
+      while (
+        y < formEndYear ||
+        (y === formEndYear && m <= formEndMonth)
+      ) {
+        rows.push({
+          organization_id: organizationId,
+          source_entity_id: formSourceEntityId,
+          destination_entity_id: formDestEntityId,
+          master_account_id: formMasterAccountId,
+          destination_master_account_id: reclassMode
+            ? formDestMasterAccountId
+            : null,
+          amount,
+          description: formDescription.trim(),
+          notes: formNotes.trim() || null,
+          schedule_type: "single_month",
+          period_year: y,
+          period_month: m,
+          start_year: null,
+          start_month: null,
+          end_year: null,
+          end_month: null,
+          is_repeating: false,
+          repeat_end_year: null,
+          repeat_end_month: null,
+        });
+        m++;
+        if (m > 12) {
+          m = 1;
+          y++;
+        }
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        .from("allocation_adjustments")
+        .insert(rows);
+
+      if (error) {
+        toast.error(error.message);
+      } else {
+        toast.success(`Created ${rows.length} allocations`);
+        setShowDialog(false);
+        loadAllocations();
+        onAllocationActivated?.();
+      }
+      setSaving(false);
+      return;
+    }
 
     const payload: Record<string, unknown> = {
       organization_id: organizationId,
@@ -987,13 +1045,17 @@ export function AllocationTab({
               <Select
                 value={formScheduleType}
                 onValueChange={(v) => {
-                  const newType = v as "single_month" | "monthly_spread";
+                  const newType = v as
+                    | "single_month"
+                    | "monthly_spread"
+                    | "per_month_bulk";
                   setFormScheduleType(newType);
-                  // Disable repeating when switching to monthly_spread
-                  if (newType === "monthly_spread") {
+                  // Repeating only applies to single_month
+                  if (newType !== "single_month") {
                     setFormIsRepeating(false);
                   }
                 }}
+                disabled={!!editingId}
               >
                 <SelectTrigger className="h-8 text-xs">
                   <SelectValue />
@@ -1003,6 +1065,11 @@ export function AllocationTab({
                   <SelectItem value="monthly_spread">
                     Monthly Spread (divide across months)
                   </SelectItem>
+                  {!editingId && (
+                    <SelectItem value="per_month_bulk">
+                      Per-Month Entries (separate row per month)
+                    </SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -1225,12 +1292,30 @@ export function AllocationTab({
                       ` (${formatStatementAmount(parseFloat(formAmount) / countMonthsInRange(formStartYear, formStartMonth, formEndYear, formEndMonth), true)}/mo)`}
                   </p>
                 )}
+                {formScheduleType === "per_month_bulk" && (
+                  <p className="text-[11px] text-blue-600">
+                    Will create{" "}
+                    {countMonthsInRange(
+                      formStartYear,
+                      formStartMonth,
+                      formEndYear,
+                      formEndMonth
+                    )}{" "}
+                    separate single-month allocation row(s), one per month, each
+                    with the amount below. Each row can be edited or deleted
+                    independently afterwards.
+                  </p>
+                )}
               </div>
             )}
 
             {/* Amount */}
             <div className="space-y-1.5">
-              <Label className="text-xs">Amount</Label>
+              <Label className="text-xs">
+                {formScheduleType === "per_month_bulk"
+                  ? "Amount (per month)"
+                  : "Amount"}
+              </Label>
               <Input
                 type="number"
                 step="0.01"
@@ -1240,9 +1325,13 @@ export function AllocationTab({
                 className="h-8 text-xs"
               />
               <p className="text-[11px] text-muted-foreground">
-                {isReclass
-                  ? "This amount will be moved from the source account to the destination account within the same entity."
-                  : "This amount will be removed from the source entity and added to the destination entity for the selected account."}
+                {formScheduleType === "per_month_bulk"
+                  ? isReclass
+                    ? "This amount will be moved from the source account to the destination account each month, for every month in the range."
+                    : "This amount will be removed from the source entity and added to the destination entity each month, for every month in the range."
+                  : isReclass
+                    ? "This amount will be moved from the source account to the destination account within the same entity."
+                    : "This amount will be removed from the source entity and added to the destination entity for the selected account."}
               </p>
             </div>
 
@@ -1283,7 +1372,9 @@ export function AllocationTab({
                 ? "Saving..."
                 : editingId
                   ? "Update"
-                  : "Add Allocation"}
+                  : formScheduleType === "per_month_bulk"
+                    ? `Add ${countMonthsInRange(formStartYear, formStartMonth, formEndYear, formEndMonth)} Allocations`
+                    : "Add Allocation"}
             </Button>
           </DialogFooter>
         </DialogContent>
