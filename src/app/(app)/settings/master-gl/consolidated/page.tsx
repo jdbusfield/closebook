@@ -268,13 +268,14 @@ export default function ConsolidatedPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {[currentPeriod.year - 2, currentPeriod.year - 1, currentPeriod.year, currentPeriod.year + 1].map(
-                (year) => (
-                  <SelectItem key={year} value={String(year)}>
-                    {year}
-                  </SelectItem>
-                )
-              )}
+              {Array.from(
+                { length: currentPeriod.year + 1 - 2017 + 1 },
+                (_, i) => currentPeriod.year + 1 - i,
+              ).map((year) => (
+                <SelectItem key={year} value={String(year)}>
+                  {year}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
