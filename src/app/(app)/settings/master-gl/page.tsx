@@ -989,17 +989,9 @@ export default function MasterGLPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {Array.from(
-                    new Set([
-                      currentPeriod.year + 1,
-                      currentPeriod.year,
-                      currentPeriod.year - 1,
-                      currentPeriod.year - 2,
-                      currentPeriod.year - 3,
-                      2025,
-                    ]),
-                  )
-                    .sort((a, b) => b - a)
-                    .map((year) => (
+                    { length: currentPeriod.year + 1 - 2017 + 1 },
+                    (_, i) => currentPeriod.year + 1 - i,
+                  ).map((year) => (
                       <SelectItem key={year} value={String(year)}>
                         {year}
                       </SelectItem>
@@ -1891,12 +1883,10 @@ export default function MasterGLPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {[
-                    currentPeriod.year - 2,
-                    currentPeriod.year - 1,
-                    currentPeriod.year,
-                    currentPeriod.year + 1,
-                  ].map((year) => (
+                  {Array.from(
+                    { length: currentPeriod.year + 1 - 2017 + 1 },
+                    (_, i) => currentPeriod.year + 1 - i,
+                  ).map((year) => (
                     <SelectItem key={year} value={String(year)}>
                       {year}
                     </SelectItem>
