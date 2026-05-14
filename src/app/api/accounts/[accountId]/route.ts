@@ -20,7 +20,7 @@ interface PatchBody {
   accountNumber?: string | null;
   name?: string;
   classification?: string;
-  accountType?: string | null;
+  accountType?: string;
 }
 
 export async function PATCH(
@@ -86,7 +86,7 @@ export async function PATCH(
     account_number?: string | null;
     name?: string;
     classification?: string;
-    account_type?: string | null;
+    account_type?: string;
   } = {};
 
   if (Object.prototype.hasOwnProperty.call(body, "accountNumber")) {
@@ -125,13 +125,14 @@ export async function PATCH(
   }
 
   if (Object.prototype.hasOwnProperty.call(body, "accountType")) {
-    const v = body.accountType;
-    if (v === null || v === undefined) {
-      update.account_type = null;
-    } else {
-      const trimmed = String(v).trim();
-      update.account_type = trimmed.length > 0 ? trimmed : null;
+    const trimmed = String(body.accountType ?? "").trim();
+    if (trimmed.length === 0) {
+      return NextResponse.json(
+        { error: "accountType cannot be blank" },
+        { status: 400 }
+      );
     }
+    update.account_type = trimmed;
   }
 
   if (Object.keys(update).length === 0) {
