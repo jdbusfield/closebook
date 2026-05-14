@@ -67,7 +67,7 @@ const MONTHS = [
   "December",
 ];
 
-const YEARS = [2023, 2024, 2025, 2026, 2027, 2028];
+const YEARS = [2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026, 2027, 2028];
 
 function formatPeriod(year: number, month: number): string {
   return `${MONTHS[month - 1]?.slice(0, 3)} ${year}`;
