@@ -59,7 +59,9 @@ import {
   ChevronsUpDown,
   Link2,
   Download,
+  Pencil,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import {
   formatCurrency,
   getCurrentPeriod,
@@ -145,6 +147,133 @@ const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
+
+const CLASSIFICATION_OPTIONS: AccountClassification[] = [
+  "Asset",
+  "Liability",
+  "Equity",
+  "Revenue",
+  "Expense",
+];
+
+function ReclassifyPopover({
+  accountId,
+  currentClassification,
+  currentAccountType,
+  onSaved,
+}: {
+  accountId: string;
+  currentClassification: AccountClassification | undefined;
+  currentAccountType: string | undefined;
+  onSaved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [classification, setClassification] = useState<AccountClassification>(
+    currentClassification ?? "Expense"
+  );
+  const [accountType, setAccountType] = useState<string>(currentAccountType ?? "");
+
+  useEffect(() => {
+    if (open) {
+      setClassification(currentClassification ?? "Expense");
+      setAccountType(currentAccountType ?? "");
+    }
+  }, [open, currentClassification, currentAccountType]);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const response = await fetch(`/api/accounts/${accountId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          classification,
+          accountType: accountType.trim() || null,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(data.error || "Failed to reclassify");
+        return;
+      }
+      toast.success(`Reclassified to ${classification}`);
+      setOpen(false);
+      onSaved();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 w-6 p-0 opacity-40 hover:opacity-100"
+          aria-label="Reclassify account"
+        >
+          <Pencil className="h-3 w-3" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 space-y-3 p-3" align="start">
+        <div className="space-y-1">
+          <p className="text-sm font-medium">Reclassify account</p>
+          <p className="text-xs text-muted-foreground">
+            Fix the auto-classification if the import guessed wrong.
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Classification</Label>
+          <Select
+            value={classification}
+            onValueChange={(v) => setClassification(v as AccountClassification)}
+          >
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CLASSIFICATION_OPTIONS.map((c) => (
+                <SelectItem key={c} value={c} className="text-xs">
+                  {c}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Account Type</Label>
+          <Input
+            value={accountType}
+            onChange={(e) => setAccountType(e.target.value)}
+            placeholder="e.g. Bank, Other Current Liability"
+            className="h-8 text-xs"
+          />
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setOpen(false)}
+            disabled={saving}
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            className="h-7 text-xs"
+            onClick={handleSave}
+            disabled={saving}
+          >
+            {saving ? "Saving..." : "Save"}
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export default function TrialBalancePage() {
   const params = useParams();
@@ -1094,7 +1223,17 @@ export default function TrialBalancePage() {
                                 {b.accounts?.account_number ?? "---"}
                               </TableCell>
                               <TableCell className="font-medium">
-                                {b.accounts?.name}
+                                <div className="flex items-center gap-1">
+                                  <span>{b.accounts?.name}</span>
+                                  <ReclassifyPopover
+                                    accountId={b.account_id}
+                                    currentClassification={
+                                      b.accounts?.classification
+                                    }
+                                    currentAccountType={b.accounts?.account_type}
+                                    onSaved={() => loadBalances()}
+                                  />
+                                </div>
                               </TableCell>
                               <TableCell className="text-sm text-muted-foreground">
                                 {b.accounts?.account_type}
