@@ -2127,18 +2127,12 @@ export default function MasterGLPage() {
                                   <TableCell>
                                     <AccountCombobox
                                       disabled={inlineMappingId === account.id}
-                                      accounts={masterAccounts
-                                        .filter(
-                                          (m) =>
-                                            m.classification ===
-                                            account.classification,
-                                        )
-                                        .map((m) => ({
-                                          id: m.id,
-                                          account_number: m.account_number,
-                                          name: m.name,
-                                          account_type: m.classification,
-                                        }))}
+                                      accounts={masterAccounts.map((m) => ({
+                                        id: m.id,
+                                        account_number: m.account_number,
+                                        name: m.name,
+                                        account_type: m.classification,
+                                      }))}
                                       value=""
                                       onValueChange={(masterId) =>
                                         handleInlineMap(account, masterId)
@@ -2146,10 +2140,10 @@ export default function MasterGLPage() {
                                       placeholder={
                                         inlineMappingId === account.id
                                           ? "Mapping..."
-                                          : `Select ${account.classification} master account...`
+                                          : "Select any master GL account..."
                                       }
                                       searchPlaceholder="Search master accounts..."
-                                      emptyMessage={`No ${account.classification} master accounts available.`}
+                                      emptyMessage="No master accounts available."
                                       className="h-8"
                                     />
                                   </TableCell>
