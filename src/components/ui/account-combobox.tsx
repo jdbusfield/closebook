@@ -26,34 +26,82 @@ export interface AccountOption {
   secondary?: string;
 }
 
-interface AccountComboboxProps {
+type BaseProps = {
   accounts: AccountOption[];
-  value: string;
-  onValueChange: (value: string) => void;
   placeholder?: string;
   searchPlaceholder?: string;
   emptyMessage?: string;
   className?: string;
   disabled?: boolean;
-}
+};
 
-export function AccountCombobox({
-  accounts,
-  value,
-  onValueChange,
-  placeholder = "Select account...",
-  searchPlaceholder = "Search accounts...",
-  emptyMessage = "No account found.",
-  className,
-  disabled,
-}: AccountComboboxProps) {
+type SingleProps = BaseProps & {
+  multiple?: false;
+  value: string;
+  onValueChange: (value: string) => void;
+};
+
+type MultiProps = BaseProps & {
+  multiple: true;
+  values: string[];
+  onValuesChange: (values: string[]) => void;
+};
+
+export type AccountComboboxProps = SingleProps | MultiProps;
+
+export function AccountCombobox(props: AccountComboboxProps) {
+  const {
+    accounts,
+    placeholder = "Select account...",
+    searchPlaceholder = "Search accounts...",
+    emptyMessage = "No account found.",
+    className,
+    disabled,
+  } = props;
   const [open, setOpen] = React.useState(false);
 
-  const selected = accounts.find((a) => a.id === value);
+  const isMulti = props.multiple === true;
+  const selectedIds = isMulti
+    ? props.values
+    : props.value
+      ? [props.value]
+      : [];
+  const selectedSet = React.useMemo(
+    () => new Set(selectedIds),
+    [selectedIds]
+  );
 
-  const displayLabel = selected
-    ? `${selected.account_number ? `${selected.account_number} — ` : ""}${selected.name}`
-    : placeholder;
+  let displayLabel: React.ReactNode = placeholder;
+  if (isMulti) {
+    if (selectedIds.length === 1) {
+      const a = accounts.find((x) => x.id === selectedIds[0]);
+      if (a) {
+        displayLabel = `${a.account_number ? `${a.account_number} — ` : ""}${a.name}`;
+      }
+    } else if (selectedIds.length > 1) {
+      displayLabel = `${selectedIds.length} accounts selected`;
+    }
+  } else {
+    const a = accounts.find((x) => x.id === props.value);
+    if (a) {
+      displayLabel = `${a.account_number ? `${a.account_number} — ` : ""}${a.name}`;
+    }
+  }
+
+  function handleSelect(id: string) {
+    if (isMulti) {
+      const next = selectedSet.has(id)
+        ? selectedIds.filter((x) => x !== id)
+        : [...selectedIds, id];
+      props.onValuesChange(next);
+      // Keep popover open so the user can pick more without losing search.
+    } else {
+      props.onValueChange(id);
+      setOpen(false);
+    }
+  }
+
+  const hasSelection = selectedIds.length > 0;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -65,7 +113,7 @@ export function AccountCombobox({
           disabled={disabled}
           className={cn(
             "w-full min-w-0 justify-between text-sm font-normal overflow-hidden",
-            !value && "text-muted-foreground",
+            !hasSelection && "text-muted-foreground",
             className
           )}
         >
@@ -82,37 +130,37 @@ export function AccountCombobox({
           <CommandList>
             <CommandEmpty>{emptyMessage}</CommandEmpty>
             <CommandGroup>
-              {accounts.map((a) => (
-                <CommandItem
-                  key={a.id}
-                  value={`${a.account_number ?? ""} ${a.name} ${a.account_type ?? ""} ${a.secondary ?? ""}`}
-                  onSelect={() => {
-                    onValueChange(a.id);
-                    setOpen(false);
-                  }}
-                >
-                  <Check
-                    className={cn(
-                      "mr-2 h-4 w-4",
-                      value === a.id ? "opacity-100" : "opacity-0"
-                    )}
-                  />
-                  <span className="truncate">
-                    {a.account_number ? `${a.account_number} — ` : ""}
-                    {a.name}
-                    {a.account_type && (
-                      <span className="text-muted-foreground ml-2 text-xs">
-                        ({a.account_type})
-                      </span>
-                    )}
-                    {a.secondary && (
-                      <span className="text-muted-foreground ml-2 text-xs">
-                        {a.secondary}
-                      </span>
-                    )}
-                  </span>
-                </CommandItem>
-              ))}
+              {accounts.map((a) => {
+                const isSelected = selectedSet.has(a.id);
+                return (
+                  <CommandItem
+                    key={a.id}
+                    value={`${a.account_number ?? ""} ${a.name} ${a.account_type ?? ""} ${a.secondary ?? ""}`}
+                    onSelect={() => handleSelect(a.id)}
+                  >
+                    <Check
+                      className={cn(
+                        "mr-2 h-4 w-4",
+                        isSelected ? "opacity-100" : "opacity-0"
+                      )}
+                    />
+                    <span className="truncate">
+                      {a.account_number ? `${a.account_number} — ` : ""}
+                      {a.name}
+                      {a.account_type && (
+                        <span className="text-muted-foreground ml-2 text-xs">
+                          ({a.account_type})
+                        </span>
+                      )}
+                      {a.secondary && (
+                        <span className="text-muted-foreground ml-2 text-xs">
+                          {a.secondary}
+                        </span>
+                      )}
+                    </span>
+                  </CommandItem>
+                );
+              })}
             </CommandGroup>
           </CommandList>
         </Command>
