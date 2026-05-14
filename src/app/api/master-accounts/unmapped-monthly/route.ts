@@ -100,7 +100,7 @@ export async function GET(request: Request) {
   const allAccounts = await fetchAllAccounts(
     adminClient,
     entityIds,
-    "id, entity_id, name, account_number, classification, account_type"
+    "id, entity_id, name, account_number, classification, account_type, account_sub_type"
   );
 
   // Filter to unmapped accounts
@@ -167,6 +167,8 @@ export async function GET(request: Request) {
       name: a.name,
       accountNumber: a.account_number,
       classification: a.classification,
+      accountType: a.account_type ?? null,
+      accountSubType: a.account_sub_type ?? null,
       monthlyBalances,
     };
   });
