@@ -101,6 +101,14 @@ interface SyncProgress {
   unmatchedNames?: string[];
 }
 
+interface MasterAccountOption {
+  id: string;
+  account_number: string | null;
+  name: string;
+  classification: AccountClassification;
+  account_type: string | null;
+}
+
 interface UnmatchedRow {
   id: string;
   entityId: string;
@@ -304,6 +312,13 @@ export default function TrialBalancePage() {
   const [selectedAccounts, setSelectedAccounts] = useState<Record<string, string>>({});
   const [resolving, setResolving] = useState<string | null>(null);
   const [openPopovers, setOpenPopovers] = useState<Record<string, boolean>>({});
+  const [masterAccounts, setMasterAccounts] = useState<MasterAccountOption[]>([]);
+  // For each unmatched row id, the master account chosen (if the user is
+  // creating + mapping rather than mapping to an existing entity account).
+  const [selectedMasters, setSelectedMasters] = useState<Record<string, string>>({});
+  const [openCreatePopovers, setOpenCreatePopovers] = useState<
+    Record<string, boolean>
+  >({});
 
   const loadBalances = useCallback(async () => {
     setLoading(true);
@@ -363,11 +378,37 @@ export default function TrialBalancePage() {
     setEntityAccounts((data as EntityAccount[]) ?? []);
   }, [supabase, entityId]);
 
+  const loadMasterAccounts = useCallback(async () => {
+    // Resolve the entity's organization, then fetch active master accounts
+    // for that org. Master accounts are chart-scoped — we surface every
+    // active one rather than filter by chart, since the user just needs to
+    // pick whichever one this QBO account corresponds to.
+    const { data: entity } = await supabase
+      .from("entities")
+      .select("organization_id")
+      .eq("id", entityId)
+      .single();
+    const orgId = (entity as { organization_id?: string } | null)?.organization_id;
+    if (!orgId) {
+      setMasterAccounts([]);
+      return;
+    }
+    const { data } = await supabase
+      .from("master_accounts")
+      .select("id, account_number, name, classification, account_type")
+      .eq("organization_id", orgId)
+      .eq("is_active", true)
+      .order("classification")
+      .order("account_number");
+    setMasterAccounts((data as MasterAccountOption[]) ?? []);
+  }, [supabase, entityId]);
+
   useEffect(() => {
     loadBalances();
     loadUnmatched();
     loadEntityAccounts();
-  }, [loadBalances, loadUnmatched, loadEntityAccounts]);
+    loadMasterAccounts();
+  }, [loadBalances, loadUnmatched, loadEntityAccounts, loadMasterAccounts]);
 
   async function handleSync() {
     setSyncing(true);
@@ -562,22 +603,41 @@ export default function TrialBalancePage() {
   }
 
   async function handleCreateAccount(unmatchedRowId: string) {
+    const masterAccountId = selectedMasters[unmatchedRowId];
+    if (!masterAccountId) {
+      toast.error("Pick a master GL account first");
+      return;
+    }
     setResolving(unmatchedRowId);
     try {
       const response = await fetch("/api/tb-unmatched/create-account", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ unmatchedRowId }),
+        body: JSON.stringify({ unmatchedRowId, masterAccountId }),
       });
 
       if (response.ok) {
         const data = await response.json();
         const extra = data.autoResolvedCount ?? 0;
+        const master = masterAccounts.find((m) => m.id === masterAccountId);
+        const masterLabel = master
+          ? `${master.account_number ?? ""} ${master.name}`.trim()
+          : "master account";
         toast.success(
           extra > 0
-            ? `Created ${data.classification} account "${data.name}" and posted balances across ${extra + 1} months`
-            : `Created ${data.classification} account "${data.name}" and posted its balance`
+            ? `Created "${data.name}" → ${masterLabel} and posted balances across ${extra + 1} months`
+            : `Created "${data.name}" → ${masterLabel}`
         );
+        setSelectedMasters((prev) => {
+          const next = { ...prev };
+          delete next[unmatchedRowId];
+          return next;
+        });
+        setOpenCreatePopovers((prev) => {
+          const next = { ...prev };
+          delete next[unmatchedRowId];
+          return next;
+        });
         loadBalances();
         loadUnmatched();
         loadEntityAccounts();
@@ -589,43 +649,6 @@ export default function TrialBalancePage() {
       toast.error("Failed to create account — network error");
     }
     setResolving(null);
-  }
-
-  async function handleCreateAllAccounts() {
-    if (unmatchedRows.length === 0) return;
-    setResolving("__all__");
-    let created = 0;
-    const failures: string[] = [];
-    for (const row of unmatchedRows) {
-      try {
-        const response = await fetch("/api/tb-unmatched/create-account", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ unmatchedRowId: row.id }),
-        });
-        if (response.ok) created++;
-        else {
-          const err = await response.json().catch(() => ({}));
-          failures.push(`${row.qboAccountName}: ${err.error ?? "failed"}`);
-        }
-      } catch {
-        failures.push(`${row.qboAccountName}: network error`);
-      }
-    }
-    setResolving(null);
-    if (created > 0) {
-      toast.success(
-        `Created ${created} account${created === 1 ? "" : "s"} from QBO trial balance`
-      );
-    }
-    if (failures.length > 0) {
-      toast.error(
-        `${failures.length} failed — ${failures.slice(0, 3).join("; ")}${failures.length > 3 ? "…" : ""}`
-      );
-    }
-    loadBalances();
-    loadUnmatched();
-    loadEntityAccounts();
   }
 
   function toggleCollapse(classification: string) {
@@ -863,28 +886,15 @@ export default function TrialBalancePage() {
       {unmatchedRows.length > 0 && (
         <Card className="border-amber-200 dark:border-amber-800">
           <CardHeader>
-            <div className="flex items-start justify-between gap-4">
-              <CardTitle className="flex items-center gap-2">
-                <Link2 className="h-5 w-5 text-amber-600" />
-                Unmatched QBO Accounts ({unmatchedRows.length})
-              </CardTitle>
-              <Button
-                size="sm"
-                onClick={handleCreateAllAccounts}
-                disabled={resolving === "__all__"}
-              >
-                {resolving === "__all__" ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
-                Create All Accounts
-              </Button>
-            </div>
+            <CardTitle className="flex items-center gap-2">
+              <Link2 className="h-5 w-5 text-amber-600" />
+              Unmatched QBO Accounts ({unmatchedRows.length})
+            </CardTitle>
             <CardDescription>
               These accounts from the QuickBooks trial balance don&apos;t exist
-              in this entity&apos;s chart of accounts yet. Click <strong>Create</strong> to
-              add a new account for the QBO ledger (classification inferred
-              from the name), or map to an existing account if you already
-              have one for it.
+              in this entity&apos;s chart of accounts yet. Either map to an
+              existing entity account, or pick a master GL account to create a
+              new entity account and link it in one step.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -1028,17 +1038,105 @@ export default function TrialBalancePage() {
                               )}
                             </Button>
                           ) : (
-                            <Button
-                              size="sm"
-                              onClick={() => handleCreateAccount(row.id)}
-                              disabled={resolving === row.id}
+                            <Popover
+                              open={openCreatePopovers[row.id] ?? false}
+                              onOpenChange={(open) =>
+                                setOpenCreatePopovers((prev) => ({
+                                  ...prev,
+                                  [row.id]: open,
+                                }))
+                              }
                             >
-                              {resolving === row.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                "Create Account"
-                              )}
-                            </Button>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={resolving === row.id}
+                                >
+                                  {resolving === row.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    "Create + Map"
+                                  )}
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent
+                                className="w-[360px] p-0"
+                                align="end"
+                              >
+                                <div className="px-3 py-2 border-b">
+                                  <p className="text-sm font-medium">
+                                    Pick a master GL account
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    Creates an entity account with the same
+                                    classification + account type and links it
+                                    to the master in one step.
+                                  </p>
+                                </div>
+                                <Command>
+                                  <CommandInput placeholder="Search master GL accounts..." />
+                                  <CommandList>
+                                    <CommandEmpty>
+                                      No master accounts found.
+                                    </CommandEmpty>
+                                    {Object.entries(
+                                      masterAccounts.reduce<
+                                        Record<string, MasterAccountOption[]>
+                                      >((acc, m) => {
+                                        const key = m.classification;
+                                        if (!acc[key]) acc[key] = [];
+                                        acc[key].push(m);
+                                        return acc;
+                                      }, {})
+                                    ).map(([classification, options]) => (
+                                      <CommandGroup
+                                        key={classification}
+                                        heading={classification}
+                                      >
+                                        {options.map((m) => (
+                                          <CommandItem
+                                            key={m.id}
+                                            value={`${m.account_number ?? ""} ${m.name} ${m.account_type ?? ""}`}
+                                            onSelect={() => {
+                                              setSelectedMasters((prev) => ({
+                                                ...prev,
+                                                [row.id]: m.id,
+                                              }));
+                                              handleCreateAccount(row.id);
+                                            }}
+                                          >
+                                            <Check
+                                              className={cn(
+                                                "mr-2 h-4 w-4",
+                                                selectedMasters[row.id] === m.id
+                                                  ? "opacity-100"
+                                                  : "opacity-0"
+                                              )}
+                                            />
+                                            <div className="flex flex-col">
+                                              <span className="text-sm">
+                                                {m.account_number && (
+                                                  <span className="font-mono text-muted-foreground mr-1">
+                                                    {m.account_number}
+                                                  </span>
+                                                )}
+                                                {m.name}
+                                              </span>
+                                              {m.account_type && (
+                                                <span className="text-xs text-muted-foreground">
+                                                  {m.account_type}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </CommandItem>
+                                        ))}
+                                      </CommandGroup>
+                                    ))}
+                                  </CommandList>
+                                </Command>
+                              </PopoverContent>
+                            </Popover>
                           )}
                         </div>
                       </TableCell>

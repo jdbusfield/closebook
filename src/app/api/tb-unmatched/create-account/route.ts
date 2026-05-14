@@ -5,6 +5,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 // Resolve an unmatched QBO trial balance row by CREATING a new account in
 // the entity's chart of accounts (rather than mapping to an existing one).
 // Also writes the GL balance for the period so the trial balance ties.
+//
+// Classification + account_type come from the caller — no auto-classifier.
+// Either pass `masterAccountId` (we copy classification + account_type from
+// that master and also create the mapping in master_account_mappings) or
+// pass explicit `classification` + `accountType`.
 
 const VALID_CLASSIFICATIONS = new Set([
   "Asset",
@@ -13,129 +18,6 @@ const VALID_CLASSIFICATIONS = new Set([
   "Revenue",
   "Expense",
 ]);
-
-// Heuristic classification from account name. Order matters — "Deferred
-// Revenue" must resolve to Liability before "Revenue" matches.
-function inferClassification(nameRaw: string): {
-  classification: string;
-  accountType: string;
-} {
-  const n = nameRaw.toLowerCase();
-  const has = (...terms: string[]) => terms.some((t) => n.includes(t));
-
-  if (has("accumulated depreciation", "accum depr", "accum. depr")) {
-    return { classification: "Asset", accountType: "Fixed Asset" };
-  }
-  if (has("accounts payable", "a/p", "ap ")) {
-    return { classification: "Liability", accountType: "Accounts Payable" };
-  }
-  if (has("accounts receivable", "a/r", "ar ")) {
-    return { classification: "Asset", accountType: "Accounts Receivable" };
-  }
-  if (has("deferred revenue", "deferred income", "unearned")) {
-    return { classification: "Liability", accountType: "Other Current Liability" };
-  }
-  if (has("credit card")) {
-    return { classification: "Liability", accountType: "Credit Card" };
-  }
-  if (
-    has(
-      "payable",
-      "accrued",
-      "loan",
-      "note payable",
-      "line of credit",
-      "mortgage",
-      "tax payable"
-    )
-  ) {
-    return { classification: "Liability", accountType: "Other Current Liability" };
-  }
-  if (
-    has(
-      "equity",
-      "capital",
-      "retained earnings",
-      "member",
-      "partner",
-      "shareholder",
-      "distribution",
-      "draw",
-      "contribution"
-    )
-  ) {
-    return { classification: "Equity", accountType: "Equity" };
-  }
-  // Well-known bank-name fragments. These are specific enough that they
-  // strongly imply a deposit account even when the QBO label doesn't include
-  // the literal word "bank" / "checking" — e.g. "Chase BusCking (Legacy)"
-  // collapses "Business Checking" into "BusCking" with no separator, so the
-  // generic "checking" substring misses. Keep this list tight to avoid
-  // false positives (e.g. don't add bare "operating" — it hits expenses).
-  if (
-    has(
-      "chase",
-      "wells fargo",
-      "bank of america",
-      "bofa",
-      "citibank",
-      "u.s. bank",
-      "us bank",
-      "pnc bank",
-      "first republic",
-      "jpmorgan",
-      "jp morgan",
-      "manufacturers bank",
-      "buscking",
-      "bus cking",
-      "bus ckg",
-      "buschecking"
-    )
-  ) {
-    return { classification: "Asset", accountType: "Bank" };
-  }
-  if (
-    has(
-      "cash",
-      "bank",
-      "checking",
-      "savings",
-      "money market"
-    )
-  ) {
-    return { classification: "Asset", accountType: "Bank" };
-  }
-  if (has("prepaid", "deposit")) {
-    return { classification: "Asset", accountType: "Other Current Asset" };
-  }
-  if (has("inventory")) {
-    return { classification: "Asset", accountType: "Other Current Asset" };
-  }
-  if (
-    has(
-      "fixed asset",
-      "equipment",
-      "vehicle",
-      "furniture",
-      "building",
-      "land",
-      "leasehold"
-    )
-  ) {
-    return { classification: "Asset", accountType: "Fixed Asset" };
-  }
-  if (has("goodwill", "intangible")) {
-    return { classification: "Asset", accountType: "Other Asset" };
-  }
-  if (has("revenue", "sales", "income")) {
-    return { classification: "Revenue", accountType: "Income" };
-  }
-  if (has("cost of goods", "cogs", "cost of sales")) {
-    return { classification: "Expense", accountType: "Cost of Goods Sold" };
-  }
-  // Default bucket
-  return { classification: "Expense", accountType: "Expense" };
-}
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -149,12 +31,14 @@ export async function POST(request: Request) {
   const body = await request.json();
   const {
     unmatchedRowId,
+    masterAccountId,
     classification: suppliedClassification,
     accountType: suppliedAccountType,
     accountNumber,
     name: suppliedName,
   } = body as {
     unmatchedRowId?: string;
+    masterAccountId?: string;
     classification?: string;
     accountType?: string;
     accountNumber?: string | null;
@@ -188,6 +72,69 @@ export async function POST(request: Request) {
     );
   }
 
+  // Resolve classification + account_type either from a chosen master account
+  // (preferred — also yields a mapping for free) or from explicit caller
+  // input. No name-based inference fallback.
+  let classification: string;
+  let accountType: string;
+  let masterAccountRow: { id: string; organization_id: string } | null = null;
+
+  if (masterAccountId) {
+    const { data: master, error: masterErr } = await admin
+      .from("master_accounts")
+      .select("id, organization_id, classification, account_type")
+      .eq("id", masterAccountId)
+      .single();
+    if (masterErr || !master) {
+      return NextResponse.json(
+        { error: "Master account not found" },
+        { status: 404 }
+      );
+    }
+
+    // Sanity-check that the chosen master belongs to the same org as the
+    // entity owning the unmatched row.
+    const { data: entityOrg } = await admin
+      .from("entities")
+      .select("organization_id")
+      .eq("id", unmatchedRow.entity_id)
+      .single();
+    if (
+      !entityOrg ||
+      entityOrg.organization_id !== master.organization_id
+    ) {
+      return NextResponse.json(
+        { error: "Master account belongs to a different organization" },
+        { status: 400 }
+      );
+    }
+
+    classification = master.classification;
+    accountType = (master.account_type ?? "").toString().trim() || "Other";
+    masterAccountRow = { id: master.id, organization_id: master.organization_id };
+  } else {
+    if (
+      !suppliedClassification ||
+      !VALID_CLASSIFICATIONS.has(suppliedClassification)
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Either pick a master GL account or provide a classification (Asset, Liability, Equity, Revenue, or Expense).",
+        },
+        { status: 400 }
+      );
+    }
+    if (!suppliedAccountType || suppliedAccountType.trim().length === 0) {
+      return NextResponse.json(
+        { error: "accountType is required when not using a master GL account." },
+        { status: 400 }
+      );
+    }
+    classification = suppliedClassification;
+    accountType = suppliedAccountType.trim();
+  }
+
   const rawName = (suppliedName ?? unmatchedRow.qbo_account_name ?? "").trim();
   if (!rawName) {
     return NextResponse.json({ error: "Account name is required" }, { status: 400 });
@@ -201,9 +148,6 @@ export async function POST(request: Request) {
   let parsedNumber: string | null = null;
   let name = rawName;
   if (accountNumber === undefined) {
-    // Match a leading number-like token: digits with optional `.` or `-`
-    // separators (e.g. "10100", "10100.1", "10100-01"), followed by one of
-    // `- : . ·` or whitespace, then the rest of the name.
     const m = rawName.match(/^(\d+(?:[.\-]\d+)*)\s*[-:·.]?\s+(.+)$/);
     if (m && m[2].trim().length > 0) {
       parsedNumber = m[1];
@@ -212,18 +156,6 @@ export async function POST(request: Request) {
   }
   const resolvedAccountNumber =
     accountNumber !== undefined ? (accountNumber ?? null) : parsedNumber;
-
-  // Resolve classification / account_type — either supplied by the caller or
-  // inferred from the name.
-  const inferred = inferClassification(name);
-  const classification =
-    suppliedClassification && VALID_CLASSIFICATIONS.has(suppliedClassification)
-      ? suppliedClassification
-      : inferred.classification;
-  const accountType =
-    suppliedAccountType && suppliedAccountType.trim().length > 0
-      ? suppliedAccountType.trim()
-      : inferred.accountType;
 
   // If an account with the same qbo_id already exists for this entity, reuse
   // it rather than creating a duplicate.
@@ -246,8 +178,6 @@ export async function POST(request: Request) {
         qbo_id: unmatchedRow.qbo_account_id ?? null,
         account_number: resolvedAccountNumber,
         name,
-        // Preserve the original QBO-display string as fully_qualified_name
-        // so existing match-by-name logic continues to work on re-sync.
         fully_qualified_name: rawName,
         classification,
         account_type: accountType,
@@ -264,11 +194,33 @@ export async function POST(request: Request) {
     accountId = created.id;
   }
 
+  // If the caller picked a master account, also create the mapping (or leave
+  // it alone if one already exists).
+  if (masterAccountRow) {
+    const { error: mappingErr } = await admin
+      .from("master_account_mappings")
+      .insert({
+        master_account_id: masterAccountRow.id,
+        entity_id: unmatchedRow.entity_id,
+        account_id: accountId,
+        created_by: user.id,
+      });
+    // 23505 = unique-violation: the mapping already exists, which is fine.
+    if (
+      mappingErr &&
+      (mappingErr as { code?: string }).code !== "23505"
+    ) {
+      return NextResponse.json(
+        { error: mappingErr.message ?? "Failed to create master mapping" },
+        { status: 500 }
+      );
+    }
+  }
+
   // Find sibling unresolved rows for the same logical QBO account across
   // other periods so we can back-fill the new mapping in one shot. Match by
   // qbo_account_id when present (most precise), otherwise fall back to the
-  // qbo_account_name string — many "(deleted)" QBO accounts arrive without an
-  // id and are only correlated by name.
+  // qbo_account_name string.
   let siblingsQuery = admin
     .from("tb_unmatched_rows")
     .select("id, period_year, period_month, debit, credit")
@@ -291,7 +243,6 @@ export async function POST(request: Request) {
   const allRows = [unmatchedRow, ...(siblings ?? [])];
   const nowIso = new Date().toISOString();
 
-  // Upsert gl_balances for the current row and every sibling
   const balanceRows = allRows.map((r) => {
     const d = Number(r.debit ?? 0);
     const c = Number(r.credit ?? 0);
@@ -311,7 +262,6 @@ export async function POST(request: Request) {
     onConflict: "entity_id,account_id,period_year,period_month",
   });
 
-  // Mark every matched unmatched row (current + siblings) as resolved
   await admin
     .from("tb_unmatched_rows")
     .update({
@@ -330,6 +280,7 @@ export async function POST(request: Request) {
     classification,
     accountType,
     name,
+    masterAccountId: masterAccountRow?.id ?? null,
     autoResolvedCount: siblings?.length ?? 0,
   });
 }
