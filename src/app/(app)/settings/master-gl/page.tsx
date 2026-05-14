@@ -214,6 +214,7 @@ export default function MasterGLPage() {
   const [mappingSheetOpen, setMappingSheetOpen] = useState(false);
   const [selectedEntityId, setSelectedEntityId] = useState<string>("");
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
+  const [inlineMappingId, setInlineMappingId] = useState<string | null>(null);
 
   // Bulk setup state
   const [showBulkDialog, setShowBulkDialog] = useState(false);
@@ -714,6 +715,39 @@ export default function MasterGLPage() {
     setSelectedAccountIds([]);
     await loadMappings();
     await loadUnmappedMonthly();
+  }
+
+  async function handleInlineMap(
+    account: UnmappedAccountMonthly,
+    masterAccountId: string,
+  ) {
+    if (!masterAccountId) return;
+    setInlineMappingId(account.id);
+    try {
+      const response = await fetch("/api/master-accounts/mappings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          masterAccountId,
+          entityId: account.entityId,
+          accountId: account.id,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(data.error || "Failed to map account");
+        return;
+      }
+      const masterLabel = masterAccounts.find((m) => m.id === masterAccountId);
+      toast.success(
+        masterLabel
+          ? `Mapped "${account.name}" → ${masterLabel.account_number} ${masterLabel.name}`
+          : `Mapped "${account.name}"`,
+      );
+      await Promise.all([loadMappings(), loadUnmappedMonthly()]);
+    } finally {
+      setInlineMappingId(null);
+    }
   }
 
   async function handleRemoveMapping(mappingId: string) {
@@ -2051,6 +2085,9 @@ export default function MasterGLPage() {
                                 <TableHead className="sticky left-[80px] bg-background z-10 min-w-[200px]">
                                   Account Name
                                 </TableHead>
+                                <TableHead className="min-w-[260px]">
+                                  Map to Master GL
+                                </TableHead>
                                 {MONTH_LABELS.map((m) => (
                                   <TableHead
                                     key={m}
@@ -2087,6 +2124,35 @@ export default function MasterGLPage() {
                                       </Badge>
                                     </div>
                                   </TableCell>
+                                  <TableCell>
+                                    <AccountCombobox
+                                      disabled={inlineMappingId === account.id}
+                                      accounts={masterAccounts
+                                        .filter(
+                                          (m) =>
+                                            m.classification ===
+                                            account.classification,
+                                        )
+                                        .map((m) => ({
+                                          id: m.id,
+                                          account_number: m.account_number,
+                                          name: m.name,
+                                          account_type: m.classification,
+                                        }))}
+                                      value=""
+                                      onValueChange={(masterId) =>
+                                        handleInlineMap(account, masterId)
+                                      }
+                                      placeholder={
+                                        inlineMappingId === account.id
+                                          ? "Mapping..."
+                                          : `Select ${account.classification} master account...`
+                                      }
+                                      searchPlaceholder="Search master accounts..."
+                                      emptyMessage={`No ${account.classification} master accounts available.`}
+                                      className="h-8"
+                                    />
+                                  </TableCell>
                                   {MONTH_LABELS.map((_, i) => {
                                     const balance =
                                       account.monthlyBalances[i + 1];
@@ -2109,6 +2175,7 @@ export default function MasterGLPage() {
                                 <TableCell className="sticky left-[80px] bg-amber-100/80 z-10 text-sm">
                                   Subtotal
                                 </TableCell>
+                                <TableCell />
                                 {MONTH_LABELS.map((_, i) => {
                                   const subtotal = monthlySubtotals[i + 1];
                                   return (
