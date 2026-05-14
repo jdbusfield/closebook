@@ -213,7 +213,7 @@ export default function MasterGLPage() {
   );
   const [mappingSheetOpen, setMappingSheetOpen] = useState(false);
   const [selectedEntityId, setSelectedEntityId] = useState<string>("");
-  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
 
   // Bulk setup state
   const [showBulkDialog, setShowBulkDialog] = useState(false);
@@ -600,7 +600,7 @@ export default function MasterGLPage() {
   function openMappingSheet(account: MasterAccount) {
     setMappingAccount(account);
     setSelectedEntityId("");
-    setSelectedAccountId("");
+    setSelectedAccountIds([]);
     // Pre-fill year-adjustment inputs from existing record for the totals year
     const existing = yearAdjustments.find(
       (a) => a.master_account_id === account.id && a.period_year === totalsYear,
@@ -671,30 +671,47 @@ export default function MasterGLPage() {
   }
 
   async function handleAddMapping() {
-    if (!mappingAccount || !selectedEntityId || !selectedAccountId) {
-      toast.error("Please select an entity and account");
+    if (!mappingAccount || !selectedEntityId || selectedAccountIds.length === 0) {
+      toast.error("Please select an entity and at least one account");
       return;
     }
 
-    const response = await fetch("/api/master-accounts/mappings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        masterAccountId: mappingAccount.id,
-        entityId: selectedEntityId,
-        accountId: selectedAccountId,
-      }),
-    });
+    const results = await Promise.all(
+      selectedAccountIds.map(async (accountId) => {
+        const response = await fetch("/api/master-accounts/mappings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            masterAccountId: mappingAccount.id,
+            entityId: selectedEntityId,
+            accountId,
+          }),
+        });
+        const data = await response.json().catch(() => ({}));
+        return { accountId, ok: response.ok, error: data?.error as string | undefined };
+      })
+    );
 
-    const data = await response.json();
-    if (!response.ok) {
-      toast.error(data.error || "Failed to create mapping");
-      return;
+    const succeeded = results.filter((r) => r.ok).length;
+    const failures = results.filter((r) => !r.ok);
+
+    if (succeeded > 0) {
+      toast.success(
+        succeeded === 1
+          ? "Account mapped successfully"
+          : `${succeeded} accounts mapped successfully`
+      );
+    }
+    if (failures.length > 0) {
+      const sampleError = failures[0].error ?? "Failed to create mapping";
+      toast.error(
+        failures.length === 1
+          ? sampleError
+          : `${failures.length} of ${results.length} failed — ${sampleError}`
+      );
     }
 
-    toast.success("Account mapped successfully");
-    setSelectedEntityId("");
-    setSelectedAccountId("");
+    setSelectedAccountIds([]);
     await loadMappings();
     await loadUnmappedMonthly();
   }
@@ -1629,7 +1646,7 @@ export default function MasterGLPage() {
                       value={selectedEntityId}
                       onValueChange={(v) => {
                         setSelectedEntityId(v);
-                        setSelectedAccountId("");
+                        setSelectedAccountIds([]);
                       }}
                     >
                       <SelectTrigger>
@@ -1647,17 +1664,35 @@ export default function MasterGLPage() {
 
                   {selectedEntityId && (
                     <div className="space-y-2">
-                      <Label>Entity Account</Label>
+                      <div className="flex items-center justify-between">
+                        <Label>Entity Accounts</Label>
+                        {selectedAccountIds.length > 0 && (
+                          <button
+                            type="button"
+                            className="text-xs text-muted-foreground hover:text-foreground"
+                            onClick={() => setSelectedAccountIds([])}
+                          >
+                            Clear ({selectedAccountIds.length})
+                          </button>
+                        )}
+                      </div>
                       <AccountCombobox
+                        multiple
                         accounts={getAvailableAccounts(selectedEntityId).map((a) => ({
                           id: a.id,
                           account_number: a.account_number,
                           name: a.name,
                           account_type: a.classification,
                         }))}
-                        value={selectedAccountId}
-                        onValueChange={setSelectedAccountId}
+                        values={selectedAccountIds}
+                        onValuesChange={setSelectedAccountIds}
+                        placeholder="Select one or more accounts..."
                       />
+                      <p className="text-xs text-muted-foreground">
+                        Tip: select multiple accounts to map them all to this
+                        master account at once. Click an item again to
+                        deselect it.
+                      </p>
                       {getAvailableAccounts(selectedEntityId).length === 0 && (
                         <p className="text-xs text-muted-foreground">
                           All accounts for this entity are already mapped.
@@ -1668,11 +1703,15 @@ export default function MasterGLPage() {
 
                   <Button
                     onClick={handleAddMapping}
-                    disabled={!selectedEntityId || !selectedAccountId}
+                    disabled={
+                      !selectedEntityId || selectedAccountIds.length === 0
+                    }
                     className="w-full"
                   >
                     <Link2 className="mr-2 h-4 w-4" />
-                    Map Account
+                    {selectedAccountIds.length > 1
+                      ? `Map ${selectedAccountIds.length} Accounts`
+                      : "Map Account"}
                   </Button>
                 </div>
 
