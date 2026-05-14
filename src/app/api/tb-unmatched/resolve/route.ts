@@ -74,40 +74,70 @@ export async function POST(request: Request) {
       .eq("id", accountId);
   }
 
-  // 4. Create the gl_balance entry
-  const debit = Number(unmatchedRow.debit ?? 0);
-  const credit = Number(unmatchedRow.credit ?? 0);
+  // 4. Find sibling unresolved rows for the same logical QBO account across
+  //    other periods so we can back-fill the same mapping in one shot.
+  let siblingsQuery = adminClient
+    .from("tb_unmatched_rows")
+    .select("id, period_year, period_month, debit, credit")
+    .eq("entity_id", unmatchedRow.entity_id)
+    .is("resolved_account_id", null)
+    .neq("id", unmatchedRowId);
 
-  await adminClient.from("gl_balances").upsert(
-    {
+  if (unmatchedRow.qbo_account_id) {
+    siblingsQuery = siblingsQuery.eq(
+      "qbo_account_id",
+      unmatchedRow.qbo_account_id
+    );
+  } else {
+    siblingsQuery = siblingsQuery
+      .is("qbo_account_id", null)
+      .eq("qbo_account_name", unmatchedRow.qbo_account_name);
+  }
+
+  const { data: siblings } = await siblingsQuery;
+  const allRows = [unmatchedRow, ...(siblings ?? [])];
+  const nowIso = new Date().toISOString();
+
+  // 5. Upsert gl_balances for the current row + every sibling period
+  const balanceRows = allRows.map((r) => {
+    const d = Number(r.debit ?? 0);
+    const c = Number(r.credit ?? 0);
+    return {
       entity_id: unmatchedRow.entity_id,
       account_id: accountId,
-      period_year: unmatchedRow.period_year,
-      period_month: unmatchedRow.period_month,
-      debit_total: debit,
-      credit_total: credit,
-      ending_balance: debit - credit,
-      net_change: debit - credit,
-      synced_at: new Date().toISOString(),
-    },
-    {
-      onConflict: "entity_id,account_id,period_year,period_month",
-    }
-  );
+      period_year: r.period_year,
+      period_month: r.period_month,
+      debit_total: d,
+      credit_total: c,
+      ending_balance: d - c,
+      net_change: d - c,
+      synced_at: nowIso,
+    };
+  });
+  await adminClient.from("gl_balances").upsert(balanceRows, {
+    onConflict: "entity_id,account_id,period_year,period_month",
+  });
 
-  // 5. Mark the unmatched row as resolved
+  // 6. Mark every matched unmatched row (current + siblings) as resolved
   await adminClient
     .from("tb_unmatched_rows")
     .update({
       resolved_account_id: accountId,
-      resolved_at: new Date().toISOString(),
+      resolved_at: nowIso,
       resolved_by: user.id,
     })
-    .eq("id", unmatchedRowId);
+    .in(
+      "id",
+      allRows.map((r) => r.id)
+    );
+
+  const debit = Number(unmatchedRow.debit ?? 0);
+  const credit = Number(unmatchedRow.credit ?? 0);
 
   return NextResponse.json({
     success: true,
     message: "Account mapped and GL balance created",
+    autoResolvedCount: siblings?.length ?? 0,
     resolvedRow: {
       id: unmatchedRowId,
       accountId,

@@ -402,7 +402,13 @@ export default function TrialBalancePage() {
       });
 
       if (response.ok) {
-        toast.success("Account mapped and GL balance created");
+        const data = await response.json().catch(() => ({}));
+        const extra = data.autoResolvedCount ?? 0;
+        toast.success(
+          extra > 0
+            ? `Account mapped — also back-filled ${extra} prior month${extra === 1 ? "" : "s"}`
+            : "Account mapped and GL balance created"
+        );
         loadBalances();
         loadUnmatched();
         loadEntityAccounts();
@@ -432,8 +438,11 @@ export default function TrialBalancePage() {
 
       if (response.ok) {
         const data = await response.json();
+        const extra = data.autoResolvedCount ?? 0;
         toast.success(
-          `Created ${data.classification} account "${data.name}" and posted its balance`
+          extra > 0
+            ? `Created ${data.classification} account "${data.name}" and posted balances across ${extra + 1} months`
+            : `Created ${data.classification} account "${data.name}" and posted its balance`
         );
         loadBalances();
         loadUnmatched();
