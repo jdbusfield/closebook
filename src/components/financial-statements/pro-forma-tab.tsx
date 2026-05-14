@@ -220,9 +220,9 @@ export function ProFormaTab({
   const [formEntityId, setFormEntityId] = useState<string>("");
   const [formMasterAccountId, setFormMasterAccountId] = useState<string>("");
   const [formOffsetMasterAccountId, setFormOffsetMasterAccountId] = useState<string>("");
-  const [formYear, setFormYear] = useState(endYear);
-  const [formMonth, setFormMonth] = useState(endMonth);
-  const [formAmount, setFormAmount] = useState("");
+  const [formPeriods, setFormPeriods] = useState<
+    Array<{ year: number; month: number; amount: string }>
+  >([{ year: endYear, month: endMonth, amount: "" }]);
   const [formDescription, setFormDescription] = useState("");
   const [formNotes, setFormNotes] = useState("");
 
@@ -353,11 +353,36 @@ export function ProFormaTab({
     );
     setFormMasterAccountId("");
     setFormOffsetMasterAccountId("");
-    setFormYear(endYear);
-    setFormMonth(endMonth);
-    setFormAmount("");
+    setFormPeriods([{ year: endYear, month: endMonth, amount: "" }]);
     setFormDescription("");
     setFormNotes("");
+  }
+
+  function updatePeriod(
+    index: number,
+    patch: Partial<{ year: number; month: number; amount: string }>
+  ) {
+    setFormPeriods((prev) =>
+      prev.map((p, i) => (i === index ? { ...p, ...patch } : p))
+    );
+  }
+
+  function addPeriod() {
+    setFormPeriods((prev) => {
+      const last = prev[prev.length - 1];
+      const baseYear = last?.year ?? endYear;
+      const baseMonth = last?.month ?? endMonth;
+      // Auto-advance to the next month
+      const nextMonth = baseMonth === 12 ? 1 : baseMonth + 1;
+      const nextYear = baseMonth === 12 ? baseYear + 1 : baseYear;
+      return [...prev, { year: nextYear, month: nextMonth, amount: "" }];
+    });
+  }
+
+  function removePeriod(index: number) {
+    setFormPeriods((prev) =>
+      prev.length === 1 ? prev : prev.filter((_, i) => i !== index)
+    );
   }
 
   // Open add dialog
@@ -372,9 +397,13 @@ export function ProFormaTab({
     setFormEntityId(adj.entity_id);
     setFormMasterAccountId(adj.master_account_id);
     setFormOffsetMasterAccountId(adj.offset_master_account_id ?? "");
-    setFormYear(adj.period_year);
-    setFormMonth(adj.period_month);
-    setFormAmount(String(adj.amount));
+    setFormPeriods([
+      {
+        year: adj.period_year,
+        month: adj.period_month,
+        amount: String(adj.amount),
+      },
+    ]);
     setFormDescription(adj.description);
     setFormNotes(adj.notes ?? "");
     setShowDialog(true);
@@ -392,31 +421,58 @@ export function ProFormaTab({
       return;
     }
 
-    const amount = parseFloat(formAmount);
-    if (isNaN(amount)) {
-      toast.error("Amount must be a valid number");
+    if (formPeriods.length === 0) {
+      toast.error("Add at least one period");
       return;
+    }
+
+    const parsedPeriods: Array<{ year: number; month: number; amount: number }> = [];
+    for (let i = 0; i < formPeriods.length; i++) {
+      const p = formPeriods[i];
+      const amount = parseFloat(p.amount);
+      if (isNaN(amount)) {
+        toast.error(`Row ${i + 1}: amount must be a valid number`);
+        return;
+      }
+      parsedPeriods.push({ year: p.year, month: p.month, amount });
+    }
+
+    // Check for duplicate (year, month) pairs in this submission
+    const seen = new Set<string>();
+    for (const p of parsedPeriods) {
+      const key = `${p.year}-${p.month}`;
+      if (seen.has(key)) {
+        toast.error(
+          `Duplicate period ${MONTHS[p.month - 1]} ${p.year} — combine into one row`
+        );
+        return;
+      }
+      seen.add(key);
     }
 
     setSaving(true);
 
-    const payload = {
+    const sharedPayload = {
       organization_id: organizationId,
       entity_id: formEntityId,
       master_account_id: formMasterAccountId,
       offset_master_account_id: formOffsetMasterAccountId || null,
-      period_year: formYear,
-      period_month: formMonth,
-      amount,
       description: formDescription.trim(),
       notes: formNotes.trim() || null,
     };
 
     if (editingId) {
+      // Edit affects a single existing row only.
+      const p = parsedPeriods[0];
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error } = await (supabase as any)
         .from("pro_forma_adjustments")
-        .update(payload)
+        .update({
+          ...sharedPayload,
+          period_year: p.year,
+          period_month: p.month,
+          amount: p.amount,
+        })
         .eq("id", editingId);
 
       if (error) {
@@ -428,15 +484,26 @@ export function ProFormaTab({
         onAdjustmentActivated?.();
       }
     } else {
+      const rows = parsedPeriods.map((p) => ({
+        ...sharedPayload,
+        period_year: p.year,
+        period_month: p.month,
+        amount: p.amount,
+      }));
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error } = await (supabase as any)
         .from("pro_forma_adjustments")
-        .insert(payload);
+        .insert(rows);
 
       if (error) {
         toast.error(error.message);
       } else {
-        toast.success("Adjustment created");
+        toast.success(
+          rows.length === 1
+            ? "Adjustment created"
+            : `${rows.length} adjustments created`
+        );
         setShowDialog(false);
         loadAdjustments();
         onAdjustmentActivated?.();
@@ -695,60 +762,98 @@ export function ProFormaTab({
               </p>
             </div>
 
-            {/* Period */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs">Month</Label>
-                <Select
-                  value={String(formMonth)}
-                  onValueChange={(v) => setFormMonth(parseInt(v))}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MONTHS.map((m, i) => (
-                      <SelectItem key={i + 1} value={String(i + 1)}>
-                        {m}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Year</Label>
-                <Select
-                  value={String(formYear)}
-                  onValueChange={(v) => setFormYear(parseInt(v))}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {YEARS.map((y) => (
-                      <SelectItem key={y} value={String(y)}>
-                        {y}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Amount */}
+            {/* Periods + Amounts (multi-row in create mode, single row in edit) */}
             <div className="space-y-1.5">
-              <Label className="text-xs">Amount</Label>
-              <Input
-                type="number"
-                step="0.01"
-                value={formAmount}
-                onChange={(e) => setFormAmount(e.target.value)}
-                placeholder="e.g. 5000 or -5000"
-                className="h-8 text-xs"
-              />
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">
+                  {editingId ? "Period & Amount" : "Periods & Amounts"}
+                </Label>
+                {!editingId && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={addPeriod}
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1" />
+                    Add month
+                  </Button>
+                )}
+              </div>
+              <div className="space-y-2">
+                {formPeriods.map((p, i) => (
+                  <div
+                    key={i}
+                    className="grid grid-cols-[1fr_90px_1fr_auto] gap-2 items-center"
+                  >
+                    <Select
+                      value={String(p.month)}
+                      onValueChange={(v) =>
+                        updatePeriod(i, { month: parseInt(v) })
+                      }
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MONTHS.map((m, mi) => (
+                          <SelectItem key={mi + 1} value={String(mi + 1)}>
+                            {m}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select
+                      value={String(p.year)}
+                      onValueChange={(v) =>
+                        updatePeriod(i, { year: parseInt(v) })
+                      }
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {YEARS.map((y) => (
+                          <SelectItem key={y} value={String(y)}>
+                            {y}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={p.amount}
+                      onChange={(e) =>
+                        updatePeriod(i, { amount: e.target.value })
+                      }
+                      placeholder="e.g. 5000 or -5000"
+                      className="h-8 text-xs"
+                    />
+                    {!editingId ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                        onClick={() => removePeriod(i)}
+                        disabled={formPeriods.length === 1}
+                        aria-label="Remove period"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    ) : (
+                      <span className="w-8" />
+                    )}
+                  </div>
+                ))}
+              </div>
               <p className="text-[11px] text-muted-foreground">
                 Positive increases debits (expenses, assets). Negative increases
                 credits (revenue, liabilities).
+                {!editingId &&
+                  " Each row becomes its own adjustment sharing the description and notes below."}
               </p>
             </div>
 
@@ -789,7 +894,9 @@ export function ProFormaTab({
                 ? "Saving..."
                 : editingId
                   ? "Update"
-                  : "Add Adjustment"}
+                  : formPeriods.length > 1
+                    ? `Add ${formPeriods.length} Adjustments`
+                    : "Add Adjustment"}
             </Button>
           </DialogFooter>
         </DialogContent>
