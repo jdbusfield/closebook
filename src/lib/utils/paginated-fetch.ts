@@ -213,6 +213,7 @@ interface AccountRow {
   account_number: string | null;
   classification: string;
   account_type?: string;
+  account_sub_type?: string | null;
   current_balance?: number;
 }
 

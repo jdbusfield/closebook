@@ -117,6 +117,8 @@ interface UnmappedAccountMonthly {
   name: string;
   accountNumber: string | null;
   classification: string;
+  accountType: string | null;
+  accountSubType: string | null;
   monthlyBalances: Record<number, number>;
 }
 
@@ -2108,7 +2110,7 @@ export default function MasterGLPage() {
                                     {account.accountNumber ?? "—"}
                                   </TableCell>
                                   <TableCell className="sticky left-[80px] bg-amber-50/80 z-10">
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex flex-wrap items-center gap-1.5">
                                       <span className="text-sm">
                                         {account.name}
                                       </span>
@@ -2122,6 +2124,20 @@ export default function MasterGLPage() {
                                       >
                                         {account.classification}
                                       </Badge>
+                                      {account.accountType && (
+                                        <Badge
+                                          variant="outline"
+                                          className="text-xs bg-muted/60 text-muted-foreground"
+                                          title="QuickBooks AccountType"
+                                        >
+                                          {account.accountType}
+                                          {account.accountSubType &&
+                                          account.accountSubType !==
+                                            account.accountType
+                                            ? ` · ${account.accountSubType}`
+                                            : ""}
+                                        </Badge>
+                                      )}
                                     </div>
                                   </TableCell>
                                   <TableCell>
