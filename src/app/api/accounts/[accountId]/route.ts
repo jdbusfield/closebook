@@ -3,14 +3,24 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 // PATCH /api/accounts/:accountId — update the editable fields on an entity
-// account. Currently supports account_number and name. Scoped through RLS:
-// the user must be a member of the organization that owns the account's
-// entity; the admin client is used for the write but only after verifying
-// the caller's session and organization membership.
+// account. Supports account_number, name, classification, and account_type.
+// Scoped through RLS: the user must be a member of the organization that
+// owns the account's entity; the admin client is used for the write but
+// only after verifying the caller's session and organization membership.
+
+const VALID_CLASSIFICATIONS = new Set([
+  "Asset",
+  "Liability",
+  "Equity",
+  "Revenue",
+  "Expense",
+]);
 
 interface PatchBody {
   accountNumber?: string | null;
   name?: string;
+  classification?: string;
+  accountType?: string | null;
 }
 
 export async function PATCH(
@@ -72,7 +82,12 @@ export async function PATCH(
   }
 
   // Build the update payload from the fields the caller actually supplied.
-  const update: { account_number?: string | null; name?: string } = {};
+  const update: {
+    account_number?: string | null;
+    name?: string;
+    classification?: string;
+    account_type?: string | null;
+  } = {};
 
   if (Object.prototype.hasOwnProperty.call(body, "accountNumber")) {
     const v = body.accountNumber;
@@ -95,6 +110,30 @@ export async function PATCH(
     update.name = v;
   }
 
+  if (Object.prototype.hasOwnProperty.call(body, "classification")) {
+    const v = (body.classification ?? "").trim();
+    if (!VALID_CLASSIFICATIONS.has(v)) {
+      return NextResponse.json(
+        {
+          error:
+            "classification must be one of Asset, Liability, Equity, Revenue, Expense",
+        },
+        { status: 400 }
+      );
+    }
+    update.classification = v;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, "accountType")) {
+    const v = body.accountType;
+    if (v === null || v === undefined) {
+      update.account_type = null;
+    } else {
+      const trimmed = String(v).trim();
+      update.account_type = trimmed.length > 0 ? trimmed : null;
+    }
+  }
+
   if (Object.keys(update).length === 0) {
     return NextResponse.json(
       { error: "No editable fields supplied" },
@@ -106,7 +145,7 @@ export async function PATCH(
     .from("accounts")
     .update(update)
     .eq("id", accountId)
-    .select("id, account_number, name")
+    .select("id, account_number, name, classification, account_type")
     .single();
 
   if (updateErr || !updated) {

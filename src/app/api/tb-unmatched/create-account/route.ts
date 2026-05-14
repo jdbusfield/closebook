@@ -66,6 +66,34 @@ function inferClassification(nameRaw: string): {
   ) {
     return { classification: "Equity", accountType: "Equity" };
   }
+  // Well-known bank-name fragments. These are specific enough that they
+  // strongly imply a deposit account even when the QBO label doesn't include
+  // the literal word "bank" / "checking" — e.g. "Chase BusCking (Legacy)"
+  // collapses "Business Checking" into "BusCking" with no separator, so the
+  // generic "checking" substring misses. Keep this list tight to avoid
+  // false positives (e.g. don't add bare "operating" — it hits expenses).
+  if (
+    has(
+      "chase",
+      "wells fargo",
+      "bank of america",
+      "bofa",
+      "citibank",
+      "u.s. bank",
+      "us bank",
+      "pnc bank",
+      "first republic",
+      "jpmorgan",
+      "jp morgan",
+      "manufacturers bank",
+      "buscking",
+      "bus cking",
+      "bus ckg",
+      "buschecking"
+    )
+  ) {
+    return { classification: "Asset", accountType: "Bank" };
+  }
   if (
     has(
       "cash",
