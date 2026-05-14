@@ -572,12 +572,10 @@ export default function TrialBalancePage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {[
-                    currentPeriod.year - 2,
-                    currentPeriod.year - 1,
-                    currentPeriod.year,
-                    currentPeriod.year + 1,
-                  ].map((y) => (
+                  {Array.from(
+                    { length: currentPeriod.year + 1 - 2017 + 1 },
+                    (_, i) => 2017 + i
+                  ).map((y) => (
                     <SelectItem key={y} value={String(y)}>
                       {y}
                     </SelectItem>
