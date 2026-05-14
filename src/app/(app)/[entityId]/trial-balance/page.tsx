@@ -182,6 +182,11 @@ function ReclassifyPopover({
   }, [open, currentClassification, currentAccountType]);
 
   async function handleSave() {
+    const trimmedType = accountType.trim();
+    if (trimmedType.length === 0) {
+      toast.error("Account Type cannot be blank");
+      return;
+    }
     setSaving(true);
     try {
       const response = await fetch(`/api/accounts/${accountId}`, {
@@ -189,7 +194,7 @@ function ReclassifyPopover({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           classification,
-          accountType: accountType.trim() || null,
+          accountType: trimmedType,
         }),
       });
       const data = await response.json().catch(() => ({}));
