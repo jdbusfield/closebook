@@ -96,11 +96,15 @@ export async function GET(request: Request) {
     mappedAccountIds = new Set(mappings.map((m) => m.account_id));
   }
 
-  // Get all active entity accounts (paginated)
+  // Get all entity accounts (paginated). Include inactive ones too — when a
+  // QBO account is deleted it gets marked is_active=false locally, but its
+  // historical TB balances live on and we still need to surface them as
+  // unmapped so the user can map them somewhere.
   const allAccounts = await fetchAllAccounts(
     adminClient,
     entityIds,
-    "id, entity_id, name, account_number, classification, account_type, account_sub_type"
+    "id, entity_id, name, account_number, classification, account_type, account_sub_type",
+    false
   );
 
   // Filter to unmapped accounts
