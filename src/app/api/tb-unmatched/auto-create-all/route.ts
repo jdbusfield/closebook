@@ -81,42 +81,52 @@ export async function POST(request: Request) {
     });
   }
 
-  // Group rows by qbo_account_id. Rows missing a qbo_id can't be resolved
-  // via QBO lookup and stay unresolved.
+  // Group rows by qbo_account_id when present, otherwise by qbo_account_name
+  // so legacy unmatched rows without a captured id can still be resolved via
+  // a name lookup against the QBO chart.
   type Group = {
-    qboId: string;
+    qboId: string | null;
     qboName: string;
     rows: typeof unresolved;
   };
-  const groups = new Map<string, Group>();
-  let missingIdCount = 0;
+  const groupsById = new Map<string, Group>();
+  const groupsByName = new Map<string, Group>();
 
   for (const r of unresolved) {
-    const qboId = r.qbo_account_id;
-    if (!qboId) {
-      missingIdCount++;
-      continue;
-    }
-    const existing = groups.get(qboId);
-    if (existing) {
-      existing.rows.push(r);
+    if (r.qbo_account_id) {
+      const existing = groupsById.get(r.qbo_account_id);
+      if (existing) {
+        existing.rows.push(r);
+      } else {
+        groupsById.set(r.qbo_account_id, {
+          qboId: r.qbo_account_id,
+          qboName: r.qbo_account_name,
+          rows: [r],
+        });
+      }
     } else {
-      groups.set(qboId, {
-        qboId,
-        qboName: r.qbo_account_name,
-        rows: [r],
-      });
+      const key = (r.qbo_account_name ?? "").trim().toLowerCase();
+      if (!key) continue;
+      const existing = groupsByName.get(key);
+      if (existing) {
+        existing.rows.push(r);
+      } else {
+        groupsByName.set(key, {
+          qboId: null,
+          qboName: r.qbo_account_name,
+          rows: [r],
+        });
+      }
     }
   }
 
-  if (groups.size === 0) {
+  if (groupsById.size === 0 && groupsByName.size === 0) {
     return NextResponse.json({
       success: true,
       createdAccounts: 0,
       resolvedRows: 0,
-      skipped: missingIdCount,
-      message:
-        "No unmatched rows carry a QBO account id — pick a master GL account manually",
+      skipped: 0,
+      message: "No unmatched rows to resolve",
     });
   }
 
@@ -138,19 +148,9 @@ export async function POST(request: Request) {
   const accessToken = await refreshTokenIfNeeded(conn, admin);
   const apiBaseUrl = "https://quickbooks.api.intuit.com";
 
-  // QBO query: SELECT * FROM Account WHERE Id IN ('1','2',...). Batch in
-  // chunks to keep URLs short — 50 ids per query is well under any limit.
-  const qboAccountsById = new Map<string, QboAccount>();
-  const idList = Array.from(groups.keys());
-  const CHUNK = 50;
-
-  for (let i = 0; i < idList.length; i += CHUNK) {
-    const chunk = idList.slice(i, i + CHUNK);
-    const inClause = chunk.map((id) => `'${id.replace(/'/g, "''")}'`).join(",");
-    const query = `SELECT * FROM Account WHERE Id IN (${inClause})`;
-
+  async function qboQuery(query: string): Promise<QboAccount[]> {
     const resp = await fetch(
-      `${apiBaseUrl}/v3/company/${conn.realm_id}/query?query=${encodeURIComponent(query)}`,
+      `${apiBaseUrl}/v3/company/${conn!.realm_id}/query?query=${encodeURIComponent(query)}`,
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -160,16 +160,45 @@ export async function POST(request: Request) {
     );
     if (!resp.ok) {
       const text = await resp.text();
-      return NextResponse.json(
-        { error: `QBO query failed (HTTP ${resp.status}): ${text}` },
-        { status: 502 }
-      );
+      throw new Error(`QBO query failed (HTTP ${resp.status}): ${text}`);
     }
     const json = await resp.json();
-    const accounts: QboAccount[] = json.QueryResponse?.Account ?? [];
-    for (const a of accounts) {
-      qboAccountsById.set(String(a.Id), a);
+    return (json.QueryResponse?.Account ?? []) as QboAccount[];
+  }
+
+  // Pull the full QBO chart of accounts including inactive ones. QBO's
+  // query syntax filters to Active=true by default, which silently drops
+  // deleted accounts like "Chase BusCking (Legacy) (deleted)" — exactly
+  // the most common unmatched case. Paginate through every account so we
+  // can resolve by id AND by name.
+  const qboAccountsById = new Map<string, QboAccount>();
+  const qboAccountsByName = new Map<string, QboAccount>();
+  const PAGE = 1000;
+  let startPos = 1;
+  try {
+    while (true) {
+      const accounts = await qboQuery(
+        `SELECT * FROM Account WHERE Active IN (true, false) STARTPOSITION ${startPos} MAXRESULTS ${PAGE}`
+      );
+      for (const a of accounts) {
+        qboAccountsById.set(String(a.Id), a);
+        const name = (a.Name ?? "").trim().toLowerCase();
+        if (name && !qboAccountsByName.has(name)) {
+          qboAccountsByName.set(name, a);
+        }
+        const fqn = (a.FullyQualifiedName ?? "").trim().toLowerCase();
+        if (fqn && !qboAccountsByName.has(fqn)) {
+          qboAccountsByName.set(fqn, a);
+        }
+      }
+      if (accounts.length < PAGE) break;
+      startPos += PAGE;
     }
+  } catch (e) {
+    return NextResponse.json(
+      { error: (e as Error).message },
+      { status: 502 }
+    );
   }
 
   // For each group, either reuse an existing local account (matched by
@@ -181,31 +210,51 @@ export async function POST(request: Request) {
   const nowIso = new Date().toISOString();
   const errors: string[] = [];
 
-  for (const group of groups.values()) {
-    const qboAccount = qboAccountsById.get(group.qboId);
+  const allGroups: Group[] = [
+    ...groupsById.values(),
+    ...groupsByName.values(),
+  ];
+
+  for (const group of allGroups) {
+    // Resolve the QBO source record. Prefer id; otherwise fall back to a
+    // case-insensitive name lookup against the full QBO chart.
+    let qboAccount: QboAccount | undefined;
+    if (group.qboId) {
+      qboAccount = qboAccountsById.get(group.qboId);
+    }
+    if (!qboAccount) {
+      const key = (group.qboName ?? "").trim().toLowerCase();
+      if (key) qboAccount = qboAccountsByName.get(key);
+    }
 
     let accountId: string | null = null;
 
     // Check if we already have a local account for this qbo_id (the source
     // of unmatched rows is usually that sync-accounts hasn't run lately, so
     // sometimes the account is already there and the match logic just missed).
-    const { data: existing } = await admin
-      .from("accounts")
-      .select("id")
-      .eq("entity_id", entityId)
-      .eq("qbo_id", group.qboId)
-      .maybeSingle();
+    const effectiveQboId = group.qboId ?? qboAccount?.Id ?? null;
+    if (effectiveQboId) {
+      const { data: existing } = await admin
+        .from("accounts")
+        .select("id")
+        .eq("entity_id", entityId)
+        .eq("qbo_id", effectiveQboId)
+        .maybeSingle();
+      if (existing?.id) {
+        accountId = existing.id;
+        reusedAccounts++;
+      }
+    }
 
-    if (existing?.id) {
-      accountId = existing.id;
-      reusedAccounts++;
-    } else if (qboAccount) {
-      // Create from QBO data — full fidelity.
+    if (!accountId && qboAccount) {
+      // Create from QBO data — full fidelity. Use the QBO record's own id
+      // (even when the unmatched row didn't carry one) so the qbo_id link
+      // is set for future syncs.
       const { data: created, error: createErr } = await admin
         .from("accounts")
         .insert({
           entity_id: entityId,
-          qbo_id: group.qboId,
+          qbo_id: String(qboAccount.Id),
           account_number: qboAccount.AcctNum ?? null,
           name: qboAccount.Name,
           fully_qualified_name:
@@ -221,13 +270,15 @@ export async function POST(request: Request) {
         .single();
       if (createErr || !created) {
         errors.push(
-          `Failed to create "${group.qboName}" (id ${group.qboId}): ${createErr?.message ?? "unknown"}`
+          `Failed to create "${group.qboName}" (id ${group.qboId ?? "—"}): ${createErr?.message ?? "unknown"}`
         );
         continue;
       }
       accountId = created.id;
       createdAccounts++;
-    } else {
+    }
+
+    if (!accountId) {
       notFoundInQbo++;
       continue;
     }
@@ -281,8 +332,7 @@ export async function POST(request: Request) {
     reusedAccounts,
     resolvedRows,
     notFoundInQbo,
-    missingId: missingIdCount,
-    skipped: notFoundInQbo + missingIdCount,
+    skipped: notFoundInQbo,
     errors: errors.length > 0 ? errors : undefined,
   });
 }
