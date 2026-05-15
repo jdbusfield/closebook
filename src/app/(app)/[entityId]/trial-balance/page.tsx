@@ -60,8 +60,17 @@ import {
   Link2,
   Download,
   Pencil,
+  Plus,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   formatCurrency,
   getCurrentPeriod,
@@ -319,6 +328,13 @@ export default function TrialBalancePage() {
   const [openCreatePopovers, setOpenCreatePopovers] = useState<
     Record<string, boolean>
   >({});
+  // New account dialog (top-of-page button)
+  const [newAccountOpen, setNewAccountOpen] = useState(false);
+  const [newAccountSaving, setNewAccountSaving] = useState(false);
+  const [newAccountName, setNewAccountName] = useState("");
+  const [newAccountNumber, setNewAccountNumber] = useState("");
+  const [newAccountMasterId, setNewAccountMasterId] = useState("");
+  const [newAccountMasterOpen, setNewAccountMasterOpen] = useState(false);
 
   const loadBalances = useCallback(async () => {
     setLoading(true);
@@ -602,6 +618,56 @@ export default function TrialBalancePage() {
     setResolving(null);
   }
 
+  function resetNewAccountForm() {
+    setNewAccountName("");
+    setNewAccountNumber("");
+    setNewAccountMasterId("");
+    setNewAccountMasterOpen(false);
+  }
+
+  async function handleCreateNewAccount() {
+    const trimmedName = newAccountName.trim();
+    if (!trimmedName) {
+      toast.error("Account name is required");
+      return;
+    }
+    if (!newAccountMasterId) {
+      toast.error("Pick a master GL account");
+      return;
+    }
+    setNewAccountSaving(true);
+    try {
+      const response = await fetch("/api/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entityId,
+          name: trimmedName,
+          accountNumber: newAccountNumber.trim() || null,
+          masterAccountId: newAccountMasterId,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(data.error || "Failed to create account");
+        return;
+      }
+      const extra = data.autoResolvedCount ?? 0;
+      toast.success(
+        extra > 0
+          ? `Created "${trimmedName}" and back-filled ${extra} unmatched period${extra === 1 ? "" : "s"}`
+          : `Created "${trimmedName}"`
+      );
+      setNewAccountOpen(false);
+      resetNewAccountForm();
+      loadBalances();
+      loadUnmatched();
+      loadEntityAccounts();
+    } finally {
+      setNewAccountSaving(false);
+    }
+  }
+
   async function handleCreateAccount(unmatchedRowId: string) {
     const masterAccountId = selectedMasters[unmatchedRowId];
     if (!masterAccountId) {
@@ -765,6 +831,16 @@ export default function TrialBalancePage() {
           >
             <Download className="mr-2 h-4 w-4" />
             Export CSV
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              resetNewAccountForm();
+              setNewAccountOpen(true);
+            }}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            New Account
           </Button>
           <Button
             variant="outline"
@@ -1409,6 +1485,164 @@ export default function TrialBalancePage() {
           )}
         </CardContent>
       </Card>
+
+      {/* New Account dialog */}
+      <Dialog
+        open={newAccountOpen}
+        onOpenChange={(open) => {
+          setNewAccountOpen(open);
+          if (!open) resetNewAccountForm();
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>New trial-balance account</DialogTitle>
+            <DialogDescription>
+              Creates an entity account in this entity&apos;s chart of
+              accounts, links it to the chosen master GL account, and
+              back-fills any unresolved QBO trial-balance rows that match the
+              account name across every period.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Account Name</Label>
+              <Input
+                value={newAccountName}
+                onChange={(e) => setNewAccountName(e.target.value)}
+                placeholder="e.g. Chase Operating - 1234"
+                className="h-8 text-sm"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Any unresolved QBO unmatched rows for this entity whose name
+                matches will be auto-resolved.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Account Number (optional)</Label>
+              <Input
+                value={newAccountNumber}
+                onChange={(e) => setNewAccountNumber(e.target.value)}
+                placeholder="e.g. 10100"
+                className="h-8 text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Master GL Account</Label>
+              <Popover
+                open={newAccountMasterOpen}
+                onOpenChange={setNewAccountMasterOpen}
+              >
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    className={cn(
+                      "w-full justify-between h-8 text-sm font-normal",
+                      !newAccountMasterId && "text-muted-foreground"
+                    )}
+                  >
+                    {newAccountMasterId
+                      ? (() => {
+                          const m = masterAccounts.find(
+                            (x) => x.id === newAccountMasterId
+                          );
+                          return m
+                            ? `${m.account_number ?? ""} ${m.name}`.trim()
+                            : "Select master GL account...";
+                        })()
+                      : "Select master GL account..."}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="w-[--radix-popover-trigger-width] p-0"
+                  align="start"
+                >
+                  <Command>
+                    <CommandInput placeholder="Search master accounts..." />
+                    <CommandList>
+                      <CommandEmpty>No master accounts found.</CommandEmpty>
+                      {Object.entries(
+                        masterAccounts.reduce<
+                          Record<string, MasterAccountOption[]>
+                        >((acc, m) => {
+                          const key = m.classification;
+                          if (!acc[key]) acc[key] = [];
+                          acc[key].push(m);
+                          return acc;
+                        }, {})
+                      ).map(([classification, options]) => (
+                        <CommandGroup
+                          key={classification}
+                          heading={classification}
+                        >
+                          {options.map((m) => (
+                            <CommandItem
+                              key={m.id}
+                              value={`${m.account_number ?? ""} ${m.name} ${m.account_type ?? ""}`}
+                              onSelect={() => {
+                                setNewAccountMasterId(m.id);
+                                setNewAccountMasterOpen(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  newAccountMasterId === m.id
+                                    ? "opacity-100"
+                                    : "opacity-0"
+                                )}
+                              />
+                              <div className="flex flex-col">
+                                <span className="text-sm">
+                                  {m.account_number && (
+                                    <span className="font-mono text-muted-foreground mr-1">
+                                      {m.account_number}
+                                    </span>
+                                  )}
+                                  {m.name}
+                                </span>
+                                {m.account_type && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {m.account_type}
+                                  </span>
+                                )}
+                              </div>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      ))}
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              <p className="text-[11px] text-muted-foreground">
+                Classification + account type are copied from this master.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setNewAccountOpen(false)}
+              disabled={newAccountSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleCreateNewAccount}
+              disabled={newAccountSaving}
+            >
+              {newAccountSaving ? "Creating..." : "Create Account"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
