@@ -61,6 +61,7 @@ import {
   Download,
   Pencil,
   Plus,
+  Wand2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -335,6 +336,9 @@ export default function TrialBalancePage() {
   const [newAccountNumber, setNewAccountNumber] = useState("");
   const [newAccountMasterId, setNewAccountMasterId] = useState("");
   const [newAccountMasterOpen, setNewAccountMasterOpen] = useState(false);
+  // Auto-create-all (button on the Unmatched panel that pulls classification
+  // from QBO for every unresolved row and creates the matching accounts).
+  const [autoCreating, setAutoCreating] = useState(false);
 
   const loadBalances = useCallback(async () => {
     setLoading(true);
@@ -717,6 +721,41 @@ export default function TrialBalancePage() {
     setResolving(null);
   }
 
+  async function handleAutoCreateAll() {
+    if (unmatchedRows.length === 0) return;
+    setAutoCreating(true);
+    try {
+      const response = await fetch("/api/tb-unmatched/auto-create-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entityId }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        toast.error(data.error || "Auto-create failed");
+        return;
+      }
+      const created = data.createdAccounts ?? 0;
+      const reused = data.reusedAccounts ?? 0;
+      const resolved = data.resolvedRows ?? 0;
+      const skipped = data.skipped ?? 0;
+      const parts: string[] = [];
+      if (created > 0) parts.push(`created ${created} account${created === 1 ? "" : "s"}`);
+      if (reused > 0) parts.push(`linked ${reused} existing`);
+      if (resolved > 0) parts.push(`resolved ${resolved} period${resolved === 1 ? "" : "s"}`);
+      if (skipped > 0) parts.push(`${skipped} still need manual mapping`);
+      toast.success(
+        parts.length > 0 ? parts.join(", ") : "Nothing to auto-create"
+      );
+      loadBalances();
+      loadUnmatched();
+      loadEntityAccounts();
+    } catch {
+      toast.error("Auto-create failed — network error");
+    }
+    setAutoCreating(false);
+  }
+
   function toggleCollapse(classification: string) {
     setCollapsed((prev) => ({
       ...prev,
@@ -962,16 +1001,33 @@ export default function TrialBalancePage() {
       {unmatchedRows.length > 0 && (
         <Card className="border-amber-200 dark:border-amber-800">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Link2 className="h-5 w-5 text-amber-600" />
-              Unmatched QBO Accounts ({unmatchedRows.length})
-            </CardTitle>
-            <CardDescription>
-              These accounts from the QuickBooks trial balance don&apos;t exist
-              in this entity&apos;s chart of accounts yet. Either map to an
-              existing entity account, or pick a master GL account to create a
-              new entity account and link it in one step.
-            </CardDescription>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Link2 className="h-5 w-5 text-amber-600" />
+                  Unmatched QBO Accounts ({unmatchedRows.length})
+                </CardTitle>
+                <CardDescription className="mt-1">
+                  These accounts from the QuickBooks trial balance don&apos;t
+                  exist in this entity&apos;s chart of accounts yet. Click
+                  &ldquo;Auto-Create All&rdquo; to pull classification from QBO
+                  and create them in one shot, or resolve them individually
+                  below.
+                </CardDescription>
+              </div>
+              <Button
+                onClick={handleAutoCreateAll}
+                disabled={autoCreating || unmatchedRows.length === 0}
+                className="shrink-0"
+              >
+                {autoCreating ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Wand2 className="mr-2 h-4 w-4" />
+                )}
+                Auto-Create All ({unmatchedRows.length})
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <Table>
