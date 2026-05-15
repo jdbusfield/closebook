@@ -263,6 +263,11 @@ export default function MasterGLPage() {
   const [unmappedLoading, setUnmappedLoading] = useState(false);
   const [unmappedEntityFilter, setUnmappedEntityFilter] =
     useState("all");
+  // Free-text search across entity accounts in the Unmapped section. When
+  // populated, the section switches to a flat search-results view that also
+  // includes ALREADY-MAPPED accounts so the user can look up an account and
+  // see the master GL it's currently mapped to.
+  const [unmappedSearch, setUnmappedSearch] = useState("");
   const [collapsedEntities, setCollapsedEntities] = useState<
     Record<string, boolean>
   >({});
@@ -1934,6 +1939,12 @@ export default function MasterGLPage() {
               )}
             </CardTitle>
             <div className="flex items-center gap-2">
+              <Input
+                value={unmappedSearch}
+                onChange={(e) => setUnmappedSearch(e.target.value)}
+                placeholder="Search account name or number..."
+                className="w-64"
+              />
               <Select
                 value={unmappedEntityFilter}
                 onValueChange={setUnmappedEntityFilter}
@@ -1980,7 +1991,226 @@ export default function MasterGLPage() {
             <p className="text-sm text-muted-foreground">
               Loading unmapped accounts...
             </p>
-          ) : unmappedAccounts.length === 0 ? (
+          ) : unmappedSearch.trim().length > 0 ? (() => {
+            const q = unmappedSearch.trim().toLowerCase();
+            const masterById = new Map(masterAccounts.map((m) => [m.id, m]));
+
+            // Unmapped matches — accounts not yet mapped to any master GL.
+            const unmappedMatches = unmappedAccounts.filter((a) => {
+              if (
+                unmappedEntityFilter !== "all" &&
+                a.entityId !== unmappedEntityFilter
+              ) {
+                return false;
+              }
+              const hay = `${a.accountNumber ?? ""} ${a.name}`.toLowerCase();
+              return hay.includes(q);
+            });
+
+            // Mapped matches — entity accounts already linked to a master GL
+            // (in the selected chart). Surface them so the user can confirm
+            // where an account points.
+            const mappedMatches = mappings
+              .filter((m) => {
+                if (
+                  unmappedEntityFilter !== "all" &&
+                  m.entity_id !== unmappedEntityFilter
+                ) {
+                  return false;
+                }
+                const acct = m.accounts;
+                if (!acct) return false;
+                const hay = `${acct.account_number ?? ""} ${acct.name}`.toLowerCase();
+                return hay.includes(q);
+              })
+              // Dedupe by account_id (rare but possible if mapped to multiple masters)
+              .reduce<
+                {
+                  mappingId: string;
+                  accountId: string;
+                  entityId: string;
+                  entityCode: string;
+                  entityName: string;
+                  accountNumber: string | null;
+                  accountName: string;
+                  classification: string;
+                  accountType: string | null;
+                  masterAccountId: string;
+                  masterLabel: string;
+                }[]
+              >((acc, m) => {
+                const acct = m.accounts;
+                const entity = m.entities;
+                const master = masterById.get(m.master_account_id);
+                const masterLabel = master
+                  ? `${master.account_number ?? ""} ${master.name}`.trim()
+                  : "Unknown master";
+                acc.push({
+                  mappingId: m.id,
+                  accountId: m.account_id,
+                  entityId: m.entity_id,
+                  entityCode: entity?.code ?? "?",
+                  entityName: entity?.name ?? "Unknown entity",
+                  accountNumber: acct.account_number ?? null,
+                  accountName: acct.name,
+                  classification: acct.classification,
+                  accountType: acct.account_type ?? null,
+                  masterAccountId: m.master_account_id,
+                  masterLabel,
+                });
+                return acc;
+              }, []);
+
+            const totalMatches =
+              unmappedMatches.length + mappedMatches.length;
+
+            if (totalMatches === 0) {
+              return (
+                <p className="text-sm text-muted-foreground py-8 text-center">
+                  No accounts match &ldquo;{unmappedSearch}&rdquo;.
+                </p>
+              );
+            }
+
+            return (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  {totalMatches} account{totalMatches === 1 ? "" : "s"} match
+                  {totalMatches === 1 ? "es" : ""} &ldquo;{unmappedSearch}
+                  &rdquo; &middot; {mappedMatches.length} mapped &middot;{" "}
+                  {unmappedMatches.length} unmapped
+                </p>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[140px]">Entity</TableHead>
+                      <TableHead className="w-[100px]">Number</TableHead>
+                      <TableHead>Account</TableHead>
+                      <TableHead>Mapped To</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {mappedMatches.map((m) => (
+                      <TableRow key={`mapped-${m.mappingId}`}>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className="bg-emerald-50 text-emerald-800 border-emerald-200"
+                          >
+                            {m.entityCode}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">
+                          {m.accountNumber ?? "—"}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-sm font-medium">
+                              {m.accountName}
+                            </span>
+                            <Badge
+                              variant="outline"
+                              className={`text-xs ${
+                                CLASSIFICATION_COLORS[
+                                  m.classification as AccountClassification
+                                ] ?? ""
+                              }`}
+                            >
+                              {m.classification}
+                            </Badge>
+                            {m.accountType && (
+                              <Badge
+                                variant="outline"
+                                className="text-xs bg-muted/60 text-muted-foreground"
+                              >
+                                {m.accountType}
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className="bg-emerald-50 text-emerald-800 border-emerald-200"
+                          >
+                            {m.masterLabel}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {unmappedMatches.map((account) => (
+                      <TableRow key={`unmapped-${account.id}`} className="bg-amber-50/50">
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className="bg-amber-100 text-amber-800 border-amber-200"
+                          >
+                            {account.entityCode}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">
+                          {account.accountNumber ?? "—"}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-sm font-medium">
+                              {account.name}
+                            </span>
+                            <Badge
+                              variant="outline"
+                              className={`text-xs ${
+                                CLASSIFICATION_COLORS[
+                                  account.classification as AccountClassification
+                                ] ?? ""
+                              }`}
+                            >
+                              {account.classification}
+                            </Badge>
+                            {account.accountType && (
+                              <Badge
+                                variant="outline"
+                                className="text-xs bg-muted/60 text-muted-foreground"
+                              >
+                                {account.accountType}
+                                {account.accountSubType &&
+                                account.accountSubType !==
+                                  account.accountType
+                                  ? ` · ${account.accountSubType}`
+                                  : ""}
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <AccountCombobox
+                            disabled={inlineMappingId === account.id}
+                            accounts={masterAccounts.map((m) => ({
+                              id: m.id,
+                              account_number: m.account_number,
+                              name: m.name,
+                              account_type: m.classification,
+                            }))}
+                            value=""
+                            onValueChange={(masterId) =>
+                              handleInlineMap(account, masterId)
+                            }
+                            placeholder={
+                              inlineMappingId === account.id
+                                ? "Mapping..."
+                                : "Unmapped — pick a master GL"
+                            }
+                            searchPlaceholder="Search master accounts..."
+                            emptyMessage="No master accounts available."
+                            className="h-8"
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            );
+          })() : unmappedAccounts.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">
               All entity accounts are mapped to master GL accounts.
             </p>
