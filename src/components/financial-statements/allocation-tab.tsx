@@ -249,6 +249,8 @@ export function AllocationTab({
     "month"
   );
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [filterYear, setFilterYear] = useState<string>("all");
+  const [filterMonth, setFilterMonth] = useState<string>("all");
 
   // Dialog state
   const [showDialog, setShowDialog] = useState(false);
@@ -708,6 +710,52 @@ export function AllocationTab({
     return y * 100 + m;
   }
 
+  // Whether an allocation is active in the given year and/or month. Handles
+  // single-month, repeating single-month, and monthly-spread ranges.
+  function allocCovers(
+    a: AllocationAdjustment,
+    year: number | null,
+    month: number | null
+  ): boolean {
+    let startY: number;
+    let startM: number;
+    let endY: number;
+    let endM: number;
+    if (a.schedule_type === "single_month") {
+      startY = a.period_year ?? a.start_year ?? 0;
+      startM = a.period_month ?? a.start_month ?? 0;
+      if (a.is_repeating && a.repeat_end_year && a.repeat_end_month) {
+        endY = a.repeat_end_year;
+        endM = a.repeat_end_month;
+      } else {
+        endY = startY;
+        endM = startM;
+      }
+    } else {
+      startY = a.start_year ?? a.period_year ?? 0;
+      startM = a.start_month ?? a.period_month ?? 0;
+      endY = a.end_year ?? startY;
+      endM = a.end_month ?? startM;
+    }
+    const start = startY * 12 + startM;
+    const end = endY * 12 + endM;
+    if (year !== null && month !== null) {
+      const t = year * 12 + month;
+      return t >= start && t <= end;
+    }
+    if (year !== null) {
+      return !(year * 12 + 12 < start || year * 12 + 1 > end);
+    }
+    if (month !== null) {
+      if (end - start >= 11) return true;
+      for (let k = start; k <= end; k++) {
+        if (((k - 1) % 12) + 1 === month) return true;
+      }
+      return false;
+    }
+    return true;
+  }
+
   // Filtered + sorted view of the allocations
   const visibleAllocations = useMemo(() => {
     const q = searchText.trim().toLowerCase();
@@ -732,6 +780,11 @@ export function AllocationTab({
           .includes(q)
       );
     }
+    if (filterYear !== "all" || filterMonth !== "all") {
+      const y = filterYear === "all" ? null : Number(filterYear);
+      const m = filterMonth === "all" ? null : Number(filterMonth);
+      rows = rows.filter((a) => allocCovers(a, y, m));
+    }
     const sorted = [...rows].sort((a, b) => {
       let cmp = 0;
       if (sortBy === "company") {
@@ -750,7 +803,12 @@ export function AllocationTab({
       return sortDir === "asc" ? cmp : -cmp;
     });
     return sorted;
-  }, [allocations, searchText, sortBy, sortDir]);
+  }, [allocations, searchText, sortBy, sortDir, filterYear, filterMonth]);
+
+  const filtersActive =
+    searchText.trim() !== "" ||
+    filterYear !== "all" ||
+    filterMonth !== "all";
 
   const activeCount = allocations.filter((a) => !a.is_excluded).length;
 
@@ -781,7 +839,7 @@ export function AllocationTab({
           <div>
             <h3 className="text-lg font-semibold">Allocation Adjustments</h3>
             <p className="text-sm text-muted-foreground">
-              {searchText.trim()
+              {filtersActive
                 ? `${visibleAllocations.length} of ${allocations.length} allocation${allocations.length !== 1 ? "s" : ""}`
                 : `${allocations.length} allocation${allocations.length !== 1 ? "s" : ""}`}
               {allocations.length > 0 && ` (${activeCount} active)`}
@@ -810,14 +868,40 @@ export function AllocationTab({
             </p>
           ) : (
             <>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center mb-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center mb-3">
                 <Input
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
                   placeholder="Search company, account, or description..."
                   className="h-8 text-xs sm:max-w-xs"
                 />
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Select value={filterYear} onValueChange={setFilterYear}>
+                    <SelectTrigger className="h-8 w-[110px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All years</SelectItem>
+                      {YEARS.map((y) => (
+                        <SelectItem key={y} value={String(y)}>
+                          {y}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={filterMonth} onValueChange={setFilterMonth}>
+                    <SelectTrigger className="h-8 w-[130px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All months</SelectItem>
+                      {MONTHS.map((m, mi) => (
+                        <SelectItem key={mi + 1} value={String(mi + 1)}>
+                          {m}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Select
                     value={sortBy}
                     onValueChange={(v) =>
@@ -852,7 +936,7 @@ export function AllocationTab({
               </div>
               {visibleAllocations.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-8 text-center">
-                  No allocations match your search.
+                  No allocations match your filters.
                 </p>
               ) : (
                 <div className="rounded-md border overflow-auto">
