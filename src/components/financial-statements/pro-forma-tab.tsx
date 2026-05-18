@@ -225,6 +225,8 @@ export function ProFormaTab({
     "month"
   );
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [filterYear, setFilterYear] = useState<string>("all");
+  const [filterMonth, setFilterMonth] = useState<string>("all");
 
   // Dialog state
   const [showDialog, setShowDialog] = useState(false);
@@ -598,6 +600,12 @@ export function ProFormaTab({
           .includes(q)
       );
     }
+    if (filterYear !== "all") {
+      rows = rows.filter((a) => a.period_year === Number(filterYear));
+    }
+    if (filterMonth !== "all") {
+      rows = rows.filter((a) => a.period_month === Number(filterMonth));
+    }
     const sorted = [...rows].sort((a, b) => {
       let cmp = 0;
       if (sortBy === "company") {
@@ -616,7 +624,12 @@ export function ProFormaTab({
       return sortDir === "asc" ? cmp : -cmp;
     });
     return sorted;
-  }, [adjustments, searchText, sortBy, sortDir]);
+  }, [adjustments, searchText, sortBy, sortDir, filterYear, filterMonth]);
+
+  const filtersActive =
+    searchText.trim() !== "" ||
+    filterYear !== "all" ||
+    filterMonth !== "all";
 
   return (
     <>
@@ -625,7 +638,7 @@ export function ProFormaTab({
           <div>
             <h3 className="text-lg font-semibold">Pro Forma Adjustments</h3>
             <p className="text-sm text-muted-foreground">
-              {searchText.trim()
+              {filtersActive
                 ? `${visibleAdjustments.length} of ${adjustments.length} adjustment${adjustments.length !== 1 ? "s" : ""}`
                 : `${adjustments.length} adjustment${adjustments.length !== 1 ? "s" : ""}`}
               {adjustments.length > 0 && ` (${activeCount} active)`}
@@ -650,14 +663,40 @@ export function ProFormaTab({
             </p>
           ) : (
             <>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center mb-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center mb-3">
                 <Input
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
                   placeholder="Search company, account, or description..."
                   className="h-8 text-xs sm:max-w-xs"
                 />
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Select value={filterYear} onValueChange={setFilterYear}>
+                    <SelectTrigger className="h-8 w-[110px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All years</SelectItem>
+                      {YEARS.map((y) => (
+                        <SelectItem key={y} value={String(y)}>
+                          {y}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={filterMonth} onValueChange={setFilterMonth}>
+                    <SelectTrigger className="h-8 w-[130px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All months</SelectItem>
+                      {MONTHS.map((m, mi) => (
+                        <SelectItem key={mi + 1} value={String(mi + 1)}>
+                          {m}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Select
                     value={sortBy}
                     onValueChange={(v) =>
@@ -692,7 +731,7 @@ export function ProFormaTab({
               </div>
               {visibleAdjustments.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-8 text-center">
-                  No adjustments match your search.
+                  No adjustments match your filters.
                 </p>
               ) : (
                 <div className="rounded-md border overflow-auto">
