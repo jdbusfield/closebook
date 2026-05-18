@@ -47,7 +47,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, ChevronsUpDown, Check } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  ChevronsUpDown,
+  Check,
+  ArrowUp,
+  ArrowDown,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatStatementAmount } from "./format-utils";
 import type { Scope, ProFormaAdjustment } from "./types";
@@ -210,6 +218,13 @@ export function ProFormaTab({
     []
   );
   const [loading, setLoading] = useState(true);
+
+  // Search + sort
+  const [searchText, setSearchText] = useState("");
+  const [sortBy, setSortBy] = useState<"company" | "account" | "month">(
+    "month"
+  );
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   // Dialog state
   const [showDialog, setShowDialog] = useState(false);
@@ -561,6 +576,48 @@ export function ProFormaTab({
   const activeCount = adjustments.filter((a) => !a.is_excluded).length;
   const showEntityColumn = scope === "organization";
 
+  // Filtered + sorted view of the adjustments
+  const visibleAdjustments = useMemo(() => {
+    const q = searchText.trim().toLowerCase();
+    let rows = adjustments;
+    if (q) {
+      rows = rows.filter((a) =>
+        [
+          a.entity_code,
+          a.entity_name,
+          a.master_account_number,
+          a.master_account_name,
+          a.offset_master_account_number,
+          a.offset_master_account_name,
+          a.description,
+          a.notes,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(q)
+      );
+    }
+    const sorted = [...rows].sort((a, b) => {
+      let cmp = 0;
+      if (sortBy === "company") {
+        cmp = (a.entity_code ?? "").localeCompare(b.entity_code ?? "");
+      } else if (sortBy === "account") {
+        cmp = (a.master_account_number ?? "").localeCompare(
+          b.master_account_number ?? "",
+          undefined,
+          { numeric: true }
+        );
+      } else {
+        cmp =
+          a.period_year - b.period_year ||
+          a.period_month - b.period_month;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return sorted;
+  }, [adjustments, searchText, sortBy, sortDir]);
+
   return (
     <>
       <Card>
@@ -568,7 +625,9 @@ export function ProFormaTab({
           <div>
             <h3 className="text-lg font-semibold">Pro Forma Adjustments</h3>
             <p className="text-sm text-muted-foreground">
-              {adjustments.length} adjustment{adjustments.length !== 1 && "s"}
+              {searchText.trim()
+                ? `${visibleAdjustments.length} of ${adjustments.length} adjustment${adjustments.length !== 1 ? "s" : ""}`
+                : `${adjustments.length} adjustment${adjustments.length !== 1 ? "s" : ""}`}
               {adjustments.length > 0 && ` (${activeCount} active)`}
             </p>
           </div>
@@ -590,8 +649,54 @@ export function ProFormaTab({
                 : 'Click "Add Adjustment" to create one.'}
             </p>
           ) : (
-            <div className="rounded-md border overflow-auto">
-              <Table>
+            <>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center mb-3">
+                <Input
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  placeholder="Search company, account, or description..."
+                  className="h-8 text-xs sm:max-w-xs"
+                />
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={sortBy}
+                    onValueChange={(v) =>
+                      setSortBy(v as "company" | "account" | "month")
+                    }
+                  >
+                    <SelectTrigger className="h-8 w-[150px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="company">Sort: Company</SelectItem>
+                      <SelectItem value="account">Sort: GL Account</SelectItem>
+                      <SelectItem value="month">Sort: Month</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2"
+                    onClick={() =>
+                      setSortDir((d) => (d === "asc" ? "desc" : "asc"))
+                    }
+                    aria-label="Toggle sort direction"
+                  >
+                    {sortDir === "asc" ? (
+                      <ArrowUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ArrowDown className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+              {visibleAdjustments.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-8 text-center">
+                  No adjustments match your search.
+                </p>
+              ) : (
+                <div className="rounded-md border overflow-auto">
+                  <Table>
                 <TableHeader>
                   <TableRow>
                     {showEntityColumn && (
@@ -611,7 +716,7 @@ export function ProFormaTab({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {adjustments.map((adj) => (
+                  {visibleAdjustments.map((adj) => (
                     <TableRow
                       key={adj.id}
                       className={adj.is_excluded ? "opacity-50" : ""}
@@ -689,8 +794,10 @@ export function ProFormaTab({
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
-            </div>
+                  </Table>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

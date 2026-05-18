@@ -56,6 +56,8 @@ import {
   ChevronsUpDown,
   Check,
   Repeat,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatStatementAmount } from "./format-utils";
@@ -240,6 +242,13 @@ export function AllocationTab({
     []
   );
   const [loading, setLoading] = useState(true);
+
+  // Search + sort
+  const [searchText, setSearchText] = useState("");
+  const [sortBy, setSortBy] = useState<"company" | "account" | "month">(
+    "month"
+  );
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   // Dialog state
   const [showDialog, setShowDialog] = useState(false);
@@ -692,6 +701,57 @@ export function AllocationTab({
     }
   }
 
+  // Effective sort period: single-month uses period_*, spread uses start_*
+  function allocPeriodKey(a: AllocationAdjustment): number {
+    const y = a.period_year ?? a.start_year ?? 0;
+    const m = a.period_month ?? a.start_month ?? 0;
+    return y * 100 + m;
+  }
+
+  // Filtered + sorted view of the allocations
+  const visibleAllocations = useMemo(() => {
+    const q = searchText.trim().toLowerCase();
+    let rows = allocations;
+    if (q) {
+      rows = rows.filter((a) =>
+        [
+          a.source_entity_code,
+          a.source_entity_name,
+          a.destination_entity_code,
+          a.destination_entity_name,
+          a.master_account_number,
+          a.master_account_name,
+          a.destination_master_account_number,
+          a.destination_master_account_name,
+          a.description,
+          a.notes,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(q)
+      );
+    }
+    const sorted = [...rows].sort((a, b) => {
+      let cmp = 0;
+      if (sortBy === "company") {
+        cmp = (a.source_entity_code ?? "").localeCompare(
+          b.source_entity_code ?? ""
+        );
+      } else if (sortBy === "account") {
+        cmp = (a.master_account_number ?? "").localeCompare(
+          b.master_account_number ?? "",
+          undefined,
+          { numeric: true }
+        );
+      } else {
+        cmp = allocPeriodKey(a) - allocPeriodKey(b);
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return sorted;
+  }, [allocations, searchText, sortBy, sortDir]);
+
   const activeCount = allocations.filter((a) => !a.is_excluded).length;
 
   // Compute monthly amount for display
@@ -721,7 +781,9 @@ export function AllocationTab({
           <div>
             <h3 className="text-lg font-semibold">Allocation Adjustments</h3>
             <p className="text-sm text-muted-foreground">
-              {allocations.length} allocation{allocations.length !== 1 && "s"}
+              {searchText.trim()
+                ? `${visibleAllocations.length} of ${allocations.length} allocation${allocations.length !== 1 ? "s" : ""}`
+                : `${allocations.length} allocation${allocations.length !== 1 ? "s" : ""}`}
               {allocations.length > 0 && ` (${activeCount} active)`}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
@@ -747,8 +809,54 @@ export function AllocationTab({
                 : 'Click "Add Allocation" to create one.'}
             </p>
           ) : (
-            <div className="rounded-md border overflow-auto">
-              <Table>
+            <>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center mb-3">
+                <Input
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  placeholder="Search company, account, or description..."
+                  className="h-8 text-xs sm:max-w-xs"
+                />
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={sortBy}
+                    onValueChange={(v) =>
+                      setSortBy(v as "company" | "account" | "month")
+                    }
+                  >
+                    <SelectTrigger className="h-8 w-[150px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="company">Sort: Company</SelectItem>
+                      <SelectItem value="account">Sort: GL Account</SelectItem>
+                      <SelectItem value="month">Sort: Month</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2"
+                    onClick={() =>
+                      setSortDir((d) => (d === "asc" ? "desc" : "asc"))
+                    }
+                    aria-label="Toggle sort direction"
+                  >
+                    {sortDir === "asc" ? (
+                      <ArrowUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ArrowDown className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+              {visibleAllocations.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-8 text-center">
+                  No allocations match your search.
+                </p>
+              ) : (
+                <div className="rounded-md border overflow-auto">
+                  <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[200px]">
@@ -767,7 +875,7 @@ export function AllocationTab({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {allocations.map((alloc) => {
+                  {visibleAllocations.map((alloc) => {
                     const monthlyAmt = getMonthlyAmount(alloc);
                     return (
                       <TableRow
@@ -936,8 +1044,10 @@ export function AllocationTab({
                     );
                   })}
                 </TableBody>
-              </Table>
-            </div>
+                  </Table>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
