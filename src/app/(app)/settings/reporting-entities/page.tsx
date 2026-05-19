@@ -27,6 +27,7 @@ interface ReportingEntity {
   id: string;
   name: string;
   code: string;
+  excludeFromBreakdown: boolean;
   members: Array<{
     entityId: string;
     entityName: string;
@@ -50,6 +51,7 @@ export default function ReportingEntitiesPage() {
   const [selectedEntityIds, setSelectedEntityIds] = useState<Set<string>>(
     new Set()
   );
+  const [excludeFromBreakdown, setExcludeFromBreakdown] = useState(false);
   const [creating, setCreating] = useState(false);
 
   // Edit state
@@ -57,6 +59,8 @@ export default function ReportingEntitiesPage() {
   const [editName, setEditName] = useState("");
   const [editCode, setEditCode] = useState("");
   const [editEntityIds, setEditEntityIds] = useState<Set<string>>(new Set());
+  const [editExcludeFromBreakdown, setEditExcludeFromBreakdown] =
+    useState(false);
   const [saving, setSaving] = useState(false);
 
   const loadData = useCallback(async () => {
@@ -119,6 +123,7 @@ export default function ReportingEntitiesPage() {
           name: name.trim(),
           code: code.trim(),
           memberEntityIds: Array.from(selectedEntityIds),
+          excludeFromBreakdown,
         }),
       });
 
@@ -131,6 +136,7 @@ export default function ReportingEntitiesPage() {
       setName("");
       setCode("");
       setSelectedEntityIds(new Set());
+      setExcludeFromBreakdown(false);
       await loadData();
     } catch (err) {
       toast.error(
@@ -146,6 +152,7 @@ export default function ReportingEntitiesPage() {
     setEditName(re.name);
     setEditCode(re.code);
     setEditEntityIds(new Set(re.members.map((m) => m.entityId)));
+    setEditExcludeFromBreakdown(re.excludeFromBreakdown);
   }
 
   function cancelEdit() {
@@ -153,6 +160,7 @@ export default function ReportingEntitiesPage() {
     setEditName("");
     setEditCode("");
     setEditEntityIds(new Set());
+    setEditExcludeFromBreakdown(false);
   }
 
   async function handleSave() {
@@ -172,6 +180,7 @@ export default function ReportingEntitiesPage() {
           name: editName.trim(),
           code: editCode.trim(),
           memberEntityIds: Array.from(editEntityIds),
+          excludeFromBreakdown: editExcludeFromBreakdown,
         }),
       });
 
@@ -305,6 +314,15 @@ export default function ReportingEntitiesPage() {
                         ))}
                       </div>
                     </div>
+                    <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                      <Checkbox
+                        checked={editExcludeFromBreakdown}
+                        onCheckedChange={(v) =>
+                          setEditExcludeFromBreakdown(v === true)
+                        }
+                      />
+                      Exclude from financial model breakdown
+                    </label>
                     <div className="flex gap-2">
                       <Button
                         size="sm"
@@ -335,6 +353,11 @@ export default function ReportingEntitiesPage() {
                         <Badge variant="outline" className="text-xs">
                           {re.code}
                         </Badge>
+                        {re.excludeFromBreakdown && (
+                          <Badge variant="secondary" className="text-xs">
+                            Excluded from breakdown
+                          </Badge>
+                        )}
                       </div>
                       <div className="flex flex-wrap gap-1.5 mt-1.5">
                         {re.members.map((m) => (
@@ -444,6 +467,14 @@ export default function ReportingEntitiesPage() {
                 </div>
               )}
             </div>
+
+            <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+              <Checkbox
+                checked={excludeFromBreakdown}
+                onCheckedChange={(v) => setExcludeFromBreakdown(v === true)}
+              />
+              Exclude from financial model breakdown
+            </label>
 
             <Button type="submit" size="sm" disabled={creating}>
               <Plus className="w-3.5 h-3.5 mr-1" />

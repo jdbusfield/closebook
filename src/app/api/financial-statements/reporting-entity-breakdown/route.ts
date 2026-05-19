@@ -547,16 +547,22 @@ export async function GET(request: Request) {
     .eq("id", organizationId)
     .single();
 
-  // Get all reporting entities for this org
+  // Get all reporting entities for this org.
+  // Excluded REs are kept here for member tracking (so their entities don't
+  // appear under "Other") but are filtered out of column generation below.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: reportingEntities } = await (admin as any)
+  const { data: allReportingEntities } = await (admin as any)
     .from("reporting_entities")
-    .select("id, name, code")
+    .select("id, name, code, exclude_from_breakdown")
     .eq("organization_id", organizationId)
     .eq("is_active", true)
     .order("name");
 
-  if (!reportingEntities || reportingEntities.length === 0) {
+  const reportingEntities = (allReportingEntities ?? []).filter(
+    (re: { exclude_from_breakdown?: boolean }) => !re.exclude_from_breakdown
+  );
+
+  if (!allReportingEntities || allReportingEntities.length === 0) {
     return NextResponse.json({
       columns: [],
       incomeStatement: {
@@ -578,13 +584,15 @@ export async function GET(request: Request) {
     });
   }
 
-  // Get all member mappings: reporting_entity_id -> entity_id[]
-  const reIds = reportingEntities.map((re: { id: string }) => re.id);
+  // Get all member mappings: reporting_entity_id -> entity_id[].
+  // Fetch members for ALL reporting entities (including excluded ones) so that
+  // entities belonging to an excluded RE are not surfaced under "Other".
+  const allReIds = allReportingEntities.map((re: { id: string }) => re.id);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: memberRows } = await (admin as any)
     .from("reporting_entity_members")
     .select("reporting_entity_id, entity_id")
-    .in("reporting_entity_id", reIds);
+    .in("reporting_entity_id", allReIds);
 
   const reMemberMap = new Map<string, string[]>();
   const allMemberEntityIds = new Set<string>();
