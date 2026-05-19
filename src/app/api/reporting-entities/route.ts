@@ -43,7 +43,7 @@ export async function GET(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: reportingEntities, error } = await (admin as any)
     .from("reporting_entities")
-    .select("id, name, code, is_active")
+    .select("id, name, code, is_active, exclude_from_breakdown")
     .eq("organization_id", organizationId)
     .eq("is_active", true)
     .order("name");
@@ -94,10 +94,16 @@ export async function GET(request: Request) {
   }
 
   const result = (reportingEntities ?? []).map(
-    (re: { id: string; name: string; code: string }) => ({
+    (re: {
+      id: string;
+      name: string;
+      code: string;
+      exclude_from_breakdown?: boolean;
+    }) => ({
       id: re.id,
       name: re.name,
       code: re.code,
+      excludeFromBreakdown: re.exclude_from_breakdown ?? false,
       members: membersByRE.get(re.id) ?? [],
     })
   );
@@ -119,7 +125,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { organizationId, name, code, memberEntityIds } =
+  const { organizationId, name, code, memberEntityIds, excludeFromBreakdown } =
     await request.json();
 
   if (!organizationId || !name || !code) {
@@ -166,6 +172,7 @@ export async function POST(request: Request) {
       organization_id: organizationId,
       name,
       code,
+      exclude_from_breakdown: excludeFromBreakdown === true,
     })
     .select("id, name, code")
     .single();
@@ -225,8 +232,13 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { reportingEntityId, name, code, memberEntityIds } =
-    await request.json();
+  const {
+    reportingEntityId,
+    name,
+    code,
+    memberEntityIds,
+    excludeFromBreakdown,
+  } = await request.json();
 
   if (!reportingEntityId) {
     return NextResponse.json(
@@ -275,6 +287,9 @@ export async function PUT(request: Request) {
   const updates: any = {};
   if (name !== undefined) updates.name = name;
   if (code !== undefined) updates.code = code;
+  if (excludeFromBreakdown !== undefined) {
+    updates.exclude_from_breakdown = excludeFromBreakdown === true;
+  }
 
   if (Object.keys(updates).length > 0) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
