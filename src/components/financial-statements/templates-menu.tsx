@@ -333,9 +333,11 @@ export function TemplatesMenu({
       return;
     }
     const ids = Array.from(exportSelectedIds).join(",");
-    const url = `/api/financial-model-templates/export-pdf?organizationId=${organizationId}&templateIds=${encodeURIComponent(ids)}`;
+    // Open the client-side print page in a new tab — uses the same Print
+    // CSS path as the Financial Model so the saved PDF matches exactly.
+    const url = `/reports/financial-model/templates-print?organizationId=${organizationId}&ids=${encodeURIComponent(ids)}`;
     setExportOpen(false);
-    window.location.href = url;
+    window.open(url, "_blank", "noopener");
   }
 
   function formatTemplatePeriod(t: FinancialModelTemplate): string {
