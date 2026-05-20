@@ -297,53 +297,130 @@ export function TemplatesMenu({
     }
   }
 
-  // Export dialog state
+  // ---- Export builder state ----
+  // The export dialog now lets the user assemble a sequence containing
+  // both templates and user-defined separator/title pages. Drag-to-reorder
+  // moves items within the sequence.
+  type SequenceItem =
+    | { kind: "template"; key: string; id: string }
+    | {
+        kind: "separator";
+        key: string;
+        title: string;
+        subtitle?: string;
+      };
+
   const [exportOpen, setExportOpen] = useState(false);
-  const [exportSelectedIds, setExportSelectedIds] = useState<Set<string>>(
-    new Set()
-  );
+  const [sequence, setSequence] = useState<SequenceItem[]>([]);
+  const [seqDragKey, setSeqDragKey] = useState<string | null>(null);
+  const [seqDragOverKey, setSeqDragOverKey] = useState<string | null>(null);
+
+  function genKey(prefix: string) {
+    return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
+  }
 
   function openExportDialog() {
-    // Default-check favorites (or all templates if no favorites exist)
-    const favs = templates.filter((t) => t.isFavorite).map((t) => t.id);
-    setExportSelectedIds(
-      new Set(favs.length > 0 ? favs : templates.map((t) => t.id))
-    );
+    const favs = templates.filter((t) => t.isFavorite);
+    const initial = (favs.length > 0 ? favs : templates).map((t) => ({
+      kind: "template" as const,
+      key: genKey("t"),
+      id: t.id,
+    }));
+    setSequence(initial);
     setExportOpen(true);
   }
 
-  function toggleExportId(id: string) {
-    setExportSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+  function applyPreset(preset: "all" | "favorites" | "none") {
+    if (preset === "none") {
+      setSequence([]);
+      return;
+    }
+    const src =
+      preset === "favorites"
+        ? templates.filter((t) => t.isFavorite)
+        : templates;
+    setSequence(
+      src.map((t) => ({
+        kind: "template" as const,
+        key: genKey("t"),
+        id: t.id,
+      }))
+    );
+  }
+
+  function addTemplateToSequence(id: string) {
+    setSequence((prev) => [
+      ...prev,
+      { kind: "template", key: genKey("t"), id },
+    ]);
+  }
+
+  function addSeparatorAt(index?: number) {
+    const sep: SequenceItem = {
+      kind: "separator",
+      key: genKey("sep"),
+      title: "Section title",
+      subtitle: "",
+    };
+    setSequence((prev) => {
+      if (index === undefined || index >= prev.length) return [...prev, sep];
+      const next = prev.slice();
+      next.splice(index, 0, sep);
       return next;
     });
   }
 
-  function selectAllForExport() {
-    setExportSelectedIds(new Set(templates.map((t) => t.id)));
+  function removeFromSequence(key: string) {
+    setSequence((prev) => prev.filter((i) => i.key !== key));
   }
 
-  function selectFavoritesForExport() {
-    setExportSelectedIds(
-      new Set(templates.filter((t) => t.isFavorite).map((t) => t.id))
+  function updateSeparator(
+    key: string,
+    field: "title" | "subtitle",
+    value: string
+  ) {
+    setSequence((prev) =>
+      prev.map((i) =>
+        i.key === key && i.kind === "separator"
+          ? { ...i, [field]: value }
+          : i
+      )
     );
   }
 
-  function selectNoneForExport() {
-    setExportSelectedIds(new Set());
+  function handleSeqDrop(targetKey: string) {
+    if (!seqDragKey || seqDragKey === targetKey) {
+      setSeqDragKey(null);
+      setSeqDragOverKey(null);
+      return;
+    }
+    setSequence((prev) => {
+      const fromIdx = prev.findIndex((i) => i.key === seqDragKey);
+      const toIdx = prev.findIndex((i) => i.key === targetKey);
+      if (fromIdx < 0 || toIdx < 0) return prev;
+      const next = prev.slice();
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
+      return next;
+    });
+    setSeqDragKey(null);
+    setSeqDragOverKey(null);
   }
 
   function handleRunExport() {
-    if (!organizationId || exportSelectedIds.size === 0) {
-      toast.error("Pick at least one template");
+    if (!organizationId || sequence.length === 0) {
+      toast.error("Add at least one template or page");
       return;
     }
-    const ids = Array.from(exportSelectedIds).join(",");
-    // Open the client-side print page in a new tab — uses the same Print
-    // CSS path as the Financial Model so the saved PDF matches exactly.
-    const url = `/reports/financial-model/templates-print?organizationId=${organizationId}&ids=${encodeURIComponent(ids)}`;
+    const usedTemplates = sequence.filter(
+      (i) => i.kind === "template"
+    ).length;
+    if (usedTemplates === 0) {
+      toast.error("Add at least one template");
+      return;
+    }
+    const encoded = btoa(JSON.stringify(sequence));
+    const url = `/reports/financial-model/templates-print?organizationId=${organizationId}&seq=${encodeURIComponent(encoded)}`;
     setExportOpen(false);
     window.open(url, "_blank", "noopener");
   }
@@ -572,24 +649,26 @@ export function TemplatesMenu({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* Export picker dialog — pick which templates to roll into the PDF */}
+      {/* Export builder — drag templates and separator pages into the
+          sequence that will be rendered to PDF. */}
       <Dialog open={exportOpen} onOpenChange={setExportOpen}>
-        <DialogContent className="sm:max-w-[520px]">
+        <DialogContent className="sm:max-w-[640px]">
           <DialogHeader>
             <DialogTitle>Export templates to PDF</DialogTitle>
             <DialogDescription>
-              Pick which templates to include. Each template renders the tab it
-              was saved on (income statement, balance sheet, RE breakdown,
-              etc.).
+              Build the PDF sequence. Drag rows to reorder. Insert title /
+              divider pages between templates to organize the output (e.g. a
+              &ldquo;Monthly&rdquo; cover before monthly templates and a
+              &ldquo;Year to Date&rdquo; cover before YTD ones).
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex items-center gap-1 -mb-2">
+          <div className="flex items-center gap-1 -mb-1">
             <Button
               variant="ghost"
               size="sm"
               className="h-7 text-xs"
-              onClick={selectAllForExport}
+              onClick={() => applyPreset("all")}
             >
               Select all
             </Button>
@@ -597,7 +676,7 @@ export function TemplatesMenu({
               variant="ghost"
               size="sm"
               className="h-7 text-xs"
-              onClick={selectFavoritesForExport}
+              onClick={() => applyPreset("favorites")}
             >
               Favorites only
             </Button>
@@ -605,45 +684,204 @@ export function TemplatesMenu({
               variant="ghost"
               size="sm"
               className="h-7 text-xs"
-              onClick={selectNoneForExport}
+              onClick={() => applyPreset("none")}
             >
-              None
+              Clear
             </Button>
-            <span className="ml-auto text-[11px] text-muted-foreground">
-              {exportSelectedIds.size} of {templates.length} selected
-            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs gap-1 ml-auto"
+              onClick={() => addSeparatorAt()}
+            >
+              <Plus className="h-3 w-3" />
+              Add title page
+            </Button>
           </div>
 
-          <div className="max-h-[360px] overflow-y-auto rounded border divide-y">
-            {templates.map((t) => (
-              <label
-                key={t.id}
-                className="flex items-start gap-2 px-3 py-2 hover:bg-muted/40 cursor-pointer"
-              >
-                <Checkbox
-                  checked={exportSelectedIds.has(t.id)}
-                  onCheckedChange={() => toggleExportId(t.id)}
-                  className="mt-0.5"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    {t.isFavorite && (
-                      <Star className="h-3 w-3 fill-yellow-400 text-yellow-500 shrink-0" />
-                    )}
-                    <span className="text-sm font-medium truncate">
-                      {t.name}
-                    </span>
-                    <Badge variant="outline" className="text-[10px] h-4 px-1.5">
-                      {TAB_LABELS[t.activeTab]}
-                    </Badge>
+          <div className="max-h-[380px] overflow-y-auto rounded border divide-y">
+            {sequence.length === 0 && (
+              <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+                Sequence is empty. Use the buttons above to add templates, or
+                pick from &ldquo;Add template&hellip;&rdquo; below.
+              </div>
+            )}
+            {sequence.map((item) => {
+              const isDragging = seqDragKey === item.key;
+              const isDragOver =
+                seqDragOverKey === item.key && seqDragKey !== item.key;
+              const rowClass = [
+                "px-3 py-2 hover:bg-muted/40",
+                isDragging ? "opacity-40" : "",
+                isDragOver ? "border-t-2 border-blue-500" : "",
+              ]
+                .filter(Boolean)
+                .join(" ");
+
+              const dragProps = {
+                draggable: true,
+                onDragStart: (e: React.DragEvent) => {
+                  e.dataTransfer.effectAllowed = "move";
+                  e.dataTransfer.setData("text/plain", item.key);
+                  setSeqDragKey(item.key);
+                },
+                onDragEnd: () => {
+                  setSeqDragKey(null);
+                  setSeqDragOverKey(null);
+                },
+                onDragOver: (e: React.DragEvent) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  if (seqDragKey && seqDragKey !== item.key) {
+                    setSeqDragOverKey(item.key);
+                  }
+                },
+                onDrop: (e: React.DragEvent) => {
+                  e.preventDefault();
+                  handleSeqDrop(item.key);
+                },
+              };
+
+              if (item.kind === "separator") {
+                return (
+                  <div key={item.key} className={rowClass} {...dragProps}>
+                    <div className="flex items-start gap-2">
+                      <GripVertical className="h-3.5 w-3.5 mt-1.5 text-muted-foreground cursor-grab active:cursor-grabbing shrink-0" />
+                      <div className="flex-1 space-y-1">
+                        <div className="flex items-center gap-1.5">
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] h-4 px-1.5"
+                          >
+                            Title page
+                          </Badge>
+                        </div>
+                        <Input
+                          value={item.title}
+                          onChange={(e) =>
+                            updateSeparator(item.key, "title", e.target.value)
+                          }
+                          className="h-7 text-sm"
+                          placeholder="Section title"
+                        />
+                        <Input
+                          value={item.subtitle ?? ""}
+                          onChange={(e) =>
+                            updateSeparator(
+                              item.key,
+                              "subtitle",
+                              e.target.value
+                            )
+                          }
+                          className="h-7 text-xs"
+                          placeholder="Subtitle (optional)"
+                        />
+                      </div>
+                      <button
+                        onClick={() => removeFromSequence(item.key)}
+                        className="p-1 hover:bg-muted rounded-sm"
+                        aria-label="Remove"
+                      >
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="text-[11px] text-muted-foreground truncate">
-                    {formatTemplatePeriod(t)}
+                );
+              }
+
+              const t = templates.find((x) => x.id === item.id);
+              if (!t) {
+                return (
+                  <div
+                    key={item.key}
+                    className={rowClass + " text-xs text-destructive"}
+                    {...dragProps}
+                  >
+                    <div className="flex items-center gap-2">
+                      <GripVertical className="h-3.5 w-3.5 text-muted-foreground cursor-grab active:cursor-grabbing shrink-0" />
+                      Template no longer exists
+                      <button
+                        onClick={() => removeFromSequence(item.key)}
+                        className="ml-auto p-1 hover:bg-muted rounded-sm"
+                        aria-label="Remove"
+                      >
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={item.key} className={rowClass} {...dragProps}>
+                  <div className="flex items-start gap-2">
+                    <GripVertical className="h-3.5 w-3.5 mt-0.5 text-muted-foreground cursor-grab active:cursor-grabbing shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        {t.isFavorite && (
+                          <Star className="h-3 w-3 fill-yellow-400 text-yellow-500 shrink-0" />
+                        )}
+                        <span className="text-sm font-medium truncate">
+                          {t.name}
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] h-4 px-1.5"
+                        >
+                          {TAB_LABELS[t.activeTab]}
+                        </Badge>
+                      </div>
+                      <div className="text-[11px] text-muted-foreground truncate">
+                        {formatTemplatePeriod(t)}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => removeFromSequence(item.key)}
+                      className="p-1 hover:bg-muted rounded-sm"
+                      aria-label="Remove"
+                    >
+                      <Trash2 className="h-3 w-3 text-destructive" />
+                    </button>
                   </div>
                 </div>
-              </label>
-            ))}
+              );
+            })}
           </div>
+
+          {/* Add-template picker: any template not already in sequence */}
+          {(() => {
+            const usedIds = new Set(
+              sequence
+                .filter((i): i is { kind: "template"; key: string; id: string } => i.kind === "template")
+                .map((i) => i.id)
+            );
+            const remaining = templates.filter((t) => !usedIds.has(t.id));
+            if (remaining.length === 0) return null;
+            return (
+              <div className="flex items-center gap-2">
+                <Label className="text-xs whitespace-nowrap">
+                  Add template
+                </Label>
+                <Select
+                  value=""
+                  onValueChange={(v) => {
+                    if (v) addTemplateToSequence(v);
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue placeholder="Pick a template…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {remaining.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            );
+          })()}
 
           <DialogFooter>
             <Button variant="ghost" onClick={() => setExportOpen(false)}>
@@ -651,10 +889,12 @@ export function TemplatesMenu({
             </Button>
             <Button
               onClick={handleRunExport}
-              disabled={exportSelectedIds.size === 0}
+              disabled={
+                sequence.filter((i) => i.kind === "template").length === 0
+              }
             >
               <FileDown className="h-3.5 w-3.5 mr-1.5" />
-              Export {exportSelectedIds.size} as PDF
+              Export PDF
             </Button>
           </DialogFooter>
         </DialogContent>

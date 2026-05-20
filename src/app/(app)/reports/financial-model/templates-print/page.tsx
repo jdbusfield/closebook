@@ -27,19 +27,40 @@ import type {
 // Financial Model page exactly.
 // ---------------------------------------------------------------------------
 
+// An item in the export sequence — either a template to render or a
+// user-defined separator/title page that lives between templates.
+export type ExportSequenceItem =
+  | { kind: "template"; id: string; key: string }
+  | { kind: "separator"; key: string; title: string; subtitle?: string };
+
+function decodeSeqParam(raw: string | null): ExportSequenceItem[] | null {
+  if (!raw) return null;
+  try {
+    const json =
+      typeof window !== "undefined" ? window.atob(raw) : Buffer.from(raw, "base64").toString();
+    const parsed = JSON.parse(json) as ExportSequenceItem[];
+    if (!Array.isArray(parsed)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 export default function TemplatesPrintPage() {
   const searchParams = useSearchParams();
   const organizationId = searchParams.get("organizationId");
   const idsParam = searchParams.get("ids") ?? "";
+  const seqParam = searchParams.get("seq");
 
-  const [templates, setTemplates] = useState<FinancialModelTemplate[] | null>(
-    null
-  );
+  const [allTemplates, setAllTemplates] = useState<
+    FinancialModelTemplate[] | null
+  >(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   usePrintFitToPage();
 
-  // Load the listed templates
+  // Load templates for the organization once; the sequence below picks
+  // which ones to render (and in what order).
   useEffect(() => {
     if (!organizationId) {
       setLoadError("organizationId is required");
@@ -48,51 +69,65 @@ export default function TemplatesPrintPage() {
     fetch(`/api/financial-model-templates?organizationId=${organizationId}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(r)))
       .then((body: { templates: FinancialModelTemplate[] }) => {
-        const ids = new Set(idsParam.split(",").filter(Boolean));
-        const filtered =
-          ids.size === 0
-            ? body.templates
-            : body.templates.filter((t) => ids.has(t.id));
-        // Preserve the order from the ids query string if provided
-        if (ids.size > 0) {
-          const order = idsParam.split(",").filter(Boolean);
-          filtered.sort(
-            (a, b) => order.indexOf(a.id) - order.indexOf(b.id)
-          );
-        }
-        setTemplates(filtered);
+        setAllTemplates(body.templates);
       })
       .catch(() => setLoadError("Failed to load templates"));
-  }, [organizationId, idsParam]);
+  }, [organizationId]);
 
-  // Track per-section readiness — once all are ready, trigger print
+  // Resolve the export sequence: prefer the encoded `seq` param; fall back
+  // to the legacy `ids` param so older links keep working.
+  const sequence: ExportSequenceItem[] | null =
+    allTemplates === null
+      ? null
+      : (() => {
+          const decoded = decodeSeqParam(seqParam);
+          if (decoded && decoded.length > 0) {
+            const known = new Set(allTemplates.map((t) => t.id));
+            return decoded.filter(
+              (item) => item.kind === "separator" || known.has(item.id)
+            );
+          }
+          // Legacy: just template IDs in the order given
+          const ids = idsParam.split(",").filter(Boolean);
+          if (ids.length === 0) {
+            return allTemplates.map((t, i) => ({
+              kind: "template" as const,
+              id: t.id,
+              key: `t-${t.id}-${i}`,
+            }));
+          }
+          return ids.map((id, i) => ({
+            kind: "template" as const,
+            id,
+            key: `t-${id}-${i}`,
+          }));
+        })();
+
+  // Track per-item readiness — once all entries are ready, trigger print
   const readyMapRef = useRef<Map<string, boolean>>(new Map());
   const printedRef = useRef(false);
 
   const markReady = useCallback(
-    (id: string) => {
-      readyMapRef.current.set(id, true);
+    (key: string) => {
+      readyMapRef.current.set(key, true);
       if (
         !printedRef.current &&
-        templates &&
-        templates.length > 0 &&
-        templates.every((t) => readyMapRef.current.get(t.id))
+        sequence &&
+        sequence.length > 0 &&
+        sequence.every((item) => readyMapRef.current.get(item.key))
       ) {
         printedRef.current = true;
-        // Give the browser a tick to paint and the print-fit hook to scale
         setTimeout(() => window.print(), 350);
       }
     },
-    [templates]
+    [sequence]
   );
 
   if (loadError) {
-    return (
-      <div className="p-8 text-sm text-destructive">{loadError}</div>
-    );
+    return <div className="p-8 text-sm text-destructive">{loadError}</div>;
   }
 
-  if (!templates) {
+  if (allTemplates === null || sequence === null) {
     return (
       <div className="p-8 text-sm text-muted-foreground">
         Loading templates…
@@ -100,7 +135,7 @@ export default function TemplatesPrintPage() {
     );
   }
 
-  if (templates.length === 0) {
+  if (sequence.length === 0) {
     return (
       <div className="p-8 text-sm text-muted-foreground">
         No templates to print.
@@ -108,12 +143,14 @@ export default function TemplatesPrintPage() {
     );
   }
 
+  const templatesById = new Map(allTemplates.map((t) => [t.id, t]));
+
   return (
     <div className="space-y-4">
       <div className="stmt-no-print sticky top-0 bg-background border-b px-4 py-2 flex items-center gap-3 z-10">
         <p className="text-sm text-muted-foreground">
-          Print dialog opens automatically once all {templates.length} template
-          {templates.length === 1 ? "" : "s"} finish loading.
+          Print dialog opens automatically once all {sequence.length}{" "}
+          page section{sequence.length === 1 ? "" : "s"} finish loading.
         </p>
         <button
           onClick={() => window.print()}
@@ -123,14 +160,70 @@ export default function TemplatesPrintPage() {
         </button>
       </div>
 
-      {templates.map((t, idx) => (
-        <TemplatePrintSection
-          key={t.id}
-          template={t}
-          onReady={() => markReady(t.id)}
-          forcePageBreakBefore={idx > 0}
-        />
-      ))}
+      {sequence.map((item, idx) => {
+        if (item.kind === "separator") {
+          return (
+            <SeparatorPrintSection
+              key={item.key}
+              title={item.title}
+              subtitle={item.subtitle}
+              onReady={() => markReady(item.key)}
+              forcePageBreakBefore={idx > 0}
+            />
+          );
+        }
+        const t = templatesById.get(item.id);
+        if (!t) {
+          return null;
+        }
+        return (
+          <TemplatePrintSection
+            key={item.key}
+            template={t}
+            onReady={() => markReady(item.key)}
+            forcePageBreakBefore={idx > 0}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Separator / title page — full-page centered title + optional subtitle.
+// ---------------------------------------------------------------------------
+
+function SeparatorPrintSection({
+  title,
+  subtitle,
+  onReady,
+  forcePageBreakBefore,
+}: {
+  title: string;
+  subtitle?: string;
+  onReady: () => void;
+  forcePageBreakBefore: boolean;
+}) {
+  useEffect(() => {
+    onReady();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div
+      className={[
+        forcePageBreakBefore ? "stmt-page-break" : "",
+        "stmt-single-page",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <div className="min-h-[9in] flex flex-col items-center justify-center text-center px-12 py-16">
+        <h2 className="text-4xl font-semibold tracking-tight">{title}</h2>
+        {subtitle && (
+          <p className="mt-4 text-lg text-muted-foreground">{subtitle}</p>
+        )}
+      </div>
     </div>
   );
 }
