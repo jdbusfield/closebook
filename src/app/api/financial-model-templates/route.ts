@@ -32,6 +32,16 @@ export interface FinancialModelTemplate {
   includeBalanceSheet: boolean;
   includeCashFlow: boolean;
   includeProFormaSchedule: boolean;
+  activeTab:
+    | "all"
+    | "income-statement"
+    | "balance-sheet"
+    | "cash-flow"
+    | "pro-forma"
+    | "allocations"
+    | "entity-breakdown"
+    | "re-breakdown"
+    | "bridge";
   displayOrder: number;
 }
 
@@ -63,6 +73,7 @@ function rowToTemplate(row: any): FinancialModelTemplate {
     includeBalanceSheet: !!row.include_balance_sheet,
     includeCashFlow: !!row.include_cash_flow,
     includeProFormaSchedule: !!row.include_pro_forma_schedule,
+    activeTab: row.active_tab ?? "all",
     displayOrder: row.display_order ?? 0,
   };
 }
@@ -95,6 +106,7 @@ function templateToRow(t: Partial<FinancialModelTemplate>): Record<string, any> 
   if (t.includeBalanceSheet !== undefined) row.include_balance_sheet = !!t.includeBalanceSheet;
   if (t.includeCashFlow !== undefined) row.include_cash_flow = !!t.includeCashFlow;
   if (t.includeProFormaSchedule !== undefined) row.include_pro_forma_schedule = !!t.includeProFormaSchedule;
+  if (t.activeTab !== undefined) row.active_tab = t.activeTab;
   if (t.displayOrder !== undefined) row.display_order = t.displayOrder;
   return row;
 }

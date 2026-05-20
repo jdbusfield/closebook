@@ -332,6 +332,7 @@ export default function FinancialModelPage() {
     setIncludeTotal(t.includeTotal);
     setEbitdaOnly(t.ebitdaOnly);
     setVarianceDisplay(t.varianceDisplay);
+    if (t.activeTab) setActiveTab(t.activeTab);
   }
 
   function handlePrint() {
@@ -542,6 +543,7 @@ export default function FinancialModelPage() {
               includeTotal,
               ebitdaOnly,
               varianceDisplay,
+              activeTab,
             }}
             onLoadTemplate={handleLoadTemplate}
           />

@@ -37,6 +37,29 @@ import {
   type DynamicPreset,
 } from "@/lib/financial-model-templates/period-resolver";
 
+export type FinancialModelTab =
+  | "all"
+  | "income-statement"
+  | "balance-sheet"
+  | "cash-flow"
+  | "pro-forma"
+  | "allocations"
+  | "entity-breakdown"
+  | "re-breakdown"
+  | "bridge";
+
+const TAB_LABELS: Record<FinancialModelTab, string> = {
+  all: "All Statements",
+  "income-statement": "Income Statement",
+  "balance-sheet": "Balance Sheet",
+  "cash-flow": "Cash Flow",
+  "pro-forma": "Pro Forma Adjustments",
+  allocations: "Allocations",
+  "entity-breakdown": "Entity Breakdown",
+  "re-breakdown": "RE Breakdown",
+  bridge: "Bridge",
+};
+
 // Mirror of the API's FinancialModelTemplate shape (client-side copy so this
 // component does not need to import a route file).
 export interface FinancialModelTemplate {
@@ -65,6 +88,7 @@ export interface FinancialModelTemplate {
   includeBalanceSheet: boolean;
   includeCashFlow: boolean;
   includeProFormaSchedule: boolean;
+  activeTab: FinancialModelTab;
   displayOrder: number;
 }
 
@@ -85,6 +109,7 @@ export interface CurrentConfigSnapshot {
   includeTotal: boolean;
   ebitdaOnly: boolean;
   varianceDisplay: "dollars" | "percentage";
+  activeTab: FinancialModelTab;
 }
 
 interface TemplatesMenuProps {
@@ -197,6 +222,7 @@ export function TemplatesMenu({
       includeBalanceSheet: draftIncludeBS,
       includeCashFlow: draftIncludeCF,
       includeProFormaSchedule: draftIncludePFS,
+      activeTab: current.activeTab,
     };
 
     try {
@@ -254,9 +280,52 @@ export function TemplatesMenu({
     }
   }
 
-  function handleExportAll(filter: "all" | "favorites") {
-    if (!organizationId) return;
-    const url = `/api/financial-model-templates/export-pdf?organizationId=${organizationId}&filter=${filter}`;
+  // Export dialog state
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportSelectedIds, setExportSelectedIds] = useState<Set<string>>(
+    new Set()
+  );
+
+  function openExportDialog() {
+    // Default-check favorites (or all templates if no favorites exist)
+    const favs = templates.filter((t) => t.isFavorite).map((t) => t.id);
+    setExportSelectedIds(
+      new Set(favs.length > 0 ? favs : templates.map((t) => t.id))
+    );
+    setExportOpen(true);
+  }
+
+  function toggleExportId(id: string) {
+    setExportSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAllForExport() {
+    setExportSelectedIds(new Set(templates.map((t) => t.id)));
+  }
+
+  function selectFavoritesForExport() {
+    setExportSelectedIds(
+      new Set(templates.filter((t) => t.isFavorite).map((t) => t.id))
+    );
+  }
+
+  function selectNoneForExport() {
+    setExportSelectedIds(new Set());
+  }
+
+  function handleRunExport() {
+    if (!organizationId || exportSelectedIds.size === 0) {
+      toast.error("Pick at least one template");
+      return;
+    }
+    const ids = Array.from(exportSelectedIds).join(",");
+    const url = `/api/financial-model-templates/export-pdf?organizationId=${organizationId}&templateIds=${encodeURIComponent(ids)}`;
+    setExportOpen(false);
     window.location.href = url;
   }
 
@@ -365,27 +434,104 @@ export function TemplatesMenu({
           )}
 
           {templates.length > 0 && (
-            <>
-              <DropdownMenuItem
-                onClick={() => handleExportAll("all")}
-                className="text-xs gap-2"
-              >
-                <FileDown className="h-3.5 w-3.5" />
-                Export all templates to PDF
-              </DropdownMenuItem>
-              {favorites.length > 0 && (
-                <DropdownMenuItem
-                  onClick={() => handleExportAll("favorites")}
-                  className="text-xs gap-2"
-                >
-                  <FileDown className="h-3.5 w-3.5" />
-                  Export favorites only
-                </DropdownMenuItem>
-              )}
-            </>
+            <DropdownMenuItem
+              onClick={openExportDialog}
+              className="text-xs gap-2"
+            >
+              <FileDown className="h-3.5 w-3.5" />
+              Export templates to PDF…
+            </DropdownMenuItem>
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {/* Export picker dialog — pick which templates to roll into the PDF */}
+      <Dialog open={exportOpen} onOpenChange={setExportOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>Export templates to PDF</DialogTitle>
+            <DialogDescription>
+              Pick which templates to include. Each template renders the tab it
+              was saved on (income statement, balance sheet, RE breakdown,
+              etc.).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex items-center gap-1 -mb-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={selectAllForExport}
+            >
+              Select all
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={selectFavoritesForExport}
+            >
+              Favorites only
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={selectNoneForExport}
+            >
+              None
+            </Button>
+            <span className="ml-auto text-[11px] text-muted-foreground">
+              {exportSelectedIds.size} of {templates.length} selected
+            </span>
+          </div>
+
+          <div className="max-h-[360px] overflow-y-auto rounded border divide-y">
+            {templates.map((t) => (
+              <label
+                key={t.id}
+                className="flex items-start gap-2 px-3 py-2 hover:bg-muted/40 cursor-pointer"
+              >
+                <Checkbox
+                  checked={exportSelectedIds.has(t.id)}
+                  onCheckedChange={() => toggleExportId(t.id)}
+                  className="mt-0.5"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    {t.isFavorite && (
+                      <Star className="h-3 w-3 fill-yellow-400 text-yellow-500 shrink-0" />
+                    )}
+                    <span className="text-sm font-medium truncate">
+                      {t.name}
+                    </span>
+                    <Badge variant="outline" className="text-[10px] h-4 px-1.5">
+                      {TAB_LABELS[t.activeTab]}
+                    </Badge>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground truncate">
+                    {formatTemplatePeriod(t)}
+                  </div>
+                </div>
+              </label>
+            ))}
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setExportOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRunExport}
+              disabled={exportSelectedIds.size === 0}
+            >
+              <FileDown className="h-3.5 w-3.5 mr-1.5" />
+              Export {exportSelectedIds.size} as PDF
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Save / edit dialog */}
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
@@ -574,6 +720,9 @@ function TemplateRow({
       >
         <div className="text-sm font-medium truncate">{template.name}</div>
         <div className="text-[10px] text-muted-foreground truncate">
+          <span className="inline-flex items-center mr-1 px-1 rounded bg-muted text-foreground/80 text-[9px] font-medium">
+            {TAB_LABELS[template.activeTab]}
+          </span>
           {periodLabel}
           {template.periodMode === "dynamic" && (
             <span className="ml-1 inline-flex items-center px-1 rounded bg-blue-50 text-blue-700 text-[9px] font-medium">
