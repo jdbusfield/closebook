@@ -385,14 +385,21 @@ function StatementsTabSection({
     ? filterForEbitdaOnly(data.incomeStatement)
     : data.incomeStatement;
 
+  // For a single-statement tab, the tab itself implies which statement
+  // prints. For the "all" tab, the per-statement include flags from the
+  // template's save dialog drive what's included in the export.
   const tab = template.activeTab;
-  const showIS = tab === "all" || tab === "income-statement";
+  const showIS =
+    tab === "income-statement" ||
+    (tab === "all" && template.includeIncomeStatement);
   const showBS =
-    (tab === "all" || tab === "balance-sheet") && !template.ebitdaOnly;
+    (tab === "balance-sheet" ||
+      (tab === "all" && template.includeBalanceSheet)) &&
+    !template.ebitdaOnly;
   const showCF =
-    (tab === "all" || tab === "cash-flow") && !template.ebitdaOnly;
-  // Pro forma tab shows ONLY the adjustment detail schedule; "all" tab can
-  // optionally include it depending on the template flag.
+    (tab === "cash-flow" ||
+      (tab === "all" && template.includeCashFlow)) &&
+    !template.ebitdaOnly;
   const showProForma =
     (tab === "pro-forma" ||
       (tab === "all" && template.includeProFormaSchedule)) &&
