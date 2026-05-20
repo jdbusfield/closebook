@@ -22,7 +22,7 @@ const MONTH_ABBR = [
 ];
 
 // ---------------------------------------------------------------------------
-// Number formatting — parens for negatives, em dash for zero
+// Number formatting
 // ---------------------------------------------------------------------------
 
 function fmtAmount(amount: number | null | undefined, showDollar = false): string {
@@ -44,7 +44,7 @@ function fmtPercent(value: number | null | undefined): string {
 }
 
 // ---------------------------------------------------------------------------
-// Fetch internal financial-statements API on behalf of the request user
+// Internal API helpers
 // ---------------------------------------------------------------------------
 
 interface FetchedStatements {
@@ -64,15 +64,41 @@ interface FetchedStatements {
   };
 }
 
-async function fetchStatementsForTemplate(
+interface FetchedBreakdown {
+  columns: Array<{ key: string; label: string; fullName: string }>;
+  incomeStatement: StatementData;
+  balanceSheet: StatementData;
+  metadata: {
+    organizationName?: string;
+    reportingEntityName?: string;
+    generatedAt: string;
+    startPeriod: string;
+    endPeriod: string;
+  };
+}
+
+async function fetchInternalJson<T>(
   request: Request,
+  path: string,
+  params: URLSearchParams
+): Promise<T> {
+  const baseUrl = new URL(request.url).origin;
+  const res = await fetch(`${baseUrl}${path}?${params.toString()}`, {
+    headers: { cookie: request.headers.get("cookie") ?? "" },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ?? `Fetch ${path} failed (${res.status})`);
+  }
+  return res.json() as Promise<T>;
+}
+
+function buildStatementsParams(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   template: any,
   resolved: { startYear: number; startMonth: number; endYear: number; endMonth: number }
-): Promise<FetchedStatements> {
-  const baseUrl = new URL(request.url).origin;
+): URLSearchParams {
   const params = new URLSearchParams();
-
   params.set("scope", template.scope);
   params.set("startYear", String(resolved.startYear));
   params.set("startMonth", String(resolved.startMonth));
@@ -96,25 +122,14 @@ async function fetchStatementsForTemplate(
   if (template.chart_id) {
     params.set("chartId", template.chart_id);
   }
-
-  const res = await fetch(
-    `${baseUrl}/api/financial-statements?${params.toString()}`,
-    { headers: { cookie: request.headers.get("cookie") ?? "" } }
-  );
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error ?? `Statements fetch failed (${res.status})`);
-  }
-  return res.json();
+  return params;
 }
 
 // ---------------------------------------------------------------------------
-// EBITDA filter (mirrors filterForEbitdaOnly from format-utils)
+// EBITDA filter
 // ---------------------------------------------------------------------------
 
 function filterForEbitdaOnly(statement: StatementData): StatementData {
-  // Drop everything after the operating_income computed line. This matches
-  // the on-screen toggle's behavior without importing the client-only helper.
   const sections = [];
   for (const s of statement.sections) {
     sections.push(s);
@@ -130,29 +145,32 @@ function filterForEbitdaOnly(statement: StatementData): StatementData {
 }
 
 // ---------------------------------------------------------------------------
-// PDF rendering: one statement per page
+// Generic columnar statement → autoTable rows.
+//
+// Used for both period-keyed statements (IS/BS/CF) and column-keyed
+// breakdowns (entity / RE breakdown). The caller supplies the column
+// definitions; we just look up amounts via line.amounts[column.key].
 // ---------------------------------------------------------------------------
 
-interface RenderContext {
-  pdf: jsPDF;
-  templateName: string;
-  companyName: string;
-  periodDescription: string;
+interface ColumnDef {
+  key: string;
+  label: string;
 }
 
-function statementToRows(
+function statementToRowsGeneric(
   statement: StatementData,
-  periods: Period[],
+  columns: ColumnDef[],
   includeBudget: boolean,
-  varianceDisplay: "dollars" | "percentage"
+  varianceDisplay: "dollars" | "percentage",
+  periods?: Period[] // when present, enables budget/variance triplets
 ): {
   head: string[][];
   body: (string | { content: string; styles?: Record<string, unknown> })[][];
 } {
   const columnHeaders: string[] = ["Account"];
-  for (const p of periods) {
-    columnHeaders.push(p.label);
-    if (includeBudget) {
+  for (const c of columns) {
+    columnHeaders.push(c.label);
+    if (includeBudget && periods) {
       columnHeaders.push("Budget");
       columnHeaders.push(varianceDisplay === "percentage" ? "Var %" : "Var $");
     }
@@ -173,8 +191,8 @@ function statementToRows(
     };
     const row: object[] = [labelCell];
 
-    for (const p of periods) {
-      const v = line.amounts?.[p.key];
+    for (const c of columns) {
+      const v = line.amounts?.[c.key];
       const formatted = isPct
         ? fmtPercent(v)
         : fmtAmount(v, line.showDollarSign);
@@ -185,8 +203,8 @@ function statementToRows(
           fontStyle: emphasis === "normal" ? (isPct ? "italic" : "normal") : "bold",
         },
       });
-      if (includeBudget) {
-        const b = line.budgetAmounts?.[p.key];
+      if (includeBudget && periods) {
+        const b = line.budgetAmounts?.[c.key];
         row.push({
           content: isPct ? fmtPercent(b) : fmtAmount(b),
           styles: { halign: "right" },
@@ -214,8 +232,7 @@ function statementToRows(
 
   for (const section of statement.sections) {
     if (section.title) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const sectionRow: any[] = [
+      body.push([
         {
           content: section.title.toUpperCase(),
           colSpan: columnHeaders.length,
@@ -225,8 +242,7 @@ function statementToRows(
             textColor: [31, 58, 95],
           },
         },
-      ];
-      body.push(sectionRow);
+      ]);
     }
     for (const line of section.lines) {
       if (line.isSeparator) continue;
@@ -248,36 +264,49 @@ function statementToRows(
   return { head: [columnHeaders], body };
 }
 
-function renderStatementPage(
+// ---------------------------------------------------------------------------
+// PDF page primitives
+// ---------------------------------------------------------------------------
+
+interface RenderContext {
+  pdf: jsPDF;
+  templateName: string;
+  companyName: string;
+  periodDescription: string;
+}
+
+function addPageForColumns(pdf: jsPDF, columnCount: number) {
+  pdf.addPage(
+    "letter",
+    columnCount > 6 ? "landscape" : "portrait"
+  );
+}
+
+function drawPageHeader(
   ctx: RenderContext,
-  statement: StatementData,
   statementTitle: string,
-  periods: Period[],
-  includeBudget: boolean,
-  varianceDisplay: "dollars" | "percentage",
-  isFirstPage: boolean
+  subTitle?: string
 ) {
   const { pdf, templateName, companyName, periodDescription } = ctx;
-
-  if (!isFirstPage) {
-    const colCount = periods.length * (includeBudget ? 3 : 1) + 1;
-    pdf.addPage(colCount > 6 ? "letter" : "letter", colCount > 6 ? "landscape" : "portrait");
-  }
-
-  // Header
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(14);
   pdf.setTextColor(28, 36, 48);
-  pdf.text(companyName || "Financial Statements", pdf.internal.pageSize.getWidth() / 2, 36, {
-    align: "center",
-  });
+  pdf.text(
+    companyName || "Financial Statements",
+    pdf.internal.pageSize.getWidth() / 2,
+    36,
+    { align: "center" }
+  );
 
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(11);
   pdf.setTextColor(31, 58, 95);
-  pdf.text(statementTitle.toUpperCase(), pdf.internal.pageSize.getWidth() / 2, 54, {
-    align: "center",
-  });
+  pdf.text(
+    statementTitle.toUpperCase(),
+    pdf.internal.pageSize.getWidth() / 2,
+    54,
+    { align: "center" }
+  );
 
   pdf.setFont("helvetica", "italic");
   pdf.setFontSize(9);
@@ -286,20 +315,66 @@ function renderStatementPage(
     align: "center",
   });
   pdf.text(
-    `Template: ${templateName} · Unaudited — For Management Use Only`,
+    `Template: ${templateName}${subTitle ? ` · ${subTitle}` : ""} · Unaudited — For Management Use Only`,
     pdf.internal.pageSize.getWidth() / 2,
     80,
     { align: "center" }
   );
+}
 
-  const { head, body } = statementToRows(
+function footerCallback(ctx: RenderContext) {
+  return (data: { settings: { margin: { left: number; right: number } } }) => {
+    const { pdf, templateName, periodDescription } = ctx;
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    pdf.setFontSize(7);
+    pdf.setTextColor(107, 114, 128);
+    pdf.setFont("helvetica", "italic");
+    pdf.text(
+      `${templateName} — ${periodDescription}`,
+      data.settings.margin.left,
+      pageH - 12
+    );
+    pdf.text(
+      `Page ${pdf.getNumberOfPages()}`,
+      pageW - data.settings.margin.right,
+      pageH - 12,
+      { align: "right" }
+    );
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Statement page renderers (one per tab type)
+// ---------------------------------------------------------------------------
+
+function renderStatementPage(
+  ctx: RenderContext,
+  statement: StatementData,
+  statementTitle: string,
+  periods: Period[],
+  includeBudget: boolean,
+  varianceDisplay: "dollars" | "percentage"
+) {
+  const columns: ColumnDef[] = periods.map((p) => ({
+    key: p.key,
+    label: p.label,
+  }));
+  const totalCols =
+    columns.length * (includeBudget ? 3 : 1) + 1;
+  addPageForColumns(ctx.pdf, totalCols);
+
+  drawPageHeader(ctx, statementTitle);
+
+  const { head, body } = statementToRowsGeneric(
     statement,
-    periods,
+    columns,
     includeBudget,
-    varianceDisplay
+    varianceDisplay,
+    periods
   );
 
-  autoTable(pdf, {
+  autoTable(ctx.pdf, {
     head,
     body,
     startY: 92,
@@ -317,27 +392,48 @@ function renderStatementPage(
       fontStyle: "bold",
       halign: "center",
     },
-    columnStyles: {
-      0: { cellWidth: "auto", halign: "left" },
+    columnStyles: { 0: { cellWidth: "auto", halign: "left" } },
+    didDrawPage: footerCallback(ctx),
+    margin: { left: 28, right: 28, bottom: 28 },
+  });
+}
+
+function renderBreakdownPage(
+  ctx: RenderContext,
+  statement: StatementData,
+  columns: ColumnDef[],
+  title: string
+) {
+  addPageForColumns(ctx.pdf, columns.length + 1);
+  drawPageHeader(ctx, title);
+
+  const { head, body } = statementToRowsGeneric(
+    statement,
+    columns,
+    false,
+    "dollars"
+  );
+
+  autoTable(ctx.pdf, {
+    head,
+    body,
+    startY: 92,
+    styles: {
+      font: "helvetica",
+      fontSize: 8,
+      cellPadding: 2.5,
+      textColor: [28, 36, 48],
+      lineColor: [209, 213, 219],
+      lineWidth: 0.25,
     },
-    didDrawPage: (data) => {
-      const pageW = pdf.internal.pageSize.getWidth();
-      const pageH = pdf.internal.pageSize.getHeight();
-      pdf.setFontSize(7);
-      pdf.setTextColor(107, 114, 128);
-      pdf.setFont("helvetica", "italic");
-      pdf.text(
-        `${templateName} — ${periodDescription}`,
-        data.settings.margin.left,
-        pageH - 12
-      );
-      pdf.text(
-        `Page ${pdf.getNumberOfPages()}`,
-        pageW - data.settings.margin.right,
-        pageH - 12,
-        { align: "right" }
-      );
+    headStyles: {
+      fillColor: [31, 58, 95],
+      textColor: [255, 255, 255],
+      fontStyle: "bold",
+      halign: "center",
     },
+    columnStyles: { 0: { cellWidth: "auto", halign: "left" } },
+    didDrawPage: footerCallback(ctx),
     margin: { left: 28, right: 28, bottom: 28 },
   });
 }
@@ -347,47 +443,19 @@ function renderProFormaSchedulePage(
   adjustments: ProFormaAdjustmentDetail[],
   periods: Period[]
 ) {
-  const { pdf, templateName, companyName, periodDescription } = ctx;
-  pdf.addPage("letter", "landscape");
+  ctx.pdf.addPage("letter", "landscape");
+  drawPageHeader(ctx, "Pro Forma Adjustments Detail");
 
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(14);
-  pdf.setTextColor(28, 36, 48);
-  pdf.text(companyName || "Pro Forma Adjustments", pdf.internal.pageSize.getWidth() / 2, 36, {
-    align: "center",
-  });
-
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(11);
-  pdf.setTextColor(31, 58, 95);
-  pdf.text("PRO FORMA ADJUSTMENTS DETAIL", pdf.internal.pageSize.getWidth() / 2, 54, {
-    align: "center",
-  });
-
-  pdf.setFont("helvetica", "italic");
-  pdf.setFontSize(9);
-  pdf.setTextColor(107, 114, 128);
-  pdf.text(periodDescription, pdf.internal.pageSize.getWidth() / 2, 68, {
-    align: "center",
-  });
-  pdf.text(
-    `Template: ${templateName}`,
-    pdf.internal.pageSize.getWidth() / 2,
-    80,
-    { align: "center" }
-  );
-
-  // Filter to adjustments inside the report period range
   const validBucketKeys = new Set(periods.map((p) => p.key));
   const visible = adjustments.filter((a) => validBucketKeys.has(a.bucketKey));
 
   if (visible.length === 0) {
-    pdf.setFont("helvetica", "italic");
-    pdf.setFontSize(10);
-    pdf.setTextColor(107, 114, 128);
-    pdf.text(
+    ctx.pdf.setFont("helvetica", "italic");
+    ctx.pdf.setFontSize(10);
+    ctx.pdf.setTextColor(107, 114, 128);
+    ctx.pdf.text(
       "No pro forma adjustments in this period.",
-      pdf.internal.pageSize.getWidth() / 2,
+      ctx.pdf.internal.pageSize.getWidth() / 2,
       120,
       { align: "center" }
     );
@@ -409,7 +477,7 @@ function renderProFormaSchedulePage(
     { content: fmtAmount(a.amount, true), styles: { halign: "right" } },
   ]);
 
-  autoTable(pdf, {
+  autoTable(ctx.pdf, {
     head,
     body,
     startY: 92,
@@ -427,24 +495,108 @@ function renderProFormaSchedulePage(
       fontStyle: "bold",
     },
     margin: { left: 28, right: 28, bottom: 28 },
-    didDrawPage: (data) => {
-      const pageW = pdf.internal.pageSize.getWidth();
-      const pageH = pdf.internal.pageSize.getHeight();
-      pdf.setFontSize(7);
-      pdf.setTextColor(107, 114, 128);
-      pdf.setFont("helvetica", "italic");
-      pdf.text(
-        `${templateName} — ${periodDescription}`,
-        data.settings.margin.left,
-        pageH - 12
-      );
-      pdf.text(
-        `Page ${pdf.getNumberOfPages()}`,
-        pageW - data.settings.margin.right,
-        pageH - 12,
-        { align: "right" }
-      );
+    didDrawPage: footerCallback(ctx),
+  });
+}
+
+interface AllocationRow {
+  source_entity_code: string;
+  source_entity_name: string;
+  destination_entity_code: string | null;
+  destination_entity_name: string | null;
+  master_account_number: string | null;
+  master_account_name: string | null;
+  destination_master_account_number: string | null;
+  destination_master_account_name: string | null;
+  amount: number;
+  description: string | null;
+  schedule_type: string;
+  period_year: number | null;
+  period_month: number | null;
+  start_year: number | null;
+  start_month: number | null;
+  end_year: number | null;
+  end_month: number | null;
+  is_repeating: boolean | null;
+}
+
+function formatAllocationPeriod(a: AllocationRow): string {
+  if (a.schedule_type === "single_month" && a.period_year && a.period_month) {
+    let base = `${MONTH_ABBR[a.period_month - 1]} ${a.period_year}`;
+    if (a.is_repeating) base += " (repeating)";
+    return base;
+  }
+  if (
+    a.schedule_type === "monthly_spread" &&
+    a.start_year &&
+    a.start_month &&
+    a.end_year &&
+    a.end_month
+  ) {
+    return `${MONTH_ABBR[a.start_month - 1]} ${a.start_year} – ${MONTH_ABBR[a.end_month - 1]} ${a.end_year}`;
+  }
+  return "—";
+}
+
+function renderAllocationsPage(
+  ctx: RenderContext,
+  allocations: AllocationRow[]
+) {
+  ctx.pdf.addPage("letter", "landscape");
+  drawPageHeader(ctx, "Allocations Detail");
+
+  if (allocations.length === 0) {
+    ctx.pdf.setFont("helvetica", "italic");
+    ctx.pdf.setFontSize(10);
+    ctx.pdf.setTextColor(107, 114, 128);
+    ctx.pdf.text(
+      "No allocations found.",
+      ctx.pdf.internal.pageSize.getWidth() / 2,
+      120,
+      { align: "center" }
+    );
+    return;
+  }
+
+  const head = [
+    ["From", "To", "Account", "Reclass to", "Period", "Description", "Amount"],
+  ];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const body: any[] = allocations.map((a) => [
+    `${a.source_entity_code ?? ""} — ${a.source_entity_name ?? ""}`,
+    a.destination_entity_code
+      ? `${a.destination_entity_code} — ${a.destination_entity_name ?? ""}`
+      : "—",
+    a.master_account_number
+      ? `${a.master_account_number} ${a.master_account_name ?? ""}`
+      : (a.master_account_name ?? ""),
+    a.destination_master_account_number
+      ? `${a.destination_master_account_number} ${a.destination_master_account_name ?? ""}`
+      : "",
+    formatAllocationPeriod(a),
+    a.description ?? "",
+    { content: fmtAmount(a.amount, true), styles: { halign: "right" } },
+  ]);
+
+  autoTable(ctx.pdf, {
+    head,
+    body,
+    startY: 92,
+    styles: {
+      font: "helvetica",
+      fontSize: 8,
+      cellPadding: 3,
+      textColor: [28, 36, 48],
+      lineColor: [209, 213, 219],
+      lineWidth: 0.25,
     },
+    headStyles: {
+      fillColor: [31, 58, 95],
+      textColor: [255, 255, 255],
+      fontStyle: "bold",
+    },
+    margin: { left: 28, right: 28, bottom: 28 },
+    didDrawPage: footerCallback(ctx),
   });
 }
 
@@ -453,7 +605,8 @@ function renderTemplateCoverPage(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   template: any,
   resolved: { startYear: number; startMonth: number; endYear: number; endMonth: number },
-  isFirstPage: boolean
+  isFirstPage: boolean,
+  activeTabLabel: string
 ) {
   const { pdf } = ctx;
   if (!isFirstPage) {
@@ -479,17 +632,324 @@ function renderTemplateCoverPage(
       : "Static range";
   pdf.text(periodMode, pageW / 2, 188, { align: "center" });
 
-  const statementsList: string[] = [];
-  if (template.include_income_statement) statementsList.push("Income Statement");
-  if (template.include_balance_sheet) statementsList.push("Balance Sheet");
-  if (template.include_cash_flow) statementsList.push("Cash Flow Statement");
-  if (template.include_pro_forma_schedule) statementsList.push("Pro Forma Adjustments");
-  pdf.text(
-    "Includes: " + (statementsList.join(", ") || "(no statements selected)"),
-    pageW / 2,
-    210,
-    { align: "center" }
-  );
+  pdf.setFont("helvetica", "bold");
+  pdf.setTextColor(31, 58, 95);
+  pdf.text(`View: ${activeTabLabel}`, pageW / 2, 210, { align: "center" });
+}
+
+const TAB_LABELS: Record<string, string> = {
+  all: "All Statements",
+  "income-statement": "Income Statement",
+  "balance-sheet": "Balance Sheet",
+  "cash-flow": "Cash Flow Statement",
+  "pro-forma": "Pro Forma Adjustments",
+  allocations: "Allocations",
+  "entity-breakdown": "Entity Breakdown",
+  "re-breakdown": "Reporting Entity Breakdown",
+  bridge: "Bridge",
+};
+
+// ---------------------------------------------------------------------------
+// Per-template renderer — dispatches on active_tab
+// ---------------------------------------------------------------------------
+
+async function renderTemplate(
+  request: Request,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  template: any,
+  resolved: { startYear: number; startMonth: number; endYear: number; endMonth: number },
+  pdf: jsPDF,
+  isFirstPage: boolean
+): Promise<void> {
+  const activeTab: string = template.active_tab ?? "all";
+  const activeTabLabel = TAB_LABELS[activeTab] ?? activeTab;
+
+  const titlePrefix =
+    template.scope === "organization" ? "Consolidated " : "";
+  const varianceDisplay: "dollars" | "percentage" =
+    template.variance_display === "percentage" ? "percentage" : "dollars";
+
+  // Statements-tab cluster (all/IS/BS/CF/pro-forma): fetch the main API once
+  // and dispatch to renderers.
+  const wantsStatements = new Set([
+    "all",
+    "income-statement",
+    "balance-sheet",
+    "cash-flow",
+    "pro-forma",
+  ]).has(activeTab);
+
+  // For "all" we fall back to the template's per-statement flags; for any
+  // specific statement tab the flag is implied by the tab itself.
+  const renderIS =
+    activeTab === "all"
+      ? !!template.include_income_statement
+      : activeTab === "income-statement";
+  const renderBS =
+    activeTab === "all"
+      ? !!template.include_balance_sheet
+      : activeTab === "balance-sheet";
+  const renderCF =
+    activeTab === "all"
+      ? !!template.include_cash_flow
+      : activeTab === "cash-flow";
+  const renderProForma =
+    activeTab === "pro-forma" ||
+    (activeTab === "all" && !!template.include_pro_forma_schedule);
+
+  // Resolve company name and period description for the cover (best-effort
+  // before any API calls — overridden below if we fetch metadata).
+  let companyName = "";
+  let periodDescription = `${MONTH_ABBR[resolved.startMonth - 1]} ${resolved.startYear} – ${MONTH_ABBR[resolved.endMonth - 1]} ${resolved.endYear}`;
+
+  // ---- Statements tabs ----
+  if (wantsStatements) {
+    let data: FetchedStatements;
+    try {
+      data = await fetchInternalJson<FetchedStatements>(
+        request,
+        "/api/financial-statements",
+        buildStatementsParams(template, resolved)
+      );
+    } catch (e) {
+      const ctx: RenderContext = {
+        pdf,
+        templateName: template.name,
+        companyName: "",
+        periodDescription,
+      };
+      renderTemplateCoverPage(ctx, template, resolved, isFirstPage, activeTabLabel);
+      pdf.setFontSize(11);
+      pdf.setTextColor(180, 28, 28);
+      pdf.text(
+        `Failed to load: ${(e as Error).message}`,
+        pdf.internal.pageSize.getWidth() / 2,
+        250,
+        { align: "center" }
+      );
+      return;
+    }
+
+    companyName =
+      data.metadata.reportingEntityName ??
+      data.metadata.entityName ??
+      data.metadata.organizationName ??
+      "";
+
+    const ctx: RenderContext = {
+      pdf,
+      templateName: template.name,
+      companyName,
+      periodDescription,
+    };
+
+    renderTemplateCoverPage(ctx, template, resolved, isFirstPage, activeTabLabel);
+
+    const incomeStatement = template.ebitda_only
+      ? filterForEbitdaOnly(data.incomeStatement)
+      : data.incomeStatement;
+
+    if (renderIS) {
+      renderStatementPage(
+        ctx,
+        incomeStatement,
+        `${titlePrefix}Statement of Operations`,
+        data.periods,
+        !!template.include_budget,
+        varianceDisplay
+      );
+    }
+    if (renderBS) {
+      renderStatementPage(
+        ctx,
+        data.balanceSheet,
+        `${titlePrefix}Balance Sheet`,
+        data.periods,
+        false,
+        varianceDisplay
+      );
+    }
+    if (renderCF) {
+      renderStatementPage(
+        ctx,
+        data.cashFlowStatement,
+        `${titlePrefix}Statement of Cash Flows`,
+        data.periods,
+        false,
+        varianceDisplay
+      );
+    }
+    if (renderProForma && data.proFormaAdjustments) {
+      renderProFormaSchedulePage(ctx, data.proFormaAdjustments, data.periods);
+    }
+    return;
+  }
+
+  // ---- Entity Breakdown ----
+  if (activeTab === "entity-breakdown") {
+    const params = new URLSearchParams();
+    params.set("organizationId", template.organization_id);
+    if (template.scope === "reporting_entity" && template.reporting_entity_id) {
+      params.set("reportingEntityId", template.reporting_entity_id);
+    }
+    if (template.chart_id) params.set("chartId", template.chart_id);
+    params.set("startYear", String(resolved.startYear));
+    params.set("startMonth", String(resolved.startMonth));
+    params.set("endYear", String(resolved.endYear));
+    params.set("endMonth", String(resolved.endMonth));
+    params.set("granularity", template.granularity);
+    params.set("includeProForma", String(!!template.include_pro_forma));
+    params.set("includeAllocations", String(!!template.include_allocations));
+
+    let data: FetchedBreakdown;
+    try {
+      data = await fetchInternalJson<FetchedBreakdown>(
+        request,
+        "/api/financial-statements/entity-breakdown",
+        params
+      );
+    } catch (e) {
+      const ctx: RenderContext = { pdf, templateName: template.name, companyName: "", periodDescription };
+      renderTemplateCoverPage(ctx, template, resolved, isFirstPage, activeTabLabel);
+      pdf.setTextColor(180, 28, 28);
+      pdf.text(`Failed to load: ${(e as Error).message}`, pdf.internal.pageSize.getWidth() / 2, 250, { align: "center" });
+      return;
+    }
+
+    companyName = data.metadata.reportingEntityName ?? data.metadata.organizationName ?? "";
+    const ctx: RenderContext = { pdf, templateName: template.name, companyName, periodDescription };
+    renderTemplateCoverPage(ctx, template, resolved, isFirstPage, activeTabLabel);
+
+    const incomeStatement = template.ebitda_only
+      ? filterForEbitdaOnly(data.incomeStatement)
+      : data.incomeStatement;
+
+    const cols: ColumnDef[] = data.columns.map((c) => ({ key: c.key, label: c.label }));
+    renderBreakdownPage(ctx, incomeStatement, cols, "Income Statement — Entity Breakdown");
+    renderBreakdownPage(ctx, data.balanceSheet, cols, "Balance Sheet — Entity Breakdown");
+    return;
+  }
+
+  // ---- Reporting Entity Breakdown ----
+  if (activeTab === "re-breakdown") {
+    const params = new URLSearchParams();
+    params.set("organizationId", template.organization_id);
+    if (template.chart_id) params.set("chartId", template.chart_id);
+    params.set("startYear", String(resolved.startYear));
+    params.set("startMonth", String(resolved.startMonth));
+    params.set("endYear", String(resolved.endYear));
+    params.set("endMonth", String(resolved.endMonth));
+    params.set("granularity", template.granularity);
+    params.set("includeProForma", String(!!template.include_pro_forma));
+    params.set("includeAllocations", String(!!template.include_allocations));
+
+    let data: FetchedBreakdown;
+    try {
+      data = await fetchInternalJson<FetchedBreakdown>(
+        request,
+        "/api/financial-statements/reporting-entity-breakdown",
+        params
+      );
+    } catch (e) {
+      const ctx: RenderContext = { pdf, templateName: template.name, companyName: "", periodDescription };
+      renderTemplateCoverPage(ctx, template, resolved, isFirstPage, activeTabLabel);
+      pdf.setTextColor(180, 28, 28);
+      pdf.text(`Failed to load: ${(e as Error).message}`, pdf.internal.pageSize.getWidth() / 2, 250, { align: "center" });
+      return;
+    }
+
+    companyName = data.metadata.organizationName ?? "";
+    const ctx: RenderContext = { pdf, templateName: template.name, companyName, periodDescription };
+    renderTemplateCoverPage(ctx, template, resolved, isFirstPage, activeTabLabel);
+
+    const incomeStatement = template.ebitda_only
+      ? filterForEbitdaOnly(data.incomeStatement)
+      : data.incomeStatement;
+
+    const cols: ColumnDef[] = data.columns.map((c) => ({ key: c.key, label: c.label }));
+    renderBreakdownPage(ctx, incomeStatement, cols, "Income Statement — Reporting Entity Breakdown");
+    renderBreakdownPage(ctx, data.balanceSheet, cols, "Balance Sheet — Reporting Entity Breakdown");
+    return;
+  }
+
+  // ---- Allocations (read directly from DB; the tab does not have a single API) ----
+  if (activeTab === "allocations") {
+    const admin = createAdminClient();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let q = (admin as any)
+      .from("allocation_adjustments")
+      .select(
+        `*,
+        source:entities!allocation_adjustments_source_entity_id_fkey(name, code),
+        destination:entities!allocation_adjustments_destination_entity_id_fkey(name, code),
+        master_accounts!allocation_adjustments_master_account_id_fkey!inner(name, account_number),
+        dest_master:master_accounts!allocation_adjustments_destination_master_account_id_fkey(name, account_number)`
+      )
+      .eq("organization_id", template.organization_id)
+      .order("created_at", { ascending: false });
+
+    if (template.scope === "entity" && template.entity_id) {
+      q = q.or(
+        `source_entity_id.eq.${template.entity_id},destination_entity_id.eq.${template.entity_id}`
+      );
+    }
+
+    const { data: rows } = await q;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allocations: AllocationRow[] = (rows ?? []).map((r: any) => ({
+      source_entity_code: r.source?.code ?? "",
+      source_entity_name: r.source?.name ?? "",
+      destination_entity_code: r.destination?.code ?? null,
+      destination_entity_name: r.destination?.name ?? null,
+      master_account_number: r.master_accounts?.account_number ?? null,
+      master_account_name: r.master_accounts?.name ?? null,
+      destination_master_account_number: r.dest_master?.account_number ?? null,
+      destination_master_account_name: r.dest_master?.name ?? null,
+      amount: Number(r.amount ?? 0),
+      description: r.description ?? null,
+      schedule_type: r.schedule_type,
+      period_year: r.period_year,
+      period_month: r.period_month,
+      start_year: r.start_year,
+      start_month: r.start_month,
+      end_year: r.end_year,
+      end_month: r.end_month,
+      is_repeating: r.is_repeating,
+    }));
+
+    // Resolve org/entity name for header
+    const { data: org } = await admin
+      .from("organizations")
+      .select("name")
+      .eq("id", template.organization_id)
+      .single();
+    companyName = org?.name ?? "";
+
+    const ctx: RenderContext = { pdf, templateName: template.name, companyName, periodDescription };
+    renderTemplateCoverPage(ctx, template, resolved, isFirstPage, activeTabLabel);
+    renderAllocationsPage(ctx, allocations);
+    return;
+  }
+
+  // ---- Bridge (placeholder — complex view; not yet supported in PDF) ----
+  if (activeTab === "bridge") {
+    const ctx: RenderContext = { pdf, templateName: template.name, companyName: "", periodDescription };
+    renderTemplateCoverPage(ctx, template, resolved, isFirstPage, activeTabLabel);
+    pdf.setFont("helvetica", "italic");
+    pdf.setFontSize(10);
+    pdf.setTextColor(107, 114, 128);
+    pdf.text(
+      "Bridge view is not yet supported in PDF export — open the tab in the app.",
+      pdf.internal.pageSize.getWidth() / 2,
+      250,
+      { align: "center" }
+    );
+    return;
+  }
+
+  // ---- Fallback ----
+  const ctx: RenderContext = { pdf, templateName: template.name, companyName: "", periodDescription };
+  renderTemplateCoverPage(ctx, template, resolved, isFirstPage, activeTabLabel);
 }
 
 // ---------------------------------------------------------------------------
@@ -580,99 +1040,10 @@ export async function GET(request: Request) {
         today
       );
 
-      if (!resolved) {
-        // Skip templates with no resolvable period rather than failing the
-        // entire export.
-        continue;
-      }
+      if (!resolved) continue;
 
-      let data: FetchedStatements;
-      try {
-        data = await fetchStatementsForTemplate(request, template, resolved);
-      } catch (e) {
-        // Render a placeholder page that says the fetch failed but keep going
-        renderTemplateCoverPage({
-          pdf,
-          templateName: template.name,
-          companyName: "",
-          periodDescription:
-            `${MONTH_ABBR[resolved.startMonth - 1]} ${resolved.startYear} – ${MONTH_ABBR[resolved.endMonth - 1]} ${resolved.endYear}`,
-        }, template, resolved, isFirstPage);
-        isFirstPage = false;
-        pdf.setFontSize(11);
-        pdf.setTextColor(180, 28, 28);
-        pdf.text(
-          `Failed to load: ${(e as Error).message}`,
-          pdf.internal.pageSize.getWidth() / 2,
-          250,
-          { align: "center" }
-        );
-        continue;
-      }
-
-      const periodDescription = `${MONTH_ABBR[resolved.startMonth - 1]} ${resolved.startYear} – ${MONTH_ABBR[resolved.endMonth - 1]} ${resolved.endYear}`;
-      const companyName =
-        data.metadata.reportingEntityName ??
-        data.metadata.entityName ??
-        data.metadata.organizationName ??
-        "";
-
-      const ctx: RenderContext = {
-        pdf,
-        templateName: template.name,
-        companyName,
-        periodDescription,
-      };
-
-      renderTemplateCoverPage(ctx, template, resolved, isFirstPage);
+      await renderTemplate(request, template, resolved, pdf, isFirstPage);
       isFirstPage = false;
-
-      const incomeStatement = template.ebitda_only
-        ? filterForEbitdaOnly(data.incomeStatement)
-        : data.incomeStatement;
-
-      const varianceDisplay: "dollars" | "percentage" =
-        template.variance_display === "percentage" ? "percentage" : "dollars";
-
-      if (template.include_income_statement) {
-        renderStatementPage(
-          ctx,
-          incomeStatement,
-          template.scope === "organization" ? "Consolidated Statement of Operations" : "Statement of Operations",
-          data.periods,
-          !!template.include_budget,
-          varianceDisplay,
-          false
-        );
-      }
-
-      if (template.include_balance_sheet) {
-        renderStatementPage(
-          ctx,
-          data.balanceSheet,
-          template.scope === "organization" ? "Consolidated Balance Sheet" : "Balance Sheet",
-          data.periods,
-          false,
-          varianceDisplay,
-          false
-        );
-      }
-
-      if (template.include_cash_flow) {
-        renderStatementPage(
-          ctx,
-          data.cashFlowStatement,
-          template.scope === "organization" ? "Consolidated Statement of Cash Flows" : "Statement of Cash Flows",
-          data.periods,
-          false,
-          varianceDisplay,
-          false
-        );
-      }
-
-      if (template.include_pro_forma_schedule && data.proFormaAdjustments) {
-        renderProFormaSchedulePage(ctx, data.proFormaAdjustments, data.periods);
-      }
     }
 
     const buf = pdf.output("arraybuffer");
