@@ -1,7 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Star, Trash2, Plus, FileDown, Bookmark, Pencil } from "lucide-react";
+import {
+  Star,
+  Trash2,
+  Plus,
+  FileDown,
+  Bookmark,
+  Pencil,
+  GripVertical,
+} from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -369,6 +377,56 @@ export function TemplatesMenu({
   const favorites = templates.filter((t) => t.isFavorite);
   const others = templates.filter((t) => !t.isFavorite);
 
+  // Drag-and-drop state for favorites reordering
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  async function persistFavoriteOrder(orderedIds: string[]) {
+    if (!organizationId) return;
+    const res = await fetch("/api/financial-model-templates/reorder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ organizationId, orderedIds }),
+    });
+    if (!res.ok) {
+      toast.error("Failed to save order");
+      // Roll back by reloading
+      await reload();
+    }
+  }
+
+  function handleDropOnFavorite(targetId: string) {
+    if (!dragId || dragId === targetId) {
+      setDragId(null);
+      setDragOverId(null);
+      return;
+    }
+
+    const favIds = favorites.map((t) => t.id);
+    const fromIdx = favIds.indexOf(dragId);
+    const toIdx = favIds.indexOf(targetId);
+    if (fromIdx < 0 || toIdx < 0) {
+      setDragId(null);
+      setDragOverId(null);
+      return;
+    }
+
+    const next = favIds.slice();
+    next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, dragId);
+
+    // Optimistic local update so the menu reflects the new order immediately
+    const idToTemplate = new Map(favorites.map((t) => [t.id, t]));
+    const reorderedFavs = next
+      .map((id) => idToTemplate.get(id))
+      .filter((t): t is FinancialModelTemplate => !!t);
+    setTemplates([...reorderedFavs, ...others]);
+    setDragId(null);
+    setDragOverId(null);
+
+    persistFavoriteOrder(next);
+  }
+
   return (
     <>
       <DropdownMenu>
@@ -415,6 +473,11 @@ export function TemplatesMenu({
             <>
               <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 Favorites
+                {favorites.length > 1 && (
+                  <span className="ml-1 normal-case tracking-normal text-muted-foreground/70">
+                    · drag to reorder
+                  </span>
+                )}
               </DropdownMenuLabel>
               {favorites.map((t) => (
                 <TemplateRow
@@ -425,6 +488,18 @@ export function TemplatesMenu({
                   onEdit={() => openEditDialog(t)}
                   onToggleFavorite={() => toggleFavorite(t)}
                   onDelete={() => handleDelete(t)}
+                  draggable
+                  isDragging={dragId === t.id}
+                  isDragOver={dragOverId === t.id && dragId !== t.id}
+                  onDragStart={() => setDragId(t.id)}
+                  onDragEnd={() => {
+                    setDragId(null);
+                    setDragOverId(null);
+                  }}
+                  onDragOver={() => {
+                    if (dragId && dragId !== t.id) setDragOverId(t.id);
+                  }}
+                  onDrop={() => handleDropOnFavorite(t.id)}
                 />
               ))}
               <DropdownMenuSeparator />
@@ -738,6 +813,13 @@ interface TemplateRowProps {
   onEdit: () => void;
   onToggleFavorite: () => void;
   onDelete: () => void;
+  draggable?: boolean;
+  isDragging?: boolean;
+  isDragOver?: boolean;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
+  onDragOver?: () => void;
+  onDrop?: () => void;
 }
 
 function TemplateRow({
@@ -747,9 +829,52 @@ function TemplateRow({
   onEdit,
   onToggleFavorite,
   onDelete,
+  draggable,
+  isDragging,
+  isDragOver,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
 }: TemplateRowProps) {
   return (
-    <div className="flex items-center gap-1 px-2 py-1.5 hover:bg-muted/50 rounded-sm">
+    <div
+      className={[
+        "flex items-center gap-1 px-2 py-1.5 hover:bg-muted/50 rounded-sm",
+        isDragging ? "opacity-40" : "",
+        isDragOver ? "border-t-2 border-blue-500" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      draggable={draggable}
+      onDragStart={(e) => {
+        if (!draggable) return;
+        e.dataTransfer.effectAllowed = "move";
+        // Required for Firefox to start drag
+        e.dataTransfer.setData("text/plain", template.id);
+        onDragStart?.();
+      }}
+      onDragEnd={onDragEnd}
+      onDragOver={(e) => {
+        if (!draggable) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        onDragOver?.();
+      }}
+      onDrop={(e) => {
+        if (!draggable) return;
+        e.preventDefault();
+        onDrop?.();
+      }}
+    >
+      {draggable && (
+        <span
+          className="p-0.5 text-muted-foreground cursor-grab active:cursor-grabbing"
+          aria-label="Drag to reorder"
+        >
+          <GripVertical className="h-3 w-3" />
+        </span>
+      )}
       <button
         onClick={onToggleFavorite}
         className="p-1 hover:bg-muted rounded-sm"
