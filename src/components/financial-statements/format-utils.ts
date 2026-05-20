@@ -163,6 +163,12 @@ export function getStatementPeriodDescription(
   const endDayStr = `${MONTH_NAMES_FULL[endMonth - 1]} ${endDate.getDate()}, ${endYear}`;
 
   if (granularity === "yearly") {
+    // When the selected range doesn't run through December, it's a
+    // partial / YTD view — say so explicitly so the caption isn't
+    // misread as a full-year statement.
+    if (endMonth !== 12) {
+      return `Year to Date through ${endDayStr}`;
+    }
     return `For the Year Ended ${endDayStr}`;
   }
   if (granularity === "quarterly") {
