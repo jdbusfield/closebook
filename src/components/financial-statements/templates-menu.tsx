@@ -395,36 +395,49 @@ export function TemplatesMenu({
     }
   }
 
-  function handleDropOnFavorite(targetId: string) {
+  // Reorder within a single group (favorites OR non-favorites). Cross-group
+  // drag is intentionally not supported — use the star button to move a
+  // template between groups.
+  function handleDropWithinGroup(
+    targetId: string,
+    group: FinancialModelTemplate[],
+    otherGroup: FinancialModelTemplate[],
+    favoritesFirst: boolean
+  ) {
     if (!dragId || dragId === targetId) {
       setDragId(null);
       setDragOverId(null);
       return;
     }
 
-    const favIds = favorites.map((t) => t.id);
-    const fromIdx = favIds.indexOf(dragId);
-    const toIdx = favIds.indexOf(targetId);
+    const ids = group.map((t) => t.id);
+    const fromIdx = ids.indexOf(dragId);
+    const toIdx = ids.indexOf(targetId);
     if (fromIdx < 0 || toIdx < 0) {
+      // Dragged template isn't in this group; ignore.
       setDragId(null);
       setDragOverId(null);
       return;
     }
 
-    const next = favIds.slice();
-    next.splice(fromIdx, 1);
-    next.splice(toIdx, 0, dragId);
+    const nextIds = ids.slice();
+    nextIds.splice(fromIdx, 1);
+    nextIds.splice(toIdx, 0, dragId);
 
-    // Optimistic local update so the menu reflects the new order immediately
-    const idToTemplate = new Map(favorites.map((t) => [t.id, t]));
-    const reorderedFavs = next
-      .map((id) => idToTemplate.get(id))
+    const byId = new Map(group.map((t) => [t.id, t]));
+    const reordered = nextIds
+      .map((id) => byId.get(id))
       .filter((t): t is FinancialModelTemplate => !!t);
-    setTemplates([...reorderedFavs, ...others]);
+
+    const combined = favoritesFirst
+      ? [...reordered, ...otherGroup]
+      : [...otherGroup, ...reordered];
+
+    setTemplates(combined);
     setDragId(null);
     setDragOverId(null);
 
-    persistFavoriteOrder(next);
+    persistFavoriteOrder(combined.map((t) => t.id));
   }
 
   return (
@@ -488,7 +501,7 @@ export function TemplatesMenu({
                   onEdit={() => openEditDialog(t)}
                   onToggleFavorite={() => toggleFavorite(t)}
                   onDelete={() => handleDelete(t)}
-                  draggable
+                  draggable={favorites.length > 1}
                   isDragging={dragId === t.id}
                   isDragOver={dragOverId === t.id && dragId !== t.id}
                   onDragStart={() => setDragId(t.id)}
@@ -499,7 +512,9 @@ export function TemplatesMenu({
                   onDragOver={() => {
                     if (dragId && dragId !== t.id) setDragOverId(t.id);
                   }}
-                  onDrop={() => handleDropOnFavorite(t.id)}
+                  onDrop={() =>
+                    handleDropWithinGroup(t.id, favorites, others, true)
+                  }
                 />
               ))}
               <DropdownMenuSeparator />
@@ -508,11 +523,14 @@ export function TemplatesMenu({
 
           {others.length > 0 && (
             <>
-              {favorites.length > 0 && (
-                <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Other
-                </DropdownMenuLabel>
-              )}
+              <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                {favorites.length > 0 ? "Other" : "Saved"}
+                {others.length > 1 && (
+                  <span className="ml-1 normal-case tracking-normal text-muted-foreground/70">
+                    · drag to reorder
+                  </span>
+                )}
+              </DropdownMenuLabel>
               {others.map((t) => (
                 <TemplateRow
                   key={t.id}
@@ -522,6 +540,20 @@ export function TemplatesMenu({
                   onEdit={() => openEditDialog(t)}
                   onToggleFavorite={() => toggleFavorite(t)}
                   onDelete={() => handleDelete(t)}
+                  draggable={others.length > 1}
+                  isDragging={dragId === t.id}
+                  isDragOver={dragOverId === t.id && dragId !== t.id}
+                  onDragStart={() => setDragId(t.id)}
+                  onDragEnd={() => {
+                    setDragId(null);
+                    setDragOverId(null);
+                  }}
+                  onDragOver={() => {
+                    if (dragId && dragId !== t.id) setDragOverId(t.id);
+                  }}
+                  onDrop={() =>
+                    handleDropWithinGroup(t.id, others, favorites, false)
+                  }
                 />
               ))}
               <DropdownMenuSeparator />
