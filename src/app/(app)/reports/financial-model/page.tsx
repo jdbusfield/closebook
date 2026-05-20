@@ -27,6 +27,11 @@ import { EntityBreakdownTab } from "@/components/financial-statements/entity-bre
 import { ReportingEntityBreakdownTab } from "@/components/financial-statements/reporting-entity-breakdown-tab";
 import { BridgeTab } from "@/components/financial-statements/bridge-tab";
 import {
+  TemplatesMenu,
+  type FinancialModelTemplate,
+} from "@/components/financial-statements/templates-menu";
+import { resolveDynamicPeriod } from "@/lib/financial-model-templates/period-resolver";
+import {
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
@@ -298,6 +303,37 @@ export default function FinancialModelPage() {
     window.location.href = buildExportUrl("all");
   }
 
+  function handleLoadTemplate(t: FinancialModelTemplate) {
+    // Apply scope first so the gating effects pick up the right value
+    setScope(t.scope);
+    setSelectedEntityId(t.entityId);
+    setSelectedReportingEntityId(t.reportingEntityId);
+    if (t.chartId) setSelectedChartId(t.chartId);
+
+    // Resolve period — dynamic templates re-resolve against today's date
+    if (t.periodMode === "dynamic" && t.dynamicPreset) {
+      const r = resolveDynamicPeriod(t.dynamicPreset);
+      setStartYear(r.startYear);
+      setStartMonth(r.startMonth);
+      setEndYear(r.endYear);
+      setEndMonth(r.endMonth);
+    } else if (t.startYear && t.startMonth && t.endYear && t.endMonth) {
+      setStartYear(t.startYear);
+      setStartMonth(t.startMonth);
+      setEndYear(t.endYear);
+      setEndMonth(t.endMonth);
+    }
+
+    setGranularity(t.granularity);
+    setIncludeBudget(t.includeBudget);
+    setIncludeYoY(t.includeYoY);
+    setIncludeProForma(t.includeProForma);
+    setIncludeAllocations(t.includeAllocations);
+    setIncludeTotal(t.includeTotal);
+    setEbitdaOnly(t.ebitdaOnly);
+    setVarianceDisplay(t.varianceDisplay);
+  }
+
   function handlePrint() {
     // Chrome uses `document.title` at print time for two things that bleed
     // into the saved PDF: the PDF's Title metadata (shown as the tab label
@@ -485,6 +521,31 @@ export default function FinancialModelPage() {
             </Select>
           </div>
         )}
+
+        <div className="ml-auto">
+          <TemplatesMenu
+            organizationId={organizationId}
+            current={{
+              scope,
+              entityId: selectedEntityId,
+              reportingEntityId: selectedReportingEntityId,
+              chartId: selectedChartId,
+              startYear,
+              startMonth,
+              endYear,
+              endMonth,
+              granularity,
+              includeBudget,
+              includeYoY,
+              includeProForma,
+              includeAllocations,
+              includeTotal,
+              ebitdaOnly,
+              varianceDisplay,
+            }}
+            onLoadTemplate={handleLoadTemplate}
+          />
+        </div>
       </div>
 
       {isAccountantView && (
