@@ -252,6 +252,16 @@ export default function FinancialModelPage() {
   const drillDown = useDrillDown(config);
   usePrintFitToPage();
 
+  // When a template is loaded, set this flag so the next render — once
+  // state has settled and canFetch is true — auto-runs generate().
+  const [autoGenerate, setAutoGenerate] = useState(false);
+  useEffect(() => {
+    if (autoGenerate && canFetch && !loading) {
+      generate();
+      setAutoGenerate(false);
+    }
+  }, [autoGenerate, canFetch, loading, generate]);
+
   function handleCellClick(statementId: string) {
     return (
       line: LineItem,
@@ -333,6 +343,7 @@ export default function FinancialModelPage() {
     setEbitdaOnly(t.ebitdaOnly);
     setVarianceDisplay(t.varianceDisplay);
     if (t.activeTab) setActiveTab(t.activeTab);
+    setAutoGenerate(true);
   }
 
   function handlePrint() {
