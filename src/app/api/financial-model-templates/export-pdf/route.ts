@@ -626,10 +626,21 @@ function renderTemplateCoverPage(
   pdf.text(periodLabel, pageW / 2, 168, { align: "center" });
 
   pdf.setFontSize(10);
-  const periodMode =
-    template.period_mode === "dynamic"
-      ? `Dynamic: ${DYNAMIC_PRESET_LABELS[template.dynamic_preset as DynamicPreset] ?? template.dynamic_preset}`
-      : "Static range";
+  let periodMode: string;
+  if (template.period_mode === "dynamic") {
+    periodMode = `Dynamic: ${DYNAMIC_PRESET_LABELS[template.dynamic_preset as DynamicPreset] ?? template.dynamic_preset}`;
+  } else if (template.period_mode === "hybrid") {
+    const startLabel =
+      template.start_year && template.start_month
+        ? `${MONTH_ABBR[template.start_month - 1]} ${template.start_year}`
+        : "(start)";
+    const endLabel = template.dynamic_preset
+      ? DYNAMIC_PRESET_LABELS[template.dynamic_preset as DynamicPreset] ?? template.dynamic_preset
+      : "(end)";
+    periodMode = `Hybrid: from ${startLabel} through ${endLabel}`;
+  } else {
+    periodMode = "Static range";
+  }
   pdf.text(periodMode, pageW / 2, 188, { align: "center" });
 
   pdf.setFont("helvetica", "bold");
@@ -1034,6 +1045,10 @@ export async function GET(request: Request) {
                   endYear: template.end_year,
                   endMonth: template.end_month,
                 }
+              : null,
+          staticStart:
+            template.start_year && template.start_month
+              ? { year: template.start_year, month: template.start_month }
               : null,
           dynamicPreset: template.dynamic_preset,
         },

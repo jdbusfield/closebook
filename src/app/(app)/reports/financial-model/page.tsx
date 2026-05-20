@@ -320,11 +320,22 @@ export default function FinancialModelPage() {
     setSelectedReportingEntityId(t.reportingEntityId);
     if (t.chartId) setSelectedChartId(t.chartId);
 
-    // Resolve period — dynamic templates re-resolve against today's date
+    // Resolve period — dynamic and hybrid templates re-resolve against today
     if (t.periodMode === "dynamic" && t.dynamicPreset) {
       const r = resolveDynamicPeriod(t.dynamicPreset);
       setStartYear(r.startYear);
       setStartMonth(r.startMonth);
+      setEndYear(r.endYear);
+      setEndMonth(r.endMonth);
+    } else if (
+      t.periodMode === "hybrid" &&
+      t.startYear &&
+      t.startMonth &&
+      t.dynamicPreset
+    ) {
+      const r = resolveDynamicPeriod(t.dynamicPreset);
+      setStartYear(t.startYear);
+      setStartMonth(t.startMonth);
       setEndYear(r.endYear);
       setEndMonth(r.endMonth);
     } else if (t.startYear && t.startMonth && t.endYear && t.endMonth) {

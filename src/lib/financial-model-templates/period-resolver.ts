@@ -114,8 +114,10 @@ export function resolveDynamicPeriod(
 }
 
 export interface TemplatePeriodInput {
-  periodMode: "static" | "dynamic";
+  periodMode: "static" | "dynamic" | "hybrid";
   staticRange?: ResolvedPeriod | null;
+  /** Static start, used by hybrid mode (start fixed, end follows today) */
+  staticStart?: { year: number; month: number } | null;
   dynamicPreset?: DynamicPreset | null;
 }
 
@@ -125,6 +127,16 @@ export function resolveTemplatePeriod(
 ): ResolvedPeriod | null {
   if (input.periodMode === "dynamic" && input.dynamicPreset) {
     return resolveDynamicPeriod(input.dynamicPreset, today);
+  }
+  if (input.periodMode === "hybrid" && input.staticStart && input.dynamicPreset) {
+    // Take the end of the dynamic preset's range; use the static start.
+    const dyn = resolveDynamicPeriod(input.dynamicPreset, today);
+    return {
+      startYear: input.staticStart.year,
+      startMonth: input.staticStart.month,
+      endYear: dyn.endYear,
+      endMonth: dyn.endMonth,
+    };
   }
   if (input.periodMode === "static" && input.staticRange) {
     return input.staticRange;

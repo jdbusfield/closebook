@@ -14,7 +14,7 @@ export interface FinancialModelTemplate {
   entityId: string | null;
   reportingEntityId: string | null;
   chartId: string | null;
-  periodMode: "static" | "dynamic";
+  periodMode: "static" | "dynamic" | "hybrid";
   startYear: number | null;
   startMonth: number | null;
   endYear: number | null;
