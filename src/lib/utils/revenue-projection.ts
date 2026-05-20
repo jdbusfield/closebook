@@ -362,28 +362,26 @@ export function processRevenueData(
       ? inv.BillingEndDate || inv.BillingStartDate || inv.InvoiceDate
       : inv.InvoiceDate;
 
-  // --- Filter to Versatile warehouse ---
+  // --- Filter to Versatile records ---
+  //
+  // Versatile orders and invoices are identified by a "V" prefix on their
+  // number. Items that come through the Versatile warehouse but use an
+  // "AS" / "AC" prefix belong to other entities (Avon Studios / Avon
+  // Cahuenga) and must be excluded from every tab and every calculation.
+  const startsWithV = (s: string | undefined | null): boolean =>
+    !!s && s.trim().toUpperCase().startsWith("V");
 
-  // Orders: filter by Warehouse field directly
-  const vsOrders = rawOrders.filter((o) => isVersatileWarehouse(o.Warehouse));
+  // Orders: must have an OrderNumber starting with "V".
+  const vsOrders = rawOrders.filter((o) => startsWithV(o.OrderNumber));
 
-  // Build a set of VS order numbers for invoice cross-reference
-  const vsOrderNumbers = new Set(
-    vsOrders.map((o) => o.OrderNumber).filter(Boolean),
-  );
+  // Invoices: must have an InvoiceNumber starting with "V". This is the
+  // authoritative VersaTile marker — warehouse matching alone would let
+  // AS-/AC-prefixed invoices through when they happen to ship from the
+  // Cahuenga warehouse.
+  const vsInvoices = rawInvoices.filter((inv) => startsWithV(inv.InvoiceNumber));
 
-  // Invoices: try Warehouse field first, then OrderNumber match,
-  // then invoice number prefix "V" (Versatile invoices always start with V,
-  // and multi-order invoices may have OrderNumber="MULTI" with no Warehouse)
-  const vsInvoices = rawInvoices.filter((inv) => {
-    if (isVersatileWarehouse(inv.Warehouse)) return true;
-    if (inv.OrderNumber && vsOrderNumbers.has(inv.OrderNumber)) return true;
-    if (inv.InvoiceNumber && inv.InvoiceNumber.toUpperCase().startsWith("V"))
-      return true;
-    return false;
-  });
-
-  // Quotes: filter by Warehouse field
+  // Quotes: filter by Warehouse field (quotes don't have a stable
+  // prefix convention, so warehouse is still the best signal).
   const vsQuotes = rawQuotes.filter((q) => isVersatileWarehouse(q.Warehouse));
 
   // --- Filter out void/no-charge invoices ---
