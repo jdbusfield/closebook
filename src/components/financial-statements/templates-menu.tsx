@@ -70,7 +70,7 @@ export interface FinancialModelTemplate {
   entityId: string | null;
   reportingEntityId: string | null;
   chartId: string | null;
-  periodMode: "static" | "dynamic";
+  periodMode: "static" | "dynamic" | "hybrid";
   startYear: number | null;
   startMonth: number | null;
   endYear: number | null;
@@ -135,9 +135,9 @@ export function TemplatesMenu({
   const [saveOpen, setSaveOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
-  const [draftPeriodMode, setDraftPeriodMode] = useState<"static" | "dynamic">(
-    "static"
-  );
+  const [draftPeriodMode, setDraftPeriodMode] = useState<
+    "static" | "dynamic" | "hybrid"
+  >("static");
   const [draftPreset, setDraftPreset] = useState<DynamicPreset>("last_month");
   const [draftIncludeIS, setDraftIncludeIS] = useState(true);
   const [draftIncludeBS, setDraftIncludeBS] = useState(true);
@@ -205,11 +205,20 @@ export function TemplatesMenu({
       reportingEntityId: current.reportingEntityId,
       chartId: current.chartId,
       periodMode: draftPeriodMode,
-      startYear: draftPeriodMode === "static" ? current.startYear : null,
-      startMonth: draftPeriodMode === "static" ? current.startMonth : null,
+      startYear:
+        draftPeriodMode === "static" || draftPeriodMode === "hybrid"
+          ? current.startYear
+          : null,
+      startMonth:
+        draftPeriodMode === "static" || draftPeriodMode === "hybrid"
+          ? current.startMonth
+          : null,
       endYear: draftPeriodMode === "static" ? current.endYear : null,
       endMonth: draftPeriodMode === "static" ? current.endMonth : null,
-      dynamicPreset: draftPeriodMode === "dynamic" ? draftPreset : null,
+      dynamicPreset:
+        draftPeriodMode === "dynamic" || draftPeriodMode === "hybrid"
+          ? draftPreset
+          : null,
       granularity: current.granularity,
       includeBudget: current.includeBudget,
       includeYoY: current.includeYoY,
@@ -337,6 +346,15 @@ export function TemplatesMenu({
           ? `${MONTH_ABBR[r.startMonth - 1]} ${r.startYear}`
           : `${MONTH_ABBR[r.startMonth - 1]} ${r.startYear} – ${MONTH_ABBR[r.endMonth - 1]} ${r.endYear}`;
       return `${DYNAMIC_PRESET_LABELS[t.dynamicPreset]} → ${range}`;
+    }
+    if (
+      t.periodMode === "hybrid" &&
+      t.startYear &&
+      t.startMonth &&
+      t.dynamicPreset
+    ) {
+      const r = resolveDynamicPeriod(t.dynamicPreset);
+      return `${MONTH_ABBR[t.startMonth - 1]} ${t.startYear} – ${MONTH_ABBR[r.endMonth - 1]} ${r.endYear}`;
     }
     if (t.startYear && t.startMonth && t.endYear && t.endMonth) {
       return t.startYear === t.endYear && t.startMonth === t.endMonth
@@ -563,7 +581,7 @@ export function TemplatesMenu({
               <Select
                 value={draftPeriodMode}
                 onValueChange={(v) =>
-                  setDraftPeriodMode(v as "static" | "dynamic")
+                  setDraftPeriodMode(v as "static" | "dynamic" | "hybrid")
                 }
               >
                 <SelectTrigger className="h-8 text-sm">
@@ -575,6 +593,9 @@ export function TemplatesMenu({
                   </SelectItem>
                   <SelectItem value="dynamic">
                     Dynamic — resolve relative to today&rsquo;s date
+                  </SelectItem>
+                  <SelectItem value="hybrid">
+                    Hybrid — fixed start, end follows today
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -588,11 +609,25 @@ export function TemplatesMenu({
                   exactly.
                 </p>
               )}
+              {draftPeriodMode === "hybrid" && (
+                <p className="text-[11px] text-muted-foreground">
+                  Start is pinned to{" "}
+                  <span className="font-medium">
+                    {MONTH_ABBR[current.startMonth - 1]} {current.startYear}
+                  </span>{" "}
+                  (the currently-selected start). The end re-resolves against
+                  today using the preset below.
+                </p>
+              )}
             </div>
 
-            {draftPeriodMode === "dynamic" && (
+            {(draftPeriodMode === "dynamic" || draftPeriodMode === "hybrid") && (
               <div className="space-y-1">
-                <Label className="text-xs">Dynamic preset</Label>
+                <Label className="text-xs">
+                  {draftPeriodMode === "hybrid"
+                    ? "Dynamic end"
+                    : "Dynamic preset"}
+                </Label>
                 <Select
                   value={draftPreset}
                   onValueChange={(v) => setDraftPreset(v as DynamicPreset)}
@@ -612,6 +647,18 @@ export function TemplatesMenu({
                 </Select>
                 {(() => {
                   const r = resolveDynamicPeriod(draftPreset);
+                  if (draftPeriodMode === "hybrid") {
+                    return (
+                      <p className="text-[11px] text-muted-foreground">
+                        Today resolves to:{" "}
+                        <span className="font-medium">
+                          {MONTH_ABBR[current.startMonth - 1]}{" "}
+                          {current.startYear} –{" "}
+                          {MONTH_ABBR[r.endMonth - 1]} {r.endYear}
+                        </span>
+                      </p>
+                    );
+                  }
                   return (
                     <p className="text-[11px] text-muted-foreground">
                       Today resolves to:{" "}
@@ -727,6 +774,11 @@ function TemplateRow({
           {template.periodMode === "dynamic" && (
             <span className="ml-1 inline-flex items-center px-1 rounded bg-blue-50 text-blue-700 text-[9px] font-medium">
               dyn
+            </span>
+          )}
+          {template.periodMode === "hybrid" && (
+            <span className="ml-1 inline-flex items-center px-1 rounded bg-purple-50 text-purple-700 text-[9px] font-medium">
+              hybrid
             </span>
           )}
         </div>
