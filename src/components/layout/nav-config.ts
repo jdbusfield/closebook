@@ -69,7 +69,20 @@ export function getOrgNavGroups(): NavGroup[] {
     {
       label: "CRM",
       items: [
-        { title: "CRM", href: "/crm", icon: Clapperboard },
+        {
+          title: "CRM",
+          href: "/crm",
+          icon: Clapperboard,
+          children: [
+            { title: "Dashboard", href: "/crm" },
+            { title: "Productions", href: "/crm/productions" },
+            { title: "Companies", href: "/crm/companies" },
+            { title: "Contacts", href: "/crm/contacts" },
+            { title: "Opportunities", href: "/crm/opportunities" },
+            { title: "Communications", href: "/crm/communications" },
+            { title: "Commercial", href: "/crm/commercial-companies" },
+          ],
+        },
       ],
     },
     {
