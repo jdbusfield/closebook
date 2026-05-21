@@ -76,6 +76,7 @@ export function getOrgNavGroups(): NavGroup[] {
           children: [
             { title: "Dashboard", href: "/crm" },
             { title: "Clients & Productions", href: "/crm/clients" },
+            { title: "Import Weekly Report", href: "/crm/import" },
             { title: "Productions (list)", href: "/crm/productions" },
             { title: "Companies", href: "/crm/companies" },
             { title: "Contacts", href: "/crm/contacts" },
