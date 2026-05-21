@@ -484,3 +484,104 @@ export async function getCrmOpportunityCount(opts?: { status?: string }): Promis
   const { count } = await q;
   return count ?? 0;
 }
+
+// ---------------------------------------------------------------------------
+// Board view — productions grouped by status with vendor + alias + comms counts
+// ---------------------------------------------------------------------------
+
+export type BoardProductionCard = {
+  id: string;
+  name: string;
+  status: string;
+  start_date: string | null;
+  end_date: string | null;
+  state: string | null;
+  ca_spend_level: number | null;
+  avon_customer_number: string | null;
+  is_399_production: boolean | null;
+  is_independent: boolean;
+  studio_or_company_name: string;
+  alias_count: number;
+  communication_count: number;
+  vendors: { avon: boolean; hdr: boolean };
+};
+
+const AVON_VENDOR_FIELDS = [
+  "rental_vehicles_vendor",
+  "rental_trailers_vendor",
+  "honeywagon_vendor",
+  "location_services_vendor",
+  "power_distribution_vendor",
+  "camera_trucks_vendor",
+  "production_trucks_vendor",
+  "ac_equipment_vendor",
+  "production_supplies_vendor",
+  "grip_lighting_vendor",
+] as const;
+
+export interface BoardFilters {
+  californiaOnly?: boolean;
+  only399?: boolean;
+  search?: string;
+}
+
+export async function getCrmBoardProductions(filters: BoardFilters = {}): Promise<BoardProductionCard[]> {
+  const supabase = await crmClient();
+  let query = supabase
+    .from("crm_productions")
+    .select(`
+      id, name, status, start_date, end_date, state, ca_spend_level,
+      avon_customer_number, is_399_production,
+      ${AVON_VENDOR_FIELDS.join(", ")},
+      company:crm_companies!crm_productions_company_id_fkey ( id, name, type ),
+      studio:crm_companies!crm_productions_studio_id_fkey ( id, name, type ),
+      aliases:crm_production_aliases ( id ),
+      communications:crm_communications ( id )
+    `)
+    .in("status", ["pre-prepping", "prepping", "shooting", "reshoots", "wrapping"])
+    .order("name");
+
+  if (filters.californiaOnly) query = query.eq("state", "California");
+  if (filters.only399) query = query.eq("is_399_production", true);
+  if (filters.search) query = query.ilike("name", `%${filters.search}%`);
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("getCrmBoardProductions error", error);
+    return [];
+  }
+
+  type Row = {
+    id: string; name: string; status: string;
+    start_date: string | null; end_date: string | null;
+    state: string | null; ca_spend_level: number | null;
+    avon_customer_number: string | null; is_399_production: boolean | null;
+    company: { id: string; name: string; type: string } | null;
+    studio: { id: string; name: string; type: string } | null;
+    aliases: Array<{ id: string }>;
+    communications: Array<{ id: string }>;
+  } & Record<typeof AVON_VENDOR_FIELDS[number], string | null>;
+
+  return ((data ?? []) as unknown as Row[]).map(r => {
+    const hasAvon = AVON_VENDOR_FIELDS.some(f => r[f] === "avon") || r.avon_customer_number != null;
+    const hasHdr = AVON_VENDOR_FIELDS.some(f => r[f] === "hdr");
+    const isIndependent = !r.studio && (r.company?.type !== "studio");
+    const displayName = r.studio?.name ?? r.company?.name ?? "—";
+    return {
+      id: r.id,
+      name: r.name,
+      status: r.status,
+      start_date: r.start_date,
+      end_date: r.end_date,
+      state: r.state,
+      ca_spend_level: r.ca_spend_level,
+      avon_customer_number: r.avon_customer_number,
+      is_399_production: r.is_399_production,
+      is_independent: isIndependent,
+      studio_or_company_name: isIndependent ? "Independent" : displayName,
+      alias_count: r.aliases?.length ?? 0,
+      communication_count: r.communications?.length ?? 0,
+      vendors: { avon: hasAvon, hdr: hasHdr },
+    };
+  });
+}
