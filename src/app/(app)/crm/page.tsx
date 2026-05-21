@@ -1,5 +1,12 @@
 import Link from "next/link";
-import { Clapperboard, Building2, Users, Activity } from "lucide-react";
+import {
+  Clapperboard,
+  Building2,
+  Users,
+  Briefcase,
+  MessageSquare,
+  ArrowRight,
+} from "lucide-react";
 import {
   Card,
   CardContent,
@@ -9,59 +16,47 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  getCrmProductions,
   getCrmStatusCounts,
   getCrmContactCount,
   getCrmCompanyCount,
+  getCrmOpportunityCount,
+  getCrmCommunications,
+  getCrmOpportunities,
 } from "@/lib/db/queries/crm";
+import {
+  PRODUCTION_STATUS_ORDER,
+  PRODUCTION_STATUS_LABEL,
+  ProductionStatusBadge,
+  OpportunityStatusBadge,
+  formatDate,
+  formatMoney,
+  COMMUNICATION_TYPE_LABEL,
+} from "./_components/crm-shared";
 
-const STATUS_ORDER = [
-  "pre-prepping",
-  "prepping",
-  "shooting",
-  "reshoots",
-  "wrapping",
-  "completed",
-  "archived",
-] as const;
-
-const STATUS_LABEL: Record<string, string> = {
-  "pre-prepping": "Pre-prepping",
-  prepping: "Prepping",
-  shooting: "Shooting",
-  reshoots: "Reshoots",
-  wrapping: "Wrapping",
-  completed: "Completed",
-  archived: "Archived",
-};
-
-const STATUS_BADGE: Record<string, string> = {
+const PIPELINE_BADGE: Record<string, string> = {
   "pre-prepping": "bg-slate-100 text-slate-700",
   prepping: "bg-amber-100 text-amber-800",
   shooting: "bg-emerald-100 text-emerald-800",
   reshoots: "bg-sky-100 text-sky-800",
   wrapping: "bg-purple-100 text-purple-800",
   completed: "bg-slate-100 text-slate-600",
+  cancelled: "bg-rose-100 text-rose-700",
   archived: "bg-slate-200 text-slate-500",
 };
 
-function formatDate(value: string | null): string {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
-
-export default async function CrmPage() {
-  const [productions, statusCounts, contactCount, companyCount] = await Promise.all([
-    getCrmProductions(),
+export default async function CrmDashboardPage() {
+  const [statusCounts, contactCount, companyCount, openOppCount, recentComms, recentOpps] = await Promise.all([
     getCrmStatusCounts(),
     getCrmContactCount(),
     getCrmCompanyCount(),
+    getCrmOpportunityCount({ status: "open" }),
+    getCrmCommunications({}).then(rows => rows.slice(0, 8)),
+    getCrmOpportunities({}).then(rows => rows.slice(0, 6)),
   ]);
 
-  const activeCount = STATUS_ORDER
-    .filter(s => s !== "completed" && s !== "archived")
+  const totalProductions = Object.values(statusCounts).reduce((a, b) => a + b, 0);
+  const activeProductions = PRODUCTION_STATUS_ORDER
+    .filter(s => s !== "completed" && s !== "archived" && s !== "cancelled")
     .reduce((sum, s) => sum + (statusCounts[s] ?? 0), 0);
 
   return (
@@ -72,130 +67,158 @@ export default async function CrmPage() {
             <Clapperboard className="h-6 w-6" /> CRM
           </h1>
           <p className="text-sm text-muted-foreground">
-            Productions, studios, and the contacts who run them.
+            Productions, contacts, opportunities, and communications across all reporting entities.
           </p>
         </div>
       </div>
 
+      {/* Quick-jump tiles */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Active productions</CardDescription>
-            <CardTitle className="text-3xl">{activeCount}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            Anything not completed or archived
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Total productions</CardDescription>
-            <CardTitle className="text-3xl">{productions.length}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            <Activity className="mr-1 inline h-3 w-3" /> All-time
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Contacts</CardDescription>
-            <CardTitle className="text-3xl">{contactCount}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            <Users className="mr-1 inline h-3 w-3" /> Across all companies
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Companies</CardDescription>
-            <CardTitle className="text-3xl">{companyCount}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            <Building2 className="mr-1 inline h-3 w-3" /> Production cos + studios
-          </CardContent>
-        </Card>
+        <Link href="/crm/productions" className="group">
+          <Card className="transition hover:border-primary">
+            <CardHeader className="pb-2">
+              <CardDescription>Active productions</CardDescription>
+              <CardTitle className="text-3xl">{activeProductions}</CardTitle>
+            </CardHeader>
+            <CardContent className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>{totalProductions} total</span>
+              <ArrowRight className="h-3 w-3 transition group-hover:translate-x-1" />
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/crm/contacts" className="group">
+          <Card className="transition hover:border-primary">
+            <CardHeader className="pb-2">
+              <CardDescription>Contacts</CardDescription>
+              <CardTitle className="text-3xl">{contactCount}</CardTitle>
+            </CardHeader>
+            <CardContent className="flex items-center justify-between text-xs text-muted-foreground">
+              <span><Users className="mr-1 inline h-3 w-3" /> All contacts</span>
+              <ArrowRight className="h-3 w-3 transition group-hover:translate-x-1" />
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/crm/companies" className="group">
+          <Card className="transition hover:border-primary">
+            <CardHeader className="pb-2">
+              <CardDescription>Companies & Studios</CardDescription>
+              <CardTitle className="text-3xl">{companyCount}</CardTitle>
+            </CardHeader>
+            <CardContent className="flex items-center justify-between text-xs text-muted-foreground">
+              <span><Building2 className="mr-1 inline h-3 w-3" /> Production cos + studios</span>
+              <ArrowRight className="h-3 w-3 transition group-hover:translate-x-1" />
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/crm/opportunities" className="group">
+          <Card className="transition hover:border-primary">
+            <CardHeader className="pb-2">
+              <CardDescription>Open opportunities</CardDescription>
+              <CardTitle className="text-3xl">{openOppCount}</CardTitle>
+            </CardHeader>
+            <CardContent className="flex items-center justify-between text-xs text-muted-foreground">
+              <span><Briefcase className="mr-1 inline h-3 w-3" /> Pipeline</span>
+              <ArrowRight className="h-3 w-3 transition group-hover:translate-x-1" />
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>By status</CardTitle>
-          <CardDescription>Production pipeline at a glance</CardDescription>
+          <CardTitle>Production pipeline</CardTitle>
+          <CardDescription>Counts by status across all productions</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-2">
-            {STATUS_ORDER.map(status => (
-              <Badge
+            {PRODUCTION_STATUS_ORDER.map(status => (
+              <Link
                 key={status}
-                className={`${STATUS_BADGE[status] ?? "bg-slate-100"} px-3 py-1`}
-                variant="secondary"
+                href={`/crm/productions?status=${status}`}
+                className="inline-block"
               >
-                {STATUS_LABEL[status]}: {statusCounts[status] ?? 0}
-              </Badge>
+                <Badge className={`${PIPELINE_BADGE[status]} cursor-pointer px-3 py-1 hover:opacity-80`} variant="secondary">
+                  {PRODUCTION_STATUS_LABEL[status]}: {statusCounts[status] ?? 0}
+                </Badge>
+              </Link>
             ))}
           </div>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Productions</CardTitle>
-          <CardDescription>{productions.length} total</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-2 text-left">Production</th>
-                  <th className="px-4 py-2 text-left">Production Co.</th>
-                  <th className="px-4 py-2 text-left">Studio</th>
-                  <th className="px-4 py-2 text-left">Type</th>
-                  <th className="px-4 py-2 text-left">Status</th>
-                  <th className="px-4 py-2 text-left">Start</th>
-                  <th className="px-4 py-2 text-left">End</th>
-                  <th className="px-4 py-2 text-left">State</th>
-                </tr>
-              </thead>
-              <tbody>
-                {productions.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">
-                      No productions yet. Run the import script (scripts/crm-import.ts) or upload a
-                      weekly production report to populate this view.
-                    </td>
-                  </tr>
-                ) : (
-                  productions.map(p => (
-                    <tr key={p.id} className="border-t hover:bg-muted/30">
-                      <td className="px-4 py-2 font-medium">
-                        <Link href={`/crm/productions/${p.id}`} className="hover:underline">
-                          {p.name}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-2">{p.company?.name ?? "—"}</td>
-                      <td className="px-4 py-2">{p.studio?.name ?? "—"}</td>
-                      <td className="px-4 py-2 text-muted-foreground">
-                        {p.production_type ?? "—"}
-                      </td>
-                      <td className="px-4 py-2">
-                        <Badge
-                          className={`${STATUS_BADGE[p.status] ?? "bg-slate-100"} text-xs`}
-                          variant="secondary"
-                        >
-                          {STATUS_LABEL[p.status] ?? p.status}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-2 text-muted-foreground">{formatDate(p.start_date)}</td>
-                      <td className="px-4 py-2 text-muted-foreground">{formatDate(p.end_date)}</td>
-                      <td className="px-4 py-2 text-muted-foreground">{p.state ?? "—"}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card>
+          <CardHeader className="flex flex-row items-start justify-between">
+            <div>
+              <CardTitle>Recent opportunities</CardTitle>
+              <CardDescription>Most recent across all segments</CardDescription>
+            </div>
+            <Link href="/crm/opportunities" className="text-xs text-primary hover:underline">View all</Link>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {recentOpps.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No opportunities yet.</p>
+            ) : (
+              recentOpps.map(o => (
+                <Link
+                  key={o.id}
+                  href={`/crm/opportunities/${o.id}`}
+                  className="block rounded-md border p-3 hover:bg-muted/40"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{o.description}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {o.production?.name ?? "—"} · {o.contact?.name ?? "—"}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1">
+                      <OpportunityStatusBadge status={o.status} />
+                      <span className="text-xs text-muted-foreground">{formatMoney(o.amount)}</span>
+                    </div>
+                  </div>
+                </Link>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-start justify-between">
+            <div>
+              <CardTitle>Recent communications</CardTitle>
+              <CardDescription>Activity feed across the CRM</CardDescription>
+            </div>
+            <Link href="/crm/communications" className="text-xs text-primary hover:underline">View all</Link>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {recentComms.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No communications yet.</p>
+            ) : (
+              recentComms.map(c => (
+                <div key={c.id} className="flex items-start justify-between gap-3 rounded-md border p-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {COMMUNICATION_TYPE_LABEL[c.type] ?? c.type}
+                      {c.contact?.name ? ` · ${c.contact.name}` : ""}
+                    </p>
+                    {c.notes && <p className="line-clamp-2 text-sm">{c.notes}</p>}
+                    {(c.production?.name || c.commercial_company?.name) && (
+                      <p className="text-xs text-muted-foreground">
+                        {c.production?.name ?? c.commercial_company?.name}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-end whitespace-nowrap">
+                    <MessageSquare className="h-3 w-3 text-muted-foreground" />
+                    <span className="mt-1 text-xs text-muted-foreground">{formatDate(c.date)}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
