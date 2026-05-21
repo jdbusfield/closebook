@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getPeriodsInRange } from "@/lib/utils/dates";
 import { fetchAllMappings, fetchAllPaginated } from "@/lib/utils/paginated-fetch";
 import { resolveChartIdOrDefault } from "@/lib/master-charts/resolve";
+import { getExcludedFromBreakdownEntityIds } from "@/lib/db/queries/reporting-entity-exclusions";
 import {
   INCOME_STATEMENT_SECTIONS,
   INCOME_STATEMENT_COMPUTED,
@@ -624,6 +625,18 @@ export async function GET(request: Request) {
     (id) => !allMemberEntityIds.has(id)
   );
 
+  // Entities that belong only to excluded REs — must be left out of the
+  // "Consolidated" column so excluding an RE actually reduces the total
+  // (rather than just hiding a column while still summing its entities
+  // into the consolidated figure).
+  const excludedEntityIds = await getExcludedFromBreakdownEntityIds(
+    admin,
+    organizationId,
+  );
+  const consolidatedEntityIds = allEntityIds.filter(
+    (id) => !excludedEntityIds.has(id),
+  );
+
   if (allEntityIds.length === 0) {
     return NextResponse.json({
       columns: [],
@@ -894,11 +907,13 @@ export async function GET(request: Request) {
       ca.endingBalance["other"] = endingBalance;
     }
 
-    // Consolidated = sum across ALL entities (not sum of RE columns, to avoid
-    // double-counting if an entity belongs to multiple reporting entities)
+    // Consolidated = sum across entities NOT belonging exclusively to an
+    // excluded RE. This keeps the consolidated total internally consistent
+    // with the visible RE columns + "Other" — excluding an RE should
+    // actually reduce the total, not just hide a column.
     const { netChange, endingBalance } = sumEntityAmounts(
       ma.id,
-      allEntityIds,
+      consolidatedEntityIds,
       isPL
     );
     ca.netChange["consolidated"] = netChange;
@@ -959,12 +974,15 @@ export async function GET(request: Request) {
           }
         }
 
-        // Always add to consolidated
-        ca.netChange["consolidated"] =
-          (ca.netChange["consolidated"] ?? 0) + amount;
-        if (adjMonthKey === lastMonthKey) {
-          ca.endingBalance["consolidated"] =
-            (ca.endingBalance["consolidated"] ?? 0) + amount;
+        // Add to consolidated only if this entity isn't excluded from
+        // breakdown — keeps consolidated in sync with the visible columns.
+        if (!excludedEntityIds.has(adj.entity_id)) {
+          ca.netChange["consolidated"] =
+            (ca.netChange["consolidated"] ?? 0) + amount;
+          if (adjMonthKey === lastMonthKey) {
+            ca.endingBalance["consolidated"] =
+              (ca.endingBalance["consolidated"] ?? 0) + amount;
+          }
         }
       }
     }
@@ -1021,12 +1039,15 @@ export async function GET(request: Request) {
           }
         }
 
-        // Always add to consolidated
-        ca.netChange["consolidated"] =
-          (ca.netChange["consolidated"] ?? 0) + amount;
-        if (adjMonthKey === lastMonthKey) {
-          ca.endingBalance["consolidated"] =
-            (ca.endingBalance["consolidated"] ?? 0) + amount;
+        // Add to consolidated only if this entity isn't excluded from
+        // breakdown — keeps consolidated in sync with the visible columns.
+        if (!excludedEntityIds.has(entry.entity_id)) {
+          ca.netChange["consolidated"] =
+            (ca.netChange["consolidated"] ?? 0) + amount;
+          if (adjMonthKey === lastMonthKey) {
+            ca.endingBalance["consolidated"] =
+              (ca.endingBalance["consolidated"] ?? 0) + amount;
+          }
         }
       }
     }

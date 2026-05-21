@@ -31,6 +31,7 @@ interface ReportingEntity {
   id: string;
   name: string;
   code: string;
+  excludeFromBreakdown?: boolean;
 }
 
 interface ReSeries {
@@ -124,8 +125,14 @@ export function RevenueByReportingEntity({
           throw new Error(`Failed to load reporting entities (${reRes.status})`);
         }
         const reJson = await reRes.json();
-        const reportingEntities: ReportingEntity[] =
+        const allReportingEntities: ReportingEntity[] =
           reJson.reportingEntities ?? [];
+        // Hide reporting entities flagged as excluded from the breakdown —
+        // they would otherwise overstate consolidated revenue against the
+        // dashboard's headline KPIs, which already exclude them.
+        const reportingEntities = allReportingEntities.filter(
+          (re) => !re.excludeFromBreakdown,
+        );
 
         if (reportingEntities.length === 0) {
           if (!cancelled) {
