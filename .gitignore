@@ -51,3 +51,6 @@ __pycache__/
 
 # claude local overrides (personal settings, not for team)
 .claude/settings.local.json
+
+# MT-CRM data dumps (contain production records — keep local only)
+migrations-from-mt-crm/
