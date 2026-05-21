@@ -1,4 +1,17 @@
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+/**
+ * The generated Database type in `src/lib/types/database.types.ts` doesn't
+ * yet include the `crm_*` tables — regenerating it requires a Supabase
+ * access token we don't have in CI. Cast through the untyped client so
+ * `.from("crm_productions")` etc. compile; the SQL is verified by the
+ * migration in `supabase/migrations/20260521_crm_initial.sql`. Drop this
+ * cast next time `database.types.ts` is regenerated.
+ */
+async function crmClient(): Promise<SupabaseClient> {
+  return (await createClient()) as unknown as SupabaseClient;
+}
 
 export type CrmProductionRow = {
   id: string;
@@ -13,7 +26,7 @@ export type CrmProductionRow = {
 };
 
 export async function getCrmProductions(opts?: { status?: string }): Promise<CrmProductionRow[]> {
-  const supabase = await createClient();
+  const supabase = await crmClient();
   let query = supabase
     .from("crm_productions")
     .select(`
@@ -34,20 +47,20 @@ export async function getCrmProductions(opts?: { status?: string }): Promise<Crm
 }
 
 export async function getCrmStatusCounts(): Promise<Record<string, number>> {
-  const supabase = await createClient();
+  const supabase = await crmClient();
   const { data, error } = await supabase
     .from("crm_productions")
     .select("status");
   if (error) return {};
   const counts: Record<string, number> = {};
-  for (const row of data ?? []) {
+  for (const row of (data ?? []) as Array<{ status: string }>) {
     counts[row.status] = (counts[row.status] ?? 0) + 1;
   }
   return counts;
 }
 
 export async function getCrmContactCount(): Promise<number> {
-  const supabase = await createClient();
+  const supabase = await crmClient();
   const { count } = await supabase
     .from("crm_contacts")
     .select("id", { count: "exact", head: true });
@@ -55,7 +68,7 @@ export async function getCrmContactCount(): Promise<number> {
 }
 
 export async function getCrmCompanyCount(): Promise<number> {
-  const supabase = await createClient();
+  const supabase = await crmClient();
   const { count } = await supabase
     .from("crm_companies")
     .select("id", { count: "exact", head: true });
