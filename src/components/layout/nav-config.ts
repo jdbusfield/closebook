@@ -75,7 +75,8 @@ export function getOrgNavGroups(): NavGroup[] {
           icon: Clapperboard,
           children: [
             { title: "Dashboard", href: "/crm" },
-            { title: "Productions", href: "/crm/productions" },
+            { title: "Clients & Productions", href: "/crm/clients" },
+            { title: "Productions (list)", href: "/crm/productions" },
             { title: "Companies", href: "/crm/companies" },
             { title: "Contacts", href: "/crm/contacts" },
             { title: "Opportunities", href: "/crm/opportunities" },
