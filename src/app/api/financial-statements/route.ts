@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getPeriodsInRange, type PeriodBucket } from "@/lib/utils/dates";
 import { fetchAllMappings, fetchAllPaginated } from "@/lib/utils/paginated-fetch";
 import { resolveChartIdOrDefault } from "@/lib/master-charts/resolve";
+import { getExcludedFromBreakdownEntityIds } from "@/lib/db/queries/reporting-entity-exclusions";
 import {
   INCOME_STATEMENT_SECTIONS,
   INCOME_STATEMENT_COMPUTED,
@@ -4022,9 +4023,24 @@ export async function GET(request: Request) {
       .select("id, fiscal_year_end_month")
       .eq("organization_id", organizationId)
       .eq("is_active", true);
-    const orgEntityIds = (orgEntities ?? []).map((e: { id: string }) => e.id);
+    const allOrgEntityIds = (orgEntities ?? []).map(
+      (e: { id: string }) => e.id,
+    );
     const orgFyEnd = (orgEntities ?? [])[0]?.fiscal_year_end_month ?? 12;
     const orgFiscalYearStartMonth = (orgFyEnd % 12) + 1;
+
+    // Drop entities that belong only to reporting entities flagged
+    // `exclude_from_breakdown`. The dashboard and any other consumer of the
+    // organization-scope statements treats this flag as authoritative, so
+    // those entities should not contribute to consolidated revenue, EBITDA,
+    // or net income totals.
+    const excludedFromBreakdown = await getExcludedFromBreakdownEntityIds(
+      admin,
+      organizationId,
+    );
+    const orgEntityIds = allOrgEntityIds.filter(
+      (id: string) => !excludedFromBreakdown.has(id),
+    );
 
     let orgChartId: string;
     try {
