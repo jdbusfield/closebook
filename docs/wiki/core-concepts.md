@@ -45,6 +45,18 @@ entities exist so you can produce a consolidated P&L for, say, "all
 operating entities except the holdco" without having to use the full
 organization-wide rollup. Configured under *Settings -> Reporting Entities*.
 
+Each reporting entity has an **Exclude from breakdown** flag (PR #97).
+When set:
+
+- The reporting entity is hidden from the Financial Model's Reporting
+  Entity Breakdown columns.
+- Its member entities are **also dropped from the org dashboard's
+  consolidated KPIs** (TTM Revenue, EBITDA, EBITDA Margin, Net Income,
+  the Monthly Revenue / EBITDA charts) — see PR #109. Entities that
+  also belong to a non-excluded reporting entity, or that are
+  unassigned, are still counted.
+- Per-entity dashboards at `/[entityId]/dashboard` are unaffected.
+
 ## Close Period
 
 A month-end close cycle for a single entity. Each close period:
@@ -77,6 +89,27 @@ two kinds:
 - **Reclass allocations** — move dollars between accounts within one entity
 - **Cross-entity allocations** — move dollars between entities (these
   generate matching intercompany entries automatically)
+
+## Year-end adjustments
+
+Chart-scoped one-time entries that true up a master GL account at year
+end without touching entity-level journals (PR #60). Each adjustment
+lives on a specific chart (management or accountant), master account,
+and period year. Behavior by classification:
+
+- **Asset / Liability / Equity** — carry forward into subsequent periods
+  (cumulative ending balance).
+- **Revenue / Expense** — stay within the year of impact.
+
+Optional fields:
+
+- `entity_id` (PR #67) — tags the adjustment to a specific entity for
+  per-entity NI attribution on the accountant chart. Untagged
+  adjustments fall back to the largest-|NI| heuristic introduced in
+  PR #65.
+- `offset_to_ic_net` (PR #61) — injects a balancing entry into the
+  synthetic Intercompany Eliminations, Net line so a single adjustment
+  zeros out both the source account and the IC residual.
 
 ## Intercompany eliminations
 

@@ -18,7 +18,16 @@ treatment in the relevant sections.
 - **Close Dashboard** (`/close-dashboard`) — every entity's close status in
   one view.
 - **Financial Model** (`/reports/financial-model`) — consolidated and
-  per-entity P&L, balance sheet, cash flow.
+  per-entity P&L, balance sheet, cash flow. Supports saveable templates
+  with favorites, drag-reorder, static / dynamic / hybrid period modes,
+  and a sequence-builder PDF export with title pages (PRs #98–#107). Year
+  selectors run from 2017 onward (PR #76). Yearly views that don't end in
+  December read "Year to Date through…" instead of "Year Ended" (PR #101).
+  A **Bridge** tab reconciles accountant-prepared vs management-prepared
+  statements with seven named categories, tier-2 / tier-3 drill-down,
+  XLSX + landscape print export, and an explicit cross-chart link
+  manager at `/settings/master-gl/bridge-links` (PRs #69, #70, #72). The
+  Bridge tab is visible at consolidated and reporting-entity scopes.
 - **Debt Dashboard** (`/debt`) — org-wide view of all debt facilities.
 - **TB Variance** (`/tb-variance`) — flags trial-balance issues across
   entities (unmapped accounts, missing GL rows, prior-period drift).
@@ -50,14 +59,35 @@ Available under `/<entityId>/...`:
 - **Revenue Accruals** — unbilled revenue tracking.
 - **Commissions** — commission calculations and paid tracking.
 - **Rebate Tracker** — customer rebate accruals (feature-flagged).
+  Includes a **Monthly Rebates** table for GL posting (PR #58) with CSV
+  export. Sales / Misc / L&D categories are flagged "Excluded from
+  rebate" on detail views and exports (PR #56). Line-item math:
+  Regular = list price, Net = post-discount (PR #57).
 - **Revenue Projection** — forward-looking revenue from RentalWorks
   pipeline (feature-flagged).
 
 ## Settings / Administration
 
-- **Master GL** — consolidated chart of accounts.
+- **Master GL** — consolidated chart of accounts. Supports two charts
+  (management and accountant). Each classification table shows a
+  **Total ({year})** column (PR #59) with a year selector going back to
+  2017 (PR #77). Mapping side sheet exposes chart-scoped year-end
+  adjustments (PR #60) with optional entity tagging for per-entity NI
+  attribution (PR #67) and an "Apply to Intercompany Eliminations, Net"
+  toggle (PR #61). The accountant chart defaults to the **By Rollup**
+  view; the management chart defaults to **By Classification** (PR #62).
+  The Unmapped Accounts panel supports search (PR #93), an inline
+  master-account picker on every row (PR #84) that lists every master
+  regardless of classification (PR #88), and surfaces the QBO
+  AccountType / sub-type as a second badge (PR #89). Mappings can be
+  added in bulk — pick one entity and toggle multiple entity accounts
+  in a single save (PR #83). A **Bridge Links** settings page at
+  `/settings/master-gl/bridge-links` pairs accountant masters ↔
+  management masters explicitly for the Bridge view (PR #69).
 - **Reporting Entities** — user-defined entity groupings for consolidated
-  views.
+  views. Supports an **Exclude from breakdown** flag (PR #97) that hides
+  the RE from the Financial Model breakdown columns and (PR #109) from
+  the org dashboard's consolidated totals.
 - **Close Templates** — task templates that drive the close calendar for
   each entity.
 - **Members** — invite users, assign roles (admin / member / viewer).
