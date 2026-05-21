@@ -10,8 +10,6 @@ import { BookOpen } from "lucide-react";
 import { getSections, getPage } from "@/lib/wiki/loader";
 import { renderMarkdown } from "@/lib/wiki/markdown";
 
-export const dynamic = "force-static";
-
 export default async function WikiIndexPage() {
   const [sections, indexPage] = await Promise.all([
     getSections(),

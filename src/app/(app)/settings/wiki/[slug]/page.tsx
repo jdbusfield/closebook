@@ -8,17 +8,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ChevronLeft } from "lucide-react";
-import { getAllSlugs, getPage, getSections } from "@/lib/wiki/loader";
+import { getPage, getSections } from "@/lib/wiki/loader";
 import { renderMarkdown } from "@/lib/wiki/markdown";
-
-export const dynamic = "force-static";
-
-export async function generateStaticParams() {
-  const slugs = await getAllSlugs();
-  return slugs
-    .filter((slug) => slug !== "index")
-    .map((slug) => ({ slug }));
-}
 
 interface PageProps {
   params: Promise<{ slug: string }>;
