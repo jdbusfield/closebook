@@ -157,6 +157,10 @@ export default async function ClientsBoardPage({ searchParams }: PageProps) {
     <div className="space-y-4 p-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold">Clients &amp; Productions</h1>
+        <div className="flex flex-wrap items-center gap-2">
+        <Button asChild size="sm" variant="default">
+          <Link href="/crm/import">Import Weekly Report</Link>
+        </Button>
         <form className="flex flex-wrap items-center gap-2">
           {sp.tab && <input type="hidden" name="tab" value={sp.tab} />}
           <div className="relative">
@@ -190,6 +194,7 @@ export default async function ClientsBoardPage({ searchParams }: PageProps) {
             </Button>
           )}
         </form>
+        </div>
       </div>
 
       {/* Hidden form value used by the checkbox-off case: if the box is unchecked, no value is submitted.
