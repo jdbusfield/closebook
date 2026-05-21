@@ -26,6 +26,7 @@ import {
   Shield,
   History,
   Settings,
+  Clapperboard,
 } from "lucide-react";
 
 export type EntityFeatureFlag = "rebates" | "revenue_projection";
@@ -63,6 +64,12 @@ export function getOrgNavGroups(): NavGroup[] {
         { title: "Payroll", href: "/payroll", icon: Users },
         { title: "Real Estate", href: "/real-estate", icon: Building },
         { title: "QBO Sync", href: "/sync", icon: RefreshCw },
+      ],
+    },
+    {
+      label: "CRM",
+      items: [
+        { title: "CRM", href: "/crm", icon: Clapperboard },
       ],
     },
     {
