@@ -30,6 +30,7 @@ import type {
   NewProductionItem,
   FellOffItem,
 } from "@/lib/crm/import-types";
+import { ProductionMatchCombobox } from "./_components/production-match-combobox";
 
 type Phase = "idle" | "uploading" | "diff" | "applying" | "done" | "error";
 
@@ -41,6 +42,7 @@ interface ApplyResult {
   studios_linked_or_created: number;
   contacts_created: number;
   marked_completed: number;
+  manual_matches_applied: number;
   errors: string[];
 }
 
@@ -60,6 +62,8 @@ export default function CrmImportPage() {
   const [completedYes, setCompletedYes] = useState<Set<string>>(new Set());
   // Edits for new productions: prodIndex -> overrides
   const [newProdEdits, setNewProdEdits] = useState<Record<string, { start_date: string; end_date: string; studio_id: string }>>({});
+  /** Manual match: which existing production a "new" PDF row is actually aliased to. */
+  const [newProdMatches, setNewProdMatches] = useState<Record<string, string | null>>({});
 
   async function handleUpload(f: File) {
     setFile(f);
@@ -103,10 +107,15 @@ export default function CrmImportPage() {
       .filter((_, i) => aliasYes.has(`alias-${i}`))
       .map(a => ({ pdf_row: a.pdf_row, matched_production_id: a.matched_production_id }));
 
-    const accept_new_productions = diff.new_productions
-      .filter((_, i) => newProdYes.has(`np-${i}`))
-      .map((np, i) => {
-        const edits = newProdEdits[`np-${i}`];
+    // Split new productions: ones the user manually matched go into manual_alias_matches
+    const checkedNewProdIndexes = diff.new_productions
+      .map((np, i) => ({ np, i, key: `np-${i}` }))
+      .filter(({ key }) => newProdYes.has(key));
+
+    const accept_new_productions = checkedNewProdIndexes
+      .filter(({ key }) => !newProdMatches[key])
+      .map(({ np, key }) => {
+        const edits = newProdEdits[key];
         return {
           pdf_row: np.pdf_row,
           company_id: np.suggested_company_id,
@@ -116,6 +125,13 @@ export default function CrmImportPage() {
         };
       });
 
+    const manual_alias_matches = checkedNewProdIndexes
+      .filter(({ key }) => newProdMatches[key])
+      .map(({ np, key }) => ({
+        pdf_row: np.pdf_row,
+        matched_production_id: newProdMatches[key] as string,
+      }));
+
     const mark_completed = Array.from(completedYes);
 
     const payload: ApplyDiffPayload = {
@@ -123,6 +139,7 @@ export default function CrmImportPage() {
       accept_status_changes,
       accept_alias_suggestions,
       accept_new_productions,
+      manual_alias_matches,
       mark_completed,
     };
     try {
@@ -152,6 +169,7 @@ export default function CrmImportPage() {
     setNewProdYes(new Set());
     setCompletedYes(new Set());
     setNewProdEdits({});
+    setNewProdMatches({});
   }
 
   return (
@@ -332,8 +350,12 @@ export default function CrmImportPage() {
                 {diff.new_productions.map((np: NewProductionItem, i) => {
                   const key = `np-${i}`;
                   const edits = newProdEdits[key] ?? { start_date: "", end_date: "", studio_id: "" };
+                  const matchedId = newProdMatches[key] ?? null;
+                  const matchedProd = matchedId
+                    ? diff.active_candidates.find(c => c.id === matchedId) ?? null
+                    : null;
                   return (
-                    <div key={key} className="rounded-lg border p-3">
+                    <div key={key} className={`rounded-lg border p-3 ${matchedProd ? "border-emerald-300 bg-emerald-50/30" : ""}`}>
                       <div className="flex items-start gap-3">
                         <input
                           type="checkbox"
@@ -352,81 +374,107 @@ export default function CrmImportPage() {
                               <span className="text-sm text-muted-foreground">from {np.pdf_row.production_company}</span>
                             )}
                           </div>
-                          {np.suggested_company_id ? (
-                            <p className="text-xs text-emerald-700">
-                              ✓ Will link to existing company &quot;{np.suggested_company_name}&quot;
-                            </p>
-                          ) : np.pdf_row.production_company ? (
-                            <p className="text-xs text-amber-700">
-                              No matching company in CRM — will create &quot;{np.pdf_row.production_company}&quot;
-                            </p>
-                          ) : null}
 
-                          {/* Research panel */}
-                          <div className="rounded-md bg-muted/40 p-2 text-xs">
-                            <p className="font-semibold uppercase tracking-wide text-muted-foreground">🤖 Researched</p>
-                            {np.research && !np.research.failed ? (
-                              <div className="mt-1 space-y-1">
-                                <p>
-                                  <span className="text-muted-foreground">Dates:</span>{" "}
-                                  {np.research.estimated_start_date ?? "Unknown"} → {np.research.estimated_end_date ?? "Unknown"}
-                                  {" · "}
-                                  <Badge className={
-                                    np.research.confidence === "high" ? "bg-emerald-100 text-emerald-800 text-[10px]"
-                                    : np.research.confidence === "medium" ? "bg-amber-100 text-amber-800 text-[10px]"
-                                    : "bg-slate-100 text-slate-700 text-[10px]"
-                                  } variant="secondary">
-                                    {np.research.confidence}
-                                  </Badge>
+                          {/* Manual match combobox — escape hatch for misses */}
+                          <div className="rounded-md border bg-background p-2">
+                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              Match to existing production
+                            </p>
+                            <ProductionMatchCombobox
+                              candidates={diff.active_candidates}
+                              selectedId={matchedId}
+                              onSelect={(id) => setNewProdMatches({ ...newProdMatches, [key]: id })}
+                              pdfRowName={np.pdf_row.production_name}
+                            />
+                            {matchedProd && (
+                              <p className="mt-2 rounded bg-emerald-100 px-2 py-1 text-[11px] text-emerald-800">
+                                ✓ Will create alias <strong>&quot;{np.pdf_row.production_name}&quot;</strong> on{" "}
+                                <strong>{matchedProd.name}</strong> and update its status to{" "}
+                                <strong>{np.pdf_row.status_label.toLowerCase()}</strong>. No new production will be created.
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Below this point: only show the "create new" details if user has NOT matched */}
+                          {!matchedProd && (
+                            <>
+                              {np.suggested_company_id ? (
+                                <p className="text-xs text-emerald-700">
+                                  ✓ Will link to existing company &quot;{np.suggested_company_name}&quot;
                                 </p>
-                                <p>
-                                  <span className="text-muted-foreground">Parent studio:</span>{" "}
-                                  {np.research.parent_studio_name ?? "Unknown"}
-                                  {np.research.matched_studio_id && <span className="ml-1 text-emerald-700">(matched existing studio ✓)</span>}
+                              ) : np.pdf_row.production_company ? (
+                                <p className="text-xs text-amber-700">
+                                  No matching company in CRM — will create &quot;{np.pdf_row.production_company}&quot;
                                 </p>
-                                <p className="text-muted-foreground">
-                                  Source: {np.research.source_note}
-                                  {np.research.source_url && (
-                                    <> · <a href={np.research.source_url} target="_blank" rel="noopener noreferrer" className="hover:underline">link</a></>
-                                  )}
-                                </p>
+                              ) : null}
+
+                              {/* Research panel */}
+                              <div className="rounded-md bg-muted/40 p-2 text-xs">
+                                <p className="font-semibold uppercase tracking-wide text-muted-foreground">🤖 Researched</p>
+                                {np.research && !np.research.failed ? (
+                                  <div className="mt-1 space-y-1">
+                                    <p>
+                                      <span className="text-muted-foreground">Dates:</span>{" "}
+                                      {np.research.estimated_start_date ?? "Unknown"} → {np.research.estimated_end_date ?? "Unknown"}
+                                      {" · "}
+                                      <Badge className={
+                                        np.research.confidence === "high" ? "bg-emerald-100 text-emerald-800 text-[10px]"
+                                        : np.research.confidence === "medium" ? "bg-amber-100 text-amber-800 text-[10px]"
+                                        : "bg-slate-100 text-slate-700 text-[10px]"
+                                      } variant="secondary">
+                                        {np.research.confidence}
+                                      </Badge>
+                                    </p>
+                                    <p>
+                                      <span className="text-muted-foreground">Parent studio:</span>{" "}
+                                      {np.research.parent_studio_name ?? "Unknown"}
+                                      {np.research.matched_studio_id && <span className="ml-1 text-emerald-700">(matched existing studio ✓)</span>}
+                                    </p>
+                                    <p className="text-muted-foreground">
+                                      Source: {np.research.source_note}
+                                      {np.research.source_url && (
+                                        <> · <a href={np.research.source_url} target="_blank" rel="noopener noreferrer" className="hover:underline">link</a></>
+                                      )}
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <p className="mt-1 text-muted-foreground">No research result.</p>
+                                )}
                               </div>
-                            ) : (
-                              <p className="mt-1 text-muted-foreground">No research result.</p>
-                            )}
-                          </div>
 
-                          {/* Editable overrides */}
-                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                            <label className="text-xs">
-                              <span className="text-muted-foreground">Start date</span>
-                              <input
-                                type="date"
-                                className="mt-1 block w-full rounded-md border bg-background px-2 py-1 text-sm"
-                                defaultValue={np.research?.estimated_start_date ?? ""}
-                                onChange={e => setNewProdEdits({ ...newProdEdits, [key]: { ...edits, start_date: e.target.value } })}
-                              />
-                            </label>
-                            <label className="text-xs">
-                              <span className="text-muted-foreground">End date</span>
-                              <input
-                                type="date"
-                                className="mt-1 block w-full rounded-md border bg-background px-2 py-1 text-sm"
-                                defaultValue={np.research?.estimated_end_date ?? ""}
-                                onChange={e => setNewProdEdits({ ...newProdEdits, [key]: { ...edits, end_date: e.target.value } })}
-                              />
-                            </label>
-                            {np.research?.matched_studio_id && (
-                              <label className="text-xs">
-                                <span className="text-muted-foreground">Studio</span>
-                                <input
-                                  readOnly
-                                  value={np.research.parent_studio_name ?? ""}
-                                  className="mt-1 block w-full rounded-md border bg-muted px-2 py-1 text-sm"
-                                />
-                              </label>
-                            )}
-                          </div>
+                              {/* Editable overrides */}
+                              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                                <label className="text-xs">
+                                  <span className="text-muted-foreground">Start date</span>
+                                  <input
+                                    type="date"
+                                    className="mt-1 block w-full rounded-md border bg-background px-2 py-1 text-sm"
+                                    defaultValue={np.research?.estimated_start_date ?? ""}
+                                    onChange={e => setNewProdEdits({ ...newProdEdits, [key]: { ...edits, start_date: e.target.value } })}
+                                  />
+                                </label>
+                                <label className="text-xs">
+                                  <span className="text-muted-foreground">End date</span>
+                                  <input
+                                    type="date"
+                                    className="mt-1 block w-full rounded-md border bg-background px-2 py-1 text-sm"
+                                    defaultValue={np.research?.estimated_end_date ?? ""}
+                                    onChange={e => setNewProdEdits({ ...newProdEdits, [key]: { ...edits, end_date: e.target.value } })}
+                                  />
+                                </label>
+                                {np.research?.matched_studio_id && (
+                                  <label className="text-xs">
+                                    <span className="text-muted-foreground">Studio</span>
+                                    <input
+                                      readOnly
+                                      value={np.research.parent_studio_name ?? ""}
+                                      className="mt-1 block w-full rounded-md border bg-muted px-2 py-1 text-sm"
+                                    />
+                                  </label>
+                                )}
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -479,7 +527,11 @@ export default function CrmImportPage() {
           {/* Apply bar */}
           <div className="sticky bottom-0 flex items-center justify-between rounded-lg border bg-background/95 p-3 shadow-lg backdrop-blur">
             <div className="text-sm text-muted-foreground">
-              {statusYes.size} status updates · {aliasYes.size} aliases · {newProdYes.size} new · {completedYes.size} marked completed
+              {(() => {
+                const matched = Array.from(newProdYes).filter(k => newProdMatches[k]).length;
+                const truNew = newProdYes.size - matched;
+                return `${statusYes.size} status updates · ${aliasYes.size} aliases · ${truNew} new · ${matched} manual matches · ${completedYes.size} marked completed`;
+              })()}
             </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={reset}>Cancel</Button>
@@ -516,6 +568,7 @@ export default function CrmImportPage() {
                 <ul className="mt-2 space-y-1 text-sm">
                   <li>• {result.status_updates} status updates</li>
                   <li>• {result.productions_created} new productions created</li>
+                  <li>• {result.manual_matches_applied} manual matches resolved</li>
                   <li>• {result.aliases_created} aliases added</li>
                   <li>• {result.companies_created} companies created</li>
                   <li>• {result.studios_linked_or_created} studios linked or created</li>

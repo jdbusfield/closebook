@@ -34,6 +34,17 @@ export interface ImportDiff {
   new_productions: NewProductionItem[];
   fell_off: FellOffItem[];
   unchanged: UnchangedItem[];
+  /** All currently-active productions, used by the UI's "match to existing" combobox
+      so the user can manually link a row that the matcher missed. */
+  active_candidates: ActiveProductionCandidate[];
+}
+
+export interface ActiveProductionCandidate {
+  id: string;
+  name: string;
+  status: string;
+  company_name: string | null;
+  aliases: string[];
 }
 
 export interface StatusChangeItem {
@@ -108,6 +119,12 @@ export interface ApplyDiffPayload {
     studio_id: string | null;        // null = no studio
     start_date: string | null;
     end_date: string | null;
+  }>;
+  /** User-resolved matches: PDF rows that looked new but the user manually
+      pointed at an existing production. Will create alias + apply status change. */
+  manual_alias_matches: Array<{
+    pdf_row: ParsedReportRow;
+    matched_production_id: string;
   }>;
   /** production_ids to mark completed (user explicitly decided show wrapped) */
   mark_completed: string[];

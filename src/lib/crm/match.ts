@@ -165,6 +165,25 @@ export async function diffPdfRows(
       weeks_active: null,
     }));
 
+  // Active candidates for the manual-match combobox (everything in an active status)
+  const aliasesByProductionId = new Map<string, string[]>();
+  for (const a of aliases) {
+    const arr = aliasesByProductionId.get(a.production_id) ?? [];
+    arr.push(a.alias_name);
+    aliasesByProductionId.set(a.production_id, arr);
+  }
+  const companyById = new Map<string, ExistingCompany>(companies.map(c => [c.id, c]));
+  const active_candidates = productions
+    .filter(p => ACTIVE_STATUSES.includes(p.status))
+    .map(p => ({
+      id: p.id,
+      name: p.name,
+      status: p.status,
+      company_name: p.company_id ? (companyById.get(p.company_id)?.name ?? null) : null,
+      aliases: aliasesByProductionId.get(p.id) ?? [],
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   return {
     report_metadata: reportMetadata,
     status_changes,
@@ -172,5 +191,6 @@ export async function diffPdfRows(
     new_productions,
     fell_off,
     unchanged,
+    active_candidates,
   };
 }
