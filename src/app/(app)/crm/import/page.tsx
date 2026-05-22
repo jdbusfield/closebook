@@ -383,7 +383,17 @@ export default function CrmImportPage() {
                             <ProductionMatchCombobox
                               candidates={diff.active_candidates}
                               selectedId={matchedId}
-                              onSelect={(id) => setNewProdMatches({ ...newProdMatches, [key]: id })}
+                              onSelect={(id) => {
+                                setNewProdMatches({ ...newProdMatches, [key]: id });
+                                // Auto-check the row when a match is picked so it actually
+                                // gets included on apply. Don't auto-uncheck when cleared —
+                                // user may want to keep the row as a new production.
+                                if (id && !newProdYes.has(key)) {
+                                  const copy = new Set(newProdYes);
+                                  copy.add(key);
+                                  setNewProdYes(copy);
+                                }
+                              }}
                               pdfRowName={np.pdf_row.production_name}
                             />
                             {matchedProd && (
