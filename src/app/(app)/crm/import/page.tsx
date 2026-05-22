@@ -132,7 +132,12 @@ export default function CrmImportPage() {
         matched_production_id: newProdMatches[key] as string,
       }));
 
-    const mark_completed = Array.from(completedYes);
+    // Don't try to mark a production completed if it's also a manual-match target —
+    // the match implies the show is still active.
+    const matchedExistingIds = new Set(
+      Object.values(newProdMatches).filter((v): v is string => Boolean(v))
+    );
+    const mark_completed = Array.from(completedYes).filter(id => !matchedExistingIds.has(id));
 
     const payload: ApplyDiffPayload = {
       report_metadata: diff.report_metadata,
@@ -239,14 +244,29 @@ export default function CrmImportPage() {
       )}
 
       {/* ---------------- DIFF ---------------- */}
-      {phase === "diff" && diff && (
+      {phase === "diff" && diff && (() => {
+        // Productions the user has manually matched to existing rows have effectively
+        // been "seen" on this report — exclude them from the fell-off list and from
+        // any pending "mark completed" selection.
+        const matchedExistingIds = new Set(
+          Object.values(newProdMatches).filter((v): v is string => Boolean(v))
+        );
+        const fellOffFiltered = diff.fell_off.filter(f => !matchedExistingIds.has(f.production_id));
+        const completedYesFiltered = Array.from(completedYes).filter(id => !matchedExistingIds.has(id));
+        // Keep the completedYes set in sync — if a previously-marked-completed row got
+        // matched, drop it from the set.
+        if (completedYesFiltered.length !== completedYes.size) {
+          // Defer to avoid setState-in-render warnings
+          queueMicrotask(() => setCompletedYes(new Set(completedYesFiltered)));
+        }
+        return (
         <>
           <div className="grid gap-3 md:grid-cols-5">
             <Card><CardContent className="p-3 text-center"><p className="text-2xl font-semibold">{diff.report_metadata.total_rows}</p><p className="text-xs text-muted-foreground">PDF rows</p></CardContent></Card>
             <Card><CardContent className="p-3 text-center"><p className="text-2xl font-semibold">{diff.status_changes.length}</p><p className="text-xs text-muted-foreground">Status changes</p></CardContent></Card>
             <Card><CardContent className="p-3 text-center"><p className="text-2xl font-semibold">{diff.alias_suggestions.length}</p><p className="text-xs text-muted-foreground">Alias suggestions</p></CardContent></Card>
             <Card><CardContent className="p-3 text-center"><p className="text-2xl font-semibold">{diff.new_productions.length}</p><p className="text-xs text-muted-foreground">New productions</p></CardContent></Card>
-            <Card><CardContent className="p-3 text-center"><p className="text-2xl font-semibold">{diff.fell_off.length}</p><p className="text-xs text-muted-foreground">Fell off report</p></CardContent></Card>
+            <Card><CardContent className="p-3 text-center"><p className="text-2xl font-semibold">{fellOffFiltered.length}</p><p className="text-xs text-muted-foreground">Fell off report</p></CardContent></Card>
           </div>
 
           {/* Status changes */}
@@ -495,11 +515,18 @@ export default function CrmImportPage() {
           )}
 
           {/* Fell off */}
-          {diff.fell_off.length > 0 && (
+          {fellOffFiltered.length > 0 && (
             <Card>
               <CardHeader>
                 <CardTitle>Fell off the report</CardTitle>
-                <CardDescription>Active productions in CRM that don&apos;t appear on this week&apos;s PDF. Check the box to mark each as completed.</CardDescription>
+                <CardDescription>
+                  Active productions in CRM that don&apos;t appear on this week&apos;s PDF. Check the box to mark each as completed.
+                  {diff.fell_off.length !== fellOffFiltered.length && (
+                    <span className="ml-1 text-emerald-700">
+                      ({diff.fell_off.length - fellOffFiltered.length} hidden — resolved via manual match above.)
+                    </span>
+                  )}
+                </CardDescription>
               </CardHeader>
               <CardContent className="p-0">
                 <table className="w-full text-sm">
@@ -511,7 +538,7 @@ export default function CrmImportPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {diff.fell_off.map((f: FellOffItem) => (
+                    {fellOffFiltered.map((f: FellOffItem) => (
                       <tr key={f.production_id} className="border-t">
                         <td className="px-4 py-2">
                           <input
@@ -555,7 +582,8 @@ export default function CrmImportPage() {
             </div>
           </div>
         </>
-      )}
+        );
+      })()}
 
       {/* ---------------- APPLYING ---------------- */}
       {phase === "applying" && (
