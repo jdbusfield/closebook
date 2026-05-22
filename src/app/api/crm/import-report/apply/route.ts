@@ -16,6 +16,7 @@ interface ApplyResult {
   studios_linked_or_created: number;
   contacts_created: number;
   marked_completed: number;
+  manual_matches_applied: number;
   errors: string[];
 }
 
@@ -46,6 +47,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     studios_linked_or_created: 0,
     contacts_created: 0,
     marked_completed: 0,
+    manual_matches_applied: 0,
     errors: [],
   };
 
@@ -141,6 +143,49 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       continue;
     }
     result.aliases_created++;
+  }
+
+  // ----- 2b) Manual alias matches (user-resolved "this is actually X") ------
+  // For each: alias the PDF name onto the existing production AND apply the
+  // status change implied by the PDF row if it differs.
+  for (const { pdf_row, matched_production_id } of payload.manual_alias_matches ?? []) {
+    const aliasName = pdf_row.production_name;
+    const { error: aliasErr } = await supabase.from("crm_production_aliases").insert({
+      organization_id: organizationId,
+      production_id: matched_production_id,
+      alias_name: aliasName,
+    });
+    if (aliasErr) {
+      result.errors.push(`manualMatchAlias(${aliasName}): ${aliasErr.message}`);
+      continue;
+    }
+    result.aliases_created++;
+
+    // Also apply the status from the PDF row if different
+    const { data: prod } = await supabase
+      .from("crm_productions")
+      .select("status")
+      .eq("id", matched_production_id)
+      .maybeSingle();
+    const currentStatus = (prod as { status: string } | null)?.status ?? null;
+    const newStatus = PDF_STATUS_TO_CRM[pdf_row.status_label] ?? "shooting";
+    if (currentStatus && currentStatus !== newStatus) {
+      const { error: statusErr } = await supabase
+        .from("crm_productions")
+        .update({ status: newStatus, status_changed_at: new Date().toISOString() })
+        .eq("id", matched_production_id);
+      if (!statusErr) {
+        await supabase.from("crm_production_status_history").insert({
+          organization_id: organizationId,
+          production_id: matched_production_id,
+          old_status: currentStatus,
+          new_status: newStatus,
+          notes: `Manual match from weekly report (${payload.report_metadata.file_name})`,
+        });
+        result.status_updates++;
+      }
+    }
+    result.manual_matches_applied++;
   }
 
   // ----- 3) New productions -----------------------------------------------
