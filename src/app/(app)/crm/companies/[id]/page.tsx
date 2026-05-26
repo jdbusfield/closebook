@@ -19,10 +19,17 @@ import {
   getCrmCompanyProductions,
   getCrmCompanyContacts,
 } from "@/lib/db/queries/crm";
+import { getOrgMembers } from "@/lib/db/queries/crm-owners";
+import { getCrmTasksForEntity } from "@/lib/db/queries/crm-tasks";
+import { getCrmNotesForEntity } from "@/lib/db/queries/crm-notes";
 import {
   ProductionStatusBadge,
   formatDate,
 } from "../../_components/crm-shared";
+import { OwnerCombobox } from "../../_components/owner-combobox";
+import { TasksTab } from "../../_components/tasks-tab";
+import { NotesTab } from "../../_components/notes-tab";
+import { createClient } from "@/lib/supabase/server";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -30,12 +37,22 @@ interface PageProps {
 
 export default async function CompanyDetailPage({ params }: PageProps) {
   const { id } = await params;
-  const [company, productions, contacts] = await Promise.all([
+  const [companyRaw, productions, contacts, members, tasks, notes, currentUser] = await Promise.all([
     getCrmCompany(id),
     getCrmCompanyProductions(id),
     getCrmCompanyContacts(id),
+    getOrgMembers(),
+    getCrmTasksForEntity("company", id),
+    getCrmNotesForEntity("company", id),
+    (async () => {
+      const supabase = await createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      return user;
+    })(),
   ]);
-  if (!company) notFound();
+  if (!companyRaw) notFound();
+  const company = companyRaw as { id: string; name: string; type: string; parent_studio_id: string | null; created_at: string; owner_id?: string | null };
+  const ownerName = company.owner_id ? (members.find(m => m.id === company.owner_id)?.full_name ?? null) : null;
 
   return (
     <div className="space-y-6 p-6">
@@ -43,17 +60,37 @@ export default async function CompanyDetailPage({ params }: PageProps) {
         <Link href="/crm/companies" className="mb-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline">
           <ArrowLeft className="h-3 w-3" /> Back to companies
         </Link>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold">
-          <Building2 className="h-6 w-6" /> {company.name}
-        </h1>
-        <Badge variant="outline" className="mt-1 text-xs">{company.type}</Badge>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="flex items-center gap-2 text-2xl font-semibold">
+              <Building2 className="h-6 w-6" /> {company.name}
+            </h1>
+            <Badge variant="outline" className="mt-1 text-xs">{company.type}</Badge>
+          </div>
+          <OwnerCombobox
+            entityType="company"
+            entityId={id}
+            currentOwnerId={company.owner_id ?? null}
+            currentOwnerName={ownerName}
+            members={members}
+          />
+        </div>
       </div>
 
       <Tabs defaultValue="productions">
         <TabsList>
           <TabsTrigger value="productions">Productions ({productions.length})</TabsTrigger>
           <TabsTrigger value="contacts">Contacts ({contacts.length})</TabsTrigger>
+          <TabsTrigger value="tasks">Tasks ({tasks.filter(t => t.status !== "done" && t.status !== "cancelled").length})</TabsTrigger>
+          <TabsTrigger value="notes">Notes ({notes.length})</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="tasks">
+          <TasksTab entityType="company" entityId={id} tasks={tasks} members={members} currentUserId={currentUser?.id ?? ""} />
+        </TabsContent>
+        <TabsContent value="notes">
+          <NotesTab entityType="company" entityId={id} notes={notes} />
+        </TabsContent>
 
         <TabsContent value="productions">
           <Card>

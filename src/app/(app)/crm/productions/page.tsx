@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { getCrmProductions } from "@/lib/db/queries/crm";
+import { getStaleProductions } from "@/lib/db/queries/crm-stale";
 import {
   PRODUCTION_STATUS_ORDER,
   PRODUCTION_STATUS_LABEL,
@@ -24,23 +25,33 @@ interface PageProps {
     is399?: string;
     category?: string;
     q?: string;
+    stale?: string;
   }>;
 }
 
 export default async function ProductionsListPage({ searchParams }: PageProps) {
   const sp = await searchParams;
-  const productions = await getCrmProductions({
-    status: sp.status,
-    is399: sp.is399 === "true" ? true : undefined,
-    category: sp.category,
-    search: sp.q,
-  });
+  const staleOnly = sp.stale === "1";
+  const [allProductions, stale] = await Promise.all([
+    getCrmProductions({
+      status: sp.status,
+      is399: sp.is399 === "true" ? true : undefined,
+      category: sp.category,
+      search: sp.q,
+    }),
+    staleOnly ? getStaleProductions() : Promise.resolve([]),
+  ]);
+  const staleIds = new Set(stale.map(s => s.production_id));
+  const productions = staleOnly
+    ? allProductions.filter(p => staleIds.has(p.id))
+    : allProductions;
 
   const activeFilters: string[] = [];
   if (sp.status) activeFilters.push(`Status: ${PRODUCTION_STATUS_LABEL[sp.status] ?? sp.status}`);
   if (sp.is399 === "true") activeFilters.push("399 productions");
   if (sp.category) activeFilters.push(`Category: ${sp.category}`);
   if (sp.q) activeFilters.push(`Search: "${sp.q}"`);
+  if (staleOnly) activeFilters.push("Stale only (no activity 30+ days)");
 
   return (
     <div className="space-y-6 p-6">

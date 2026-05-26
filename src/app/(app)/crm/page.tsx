@@ -6,6 +6,8 @@ import {
   Briefcase,
   MessageSquare,
   ArrowRight,
+  AlertTriangle,
+  CheckSquare,
 } from "lucide-react";
 import {
   Card,
@@ -23,6 +25,9 @@ import {
   getCrmCommunications,
   getCrmOpportunities,
 } from "@/lib/db/queries/crm";
+import { getStaleProductions } from "@/lib/db/queries/crm-stale";
+import { getMyOpenTasks } from "@/lib/db/queries/crm-tasks";
+import { createClient } from "@/lib/supabase/server";
 import {
   PRODUCTION_STATUS_ORDER,
   PRODUCTION_STATUS_LABEL,
@@ -45,14 +50,19 @@ const PIPELINE_BADGE: Record<string, string> = {
 };
 
 export default async function CrmDashboardPage() {
-  const [statusCounts, contactCount, companyCount, openOppCount, recentComms, recentOpps] = await Promise.all([
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const [statusCounts, contactCount, companyCount, openOppCount, recentComms, recentOpps, staleProductions, myTasks] = await Promise.all([
     getCrmStatusCounts(),
     getCrmContactCount(),
     getCrmCompanyCount(),
     getCrmOpportunityCount({ status: "open" }),
     getCrmCommunications({}).then(rows => rows.slice(0, 8)),
     getCrmOpportunities({}).then(rows => rows.slice(0, 6)),
+    getStaleProductions(),
+    user ? getMyOpenTasks(user.id) : Promise.resolve([]),
   ]);
+  const myOverdue = myTasks.filter(t => t.is_overdue).length;
 
   const totalProductions = Object.values(statusCounts).reduce((a, b) => a + b, 0);
   const activeProductions = PRODUCTION_STATUS_ORDER
@@ -119,6 +129,42 @@ export default async function CrmDashboardPage() {
             <CardContent className="flex items-center justify-between text-xs text-muted-foreground">
               <span><Briefcase className="mr-1 inline h-3 w-3" /> Pipeline</span>
               <ArrowRight className="h-3 w-3 transition group-hover:translate-x-1" />
+            </CardContent>
+          </Card>
+        </Link>
+      </div>
+
+      {/* Alerts row */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <Link href="/crm/productions?stale=1" className="group">
+          <Card className={`transition hover:border-primary ${staleProductions.length > 0 ? "border-rose-300" : ""}`}>
+            <CardHeader className="pb-2 flex flex-row items-start justify-between">
+              <div>
+                <CardDescription>Stale productions</CardDescription>
+                <CardTitle className={`text-3xl ${staleProductions.length > 0 ? "text-rose-700" : ""}`}>{staleProductions.length}</CardTitle>
+              </div>
+              <AlertTriangle className={`h-5 w-5 ${staleProductions.length > 0 ? "text-rose-500" : "text-muted-foreground"}`} />
+            </CardHeader>
+            <CardContent className="text-xs text-muted-foreground">
+              {staleProductions.length === 0
+                ? "All active productions have had activity in the last 30 days."
+                : `Active productions with no comms, notes, tasks, or invoices in 30+ days.`}
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/crm/tasks" className="group">
+          <Card className={`transition hover:border-primary ${myOverdue > 0 ? "border-rose-300" : ""}`}>
+            <CardHeader className="pb-2 flex flex-row items-start justify-between">
+              <div>
+                <CardDescription>My open tasks</CardDescription>
+                <CardTitle className="text-3xl">{myTasks.length}</CardTitle>
+              </div>
+              <CheckSquare className="h-5 w-5 text-muted-foreground" />
+            </CardHeader>
+            <CardContent className="text-xs text-muted-foreground">
+              {myOverdue > 0
+                ? <span className="text-rose-700 font-medium">{myOverdue} overdue</span>
+                : "Nothing overdue."}
             </CardContent>
           </Card>
         </Link>

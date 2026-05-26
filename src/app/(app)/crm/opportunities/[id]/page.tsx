@@ -11,6 +11,13 @@ import {
   getCrmOpportunity,
   getCrmOpportunityComments,
 } from "@/lib/db/queries/crm";
+import { getCrmTasksForEntity } from "@/lib/db/queries/crm-tasks";
+import { getCrmNotesForEntity } from "@/lib/db/queries/crm-notes";
+import { getOrgMembers } from "@/lib/db/queries/crm-owners";
+import { OwnerCombobox } from "../../_components/owner-combobox";
+import { TasksTab } from "../../_components/tasks-tab";
+import { NotesTab } from "../../_components/notes-tab";
+import { createClient } from "@/lib/supabase/server";
 import {
   OpportunityStatusBadge,
   PriorityBadge,
@@ -32,18 +39,28 @@ interface OpportunityRecord {
   salesperson: string | null;
   status_comment: string | null;
   created_at: string;
+  owner_id: string | null;
   production: { id: string; name: string; status: string } | null;
   contact: { id: string; name: string; role: string; email: string | null; phone: string | null } | null;
 }
 
 export default async function OpportunityDetailPage({ params }: PageProps) {
   const { id } = await params;
-  const [opportunityRaw, comments] = await Promise.all([
+  const [opportunityRaw, comments, tasks, notes, members, currentUser] = await Promise.all([
     getCrmOpportunity(id),
     getCrmOpportunityComments(id),
+    getCrmTasksForEntity("opportunity", id),
+    getCrmNotesForEntity("opportunity", id),
+    getOrgMembers(),
+    (async () => {
+      const supabase = await createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      return user;
+    })(),
   ]);
   const opportunity = opportunityRaw as unknown as OpportunityRecord | null;
   if (!opportunity) notFound();
+  const ownerName = opportunity.owner_id ? (members.find(m => m.id === opportunity.owner_id)?.full_name ?? null) : null;
 
   return (
     <div className="space-y-6 p-6">
@@ -51,16 +68,27 @@ export default async function OpportunityDetailPage({ params }: PageProps) {
         <Link href="/crm/opportunities" className="mb-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline">
           <ArrowLeft className="h-3 w-3" /> Back to opportunities
         </Link>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold">
-          <Briefcase className="h-6 w-6" /> {opportunity.description}
-        </h1>
-        <div className="mt-2 flex items-center gap-2">
-          <OpportunityStatusBadge status={opportunity.status} />
-          <PriorityBadge priority={opportunity.priority} />
-          <span className="text-sm text-muted-foreground">{segmentLabel(opportunity.current_segment)}</span>
-          {opportunity.amount != null && (
-            <span className="text-sm font-medium">{formatMoney(opportunity.amount)}</span>
-          )}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="flex items-center gap-2 text-2xl font-semibold">
+              <Briefcase className="h-6 w-6" /> {opportunity.description}
+            </h1>
+            <div className="mt-2 flex items-center gap-2">
+              <OpportunityStatusBadge status={opportunity.status} />
+              <PriorityBadge priority={opportunity.priority} />
+              <span className="text-sm text-muted-foreground">{segmentLabel(opportunity.current_segment)}</span>
+              {opportunity.amount != null && (
+                <span className="text-sm font-medium">{formatMoney(opportunity.amount)}</span>
+              )}
+            </div>
+          </div>
+          <OwnerCombobox
+            entityType="opportunity"
+            entityId={id}
+            currentOwnerId={opportunity.owner_id}
+            currentOwnerName={ownerName}
+            members={members}
+          />
         </div>
       </div>
 
@@ -117,6 +145,17 @@ export default async function OpportunityDetailPage({ params }: PageProps) {
           </dl>
         </CardContent>
       </Card>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div>
+          <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-muted-foreground">Tasks</h2>
+          <TasksTab entityType="opportunity" entityId={id} tasks={tasks} members={members} currentUserId={currentUser?.id ?? ""} />
+        </div>
+        <div>
+          <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-muted-foreground">Notes</h2>
+          <NotesTab entityType="opportunity" entityId={id} notes={notes} />
+        </div>
+      </div>
 
       <Card>
         <CardHeader><CardTitle>Comments ({comments.length})</CardTitle></CardHeader>
