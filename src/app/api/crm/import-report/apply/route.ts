@@ -146,8 +146,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   // ----- 2b) Manual alias matches (user-resolved "this is actually X") ------
-  // For each: alias the PDF name onto the existing production AND apply the
-  // status change implied by the PDF row if it differs.
+  // For each: alias the PDF name onto the existing production, apply the
+  // status change implied by the PDF row if it differs, and link the
+  // coordinator + location manager contacts (creating them if needed).
   for (const { pdf_row, matched_production_id } of payload.manual_alias_matches ?? []) {
     const aliasName = pdf_row.production_name;
     const { error: aliasErr } = await supabase.from("crm_production_aliases").insert({
@@ -185,6 +186,42 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         result.status_updates++;
       }
     }
+
+    // Link coordinator + location manager (idempotent — duplicate join rows are
+    // prevented by checking first; contacts upserted by name)
+    const coordId = await findOrCreateContact(pdf_row.coordinator_name, pdf_row.coordinator_phone, "Production Coordinator");
+    if (coordId) {
+      const { data: existingJoin } = await supabase
+        .from("crm_contact_productions")
+        .select("id")
+        .eq("contact_id", coordId)
+        .eq("production_id", matched_production_id)
+        .maybeSingle();
+      if (!existingJoin) {
+        await supabase.from("crm_contact_productions").insert({
+          organization_id: organizationId,
+          contact_id: coordId,
+          production_id: matched_production_id,
+        });
+      }
+    }
+    const lmId = await findOrCreateContact(pdf_row.location_manager_name, null, "Location Manager");
+    if (lmId) {
+      const { data: existingJoin } = await supabase
+        .from("crm_contact_productions")
+        .select("id")
+        .eq("contact_id", lmId)
+        .eq("production_id", matched_production_id)
+        .maybeSingle();
+      if (!existingJoin) {
+        await supabase.from("crm_contact_productions").insert({
+          organization_id: organizationId,
+          contact_id: lmId,
+          production_id: matched_production_id,
+        });
+      }
+    }
+
     result.manual_matches_applied++;
   }
 

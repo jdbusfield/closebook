@@ -12,6 +12,8 @@ import {
   RefreshCw,
   ArrowRight,
   ArrowLeft,
+  User,
+  MapPin,
 } from "lucide-react";
 import {
   Card,
@@ -395,6 +397,29 @@ export default function CrmImportPage() {
                             )}
                           </div>
 
+                          {/* Coordinator + Location Manager from PDF */}
+                          {(np.pdf_row.coordinator_name || np.pdf_row.location_manager_name) && (
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                              {np.pdf_row.coordinator_name && (
+                                <span className="inline-flex items-center gap-1">
+                                  <User className="h-3 w-3" />
+                                  <span className="text-foreground">{np.pdf_row.coordinator_name}</span>
+                                  <span className="text-[10px] uppercase tracking-wide">coordinator</span>
+                                  {np.pdf_row.coordinator_phone && (
+                                    <span className="ml-1 text-[11px]">· {np.pdf_row.coordinator_phone}</span>
+                                  )}
+                                </span>
+                              )}
+                              {np.pdf_row.location_manager_name && (
+                                <span className="inline-flex items-center gap-1">
+                                  <MapPin className="h-3 w-3" />
+                                  <span className="text-foreground">{np.pdf_row.location_manager_name}</span>
+                                  <span className="text-[10px] uppercase tracking-wide">location mgr</span>
+                                </span>
+                              )}
+                            </div>
+                          )}
+
                           {/* Manual match combobox — escape hatch for misses */}
                           <div className="rounded-md border bg-background p-2">
                             <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -417,11 +442,26 @@ export default function CrmImportPage() {
                               pdfRowName={np.pdf_row.production_name}
                             />
                             {matchedProd && (
-                              <p className="mt-2 rounded bg-emerald-100 px-2 py-1 text-[11px] text-emerald-800">
-                                ✓ Will create alias <strong>&quot;{np.pdf_row.production_name}&quot;</strong> on{" "}
-                                <strong>{matchedProd.name}</strong> and update its status to{" "}
-                                <strong>{np.pdf_row.status_label.toLowerCase()}</strong>. No new production will be created.
-                              </p>
+                              <div className="mt-2 rounded bg-emerald-100 px-2 py-1 text-[11px] text-emerald-800">
+                                <p>
+                                  ✓ Will create alias <strong>&quot;{np.pdf_row.production_name}&quot;</strong> on{" "}
+                                  <strong>{matchedProd.name}</strong> and update its status to{" "}
+                                  <strong>{np.pdf_row.status_label.toLowerCase()}</strong>. No new production will be created.
+                                </p>
+                                {(np.pdf_row.coordinator_name || np.pdf_row.location_manager_name) && (
+                                  <p className="mt-1">
+                                    Will also link
+                                    {np.pdf_row.coordinator_name && (
+                                      <> coordinator <strong>{np.pdf_row.coordinator_name}</strong></>
+                                    )}
+                                    {np.pdf_row.coordinator_name && np.pdf_row.location_manager_name && " and "}
+                                    {np.pdf_row.location_manager_name && (
+                                      <>location mgr <strong>{np.pdf_row.location_manager_name}</strong></>
+                                    )}
+                                    {" "}to <strong>{matchedProd.name}</strong>.
+                                  </p>
+                                )}
+                              </div>
                             )}
                           </div>
 
