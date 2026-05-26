@@ -24,6 +24,20 @@ import {
   getCrmProductionCommunications,
 } from "@/lib/db/queries/crm";
 import {
+  getProductionRevenueSummary,
+  getProductionRevenueByMonth,
+  getProductionInvoices,
+  getProductionRwCustomerLinks,
+  getProductionExternalCustomerLinks,
+} from "@/lib/db/queries/crm-revenue";
+import { getOrgMembers } from "@/lib/db/queries/crm-owners";
+import { RevenueTab } from "./_components/revenue-tab";
+import { OwnerCombobox } from "../../_components/owner-combobox";
+import { TasksTab } from "../../_components/tasks-tab";
+import { NotesTab } from "../../_components/notes-tab";
+import { getCrmTasksForEntity } from "@/lib/db/queries/crm-tasks";
+import { getCrmNotesForEntity } from "@/lib/db/queries/crm-notes";
+import {
   ProductionStatusBadge,
   OpportunityStatusBadge,
   PRODUCTION_STATUS_LABEL,
@@ -84,6 +98,8 @@ interface ProductionRecord {
   studio: { id: string; name: string; type: string } | null;
   primary_transportation_contact: { id: string; name: string; role: string; email: string | null; phone: string | null } | null;
   primary_locations_contact: { id: string; name: string; role: string; email: string | null; phone: string | null } | null;
+  owner_id: string | null;
+  owner: { id: string; full_name: string } | null;
 }
 
 const VENDOR_CATEGORIES: Array<{ label: string; vendor: keyof ProductionRecord; revenue: keyof ProductionRecord }> = [
@@ -106,16 +122,35 @@ function vendorLabel(value: string | null | undefined): string {
 
 export default async function ProductionDetailPage({ params }: PageProps) {
   const { id } = await params;
-  const [productionRaw, contacts, aliases, statusHistory, opportunities, communications] = await Promise.all([
+  const [
+    productionRaw, contacts, aliases, statusHistory, opportunities, communications,
+    revenueSummary, revenueMonthly, revenueInvoices, rwLinks, externalLinks,
+    members, tasks, notes, currentUser,
+  ] = await Promise.all([
     getCrmProduction(id),
     getCrmProductionContacts(id),
     getCrmProductionAliases(id),
     getCrmProductionStatusHistory(id),
     getCrmProductionOpportunities(id),
     getCrmProductionCommunications(id),
+    getProductionRevenueSummary(id),
+    getProductionRevenueByMonth(id, 12),
+    getProductionInvoices(id),
+    getProductionRwCustomerLinks(id),
+    getProductionExternalCustomerLinks(id),
+    getOrgMembers(),
+    getCrmTasksForEntity("production", id),
+    getCrmNotesForEntity("production", id),
+    (async () => {
+      const { createClient } = await import("@/lib/supabase/server");
+      const supabase = await createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      return user;
+    })(),
   ]);
   const production = productionRaw as unknown as ProductionRecord | null;
   if (!production) notFound();
+  const ownerName = production.owner_id ? (members.find(m => m.id === production.owner_id)?.full_name ?? null) : null;
 
   return (
     <div className="space-y-6 p-6">
@@ -123,7 +158,7 @@ export default async function ProductionDetailPage({ params }: PageProps) {
         <Link href="/crm/productions" className="mb-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline">
           <ArrowLeft className="h-3 w-3" /> Back to productions
         </Link>
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="flex items-center gap-2 text-2xl font-semibold">
               <Clapperboard className="h-6 w-6" /> {production.name}
@@ -139,18 +174,53 @@ export default async function ProductionDetailPage({ params }: PageProps) {
               )}
             </div>
           </div>
+          <OwnerCombobox
+            entityType="production"
+            entityId={id}
+            currentOwnerId={production.owner_id}
+            currentOwnerName={ownerName}
+            members={members}
+          />
         </div>
       </div>
 
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="revenue">Revenue ({revenueSummary.invoice_count})</TabsTrigger>
+          <TabsTrigger value="tasks">Tasks ({tasks.filter(t => t.status !== "done" && t.status !== "cancelled").length})</TabsTrigger>
+          <TabsTrigger value="notes">Notes ({notes.length})</TabsTrigger>
           <TabsTrigger value="contacts">Contacts ({contacts.length})</TabsTrigger>
           <TabsTrigger value="communications">Communications ({communications.length})</TabsTrigger>
           <TabsTrigger value="opportunities">Opportunities ({opportunities.length})</TabsTrigger>
           <TabsTrigger value="history">Status History ({statusHistory.length})</TabsTrigger>
           <TabsTrigger value="aliases">Aliases ({aliases.length})</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="revenue">
+          <RevenueTab
+            productionId={id}
+            initialSummary={revenueSummary}
+            initialMonthly={revenueMonthly}
+            initialInvoices={revenueInvoices}
+            initialRwLinks={rwLinks}
+            initialExternalLinks={externalLinks}
+          />
+        </TabsContent>
+
+        <TabsContent value="tasks">
+          <TasksTab
+            entityType="production"
+            entityId={id}
+            tasks={tasks}
+            members={members}
+            currentUserId={currentUser?.id ?? ""}
+          />
+        </TabsContent>
+
+        <TabsContent value="notes">
+          <NotesTab entityType="production" entityId={id} notes={notes} />
+        </TabsContent>
 
         <TabsContent value="overview" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">

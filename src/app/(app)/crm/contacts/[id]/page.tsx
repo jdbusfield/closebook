@@ -20,6 +20,12 @@ import {
   getCrmContactOpportunities,
   getCrmContactCommunications,
 } from "@/lib/db/queries/crm";
+import { getCrmTasksForEntity } from "@/lib/db/queries/crm-tasks";
+import { getCrmNotesForEntity } from "@/lib/db/queries/crm-notes";
+import { getOrgMembers } from "@/lib/db/queries/crm-owners";
+import { TasksTab } from "../../_components/tasks-tab";
+import { NotesTab } from "../../_components/notes-tab";
+import { createClient } from "@/lib/supabase/server";
 import {
   ProductionStatusBadge,
   OpportunityStatusBadge,
@@ -48,11 +54,19 @@ interface ContactRecord {
 
 export default async function ContactDetailPage({ params }: PageProps) {
   const { id } = await params;
-  const [contactRaw, productions, opportunities, communications] = await Promise.all([
+  const [contactRaw, productions, opportunities, communications, tasks, notes, members, currentUser] = await Promise.all([
     getCrmContact(id),
     getCrmContactProductions(id),
     getCrmContactOpportunities(id),
     getCrmContactCommunications(id),
+    getCrmTasksForEntity("contact", id),
+    getCrmNotesForEntity("contact", id),
+    getOrgMembers(),
+    (async () => {
+      const supabase = await createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      return user;
+    })(),
   ]);
   const contact = contactRaw as unknown as ContactRecord | null;
   if (!contact) notFound();
@@ -116,7 +130,16 @@ export default async function ContactDetailPage({ params }: PageProps) {
           <TabsTrigger value="productions">Productions ({productions.length})</TabsTrigger>
           <TabsTrigger value="opportunities">Opportunities ({opportunities.length})</TabsTrigger>
           <TabsTrigger value="communications">Communications ({communications.length})</TabsTrigger>
+          <TabsTrigger value="tasks">Tasks ({tasks.filter(t => t.status !== "done" && t.status !== "cancelled").length})</TabsTrigger>
+          <TabsTrigger value="notes">Notes ({notes.length})</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="tasks">
+          <TasksTab entityType="contact" entityId={id} tasks={tasks} members={members} currentUserId={currentUser?.id ?? ""} />
+        </TabsContent>
+        <TabsContent value="notes">
+          <NotesTab entityType="contact" entityId={id} notes={notes} />
+        </TabsContent>
 
         <TabsContent value="productions">
           <Card>
