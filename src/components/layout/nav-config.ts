@@ -27,9 +27,10 @@ import {
   History,
   Settings,
   Clapperboard,
+  Inbox,
 } from "lucide-react";
 
-export type EntityFeatureFlag = "rebates" | "revenue_projection";
+export type EntityFeatureFlag = "rebates" | "revenue_projection" | "inquiries";
 
 export interface NavItem {
   title: string;
@@ -125,6 +126,17 @@ export function getEntityNavGroups(entityId: string): NavGroup[] {
       ],
     },
     {
+      label: "Sales",
+      items: [
+        {
+          title: "Inquiries",
+          href: `${prefix}/inquiries`,
+          icon: Inbox,
+          feature: "inquiries",
+        },
+      ],
+    },
+    {
       label: "Resources",
       items: [
         { title: "Rental Assets", href: `${prefix}/assets`, icon: Car },
@@ -176,6 +188,9 @@ export function getEntityFeatures(entityName: string | undefined): Set<EntityFea
   if (entityName?.includes("Versatile")) {
     features.add("rebates");
     features.add("revenue_projection");
+  }
+  if (entityName?.includes("Hollywood")) {
+    features.add("inquiries");
   }
   return features;
 }
