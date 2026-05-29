@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { HDR_ENTITY_ID, extractReference } from "@/lib/inquiries/shared";
+import {
+  HDR_ENTITY_ID,
+  extractReference,
+  OPEN_INQUIRY_STATUSES,
+} from "@/lib/inquiries/shared";
 
 export const runtime = "nodejs";
 
@@ -108,7 +112,7 @@ export async function POST(request: Request) {
         .from("rental_inquiries")
         .select("id, email, status")
         .eq("entity_id", HDR_ENTITY_ID)
-        .in("status", ["new", "contacted", "quoted"])
+        .in("status", OPEN_INQUIRY_STATUSES)
         .order("last_activity_at", { ascending: false })
         .limit(50);
       inquiry =
@@ -170,12 +174,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Failed to record message" }, { status: 500 });
   }
 
-  // Bump activity; auto-advance new -> contacted once staff replies.
-  const update: AnyRecord = { last_activity_at: nowIso };
-  if (direction === "outbound" && inquiry.status === "new") {
-    update.status = "contacted";
-  }
-  await supabase.from("rental_inquiries").update(update).eq("id", inquiry.id);
+  // Bump activity. Pipeline stage is left under manual control on the board —
+  // a reply doesn't necessarily mean a quote was sent.
+  await supabase
+    .from("rental_inquiries")
+    .update({ last_activity_at: nowIso })
+    .eq("id", inquiry.id);
 
   return NextResponse.json({ ok: true, matched: true, inquiryId: inquiry.id, direction });
 }

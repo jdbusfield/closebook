@@ -1,32 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { StatusBadge } from "./status-badge";
-import { INQUIRY_STATUSES, STATUS_LABELS } from "@/lib/inquiries/shared";
+  INQUIRY_STATUSES,
+  STATUS_LABELS,
+  type InquiryStatus,
+} from "@/lib/inquiries/shared";
 
 interface InquiryRow {
   id: string;
@@ -44,6 +26,16 @@ interface InquiryRow {
   created_at: string;
 }
 
+// Per-stage accent. `dot` tints the column header marker; `ring` highlights a
+// column while a card is dragged over it.
+const COLUMN_ACCENT: Record<InquiryStatus, { dot: string; ring: string }> = {
+  new: { dot: "bg-blue-500", ring: "ring-blue-400 bg-blue-50/60" },
+  quote_sent: { dot: "bg-amber-500", ring: "ring-amber-400 bg-amber-50/60" },
+  rental_confirmed: { dot: "bg-violet-500", ring: "ring-violet-400 bg-violet-50/60" },
+  completed: { dot: "bg-green-500", ring: "ring-green-400 bg-green-50/60" },
+  lost: { dot: "bg-gray-400", ring: "ring-gray-400 bg-gray-100/70" },
+};
+
 function formatDateTime(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -56,18 +48,25 @@ function formatDateTime(iso: string | null): string {
   });
 }
 
+function normalizeStatus(status: string): InquiryStatus {
+  return (status in STATUS_LABELS ? status : "new") as InquiryStatus;
+}
+
 export default function InquiriesPage() {
   const params = useParams();
   const router = useRouter();
   const entityId = params.entityId as string;
+
   const [inquiries, setInquiries] = useState<InquiryRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [dragOverCol, setDragOverCol] = useState<InquiryStatus | null>(null);
+  // True between dragstart and dragend so the trailing click doesn't navigate.
+  const draggedRef = useRef(false);
 
   const fetchInquiries = useCallback(async () => {
     setLoading(true);
     const supabase = createClient();
-    let query = supabase
+    const { data } = await supabase
       .from("rental_inquiries")
       .select(
         "id, reference, status, name, email, phone, use_case, location, start_date, end_date, units, last_activity_at, created_at"
@@ -75,106 +74,164 @@ export default function InquiriesPage() {
       .eq("entity_id", entityId)
       .order("last_activity_at", { ascending: false })
       .limit(500);
-    if (statusFilter !== "all") query = query.eq("status", statusFilter);
-    const { data } = await query;
     setInquiries((data as InquiryRow[]) ?? []);
     setLoading(false);
-  }, [entityId, statusFilter]);
+  }, [entityId]);
 
   useEffect(() => {
     fetchInquiries();
   }, [fetchInquiries]);
 
+  const move = useCallback(
+    async (id: string, newStatus: InquiryStatus) => {
+      let changed = false;
+      setInquiries((prev) =>
+        prev.map((i) => {
+          if (i.id === id && normalizeStatus(i.status) !== newStatus) {
+            changed = true;
+            return { ...i, status: newStatus };
+          }
+          return i;
+        })
+      );
+      if (!changed) return;
+
+      try {
+        const res = await fetch(`/api/inquiries/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: newStatus }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || "Update failed");
+        }
+        toast.success(`Moved to ${STATUS_LABELS[newStatus]}`);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Update failed");
+        fetchInquiries(); // revert to server truth
+      }
+    },
+    [fetchInquiries]
+  );
+
   return (
-    <div className="space-y-4 p-4 md:p-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Inquiries</h1>
-          <p className="text-sm text-muted-foreground">
-            Inbound rental requests from hdrsiteservices.com
-          </p>
-        </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-44">
-            <SelectValue placeholder="Filter status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            {INQUIRY_STATUSES.map((s) => (
-              <SelectItem key={s} value={s}>
-                {STATUS_LABELS[s]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+    <div className="flex h-full flex-col gap-4 p-4 md:p-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Inquiries</h1>
+        <p className="text-sm text-muted-foreground">
+          Inbound rental requests from hdrsiteservices.com · drag a card to move it
+          through the pipeline
+        </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            {loading ? "Loading…" : `${inquiries.length} inquiries`}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Reference</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Use case</TableHead>
-                <TableHead>Location</TableHead>
-                <TableHead>Dates</TableHead>
-                <TableHead className="text-center">Units</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Last activity</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {!loading && inquiries.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                    No inquiries yet.
-                  </TableCell>
-                </TableRow>
-              )}
-              {inquiries.map((inq) => (
-                <TableRow
-                  key={inq.id}
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => router.push(`/${entityId}/inquiries/${inq.id}`)}
-                >
-                  <TableCell className="font-mono text-xs">
-                    <Link
-                      href={`/${entityId}/inquiries/${inq.id}`}
-                      className="text-primary hover:underline"
-                      onClick={(e) => e.stopPropagation()}
+      {loading ? (
+        <div className="text-sm text-muted-foreground">Loading…</div>
+      ) : (
+        <div className="flex flex-1 gap-3 overflow-x-auto pb-2">
+          {INQUIRY_STATUSES.map((status) => {
+            const items = inquiries.filter(
+              (i) => normalizeStatus(i.status) === status
+            );
+            const accent = COLUMN_ACCENT[status];
+            const isOver = dragOverCol === status;
+            return (
+              <div
+                key={status}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (dragOverCol !== status) setDragOverCol(status);
+                }}
+                onDragLeave={() =>
+                  setDragOverCol((c) => (c === status ? null : c))
+                }
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const id = e.dataTransfer.getData("text/plain");
+                  setDragOverCol(null);
+                  if (id) move(id, status);
+                }}
+                className={`flex w-[270px] shrink-0 flex-col rounded-lg border bg-muted/30 ${
+                  isOver ? `ring-2 ${accent.ring}` : ""
+                }`}
+              >
+                <div className="flex items-center gap-2 border-b px-3 py-2.5">
+                  <span className={`size-2 rounded-full ${accent.dot}`} />
+                  <span className="text-sm font-semibold">
+                    {STATUS_LABELS[status]}
+                  </span>
+                  <span className="ml-auto text-xs font-medium text-muted-foreground">
+                    {items.length}
+                  </span>
+                </div>
+
+                <div className="flex-1 space-y-2 p-2">
+                  {items.length === 0 && (
+                    <p className="px-1 py-6 text-center text-xs text-muted-foreground">
+                      Drop cards here
+                    </p>
+                  )}
+                  {items.map((inq) => (
+                    <div
+                      key={inq.id}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("text/plain", inq.id);
+                        e.dataTransfer.effectAllowed = "move";
+                        draggedRef.current = true;
+                      }}
+                      onDragEnd={() => {
+                        // Defer so the synthetic click (if any) is suppressed.
+                        setTimeout(() => {
+                          draggedRef.current = false;
+                        }, 0);
+                      }}
+                      onClick={() => {
+                        if (draggedRef.current) return;
+                        router.push(`/${entityId}/inquiries/${inq.id}`);
+                      }}
+                      className="cursor-pointer rounded-md border bg-card p-2.5 text-sm shadow-sm transition-shadow hover:shadow-md"
                     >
-                      {inq.reference}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-medium">{inq.name || "—"}</div>
-                    <div className="text-xs text-muted-foreground">{inq.email || ""}</div>
-                  </TableCell>
-                  <TableCell>{inq.use_case || "—"}</TableCell>
-                  <TableCell className="max-w-[180px] truncate">{inq.location || "—"}</TableCell>
-                  <TableCell className="text-xs">
-                    {inq.start_date || "—"}
-                    {inq.end_date ? ` → ${inq.end_date}` : ""}
-                  </TableCell>
-                  <TableCell className="text-center">{inq.units ?? "—"}</TableCell>
-                  <TableCell>
-                    <StatusBadge status={inq.status} />
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {formatDateTime(inq.last_activity_at)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-[11px] text-muted-foreground">
+                          {inq.reference}
+                        </span>
+                        {inq.units != null && (
+                          <span className="text-[11px] text-muted-foreground">
+                            {inq.units} unit{inq.units === 1 ? "" : "s"}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 font-medium leading-tight">
+                        {inq.name || "—"}
+                      </div>
+                      {inq.use_case && (
+                        <div className="text-xs text-muted-foreground">
+                          {inq.use_case}
+                        </div>
+                      )}
+                      {inq.location && (
+                        <div className="mt-1 truncate text-xs text-muted-foreground">
+                          📍 {inq.location}
+                        </div>
+                      )}
+                      {inq.start_date && (
+                        <div className="text-xs text-muted-foreground">
+                          🗓 {inq.start_date}
+                          {inq.end_date ? ` → ${inq.end_date}` : ""}
+                        </div>
+                      )}
+                      <div className="mt-1.5 text-[11px] text-muted-foreground">
+                        {formatDateTime(inq.last_activity_at)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

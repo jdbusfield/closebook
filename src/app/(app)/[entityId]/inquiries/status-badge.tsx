@@ -3,9 +3,9 @@ import { STATUS_LABELS, type InquiryStatus } from "@/lib/inquiries/shared";
 
 const STATUS_STYLES: Record<InquiryStatus, string> = {
   new: "bg-blue-100 text-blue-800 hover:bg-blue-100",
-  contacted: "bg-amber-100 text-amber-800 hover:bg-amber-100",
-  quoted: "bg-violet-100 text-violet-800 hover:bg-violet-100",
-  won: "bg-green-100 text-green-800 hover:bg-green-100",
+  quote_sent: "bg-amber-100 text-amber-800 hover:bg-amber-100",
+  rental_confirmed: "bg-violet-100 text-violet-800 hover:bg-violet-100",
+  completed: "bg-green-100 text-green-800 hover:bg-green-100",
   lost: "bg-gray-200 text-gray-700 hover:bg-gray-200",
 };
 
