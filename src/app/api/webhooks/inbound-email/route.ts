@@ -122,17 +122,7 @@ export async function POST(request: Request) {
     }
   }
 
-  if (!inquiry) {
-    // Park unmatched mail rather than failing — the provider should not retry.
-    console.warn("[webhooks/inbound-email] no matching inquiry", {
-      subject,
-      from: fromAddr,
-      reference,
-    });
-    return NextResponse.json({ ok: true, matched: false });
-  }
-
-  // Dedupe on the RFC Message-Id.
+  // Dedupe on the RFC Message-Id (across matched + unmatched mail).
   if (providerMessageId) {
     const { data: existing } = await supabase
       .from("rental_inquiry_messages")
@@ -144,17 +134,21 @@ export async function POST(request: Request) {
     }
   }
 
-  // Direction: a message FROM the customer is inbound; anything else (staff
-  // replying from the sales inbox) is an outbound reply.
-  const customerEmail = inquiry.email?.toLowerCase() ?? null;
+  // Direction: a message FROM the customer is inbound; staff replying from our
+  // domain is outbound. Unmatched mail defaults to inbound unless it's clearly
+  // from our own domain.
+  const customerEmail = inquiry?.email?.toLowerCase() ?? null;
   const fromIsCustomer = !!customerEmail && fromAddr?.toLowerCase() === customerEmail;
   const ourDomain = (process.env.LEAD_FROM_DOMAIN || "hdrsiteservices.com").toLowerCase();
   const fromIsStaff = emailDomain(fromAddr) === ourDomain;
   const direction = fromIsCustomer ? "inbound" : fromIsStaff ? "outbound" : "inbound";
 
   const nowIso = new Date().toISOString();
+  // Always record the message — even when it matches no inquiry — so it appears
+  // in the inbox activity feed and can be assigned to an inquiry later.
   const { error: insErr } = await supabase.from("rental_inquiry_messages").insert({
-    inquiry_id: inquiry.id,
+    inquiry_id: inquiry?.id ?? null,
+    entity_id: HDR_ENTITY_ID,
     direction,
     channel: "email",
     kind: "reply",
@@ -174,12 +168,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Failed to record message" }, { status: 500 });
   }
 
-  // Bump activity. Pipeline stage is left under manual control on the board —
-  // a reply doesn't necessarily mean a quote was sent.
-  await supabase
-    .from("rental_inquiries")
-    .update({ last_activity_at: nowIso })
-    .eq("id", inquiry.id);
+  // Bump activity on the matched inquiry (stage stays manual on the board).
+  if (inquiry) {
+    await supabase
+      .from("rental_inquiries")
+      .update({ last_activity_at: nowIso })
+      .eq("id", inquiry.id);
+  }
 
-  return NextResponse.json({ ok: true, matched: true, inquiryId: inquiry.id, direction });
+  return NextResponse.json({
+    ok: true,
+    matched: !!inquiry,
+    inquiryId: inquiry?.id ?? null,
+    direction,
+  });
 }

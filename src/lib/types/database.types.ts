@@ -150,7 +150,8 @@ export type Database = {
       rental_inquiry_messages: {
         Row: {
           id: string
-          inquiry_id: string
+          inquiry_id: string | null
+          entity_id: string | null
           direction: string
           channel: string
           kind: string | null
@@ -168,7 +169,8 @@ export type Database = {
         }
         Insert: {
           id?: string
-          inquiry_id: string
+          inquiry_id?: string | null
+          entity_id?: string | null
           direction: string
           channel?: string
           kind?: string | null
@@ -186,7 +188,8 @@ export type Database = {
         }
         Update: {
           id?: string
-          inquiry_id?: string
+          inquiry_id?: string | null
+          entity_id?: string | null
           direction?: string
           channel?: string
           kind?: string | null
