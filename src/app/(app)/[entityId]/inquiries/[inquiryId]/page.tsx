@@ -108,6 +108,71 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+// Renders an email body. HTML is rendered inside a sandboxed iframe — scripts
+// are disabled (no `allow-scripts`), so even malicious markup can't execute, and
+// the email's own CSS can't leak into the app. Falls back to plain text, then to
+// an empty-state note. Collapsed by default with an expand toggle for long mail.
+function MessageBody({
+  html,
+  text,
+  expanded,
+  onToggle,
+}: {
+  html: string | null;
+  text: string | null;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  if (html) {
+    const srcDoc = `<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>html,body{margin:0;padding:10px;background:#fff;color:#0b1320;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.55;word-break:break-word;overflow-wrap:anywhere}img{max-width:100%;height:auto}table{max-width:100%!important}a{color:#2563eb}</style></head><body>${html}</body></html>`;
+    return (
+      <div className="mt-2 space-y-1">
+        <iframe
+          title="Email body"
+          sandbox="allow-popups allow-popups-to-escape-sandbox"
+          srcDoc={srcDoc}
+          className="w-full rounded border bg-white"
+          style={{ height: expanded ? 640 : 240 }}
+        />
+        <button
+          type="button"
+          onClick={onToggle}
+          className="text-xs text-primary hover:underline"
+        >
+          {expanded ? "Collapse" : "Expand full email"}
+        </button>
+      </div>
+    );
+  }
+  if (text) {
+    return (
+      <div className="mt-2 space-y-1">
+        <div
+          className={`whitespace-pre-wrap text-sm text-foreground/90 ${
+            expanded ? "" : "line-clamp-6"
+          }`}
+        >
+          {text}
+        </div>
+        {text.length > 320 && (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="text-xs text-primary hover:underline"
+          >
+            {expanded ? "Show less" : "Show more"}
+          </button>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="mt-2 text-xs italic text-muted-foreground">
+      (No message body was captured for this email.)
+    </div>
+  );
+}
+
 export default function InquiryDetailPage() {
   const params = useParams();
   const entityId = params.entityId as string;
@@ -116,7 +181,17 @@ export default function InquiryDetailPage() {
   const [inquiry, setInquiry] = useState<Inquiry | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [events, setEvents] = useState<EmailEvent[]>([]);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+
+  const toggleExpanded = useCallback((id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
   const [saving, setSaving] = useState(false);
   const [internalNotes, setInternalNotes] = useState("");
   const [rwQuote, setRwQuote] = useState("");
@@ -336,23 +411,39 @@ export default function InquiryDetailPage() {
         </Card>
       </div>
 
-      {/* Email timeline */}
+      {/* Communication thread */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Email history</CardTitle>
+          <CardTitle className="text-base">
+            Communication{messages.length > 0 ? ` (${messages.length})` : ""}
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {messages.length === 0 && (
-            <p className="text-sm text-muted-foreground">No emails recorded yet.</p>
+            <p className="text-sm text-muted-foreground">
+              No emails recorded yet. Replies that CC{" "}
+              <span className="font-mono">sales@hdrsiteservices.com</span> and keep the{" "}
+              <span className="font-mono">{inquiry.reference}</span> reference in the subject
+              will appear here automatically.
+            </p>
           )}
           {messages.map((m) => {
             const outbound = m.direction === "outbound";
             const evs = eventsByMessage.get(m.id);
+            const recipients = [
+              m.to_addrs?.length ? `To ${m.to_addrs.join(", ")}` : "",
+              m.cc_addrs?.length ? `Cc ${m.cc_addrs.join(", ")}` : "",
+            ]
+              .filter(Boolean)
+              .join(" · ");
             return (
               <div
                 key={m.id}
-                className="rounded-md border p-3 text-sm"
-                style={{ marginLeft: outbound ? 0 : "1.5rem" }}
+                className={`rounded-md border p-3 text-sm ${
+                  outbound
+                    ? "border-blue-200 bg-blue-50/40"
+                    : "ml-4 border-green-200 bg-green-50/40"
+                }`}
               >
                 <div className="flex items-center gap-2 flex-wrap">
                   {outbound ? (
@@ -372,14 +463,15 @@ export default function InquiryDetailPage() {
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
                   {m.from_addr ? `From ${m.from_addr}` : ""}
-                  {m.to_addrs && m.to_addrs.length ? ` · To ${m.to_addrs.join(", ")}` : ""}
+                  {recipients ? ` · ${recipients}` : ""}
                 </div>
                 {m.subject && <div className="mt-1 font-medium">{m.subject}</div>}
-                {m.body_text && (
-                  <div className="mt-1 whitespace-pre-wrap text-muted-foreground line-clamp-6">
-                    {m.body_text}
-                  </div>
-                )}
+                <MessageBody
+                  html={m.body_html}
+                  text={m.body_text}
+                  expanded={expanded.has(m.id)}
+                  onToggle={() => toggleExpanded(m.id)}
+                />
                 {outbound && (
                   <div className="mt-2 flex gap-1.5 flex-wrap">
                     {evs && evs.size > 0 ? (
