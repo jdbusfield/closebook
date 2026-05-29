@@ -5,11 +5,13 @@
 export const HDR_ENTITY_ID =
   process.env.HDR_ENTITY_ID || "7529580d-3b44-4a9b-91f4-bc2db25f5211";
 
+// Pipeline stages, in board order. Stored in rental_inquiries.status (text,
+// constrained by a CHECK — keep in sync with the 20260529 migration).
 export const INQUIRY_STATUSES = [
   "new",
-  "contacted",
-  "quoted",
-  "won",
+  "quote_sent",
+  "rental_confirmed",
+  "completed",
   "lost",
 ] as const;
 
@@ -17,11 +19,19 @@ export type InquiryStatus = (typeof INQUIRY_STATUSES)[number];
 
 export const STATUS_LABELS: Record<InquiryStatus, string> = {
   new: "New",
-  contacted: "Contacted",
-  quoted: "Quoted",
-  won: "Won",
+  quote_sent: "Quote Sent",
+  rental_confirmed: "Rental Confirmed",
+  completed: "Completed",
   lost: "Lost",
 };
+
+// Open stages where inbound correspondence should still attach to the inquiry
+// (used by the inbound-email webhook's fallback matcher).
+export const OPEN_INQUIRY_STATUSES: InquiryStatus[] = [
+  "new",
+  "quote_sent",
+  "rental_confirmed",
+];
 
 // Inquiry references look like "HDR-AB12C". Used to match inbound replies
 // (the reference is carried in every email subject) back to an inquiry.
