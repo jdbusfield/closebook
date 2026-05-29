@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -58,6 +58,7 @@ function formatDateTime(iso: string | null): string {
 
 export default function InquiriesPage() {
   const params = useParams();
+  const router = useRouter();
   const entityId = params.entityId as string;
   const [inquiries, setInquiries] = useState<InquiryRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -137,11 +138,16 @@ export default function InquiriesPage() {
                 </TableRow>
               )}
               {inquiries.map((inq) => (
-                <TableRow key={inq.id} className="cursor-pointer">
+                <TableRow
+                  key={inq.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => router.push(`/${entityId}/inquiries/${inq.id}`)}
+                >
                   <TableCell className="font-mono text-xs">
                     <Link
                       href={`/${entityId}/inquiries/${inq.id}`}
                       className="text-primary hover:underline"
+                      onClick={(e) => e.stopPropagation()}
                     >
                       {inq.reference}
                     </Link>
