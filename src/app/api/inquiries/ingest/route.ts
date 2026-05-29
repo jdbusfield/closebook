@@ -102,6 +102,7 @@ export async function POST(request: Request) {
     parsed.internalEmailId || parsed.internalSubject
       ? {
           inquiry_id: inquiry.id,
+          entity_id: HDR_ENTITY_ID,
           direction: "outbound",
           channel: "email",
           kind: "internal_notification",
@@ -116,6 +117,7 @@ export async function POST(request: Request) {
     parsed.customerEmailId || parsed.customerSubject
       ? {
           inquiry_id: inquiry.id,
+          entity_id: HDR_ENTITY_ID,
           direction: "outbound",
           channel: "email",
           kind: "customer_autoreply",
