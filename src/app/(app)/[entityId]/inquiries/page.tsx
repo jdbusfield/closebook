@@ -82,19 +82,22 @@ export default function InquiriesPage() {
     fetchInquiries();
   }, [fetchInquiries]);
 
+  // Mirror state into a ref so move() can read the current card synchronously
+  // (don't gate the network call on a setState-updater side effect).
+  const inquiriesRef = useRef<InquiryRow[]>([]);
+  useEffect(() => {
+    inquiriesRef.current = inquiries;
+  }, [inquiries]);
+
   const move = useCallback(
     async (id: string, newStatus: InquiryStatus) => {
-      let changed = false;
+      const target = inquiriesRef.current.find((i) => i.id === id);
+      if (!target || normalizeStatus(target.status) === newStatus) return;
+
+      // Optimistically move the card.
       setInquiries((prev) =>
-        prev.map((i) => {
-          if (i.id === id && normalizeStatus(i.status) !== newStatus) {
-            changed = true;
-            return { ...i, status: newStatus };
-          }
-          return i;
-        })
+        prev.map((i) => (i.id === id ? { ...i, status: newStatus } : i))
       );
-      if (!changed) return;
 
       try {
         const res = await fetch(`/api/inquiries/${id}`, {
@@ -104,11 +107,14 @@ export default function InquiriesPage() {
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || "Update failed");
+          throw new Error(err.error || err.detail || `Save failed (HTTP ${res.status})`);
         }
         toast.success(`Moved to ${STATUS_LABELS[newStatus]}`);
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Update failed");
+        console.error("[inquiry move] save failed", e);
+        toast.error(
+          `Couldn't move card: ${e instanceof Error ? e.message : "unknown error"}`
+        );
         fetchInquiries(); // revert to server truth
       }
     },
