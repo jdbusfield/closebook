@@ -61,3 +61,40 @@ export async function PATCH(
 
   return NextResponse.json({ ok: true, inquiry: data });
 }
+
+// Delete an inquiry (e.g. to clear out test/junk cards). Uses the user's session
+// client so RLS enforces that only members of the inquiry's entity can delete it.
+// The inquiry's messages and email events cascade via their FK ON DELETE CASCADE.
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // RLS restricts the delete to inquiries in the user's entities; a disallowed
+  // row simply matches nothing. We .select() the deleted row so we can tell the
+  // difference between "deleted" and "not found / not permitted".
+  const { data, error } = await supabase
+    .from("rental_inquiries")
+    .delete()
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  if (!data) {
+    return NextResponse.json({ error: "Not found or not permitted" }, { status: 404 });
+  }
+
+  return NextResponse.json({ ok: true, id: data.id });
+}

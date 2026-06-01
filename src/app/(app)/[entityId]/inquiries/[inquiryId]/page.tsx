@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -23,7 +23,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { ArrowLeft, ArrowDownLeft, ArrowUpRight, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { StatusBadge } from "../status-badge";
 import { INQUIRY_STATUSES, STATUS_LABELS } from "@/lib/inquiries/shared";
@@ -175,6 +186,7 @@ function MessageBody({
 
 export default function InquiryDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const entityId = params.entityId as string;
   const inquiryId = params.inquiryId as string;
 
@@ -193,6 +205,7 @@ export default function InquiryDetailPage() {
     });
   }, []);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [internalNotes, setInternalNotes] = useState("");
   const [rwQuote, setRwQuote] = useState("");
   const [rwOrder, setRwOrder] = useState("");
@@ -256,6 +269,23 @@ export default function InquiryDetailPage() {
       toast.error(e instanceof Error ? e.message : "Update failed");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function remove() {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/inquiries/${inquiryId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Delete failed");
+      }
+      toast.success("Inquiry deleted");
+      // Leave the (now-gone) detail page and return to the board.
+      router.replace(`/${entityId}/inquiries`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Delete failed");
+      setDeleting(false);
     }
   }
 
@@ -406,6 +436,46 @@ export default function InquiryDetailPage() {
               >
                 Save notes
               </Button>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-1.5">
+              <Label className="text-destructive">Danger zone</Label>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={deleting}
+                    className="w-full border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <Trash2 className="size-4" />
+                    {deleting ? "Deleting…" : "Delete inquiry"}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete this inquiry?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This permanently removes inquiry{" "}
+                      <span className="font-mono">{inquiry.reference}</span>
+                      {inquiry.name ? ` (${inquiry.name})` : ""} and its entire email
+                      thread. This can&apos;t be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={remove}
+                      disabled={deleting}
+                      className="bg-destructive text-white hover:bg-destructive/90"
+                    >
+                      {deleting ? "Deleting…" : "Delete"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           </CardContent>
         </Card>
