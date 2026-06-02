@@ -29,6 +29,7 @@ export default function InquiriesCustomersPage() {
     onAddTask: data.addTask,
     onToggleTask: data.toggleTask,
     onAddActivity: data.addActivity,
+    onDeleteActivity: data.deleteActivity,
   };
   const selected = data.inquiries.find((i) => i.id === selectedId) ?? null;
 

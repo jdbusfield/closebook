@@ -39,6 +39,7 @@ export interface UseInquiries {
   ) => Promise<void>;
   toggleTask: (taskId: string, done: boolean) => Promise<void>;
   addActivity: (id: string, type: InquiryActivity["type"], body: string) => Promise<void>;
+  deleteActivity: (activityId: string) => Promise<void>;
   deleteInquiry: (id: string) => Promise<boolean>;
 }
 
@@ -297,6 +298,30 @@ export function useInquiries(entityId: string): UseInquiries {
     [entityId, actor, bumpActivityClock, load]
   );
 
+  const deleteActivity = useCallback(
+    async (activityId: string) => {
+      // Optimistically drop it so an accidental log disappears immediately.
+      setInquiries((prev) =>
+        prev.map((i) => ({
+          ...i,
+          activity: (i.activity || []).filter((a) => a.id !== activityId),
+        }))
+      );
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("rental_inquiry_activity")
+        .delete()
+        .eq("id", activityId);
+      if (error) {
+        toast.error(error.message);
+        await load(); // restore server truth on failure
+        return;
+      }
+      toast.success("Activity removed");
+    },
+    [load]
+  );
+
   const deleteInquiry = useCallback(
     async (id: string): Promise<boolean> => {
       try {
@@ -328,6 +353,7 @@ export function useInquiries(entityId: string): UseInquiries {
     addTask,
     toggleTask,
     addActivity,
+    deleteActivity,
     deleteInquiry,
   };
 }

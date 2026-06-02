@@ -24,6 +24,7 @@ import {
   ExternalLink,
   ArrowUpRight,
   ArrowDownLeft,
+  Trash2,
 } from "lucide-react";
 import {
   InquiryAvatar,
@@ -58,6 +59,7 @@ export interface DrawerCallbacks {
   onAddTask: (id: string, title: string, kind?: InquiryTask["kind"]) => void;
   onToggleTask: (taskId: string, done: boolean) => void;
   onAddActivity: (id: string, type: InquiryActivity["type"], body: string) => void;
+  onDeleteActivity: (activityId: string) => void;
 }
 
 // --- Stage progress bar ----------------------------------------------------
@@ -415,9 +417,11 @@ function EmailEntry({
 export function ActivityTimeline({
   inquiry,
   onAddActivity,
+  onDeleteActivity,
 }: {
   inquiry: Inquiry;
   onAddActivity: DrawerCallbacks["onAddActivity"];
+  onDeleteActivity: DrawerCallbacks["onDeleteActivity"];
 }) {
   const [type, setType] = useState<InquiryActivity["type"]>("note");
   const [text, setText] = useState("");
@@ -486,7 +490,7 @@ export function ActivityTimeline({
           e.kind === "email" ? (
             <EmailEntry key={e.id} message={e.message} customerEmail={inquiry.email} />
           ) : (
-            <div key={e.id} className="flex gap-2.5">
+            <div key={e.id} className="group flex gap-2.5">
               <ActivityIcon type={e.activity.type} />
               <div className="min-w-0 flex-1">
                 <div className="text-sm">
@@ -498,6 +502,15 @@ export function ActivityTimeline({
                   {fmtDateTime(e.activity.occurred_at)} · {relTime(e.activity.occurred_at)}
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => onDeleteActivity(e.activity.id)}
+                title="Remove this activity"
+                aria-label="Remove this activity"
+                className="shrink-0 self-start rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
             </div>
           )
         )}
@@ -584,6 +597,7 @@ export function InquiryDrawer({
                 <ActivityTimeline
                   inquiry={inquiry}
                   onAddActivity={callbacks.onAddActivity}
+                  onDeleteActivity={callbacks.onDeleteActivity}
                 />
               </Section>
 
