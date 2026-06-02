@@ -37,7 +37,11 @@ import {
 import { ArrowLeft, ArrowDownLeft, ArrowUpRight, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { StatusBadge } from "../status-badge";
-import { INQUIRY_STATUSES, STATUS_LABELS } from "@/lib/inquiries/shared";
+import {
+  INQUIRY_STATUSES,
+  STATUS_LABELS,
+  visibleThreadMessages,
+} from "@/lib/inquiries/shared";
 
 interface Inquiry {
   id: string;
@@ -303,6 +307,10 @@ export default function InquiryDetailPage() {
     );
   }
 
+  // Drop the automated autoreply and collapse the duplicated inquiry
+  // notification so the thread shows genuine correspondence only.
+  const thread = visibleThreadMessages(messages);
+
   // Distinct latest event types per message for the delivery chips.
   const eventsByMessage = new Map<string, Set<string>>();
   for (const ev of events) {
@@ -485,11 +493,11 @@ export default function InquiryDetailPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            Communication{messages.length > 0 ? ` (${messages.length})` : ""}
+            Communication{thread.length > 0 ? ` (${thread.length})` : ""}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {messages.length === 0 && (
+          {thread.length === 0 && (
             <p className="text-sm text-muted-foreground">
               No emails recorded yet. Replies that CC{" "}
               <span className="font-mono">sales@hdrsiteservices.com</span> and keep the{" "}
@@ -497,7 +505,7 @@ export default function InquiryDetailPage() {
               will appear here automatically.
             </p>
           )}
-          {messages.map((m) => {
+          {thread.map((m) => {
             const outbound = m.direction === "outbound";
             const evs = eventsByMessage.get(m.id);
             const recipients = [
