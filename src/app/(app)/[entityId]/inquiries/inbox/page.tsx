@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ArrowDownLeft, ArrowUpRight, Link2 } from "lucide-react";
 import { toast } from "sonner";
+import { SectionTabs } from "@/components/inquiries/section-tabs";
 
 interface FeedMessage {
   id: string;
@@ -137,6 +138,8 @@ export default function InboxFeedPage() {
           </p>
         </div>
       </div>
+
+      <SectionTabs entityId={entityId} />
 
       <div className="flex items-center gap-2">
         <Button

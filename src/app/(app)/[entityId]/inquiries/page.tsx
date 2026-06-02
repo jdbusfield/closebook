@@ -1,236 +1,213 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
-import { toast } from "sonner";
+import { useMemo, useRef, useState } from "react";
+import { useParams } from "next/navigation";
+import { MapPin, AlertTriangle, Flame } from "lucide-react";
+import { useInquiries } from "@/lib/inquiries/use-inquiries";
+import { SectionTabs } from "@/components/inquiries/section-tabs";
+import { InquiryDrawer, type DrawerCallbacks } from "@/components/inquiries/detail-drawer";
+import { InquiryAvatar, UnitTag } from "@/components/inquiries/atoms";
 import {
-  INQUIRY_STATUSES,
-  STATUS_LABELS,
+  type Inquiry,
   type InquiryStatus,
+  STAGES,
+  fmtMoney,
+  fmtRange,
+  daysStale,
+  daysBetween,
+  today,
+  parseDate,
+  isOpenStatus,
 } from "@/lib/inquiries/shared";
 
-interface InquiryRow {
-  id: string;
-  reference: string;
-  status: string;
-  name: string | null;
-  email: string | null;
-  phone: string | null;
-  use_case: string | null;
-  location: string | null;
-  start_date: string | null;
-  end_date: string | null;
-  units: number | null;
-  last_activity_at: string | null;
-  created_at: string;
+function firstOpenTask(inq: Inquiry) {
+  return (inq.tasks || []).find((t) => !t.done) || null;
 }
 
-// Per-stage accent. `dot` tints the column header marker; `ring` highlights a
-// column while a card is dragged over it.
-const COLUMN_ACCENT: Record<InquiryStatus, { dot: string; ring: string }> = {
-  new: { dot: "bg-blue-500", ring: "ring-blue-400 bg-blue-50/60" },
-  quote_sent: { dot: "bg-amber-500", ring: "ring-amber-400 bg-amber-50/60" },
-  rental_confirmed: { dot: "bg-violet-500", ring: "ring-violet-400 bg-violet-50/60" },
-  completed: { dot: "bg-green-500", ring: "ring-green-400 bg-green-50/60" },
-  lost: { dot: "bg-gray-400", ring: "ring-gray-400 bg-gray-100/70" },
-};
+function DealCard({
+  inq,
+  onOpen,
+  onDragStart,
+  dragging,
+}: {
+  inq: Inquiry;
+  onOpen: () => void;
+  onDragStart: (e: React.DragEvent) => void;
+  dragging: boolean;
+}) {
+  const openTask = firstOpenTask(inq);
+  const due = parseDate(openTask?.due_date ?? null);
+  const overdue = !!due && daysBetween(today(), due) < 0;
+  const stale = isOpenStatus(inq.status) && daysStale(inq) >= 5;
 
-function formatDateTime(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "—";
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onClick={onOpen}
+      className={`cursor-pointer rounded-md border bg-card p-2.5 shadow-sm transition-shadow hover:shadow-md ${
+        dragging ? "opacity-40" : ""
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <InquiryAvatar name={inq.name} size={26} />
+        <span className="flex-1 truncate text-sm font-semibold">{inq.name || "—"}</span>
+        <span className="font-mono text-[11px] text-muted-foreground">{inq.reference}</span>
+      </div>
+      <div className="mt-1.5 text-xs">
+        <span className="font-semibold">{inq.use_case || "Inquiry"}</span>
+        {inq.start_date && (
+          <span className="text-muted-foreground">
+            {" · "}
+            {fmtRange(inq.start_date, inq.end_date)}
+          </span>
+        )}
+      </div>
+      {(inq.location || inq.guests) && (
+        <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+          <MapPin className="size-3 shrink-0" />
+          <span className="truncate">
+            {inq.location}
+            {inq.guests ? ` · ${inq.guests} guests` : ""}
+          </span>
+        </div>
+      )}
+      <div className="mt-2 flex items-center justify-between gap-2 border-t pt-2">
+        <UnitTag unitId={inq.unit_id} />
+        {inq.estimated_value != null && (
+          <span className="font-mono text-xs font-semibold">
+            {fmtMoney(inq.estimated_value)}
+          </span>
+        )}
+      </div>
+      {(overdue || stale) && (
+        <div className="mt-1.5">
+          {overdue ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700">
+              <AlertTriangle className="size-3" /> Follow-up overdue
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700">
+              <Flame className="size-3" /> {daysStale(inq)}d no contact
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
-function normalizeStatus(status: string): InquiryStatus {
-  return (status in STATUS_LABELS ? status : "new") as InquiryStatus;
-}
-
-export default function InquiriesPage() {
+export default function InquiriesPipelinePage() {
   const params = useParams();
-  const router = useRouter();
   const entityId = params.entityId as string;
+  const data = useInquiries(entityId);
 
-  const [inquiries, setInquiries] = useState<InquiryRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<InquiryStatus | null>(null);
-  // True between dragstart and dragend so the trailing click doesn't navigate.
   const draggedRef = useRef(false);
 
-  const fetchInquiries = useCallback(async () => {
-    setLoading(true);
-    const supabase = createClient();
-    const { data } = await supabase
-      .from("rental_inquiries")
-      .select(
-        "id, reference, status, name, email, phone, use_case, location, start_date, end_date, units, last_activity_at, created_at"
-      )
-      .eq("entity_id", entityId)
-      .order("last_activity_at", { ascending: false })
-      .limit(500);
-    setInquiries((data as InquiryRow[]) ?? []);
-    setLoading(false);
-  }, [entityId]);
+  const callbacks: DrawerCallbacks = {
+    onMove: data.moveStage,
+    onAssignUnit: data.assignUnit,
+    onSetValue: data.setEstimatedValue,
+    onAddTask: data.addTask,
+    onToggleTask: data.toggleTask,
+    onAddActivity: data.addActivity,
+  };
 
-  useEffect(() => {
-    fetchInquiries();
-  }, [fetchInquiries]);
+  const selected = data.inquiries.find((i) => i.id === selectedId) ?? null;
 
-  // Mirror state into a ref so move() can read the current card synchronously
-  // (don't gate the network call on a setState-updater side effect).
-  const inquiriesRef = useRef<InquiryRow[]>([]);
-  useEffect(() => {
-    inquiriesRef.current = inquiries;
-  }, [inquiries]);
-
-  const move = useCallback(
-    async (id: string, newStatus: InquiryStatus) => {
-      const target = inquiriesRef.current.find((i) => i.id === id);
-      if (!target || normalizeStatus(target.status) === newStatus) return;
-
-      // Optimistically move the card.
-      setInquiries((prev) =>
-        prev.map((i) => (i.id === id ? { ...i, status: newStatus } : i))
-      );
-
-      try {
-        const res = await fetch(`/api/inquiries/${id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: newStatus }),
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || err.detail || `Save failed (HTTP ${res.status})`);
-        }
-        toast.success(`Moved to ${STATUS_LABELS[newStatus]}`);
-      } catch (e) {
-        console.error("[inquiry move] save failed", e);
-        toast.error(
-          `Couldn't move card: ${e instanceof Error ? e.message : "unknown error"}`
-        );
-        fetchInquiries(); // revert to server truth
-      }
-    },
-    [fetchInquiries]
-  );
+  const { openCount, overdueCount } = useMemo(() => {
+    const open = data.inquiries.filter((i) => isOpenStatus(i.status)).length;
+    const overdue = data.inquiries.reduce(
+      (s, i) =>
+        s +
+        (i.tasks || []).filter((t) => {
+          const d = parseDate(t.due_date);
+          return !t.done && d && daysBetween(today(), d) < 0;
+        }).length,
+      0
+    );
+    return { openCount: open, overdueCount: overdue };
+  }, [data.inquiries]);
 
   return (
     <div className="flex h-full flex-col gap-4 p-4 md:p-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Inquiries</h1>
         <p className="text-sm text-muted-foreground">
-          Inbound rental requests from hdrsiteservices.com · drag a card to move it
-          through the pipeline
+          Drag a card across stages to update its status · click to open the deal
         </p>
       </div>
+      <SectionTabs entityId={entityId} openCount={openCount} overdueCount={overdueCount} />
 
-      {loading ? (
+      {data.loading ? (
         <div className="text-sm text-muted-foreground">Loading…</div>
       ) : (
         <div className="flex flex-1 gap-3 overflow-x-auto pb-2">
-          {INQUIRY_STATUSES.map((status) => {
-            const items = inquiries.filter(
-              (i) => normalizeStatus(i.status) === status
-            );
-            const accent = COLUMN_ACCENT[status];
-            const isOver = dragOverCol === status;
+          {STAGES.map((stage) => {
+            const items = data.inquiries.filter((i) => i.status === stage.key);
+            const colValue = items.reduce((s, i) => s + (i.estimated_value || 0), 0);
+            const isOver = dragOverCol === stage.key;
             return (
               <div
-                key={status}
+                key={stage.key}
                 onDragOver={(e) => {
                   e.preventDefault();
-                  if (dragOverCol !== status) setDragOverCol(status);
+                  if (dragOverCol !== stage.key) setDragOverCol(stage.key);
                 }}
-                onDragLeave={() =>
-                  setDragOverCol((c) => (c === status ? null : c))
-                }
+                onDragLeave={(e) => {
+                  if (e.currentTarget === e.target) setDragOverCol(null);
+                }}
                 onDrop={(e) => {
                   e.preventDefault();
                   const id = e.dataTransfer.getData("text/plain");
                   setDragOverCol(null);
-                  if (id) move(id, status);
+                  if (id) data.moveStage(id, stage.key);
                 }}
-                className={`flex w-[270px] shrink-0 flex-col rounded-lg border bg-muted/30 ${
-                  isOver ? `ring-2 ${accent.ring}` : ""
+                className={`flex w-[290px] shrink-0 flex-col rounded-xl bg-muted/40 ${
+                  isOver ? "outline-dashed outline-2 outline-primary/60" : ""
                 }`}
               >
-                <div className="flex items-center gap-2 border-b px-3 py-2.5">
-                  <span className={`size-2 rounded-full ${accent.dot}`} />
-                  <span className="text-sm font-semibold">
-                    {STATUS_LABELS[status]}
-                  </span>
-                  <span className="ml-auto text-xs font-medium text-muted-foreground">
+                <div className="flex items-center gap-2 px-3 py-2.5">
+                  <span
+                    className="size-2.5 rounded-full"
+                    style={{ background: stage.color }}
+                  />
+                  <div className="flex-1">
+                    <div className="text-sm font-semibold leading-tight">{stage.label}</div>
+                    <div className="font-mono text-[11px] text-muted-foreground">
+                      {fmtMoney(colValue)}
+                    </div>
+                  </div>
+                  <span className="text-xs font-medium text-muted-foreground tabular-nums">
                     {items.length}
                   </span>
                 </div>
-
-                <div className="flex-1 space-y-2 p-2">
+                <div className="flex-1 space-y-2 overflow-y-auto p-2">
                   {items.length === 0 && (
-                    <p className="px-1 py-6 text-center text-xs text-muted-foreground">
-                      Drop cards here
+                    <p className="px-1 py-5 text-center text-xs text-muted-foreground">
+                      Drop here
                     </p>
                   )}
                   {items.map((inq) => (
-                    <div
+                    <DealCard
                       key={inq.id}
-                      draggable
+                      inq={inq}
+                      dragging={false}
                       onDragStart={(e) => {
                         e.dataTransfer.setData("text/plain", inq.id);
                         e.dataTransfer.effectAllowed = "move";
                         draggedRef.current = true;
-                      }}
-                      onDragEnd={() => {
-                        // Defer so the synthetic click (if any) is suppressed.
                         setTimeout(() => {
                           draggedRef.current = false;
                         }, 0);
                       }}
-                      onClick={() => {
+                      onOpen={() => {
                         if (draggedRef.current) return;
-                        router.push(`/${entityId}/inquiries/${inq.id}`);
+                        setSelectedId(inq.id);
                       }}
-                      className="cursor-pointer rounded-md border bg-card p-2.5 text-sm shadow-sm transition-shadow hover:shadow-md"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-mono text-[11px] text-muted-foreground">
-                          {inq.reference}
-                        </span>
-                        {inq.units != null && (
-                          <span className="text-[11px] text-muted-foreground">
-                            {inq.units} unit{inq.units === 1 ? "" : "s"}
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-0.5 font-medium leading-tight">
-                        {inq.name || "—"}
-                      </div>
-                      {inq.use_case && (
-                        <div className="text-xs text-muted-foreground">
-                          {inq.use_case}
-                        </div>
-                      )}
-                      {inq.location && (
-                        <div className="mt-1 truncate text-xs text-muted-foreground">
-                          📍 {inq.location}
-                        </div>
-                      )}
-                      {inq.start_date && (
-                        <div className="text-xs text-muted-foreground">
-                          🗓 {inq.start_date}
-                          {inq.end_date ? ` → ${inq.end_date}` : ""}
-                        </div>
-                      )}
-                      <div className="mt-1.5 text-[11px] text-muted-foreground">
-                        {formatDateTime(inq.last_activity_at)}
-                      </div>
-                    </div>
+                    />
                   ))}
                 </div>
               </div>
@@ -238,6 +215,13 @@ export default function InquiriesPage() {
           })}
         </div>
       )}
+
+      <InquiryDrawer
+        inquiry={selected}
+        entityId={entityId}
+        onClose={() => setSelectedId(null)}
+        callbacks={callbacks}
+      />
     </div>
   );
 }

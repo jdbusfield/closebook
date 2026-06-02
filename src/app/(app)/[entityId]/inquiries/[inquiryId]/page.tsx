@@ -37,10 +37,13 @@ import {
 import { ArrowLeft, ArrowDownLeft, ArrowUpRight, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { StatusBadge } from "../status-badge";
+import { SectionTabs } from "@/components/inquiries/section-tabs";
+import { UnitTag } from "@/components/inquiries/atoms";
 import {
   INQUIRY_STATUSES,
   STATUS_LABELS,
   visibleThreadMessages,
+  fmtMoney,
 } from "@/lib/inquiries/shared";
 
 interface Inquiry {
@@ -62,6 +65,8 @@ interface Inquiry {
   internal_notes: string | null;
   rw_quote_number: string | null;
   rw_order_number: string | null;
+  unit_id: string | null;
+  estimated_value: number | null;
   created_at: string;
   last_activity_at: string | null;
 }
@@ -395,6 +400,8 @@ export default function InquiryDetailPage() {
         <StatusBadge status={inquiry.status} />
       </div>
 
+      <SectionTabs entityId={entityId} />
+
       <div className="grid gap-6 md:grid-cols-3">
         {/* Left: request details */}
         <Card className="md:col-span-2">
@@ -419,6 +426,18 @@ export default function InquiryDetailPage() {
             />
             <Field label="Attendant" value={inquiry.attendant} />
             <Field label="Guest count" value={inquiry.guests} />
+            <Field
+              label="Assigned unit"
+              value={<UnitTag unitId={inquiry.unit_id} />}
+            />
+            <Field
+              label="Est. value"
+              value={
+                inquiry.estimated_value != null
+                  ? fmtMoney(inquiry.estimated_value)
+                  : null
+              }
+            />
             <Field label="Submitted" value={fmt(inquiry.created_at)} />
             <Field label="Email" value={inquiry.email} />
             <Field label="Phone" value={inquiry.phone} />

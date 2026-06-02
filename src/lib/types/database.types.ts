@@ -87,6 +87,8 @@ export type Database = {
           notes: string | null
           rw_quote_number: string | null
           rw_order_number: string | null
+          unit_id: string | null
+          estimated_value: number | null
           internal_notes: string | null
           last_activity_at: string | null
           created_by: string | null
@@ -113,6 +115,8 @@ export type Database = {
           notes?: string | null
           rw_quote_number?: string | null
           rw_order_number?: string | null
+          unit_id?: string | null
+          estimated_value?: number | null
           internal_notes?: string | null
           last_activity_at?: string | null
           created_by?: string | null
@@ -139,6 +143,8 @@ export type Database = {
           notes?: string | null
           rw_quote_number?: string | null
           rw_order_number?: string | null
+          unit_id?: string | null
+          estimated_value?: number | null
           internal_notes?: string | null
           last_activity_at?: string | null
           created_by?: string | null
@@ -233,6 +239,81 @@ export type Database = {
           event_type?: string
           payload?: Json | null
           occurred_at?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      rental_inquiry_tasks: {
+        Row: {
+          id: string
+          inquiry_id: string
+          entity_id: string
+          title: string
+          due_date: string | null
+          done: boolean
+          kind: string
+          created_by: string | null
+          completed_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          inquiry_id: string
+          entity_id: string
+          title: string
+          due_date?: string | null
+          done?: boolean
+          kind?: string
+          created_by?: string | null
+          completed_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          inquiry_id?: string
+          entity_id?: string
+          title?: string
+          due_date?: string | null
+          done?: boolean
+          kind?: string
+          created_by?: string | null
+          completed_at?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      rental_inquiry_activity: {
+        Row: {
+          id: string
+          inquiry_id: string
+          entity_id: string
+          type: string
+          body: string
+          actor: string | null
+          created_by: string | null
+          occurred_at: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          inquiry_id: string
+          entity_id: string
+          type?: string
+          body: string
+          actor?: string | null
+          created_by?: string | null
+          occurred_at?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          inquiry_id?: string
+          entity_id?: string
+          type?: string
+          body?: string
+          actor?: string | null
+          created_by?: string | null
+          occurred_at?: string
           created_at?: string
         }
         Relationships: []

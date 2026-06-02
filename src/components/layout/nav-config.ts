@@ -134,7 +134,11 @@ export function getEntityNavGroups(entityId: string): NavGroup[] {
           icon: Inbox,
           feature: "inquiries",
           children: [
+            { title: "Dashboard", href: `${prefix}/inquiries/dashboard` },
             { title: "Pipeline", href: `${prefix}/inquiries` },
+            { title: "Calendar", href: `${prefix}/inquiries/calendar` },
+            { title: "Customers", href: `${prefix}/inquiries/customers` },
+            { title: "Fleet", href: `${prefix}/inquiries/fleet` },
             { title: "Inbox Activity", href: `${prefix}/inquiries/inbox` },
           ],
         },
