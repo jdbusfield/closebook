@@ -396,38 +396,42 @@ export function relTime(s: string | Date | null | undefined): string {
   return relDays(d);
 }
 
-// Most recent moment this lead was touched — across emails, logged activity,
-// and the inquiry's own activity stamp.
+// Most recent moment of a real touchpoint — an email exchanged or an activity
+// logged (call/email/note/quote/stage move). Deliberately ignores the inquiry's
+// `last_activity_at` stamp, which gets bumped by record edits (e.g. creating the
+// inquiry from inbox mail), so the card time reflects the actual last email or
+// call rather than when the record was touched. Falls back to created_at only
+// when there's no correspondence or activity at all.
 export function lastTouchedAt(inq: Inquiry): Date | null {
-  const candidates = [
-    ...visibleThreadMessages(inq.messages || []).map((m) => parseTimestamp(messageDate(m))),
-    ...(inq.activity || []).map((a) => parseTimestamp(a.occurred_at)),
-    parseTimestamp(inq.last_activity_at),
-  ].filter((d): d is Date => !!d);
-  if (!candidates.length) return null;
+  const candidates: Date[] = [];
+  for (const m of inq.messages || []) {
+    if (m.kind === "internal_notification" || m.kind === "customer_autoreply") continue;
+    const d = parseTimestamp(messageDate(m));
+    if (d) candidates.push(d);
+  }
+  for (const a of inq.activity || []) {
+    const d = parseTimestamp(a.occurred_at);
+    if (d) candidates.push(d);
+  }
+  if (!candidates.length) {
+    return parseTimestamp(inq.created_at);
+  }
   return candidates.sort((a, b) => b.getTime() - a.getTime())[0];
 }
 
-// Window after an inquiry is created in which automated intake mail lands — the
-// lead notification, the "thank you" autoreply, and the capture-mailbox's echo
-// of the notification (which the inbound worker records as an inbound message
-// because the notification's From carries the customer's address). Anything in
-// this window is intake noise, not genuine correspondence.
-const INTAKE_WINDOW_MS = 5 * 60 * 1000;
-
 // Who had the last word — 'us' (we sent the most recent thing) or 'customer'
-// (they did, so the ball is in our court). Considers genuine post-intake
-// correspondence: real inbound replies, our outbound replies, and our logged
-// activity (calls/emails/quotes/stage moves). When there's no genuine
-// correspondence yet, falls back to the pipeline stage: a brand-new lead awaits
-// our first reply; once we've quoted/booked, we had the last word. Null for lost.
+// (they did, so the ball is in our court). Ranks genuine correspondence by
+// timestamp: real inbound replies (customer), our outbound replies (us, by
+// sender domain), and our logged activity — calls/emails/quotes/stage moves —
+// (us). The automated lead notification and the "thank you" autoreply are
+// excluded by kind; everything else is judged purely on who sent the most recent
+// thing, regardless of when the inquiry record itself was created (so inquiries
+// created from older inbox mail are read correctly). When there's no genuine
+// correspondence at all, falls back to the stage: a new lead awaits our first
+// reply; once quoted/booked we had the last word. Null for lost.
 export function lastCorrespondence(
   inq: Inquiry
 ): { by: "us" | "customer"; at: string } | null {
-  const created = parseTimestamp(inq.created_at);
-  const afterIntake = (at: Date | null): boolean =>
-    !!at && (!created || at.getTime() - created.getTime() > INTAKE_WINDOW_MS);
-
   let latestAt: number | null = null;
   let latestBy: "us" | "customer" | null = null;
   let latestIso = "";
@@ -444,20 +448,18 @@ export function lastCorrespondence(
     // Automated intake mail is never "correspondence".
     if (m.kind === "internal_notification" || m.kind === "customer_autoreply") continue;
     const iso = messageDate(m);
-    const at = parseTimestamp(iso);
-    if (!afterIntake(at)) continue; // skip the intake echo of the initial inquiry
-    offer(messageSide(m, inq.email), at, iso);
+    offer(messageSide(m, inq.email), parseTimestamp(iso), iso);
   }
   for (const a of inq.activity || []) {
-    const at = parseTimestamp(a.occurred_at);
-    if (!afterIntake(at)) continue;
-    offer("us", at, a.occurred_at); // our logged actions = we had the last word
+    // A logged "inquiry" represents the customer reaching out; everything else we
+    // log is our own action.
+    offer(a.type === "inquiry" ? "customer" : "us", parseTimestamp(a.occurred_at), a.occurred_at);
   }
 
   if (latestBy) return { by: latestBy, at: latestIso };
 
-  // No genuine post-intake correspondence — infer from the stage whose court the
-  // ball is in.
+  // No genuine correspondence at all — infer from the stage whose court the ball
+  // is in.
   if (inq.status === "lost") return null;
   const hasIntake = (inq.messages || []).length > 0 || (inq.activity || []).length > 0;
   if (inq.status === "new") {
