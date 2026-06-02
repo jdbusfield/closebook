@@ -66,6 +66,258 @@ export type Database = {
         }
         Relationships: []
       }
+      rental_inquiries: {
+        Row: {
+          id: string
+          entity_id: string
+          reference: string
+          source: string
+          status: string
+          name: string | null
+          email: string | null
+          phone: string | null
+          use_case: string | null
+          start_date: string | null
+          end_date: string | null
+          duration: string | null
+          units: number | null
+          attendant: string | null
+          guests: string | null
+          location: string | null
+          notes: string | null
+          rw_quote_number: string | null
+          rw_order_number: string | null
+          unit_id: string | null
+          estimated_value: number | null
+          internal_notes: string | null
+          last_activity_at: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          reference: string
+          source?: string
+          status?: string
+          name?: string | null
+          email?: string | null
+          phone?: string | null
+          use_case?: string | null
+          start_date?: string | null
+          end_date?: string | null
+          duration?: string | null
+          units?: number | null
+          attendant?: string | null
+          guests?: string | null
+          location?: string | null
+          notes?: string | null
+          rw_quote_number?: string | null
+          rw_order_number?: string | null
+          unit_id?: string | null
+          estimated_value?: number | null
+          internal_notes?: string | null
+          last_activity_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          reference?: string
+          source?: string
+          status?: string
+          name?: string | null
+          email?: string | null
+          phone?: string | null
+          use_case?: string | null
+          start_date?: string | null
+          end_date?: string | null
+          duration?: string | null
+          units?: number | null
+          attendant?: string | null
+          guests?: string | null
+          location?: string | null
+          notes?: string | null
+          rw_quote_number?: string | null
+          rw_order_number?: string | null
+          unit_id?: string | null
+          estimated_value?: number | null
+          internal_notes?: string | null
+          last_activity_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      rental_inquiry_messages: {
+        Row: {
+          id: string
+          inquiry_id: string | null
+          entity_id: string | null
+          direction: string
+          channel: string
+          kind: string | null
+          from_addr: string | null
+          to_addrs: string[] | null
+          cc_addrs: string[] | null
+          subject: string | null
+          body_text: string | null
+          body_html: string | null
+          resend_email_id: string | null
+          provider_message_id: string | null
+          sent_at: string | null
+          received_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          inquiry_id?: string | null
+          entity_id?: string | null
+          direction: string
+          channel?: string
+          kind?: string | null
+          from_addr?: string | null
+          to_addrs?: string[] | null
+          cc_addrs?: string[] | null
+          subject?: string | null
+          body_text?: string | null
+          body_html?: string | null
+          resend_email_id?: string | null
+          provider_message_id?: string | null
+          sent_at?: string | null
+          received_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          inquiry_id?: string | null
+          entity_id?: string | null
+          direction?: string
+          channel?: string
+          kind?: string | null
+          from_addr?: string | null
+          to_addrs?: string[] | null
+          cc_addrs?: string[] | null
+          subject?: string | null
+          body_text?: string | null
+          body_html?: string | null
+          resend_email_id?: string | null
+          provider_message_id?: string | null
+          sent_at?: string | null
+          received_at?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      rental_inquiry_email_events: {
+        Row: {
+          id: string
+          message_id: string | null
+          resend_email_id: string | null
+          event_type: string
+          payload: Json | null
+          occurred_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          message_id?: string | null
+          resend_email_id?: string | null
+          event_type: string
+          payload?: Json | null
+          occurred_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          message_id?: string | null
+          resend_email_id?: string | null
+          event_type?: string
+          payload?: Json | null
+          occurred_at?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      rental_inquiry_tasks: {
+        Row: {
+          id: string
+          inquiry_id: string
+          entity_id: string
+          title: string
+          due_date: string | null
+          done: boolean
+          kind: string
+          created_by: string | null
+          completed_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          inquiry_id: string
+          entity_id: string
+          title: string
+          due_date?: string | null
+          done?: boolean
+          kind?: string
+          created_by?: string | null
+          completed_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          inquiry_id?: string
+          entity_id?: string
+          title?: string
+          due_date?: string | null
+          done?: boolean
+          kind?: string
+          created_by?: string | null
+          completed_at?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      rental_inquiry_activity: {
+        Row: {
+          id: string
+          inquiry_id: string
+          entity_id: string
+          type: string
+          body: string
+          actor: string | null
+          created_by: string | null
+          occurred_at: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          inquiry_id: string
+          entity_id: string
+          type?: string
+          body: string
+          actor?: string | null
+          created_by?: string | null
+          occurred_at?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          inquiry_id?: string
+          entity_id?: string
+          type?: string
+          body?: string
+          actor?: string | null
+          created_by?: string | null
+          occurred_at?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       asset_depreciation_rules: {
         Row: {
           id: string

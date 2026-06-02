@@ -26,9 +26,11 @@ import {
   Shield,
   History,
   Settings,
+  Clapperboard,
+  Inbox,
 } from "lucide-react";
 
-export type EntityFeatureFlag = "rebates" | "revenue_projection";
+export type EntityFeatureFlag = "rebates" | "revenue_projection" | "inquiries";
 
 export interface NavItem {
   title: string;
@@ -66,6 +68,29 @@ export function getOrgNavGroups(): NavGroup[] {
       ],
     },
     {
+      label: "CRM",
+      items: [
+        {
+          title: "CRM",
+          href: "/crm",
+          icon: Clapperboard,
+          children: [
+            { title: "Dashboard", href: "/crm" },
+            { title: "Clients & Productions", href: "/crm/clients" },
+            { title: "Revenue by Production", href: "/crm/revenue" },
+            { title: "My Open Tasks", href: "/crm/tasks" },
+            { title: "Import Weekly Report", href: "/crm/import" },
+            { title: "Productions (list)", href: "/crm/productions" },
+            { title: "Companies", href: "/crm/companies" },
+            { title: "Contacts", href: "/crm/contacts" },
+            { title: "Opportunities", href: "/crm/opportunities" },
+            { title: "Communications", href: "/crm/communications" },
+            { title: "Commercial", href: "/crm/commercial-companies" },
+          ],
+        },
+      ],
+    },
+    {
       label: "Administration",
       items: [
         { title: "Master GL", href: "/settings/master-gl", icon: LibraryBig },
@@ -98,6 +123,25 @@ export function getEntityNavGroups(entityId: string): NavGroup[] {
         { title: "Chart of Accounts", href: `${prefix}/accounts`, icon: BookOpenCheck },
         { title: "Trial Balance", href: `${prefix}/trial-balance`, icon: Scale },
         { title: "Schedules", href: `${prefix}/schedules`, icon: TableProperties },
+      ],
+    },
+    {
+      label: "Sales",
+      items: [
+        {
+          title: "Inquiries",
+          href: `${prefix}/inquiries`,
+          icon: Inbox,
+          feature: "inquiries",
+          children: [
+            { title: "Dashboard", href: `${prefix}/inquiries/dashboard` },
+            { title: "Pipeline", href: `${prefix}/inquiries` },
+            { title: "Calendar", href: `${prefix}/inquiries/calendar` },
+            { title: "Customers", href: `${prefix}/inquiries/customers` },
+            { title: "Fleet", href: `${prefix}/inquiries/fleet` },
+            { title: "Inbox Activity", href: `${prefix}/inquiries/inbox` },
+          ],
+        },
       ],
     },
     {
@@ -155,6 +199,9 @@ export function getEntityFeatures(entityName: string | undefined): Set<EntityFea
   }
   if (entityName?.includes("Silverco")) {
     features.add("revenue_projection");
+  }
+  if (entityName?.includes("Hollywood")) {
+    features.add("inquiries");
   }
   return features;
 }
