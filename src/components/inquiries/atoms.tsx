@@ -10,18 +10,25 @@ import {
   DollarSign,
   Truck,
   Sparkles,
+  Clock,
+  ArrowUpRight,
+  ArrowDownLeft,
   type LucideIcon,
 } from "lucide-react";
 import {
+  type Inquiry,
   STAGE_BY_KEY,
   FLEET_BY_ID,
   avatarColor,
   initials,
   relDays,
+  relTime,
   daysBetween,
   parseDate,
   today,
   normalizeStatus,
+  lastTouchedAt,
+  lastCorrespondence,
 } from "@/lib/inquiries/shared";
 
 // Tint a hex color to a low-alpha background (e.g. "#2845F0" + 0.1).
@@ -137,6 +144,57 @@ export function ActivityIcon({ type, size = 12 }: { type: string; size?: number 
 }
 
 export const ACTIVITY_COLOR = ACT_COLOR;
+
+// "When was this lead last touched" — relative time across emails + activity.
+export function LastTouched({
+  inq,
+  className = "",
+}: {
+  inq: Inquiry;
+  className?: string;
+}) {
+  const t = lastTouchedAt(inq);
+  if (!t) return null;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 text-[11px] text-muted-foreground ${className}`}
+      title={`Last touched ${t.toLocaleString()}`}
+    >
+      <Clock className="size-3" />
+      {relTime(t)}
+    </span>
+  );
+}
+
+// "Who had the last word" — us (we replied, awaiting customer) vs the customer
+// (they replied, ball's in our court). Amber draws the eye when it's on us.
+export function CorrespondenceBadge({
+  inq,
+  withTime = false,
+}: {
+  inq: Inquiry;
+  withTime?: boolean;
+}) {
+  const corr = lastCorrespondence(inq);
+  if (!corr) return null;
+  const customer = corr.by === "customer";
+  return (
+    <span
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${
+        customer ? "bg-amber-100 text-amber-800" : "bg-sky-100 text-sky-800"
+      }`}
+      title={customer ? "Customer sent the last email" : "We sent the last email"}
+    >
+      {customer ? (
+        <ArrowDownLeft className="size-3" />
+      ) : (
+        <ArrowUpRight className="size-3" />
+      )}
+      {customer ? "Customer replied" : "You replied"}
+      {withTime ? ` · ${relTime(corr.at)}` : ""}
+    </span>
+  );
+}
 
 // Dashboard KPI card.
 export function KPI({

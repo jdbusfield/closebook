@@ -6,7 +6,12 @@ import { MapPin, AlertTriangle, Flame } from "lucide-react";
 import { useInquiries } from "@/lib/inquiries/use-inquiries";
 import { SectionTabs } from "@/components/inquiries/section-tabs";
 import { InquiryDrawer, type DrawerCallbacks } from "@/components/inquiries/detail-drawer";
-import { InquiryAvatar, UnitTag } from "@/components/inquiries/atoms";
+import {
+  InquiryAvatar,
+  UnitTag,
+  LastTouched,
+  CorrespondenceBadge,
+} from "@/components/inquiries/atoms";
 import {
   type Inquiry,
   type InquiryStatus,
@@ -79,6 +84,10 @@ function DealCard({
             {fmtMoney(inq.estimated_value)}
           </span>
         )}
+      </div>
+      <div className="mt-1.5 flex items-center justify-between gap-2">
+        <LastTouched inq={inq} />
+        <CorrespondenceBadge inq={inq} />
       </div>
       {(overdue || stale) && (
         <div className="mt-1.5">

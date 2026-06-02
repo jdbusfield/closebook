@@ -41,9 +41,9 @@ import {
   FLEET,
   FLEET_BY_ID,
   fmtMoney,
-  fmtDate,
+  fmtDateTime,
   fmtRange,
-  relDays,
+  relTime,
   isBookedStatus,
   visibleThreadMessages,
   messageSnippet,
@@ -398,8 +398,7 @@ function EmailEntry({ message }: { message: InquiryMessage }) {
           </div>
         )}
         <div className="mt-0.5 text-xs text-muted-foreground">
-          {who} · {fmtDate(messageDate(message), { month: "short", day: "numeric" })} ·{" "}
-          {relDays(messageDate(message))}
+          {who} · {fmtDateTime(messageDate(message))} · {relTime(messageDate(message))}
         </div>
       </div>
     </div>
@@ -489,8 +488,7 @@ export function ActivityTimeline({
                 </div>
                 <div className="text-xs text-muted-foreground">
                   {e.activity.actor ? `${e.activity.actor} · ` : ""}
-                  {fmtDate(e.activity.occurred_at, { month: "short", day: "numeric" })} ·{" "}
-                  {relDays(e.activity.occurred_at)}
+                  {fmtDateTime(e.activity.occurred_at)} · {relTime(e.activity.occurred_at)}
                 </div>
               </div>
             </div>
