@@ -317,6 +317,69 @@ export function isReservation(inq: Inquiry): boolean {
   return !!inq.unit_id && isBookedStatus(inq.status) && !!parseDate(inq.start_date);
 }
 
+// Full timestamp parse that PRESERVES the time of day (unlike parseDate, which
+// floors yyyy-mm-dd to local midnight). Use for message/activity timestamps.
+function parseTimestamp(s: string | null | undefined): Date | null {
+  if (!s) return null;
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// Date + time, e.g. "Jun 2, 5:42 PM".
+export function fmtDateTime(
+  s: string | null | undefined,
+  opts?: Intl.DateTimeFormatOptions
+): string {
+  const d = parseTimestamp(s);
+  if (!d) return s ?? "";
+  return d.toLocaleString("en-US", opts || {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+// Fine-grained relative label ("just now", "12m ago", "5h ago", then days).
+export function relTime(s: string | Date | null | undefined): string {
+  const d = s instanceof Date ? s : parseTimestamp(s ?? null);
+  if (!d) return "";
+  const diff = Date.now() - d.getTime();
+  const min = Math.round(diff / 60_000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  return relDays(d);
+}
+
+// Most recent moment this lead was touched — across emails, logged activity,
+// and the inquiry's own activity stamp.
+export function lastTouchedAt(inq: Inquiry): Date | null {
+  const candidates = [
+    ...visibleThreadMessages(inq.messages || []).map((m) => parseTimestamp(messageDate(m))),
+    ...(inq.activity || []).map((a) => parseTimestamp(a.occurred_at)),
+    parseTimestamp(inq.last_activity_at),
+  ].filter((d): d is Date => !!d);
+  if (!candidates.length) return null;
+  return candidates.sort((a, b) => b.getTime() - a.getTime())[0];
+}
+
+// Who sent the most recent email — 'us' (outbound) or 'customer' (inbound).
+// Null when there's no genuine correspondence yet.
+export function lastCorrespondence(
+  inq: Inquiry
+): { by: "us" | "customer"; at: string } | null {
+  let latest: { by: "us" | "customer"; at: string } | null = null;
+  for (const m of visibleThreadMessages(inq.messages || [])) {
+    const at = messageDate(m);
+    if (!latest || at > latest.at) {
+      latest = { by: m.direction === "outbound" ? "us" : "customer", at };
+    }
+  }
+  return latest;
+}
+
 // ---------------------------------------------------------------------------
 // Communication-thread filtering (unchanged behaviour)
 // ---------------------------------------------------------------------------
