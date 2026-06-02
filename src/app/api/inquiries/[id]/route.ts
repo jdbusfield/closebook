@@ -13,6 +13,8 @@ const UpdateSchema = z.object({
   internal_notes: z.string().max(10_000).optional().nullable(),
   rw_quote_number: z.string().max(64).optional().nullable(),
   rw_order_number: z.string().max(64).optional().nullable(),
+  unit_id: z.string().max(64).optional().nullable(),
+  estimated_value: z.number().nonnegative().max(100_000_000).optional().nullable(),
 });
 
 export async function PATCH(
@@ -49,7 +51,9 @@ export async function PATCH(
     .from("rental_inquiries")
     .update({ ...patch, last_activity_at: new Date().toISOString() })
     .eq("id", id)
-    .select("id, status, internal_notes, rw_quote_number, rw_order_number")
+    .select(
+      "id, status, internal_notes, rw_quote_number, rw_order_number, unit_id, estimated_value"
+    )
     .maybeSingle();
 
   if (error) {
