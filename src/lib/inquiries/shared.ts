@@ -365,19 +365,62 @@ export function lastTouchedAt(inq: Inquiry): Date | null {
   return candidates.sort((a, b) => b.getTime() - a.getTime())[0];
 }
 
-// Who sent the most recent email — 'us' (outbound) or 'customer' (inbound).
-// Null when there's no genuine correspondence yet.
+// Window after an inquiry is created in which automated intake mail lands — the
+// lead notification, the "thank you" autoreply, and the capture-mailbox's echo
+// of the notification (which the inbound worker records as an inbound message
+// because the notification's From carries the customer's address). Anything in
+// this window is intake noise, not genuine correspondence.
+const INTAKE_WINDOW_MS = 5 * 60 * 1000;
+
+// Who had the last word — 'us' (we sent the most recent thing) or 'customer'
+// (they did, so the ball is in our court). Considers genuine post-intake
+// correspondence: real inbound replies, our outbound replies, and our logged
+// activity (calls/emails/quotes/stage moves). When there's no genuine
+// correspondence yet, falls back to the pipeline stage: a brand-new lead awaits
+// our first reply; once we've quoted/booked, we had the last word. Null for lost.
 export function lastCorrespondence(
   inq: Inquiry
 ): { by: "us" | "customer"; at: string } | null {
-  let latest: { by: "us" | "customer"; at: string } | null = null;
-  for (const m of visibleThreadMessages(inq.messages || [])) {
-    const at = messageDate(m);
-    if (!latest || at > latest.at) {
-      latest = { by: m.direction === "outbound" ? "us" : "customer", at };
+  const created = parseTimestamp(inq.created_at);
+  const afterIntake = (at: Date | null): boolean =>
+    !!at && (!created || at.getTime() - created.getTime() > INTAKE_WINDOW_MS);
+
+  let latestAt: number | null = null;
+  let latestBy: "us" | "customer" | null = null;
+  let latestIso = "";
+  const offer = (by: "us" | "customer", at: Date | null, iso: string) => {
+    if (!at) return;
+    if (latestAt === null || at.getTime() > latestAt) {
+      latestAt = at.getTime();
+      latestBy = by;
+      latestIso = iso;
     }
+  };
+
+  for (const m of inq.messages || []) {
+    // Automated intake mail is never "correspondence".
+    if (m.kind === "internal_notification" || m.kind === "customer_autoreply") continue;
+    const iso = messageDate(m);
+    const at = parseTimestamp(iso);
+    if (!afterIntake(at)) continue; // skip the intake echo of the initial inquiry
+    offer(m.direction === "outbound" ? "us" : "customer", at, iso);
   }
-  return latest;
+  for (const a of inq.activity || []) {
+    const at = parseTimestamp(a.occurred_at);
+    if (!afterIntake(at)) continue;
+    offer("us", at, a.occurred_at); // our logged actions = we had the last word
+  }
+
+  if (latestBy) return { by: latestBy, at: latestIso };
+
+  // No genuine post-intake correspondence — infer from the stage whose court the
+  // ball is in.
+  if (inq.status === "lost") return null;
+  const hasIntake = (inq.messages || []).length > 0 || (inq.activity || []).length > 0;
+  if (inq.status === "new") {
+    return hasIntake ? { by: "customer", at: inq.created_at } : null;
+  }
+  return { by: "us", at: inq.last_activity_at || inq.created_at };
 }
 
 // ---------------------------------------------------------------------------
