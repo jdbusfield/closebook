@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, ArrowDownLeft, ArrowUpRight, Link2 } from "lucide-react";
+import { ArrowLeft, ArrowDownLeft, ArrowUpRight, Link2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { SectionTabs } from "@/components/inquiries/section-tabs";
 import { messageSide } from "@/lib/inquiries/shared";
@@ -57,6 +57,7 @@ function snippet(m: FeedMessage): string {
 
 export default function InboxFeedPage() {
   const params = useParams();
+  const router = useRouter();
   const entityId = params.entityId as string;
 
   const [messages, setMessages] = useState<FeedMessage[]>([]);
@@ -64,6 +65,7 @@ export default function InboxFeedPage() {
   const [loading, setLoading] = useState(true);
   const [unmatchedOnly, setUnmatchedOnly] = useState(false);
   const [assigning, setAssigning] = useState<string | null>(null);
+  const [creating, setCreating] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -113,6 +115,30 @@ export default function InboxFeedPage() {
       toast.error(e instanceof Error ? e.message : "Assign failed");
     } finally {
       setAssigning(null);
+    }
+  }
+
+  async function createInquiry(messageId: string) {
+    setCreating(messageId);
+    try {
+      const res = await fetch(
+        `/api/inquiry-messages/${messageId}/create-inquiry`,
+        { method: "POST" }
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // If it was already linked, just go to that inquiry.
+        if (res.status === 409 && json.inquiryId) {
+          router.push(`/${entityId}/inquiries/${json.inquiryId}`);
+          return;
+        }
+        throw new Error(json.error || "Create failed");
+      }
+      toast.success(`Created inquiry ${json.reference}`);
+      router.push(`/${entityId}/inquiries/${json.inquiryId}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Create failed");
+      setCreating(null);
     }
   }
 
@@ -218,14 +244,24 @@ export default function InboxFeedPage() {
                         <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">
                           Unmatched
                         </Badge>
+                        <Button
+                          size="sm"
+                          className="h-7"
+                          disabled={creating === m.id}
+                          onClick={() => createInquiry(m.id)}
+                        >
+                          <Plus className="size-3.5" />
+                          {creating === m.id ? "Creating…" : "Create inquiry"}
+                        </Button>
+                        <span className="text-xs text-muted-foreground">or</span>
                         <select
                           className="rounded-md border bg-background px-2 py-1 text-xs"
                           defaultValue=""
-                          disabled={assigning === m.id}
+                          disabled={assigning === m.id || creating === m.id}
                           onChange={(e) => assign(m.id, e.target.value)}
                         >
                           <option value="">
-                            {assigning === m.id ? "Linking…" : "Assign to inquiry…"}
+                            {assigning === m.id ? "Linking…" : "Assign to existing…"}
                           </option>
                           {inquiries.map((i) => (
                             <option key={i.id} value={i.id}>
