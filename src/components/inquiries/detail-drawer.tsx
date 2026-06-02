@@ -15,7 +15,16 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Phone, Mail, FileText, Plus, Check, ExternalLink } from "lucide-react";
+import {
+  Phone,
+  Mail,
+  FileText,
+  Plus,
+  Check,
+  ExternalLink,
+  ArrowUpRight,
+  ArrowDownLeft,
+} from "lucide-react";
 import {
   InquiryAvatar,
   DueBadge,
@@ -27,6 +36,7 @@ import {
   type InquiryStatus,
   type InquiryTask,
   type InquiryActivity,
+  type InquiryMessage,
   STAGES,
   FLEET,
   FLEET_BY_ID,
@@ -35,6 +45,9 @@ import {
   fmtRange,
   relDays,
   isBookedStatus,
+  visibleThreadMessages,
+  messageSnippet,
+  messageDate,
 } from "@/lib/inquiries/shared";
 
 export interface DrawerCallbacks {
@@ -347,6 +360,52 @@ const LOG_TABS: [InquiryActivity["type"], string][] = [
   ["quote", "Quote"],
 ];
 
+// A unified timeline entry — either a logged activity or a summarized email.
+type TimelineEntry =
+  | { kind: "activity"; id: string; date: string; activity: InquiryActivity }
+  | { kind: "email"; id: string; date: string; message: InquiryMessage };
+
+function EmailEntry({ message }: { message: InquiryMessage }) {
+  const outbound = message.direction === "outbound";
+  const snippet = messageSnippet(message);
+  const who = outbound
+    ? message.to_addrs?.length
+      ? `To ${message.to_addrs.join(", ")}`
+      : "Sent"
+    : message.from_addr
+      ? `From ${message.from_addr}`
+      : "Received";
+  return (
+    <div className="flex gap-2.5">
+      <ActivityIcon type="email" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5 text-sm">
+          {outbound ? (
+            <ArrowUpRight className="size-3.5 shrink-0 text-blue-600" />
+          ) : (
+            <ArrowDownLeft className="size-3.5 shrink-0 text-emerald-600" />
+          )}
+          <span className="font-semibold">
+            {outbound ? "Email sent" : "Email received"}
+          </span>
+          {message.subject && (
+            <span className="truncate text-muted-foreground">— {message.subject}</span>
+          )}
+        </div>
+        {snippet && (
+          <div className="mt-0.5 line-clamp-3 rounded bg-muted/50 px-2 py-1 text-xs text-foreground/80">
+            {snippet}
+          </div>
+        )}
+        <div className="mt-0.5 text-xs text-muted-foreground">
+          {who} · {fmtDate(messageDate(message), { month: "short", day: "numeric" })} ·{" "}
+          {relDays(messageDate(message))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ActivityTimeline({
   inquiry,
   onAddActivity,
@@ -356,9 +415,29 @@ export function ActivityTimeline({
 }) {
   const [type, setType] = useState<InquiryActivity["type"]>("note");
   const [text, setText] = useState("");
-  const items = [...(inquiry.activity || [])].sort((a, b) =>
-    (b.occurred_at || "").localeCompare(a.occurred_at || "")
-  );
+
+  // Merge logged activity with the de-duplicated email thread into one
+  // chronological feed (newest first), so the timeline shows the full
+  // back-and-forth — what we sent and what came back — alongside manual notes.
+  const entries: TimelineEntry[] = [
+    ...(inquiry.activity || []).map(
+      (a): TimelineEntry => ({
+        kind: "activity",
+        id: `a-${a.id}`,
+        date: a.occurred_at,
+        activity: a,
+      })
+    ),
+    ...visibleThreadMessages(inquiry.messages || []).map(
+      (m): TimelineEntry => ({
+        kind: "email",
+        id: `m-${m.id}`,
+        date: messageDate(m),
+        message: m,
+      })
+    ),
+  ].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
   const submit = () => {
     if (!text.trim()) return;
     onAddActivity(inquiry.id, type, text.trim());
@@ -394,24 +473,29 @@ export function ActivityTimeline({
         </Button>
       </div>
       <div className="mt-4 space-y-3">
-        {items.length === 0 && (
+        {entries.length === 0 && (
           <p className="text-sm text-muted-foreground">No activity yet.</p>
         )}
-        {items.map((a) => (
-          <div key={a.id} className="flex gap-2.5">
-            <ActivityIcon type={a.type} />
-            <div className="min-w-0 flex-1">
-              <div className="text-sm">
-                <span className="font-semibold capitalize">{a.type}</span> — {a.body}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {a.actor ? `${a.actor} · ` : ""}
-                {fmtDate(a.occurred_at, { month: "short", day: "numeric" })} ·{" "}
-                {relDays(a.occurred_at)}
+        {entries.map((e) =>
+          e.kind === "email" ? (
+            <EmailEntry key={e.id} message={e.message} />
+          ) : (
+            <div key={e.id} className="flex gap-2.5">
+              <ActivityIcon type={e.activity.type} />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm">
+                  <span className="font-semibold capitalize">{e.activity.type}</span> —{" "}
+                  {e.activity.body}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {e.activity.actor ? `${e.activity.actor} · ` : ""}
+                  {fmtDate(e.activity.occurred_at, { month: "short", day: "numeric" })} ·{" "}
+                  {relDays(e.activity.occurred_at)}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          )
+        )}
       </div>
     </div>
   );
@@ -491,7 +575,7 @@ export function InquiryDrawer({
                 />
               </Section>
 
-              <Section title="Activity timeline">
+              <Section title="Activity & emails">
                 <ActivityTimeline
                   inquiry={inquiry}
                   onAddActivity={callbacks.onAddActivity}

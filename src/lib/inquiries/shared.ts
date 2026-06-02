@@ -229,6 +229,38 @@ export interface InquiryActivity {
   occurred_at: string;
 }
 
+export interface InquiryMessage {
+  id: string;
+  inquiry_id: string | null;
+  direction: string;
+  kind: string | null;
+  from_addr: string | null;
+  to_addrs: string[] | null;
+  cc_addrs: string[] | null;
+  subject: string | null;
+  body_text: string | null;
+  body_html: string | null;
+  sent_at: string | null;
+  received_at: string | null;
+  created_at: string;
+}
+
+// Plain-text summary of an email body — strips tags from HTML-only mail and
+// collapses whitespace. Used for the activity-timeline email summaries.
+export function messageSnippet(
+  m: { body_text: string | null; body_html: string | null },
+  max = 180
+): string {
+  const raw = m.body_text || (m.body_html ? m.body_html.replace(/<[^>]+>/g, " ") : "");
+  const clean = raw.replace(/\s+/g, " ").trim();
+  return clean.length > max ? clean.slice(0, max).trimEnd() + "…" : clean;
+}
+
+// Effective timestamp of a message for chronological sorting.
+export function messageDate(m: InquiryMessage): string {
+  return m.sent_at || m.received_at || m.created_at;
+}
+
 export interface Inquiry {
   id: string;
   reference: string;
@@ -255,6 +287,7 @@ export interface Inquiry {
   created_at: string;
   tasks?: InquiryTask[];
   activity?: InquiryActivity[];
+  messages?: InquiryMessage[];
 }
 
 // Most recent activity timestamp (for staleness). Falls back to last_activity_at
