@@ -48,6 +48,7 @@ import {
   visibleThreadMessages,
   messageSnippet,
   messageDate,
+  messageSide,
 } from "@/lib/inquiries/shared";
 
 export interface DrawerCallbacks {
@@ -365,8 +366,14 @@ type TimelineEntry =
   | { kind: "activity"; id: string; date: string; activity: InquiryActivity }
   | { kind: "email"; id: string; date: string; message: InquiryMessage };
 
-function EmailEntry({ message }: { message: InquiryMessage }) {
-  const outbound = message.direction === "outbound";
+function EmailEntry({
+  message,
+  customerEmail,
+}: {
+  message: InquiryMessage;
+  customerEmail: string | null;
+}) {
+  const outbound = messageSide(message, customerEmail) === "us";
   const snippet = messageSnippet(message);
   const who = outbound
     ? message.to_addrs?.length
@@ -477,7 +484,7 @@ export function ActivityTimeline({
         )}
         {entries.map((e) =>
           e.kind === "email" ? (
-            <EmailEntry key={e.id} message={e.message} />
+            <EmailEntry key={e.id} message={e.message} customerEmail={inquiry.email} />
           ) : (
             <div key={e.id} className="flex gap-2.5">
               <ActivityIcon type={e.activity.type} />

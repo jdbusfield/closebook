@@ -261,6 +261,49 @@ export function messageDate(m: InquiryMessage): string {
   return m.sent_at || m.received_at || m.created_at;
 }
 
+// Our staff email domains. The inbound-email worker can only stamp `direction`
+// from whatever single domain it knows, so staff who reply from a *different*
+// brand domain (e.g. daniel@hollywooddepot.com vs sales@hdrsiteservices.com) get
+// mislabeled inbound. We re-derive the side at read time from the sender domain
+// so the stored rows are corrected without re-ingesting. Keep in sync with the
+// worker's STAFF_EMAIL_DOMAINS.
+export const STAFF_EMAIL_DOMAINS = new Set([
+  "hdrsiteservices.com",
+  "hollywooddepot.com",
+  "hollywooddepotrentals.com",
+  "avonrents.com",
+]);
+
+function emailDomain(addr: string | null | undefined): string | null {
+  if (!addr) return null;
+  const at = addr.lastIndexOf("@");
+  return at >= 0 ? addr.slice(at + 1).trim().toLowerCase() : null;
+}
+
+export function isStaffAddress(addr: string | null | undefined): boolean {
+  const d = emailDomain(addr);
+  return !!d && STAFF_EMAIL_DOMAINS.has(d);
+}
+
+// Which side a message is on — 'us' (sent by staff) or 'customer'. Trusts the
+// sender domain first (robust to the worker's mislabeling), then the known
+// customer address, then the stored direction as a last resort.
+export function messageSide(
+  m: { from_addr: string | null; direction: string },
+  customerEmail?: string | null
+): "us" | "customer" {
+  if (isStaffAddress(m.from_addr)) return "us";
+  if (
+    customerEmail &&
+    m.from_addr &&
+    m.from_addr.toLowerCase() === customerEmail.toLowerCase()
+  ) {
+    return "customer";
+  }
+  if (m.direction === "outbound") return "us";
+  return "customer";
+}
+
 export interface Inquiry {
   id: string;
   reference: string;
@@ -403,7 +446,7 @@ export function lastCorrespondence(
     const iso = messageDate(m);
     const at = parseTimestamp(iso);
     if (!afterIntake(at)) continue; // skip the intake echo of the initial inquiry
-    offer(m.direction === "outbound" ? "us" : "customer", at, iso);
+    offer(messageSide(m, inq.email), at, iso);
   }
   for (const a of inq.activity || []) {
     const at = parseTimestamp(a.occurred_at);

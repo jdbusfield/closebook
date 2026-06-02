@@ -139,8 +139,20 @@ export async function POST(request: Request) {
   // from our own domain.
   const customerEmail = inquiry?.email?.toLowerCase() ?? null;
   const fromIsCustomer = !!customerEmail && fromAddr?.toLowerCase() === customerEmail;
-  const ourDomain = (process.env.LEAD_FROM_DOMAIN || "hdrsiteservices.com").toLowerCase();
-  const fromIsStaff = emailDomain(fromAddr) === ourDomain;
+  // Staff reply from ANY of our brand domains (HDR / Hollywood Depot / Avon) is
+  // outbound — not just the single lead-from domain. Keep in sync with
+  // STAFF_EMAIL_DOMAINS in src/lib/inquiries/shared.ts.
+  const staffDomains = new Set(
+    (
+      process.env.STAFF_EMAIL_DOMAINS ||
+      `${process.env.LEAD_FROM_DOMAIN || "hdrsiteservices.com"},hollywooddepot.com,hollywooddepotrentals.com,avonrents.com`
+    )
+      .split(",")
+      .map((d) => d.trim().toLowerCase())
+      .filter(Boolean)
+  );
+  const fromDomain = emailDomain(fromAddr);
+  const fromIsStaff = !!fromDomain && staffDomains.has(fromDomain);
   const direction = fromIsCustomer ? "inbound" : fromIsStaff ? "outbound" : "inbound";
 
   const nowIso = new Date().toISOString();

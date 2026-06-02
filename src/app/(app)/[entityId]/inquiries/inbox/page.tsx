@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, ArrowDownLeft, ArrowUpRight, Link2 } from "lucide-react";
 import { toast } from "sonner";
 import { SectionTabs } from "@/components/inquiries/section-tabs";
+import { messageSide } from "@/lib/inquiries/shared";
 
 interface FeedMessage {
   id: string;
@@ -165,7 +166,7 @@ export default function InboxFeedPage() {
             </p>
           )}
           {visible.map((m) => {
-            const outbound = m.direction === "outbound";
+            const outbound = messageSide(m) === "us";
             const linked = m.inquiry_id ? inquiryMap.get(m.inquiry_id) : null;
             return (
               <div key={m.id} className="flex gap-3 p-3.5 text-sm">
