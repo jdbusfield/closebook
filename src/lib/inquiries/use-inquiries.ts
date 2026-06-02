@@ -14,6 +14,7 @@ import {
   type Inquiry,
   type InquiryTask,
   type InquiryActivity,
+  type InquiryMessage,
   type InquiryStatus,
   STATUS_LABELS,
 } from "@/lib/inquiries/shared";
@@ -59,7 +60,7 @@ export function useInquiries(entityId: string): UseInquiries {
 
   const load = useCallback(async () => {
     const supabase = createClient();
-    const [{ data: inqs }, { data: tasks }, { data: activity }, userRes] =
+    const [{ data: inqs }, { data: tasks }, { data: activity }, { data: messages }, userRes] =
       await Promise.all([
         supabase
           .from("rental_inquiries")
@@ -78,6 +79,14 @@ export function useInquiries(entityId: string): UseInquiries {
           .eq("entity_id", entityId)
           .order("occurred_at", { ascending: false })
           .limit(2000),
+        supabase
+          .from("rental_inquiry_messages")
+          .select(
+            "id, inquiry_id, direction, kind, from_addr, to_addrs, cc_addrs, subject, body_text, body_html, sent_at, received_at, created_at"
+          )
+          .eq("entity_id", entityId)
+          .order("created_at", { ascending: true })
+          .limit(3000),
         supabase.auth.getUser(),
       ]);
 
@@ -91,11 +100,18 @@ export function useInquiries(entityId: string): UseInquiries {
       if (!activityByInquiry.has(a.inquiry_id)) activityByInquiry.set(a.inquiry_id, []);
       activityByInquiry.get(a.inquiry_id)!.push(a);
     }
+    const messagesByInquiry = new Map<string, InquiryMessage[]>();
+    for (const msg of (messages as InquiryMessage[]) ?? []) {
+      if (!msg.inquiry_id) continue;
+      if (!messagesByInquiry.has(msg.inquiry_id)) messagesByInquiry.set(msg.inquiry_id, []);
+      messagesByInquiry.get(msg.inquiry_id)!.push(msg);
+    }
 
     const assembled = ((inqs as Inquiry[]) ?? []).map((inq) => ({
       ...inq,
       tasks: tasksByInquiry.get(inq.id) ?? [],
       activity: activityByInquiry.get(inq.id) ?? [],
+      messages: messagesByInquiry.get(inq.id) ?? [],
     }));
     setInquiries(assembled);
 
