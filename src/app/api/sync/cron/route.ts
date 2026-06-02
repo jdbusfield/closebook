@@ -202,7 +202,7 @@ export async function GET(request: Request) {
     }
   }
 
-  // Take RentalWorks revenue snapshot (Versatile Studios)
+  // Take RentalWorks revenue snapshots (Versatile + Silverco)
   let rwSnapshotResult: Record<string, unknown> | null = null;
   try {
     const rwResp = await fetch(`${baseUrl}/api/rw-revenue/snapshot`, {

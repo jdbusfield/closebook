@@ -162,9 +162,48 @@ export interface RevenueProjectionResponse {
   dateMode: DateMode;
 }
 
-// ─── Constants ──────────────────────────────────────────────────────────────
+// ─── Entity Filter Config ───────────────────────────────────────────────────
+//
+// Revenue data is fetched from RentalWorks org-wide (every warehouse), then
+// narrowed to a single accounting entity by matching the prefix on each
+// record's number. Versatile records carry a "V" prefix; the Avon Studios /
+// Avon Cahuenga business — booked under "Silverco Enterprises, LLC" — carries
+// "AS" / "AC" prefixes. Quotes lack a stable prefix for Versatile, so a
+// warehouse-keyword fallback is supported there.
 
-const VS_WAREHOUSE_KEYWORDS = ["VERSATILE", "CAHUENGA"];
+export interface EntityRevenueFilter {
+  /** InvoiceNumber must start with one of these (case-insensitive). */
+  invoicePrefixes: string[];
+  /** OrderNumber must start with one of these (case-insensitive). */
+  orderPrefixes: string[];
+  /** If set, QuoteNumber must start with one of these. */
+  quotePrefixes?: string[];
+  /** Fallback for quotes when quotePrefixes is not set: match Warehouse. */
+  quoteWarehouseKeywords?: string[];
+}
+
+export const VERSATILE_REVENUE_FILTER: EntityRevenueFilter = {
+  invoicePrefixes: ["V"],
+  orderPrefixes: ["V"],
+  quoteWarehouseKeywords: ["VERSATILE", "CAHUENGA"],
+};
+
+export const SILVERCO_REVENUE_FILTER: EntityRevenueFilter = {
+  invoicePrefixes: ["AS", "AC"],
+  orderPrefixes: ["AS", "AC"],
+  quotePrefixes: ["AS", "AC"],
+};
+
+/** Pick the right revenue filter for an entity by name. Defaults to Versatile. */
+export function getRevenueFilterForEntity(
+  entityName: string | null | undefined,
+): EntityRevenueFilter {
+  const name = (entityName || "").toLowerCase();
+  if (name.includes("silverco")) return SILVERCO_REVENUE_FILTER;
+  return VERSATILE_REVENUE_FILTER;
+}
+
+// ─── Constants ──────────────────────────────────────────────────────────────
 
 const TERMINAL_ORDER_STATUSES = new Set([
   "CANCELLED",
@@ -181,10 +220,23 @@ export const EQUIPMENT_TYPE_LABELS: Record<string, string> = {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function isVersatileWarehouse(warehouse: string | undefined | null): boolean {
-  if (!warehouse) return false;
+function warehouseMatches(
+  warehouse: string | undefined | null,
+  keywords: string[] | undefined,
+): boolean {
+  if (!warehouse || !keywords?.length) return false;
   const upper = warehouse.toUpperCase();
-  return VS_WAREHOUSE_KEYWORDS.some((kw) => upper.includes(kw));
+  return keywords.some((kw) => upper.includes(kw.toUpperCase()));
+}
+
+/** True if `s`, trimmed, starts with any of the given prefixes (case-insensitive). */
+function startsWithAnyPrefix(
+  s: string | undefined | null,
+  prefixes: string[],
+): boolean {
+  if (!s) return false;
+  const upper = s.trim().toUpperCase();
+  return prefixes.some((p) => upper.startsWith(p.toUpperCase()));
 }
 
 function toNum(val: string | number | undefined | null): number {
@@ -348,6 +400,7 @@ export function processRevenueData(
   rawOrders: RWOrderRow[],
   rawQuotes: RWQuoteRow[],
   dateMode: DateMode = "invoice_date",
+  filter: EntityRevenueFilter = VERSATILE_REVENUE_FILTER,
 ): RevenueProjectionResponse {
   const now = new Date();
   const currentMonthKey = getMonthKey(now.toISOString());
@@ -362,27 +415,28 @@ export function processRevenueData(
       ? inv.BillingEndDate || inv.BillingStartDate || inv.InvoiceDate
       : inv.InvoiceDate;
 
-  // --- Filter to Versatile records ---
+  // --- Filter to this entity's records ---
   //
-  // Versatile orders and invoices are identified by a "V" prefix on their
-  // number. Items that come through the Versatile warehouse but use an
-  // "AS" / "AC" prefix belong to other entities (Avon Studios / Avon
-  // Cahuenga) and must be excluded from every tab and every calculation.
-  const startsWithV = (s: string | undefined | null): boolean =>
-    !!s && s.trim().toUpperCase().startsWith("V");
+  // Orders and invoices are identified by a prefix on their number (e.g. "V"
+  // for Versatile, "AS"/"AC" for Silverco's Avon Studios / Avon Cahuenga
+  // business). The prefix is the authoritative entity marker — warehouse
+  // matching alone would let records from other entities through when they
+  // happen to share a warehouse.
+  const vsOrders = rawOrders.filter((o) =>
+    startsWithAnyPrefix(o.OrderNumber, filter.orderPrefixes),
+  );
 
-  // Orders: must have an OrderNumber starting with "V".
-  const vsOrders = rawOrders.filter((o) => startsWithV(o.OrderNumber));
+  const vsInvoices = rawInvoices.filter((inv) =>
+    startsWithAnyPrefix(inv.InvoiceNumber, filter.invoicePrefixes),
+  );
 
-  // Invoices: must have an InvoiceNumber starting with "V". This is the
-  // authoritative VersaTile marker — warehouse matching alone would let
-  // AS-/AC-prefixed invoices through when they happen to ship from the
-  // Cahuenga warehouse.
-  const vsInvoices = rawInvoices.filter((inv) => startsWithV(inv.InvoiceNumber));
-
-  // Quotes: filter by Warehouse field (quotes don't have a stable
-  // prefix convention, so warehouse is still the best signal).
-  const vsQuotes = rawQuotes.filter((q) => isVersatileWarehouse(q.Warehouse));
+  // Quotes: prefer a QuoteNumber prefix match; fall back to warehouse keywords
+  // for entities (like Versatile) whose quotes lack a stable prefix.
+  const vsQuotes = rawQuotes.filter((q) =>
+    filter.quotePrefixes?.length
+      ? startsWithAnyPrefix(q.QuoteNumber, filter.quotePrefixes)
+      : warehouseMatches(q.Warehouse, filter.quoteWarehouseKeywords),
+  );
 
   // --- Filter out void/no-charge invoices ---
   const validInvoices = vsInvoices.filter((inv) => {

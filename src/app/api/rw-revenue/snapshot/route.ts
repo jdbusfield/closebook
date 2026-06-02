@@ -1,10 +1,21 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { fetchRentalWorksRevenueData } from "@/lib/rentalworks/fetch-revenue-data";
-import { processRevenueData } from "@/lib/utils/revenue-projection";
+import {
+  fetchRentalWorksRevenueData,
+  type RentalWorksRevenueData,
+} from "@/lib/rentalworks/fetch-revenue-data";
+import {
+  processRevenueData,
+  getRevenueFilterForEntity,
+} from "@/lib/utils/revenue-projection";
 import type { Json } from "@/lib/types/database.types";
 
 export const maxDuration = 120;
+
+// Entities that get a daily RentalWorks revenue snapshot. Each is matched by a
+// case-insensitive name fragment; the record-prefix filter is resolved from the
+// entity name (Versatile "V" vs Silverco "AS"/"AC").
+const SNAPSHOT_ENTITY_PATTERNS = ["%Versatile%", "%silverco%"];
 
 // POST — daily cron snapshot of RentalWorks revenue data
 // Called from /api/sync/cron with x-cron-secret header
@@ -18,30 +29,68 @@ export async function POST(request: Request) {
     const supabase = createAdminClient();
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
-    // Look up Versatile entity
-    const { data: entities, error: entityErr } = await supabase
-      .from("entities")
-      .select("id, name")
-      .ilike("name", "%Versatile%")
-      .eq("is_active", true)
-      .limit(1);
+    // Look up every entity we snapshot (Versatile, Silverco, …)
+    const entityRows: { id: string; name: string }[] = [];
+    for (const pattern of SNAPSHOT_ENTITY_PATTERNS) {
+      const { data: rows } = await supabase
+        .from("entities")
+        .select("id, name")
+        .ilike("name", pattern)
+        .eq("is_active", true)
+        .limit(1);
+      if (rows?.[0]) entityRows.push(rows[0]);
+    }
 
-    if (entityErr || !entities || entities.length === 0) {
+    if (entityRows.length === 0) {
       return NextResponse.json(
-        { error: "Versatile entity not found", detail: entityErr?.message },
+        { error: "No snapshot entities found" },
         { status: 404 }
       );
     }
 
-    const entityId = entities[0].id;
-    const entityName = entities[0].name;
+    // Fetch raw data from RentalWorks API once, then process per entity.
+    const rwData = await fetchRentalWorksRevenueData();
 
-    // Fetch raw data from RentalWorks API
-    const { invoices, orders, quotes } = await fetchRentalWorksRevenueData();
+    const summaries = [];
+    for (const entity of entityRows) {
+      const summary = await snapshotEntity(supabase, today, entity, rwData);
+      summaries.push(summary);
+      if ("error" in summary) {
+        return NextResponse.json(summary, { status: 500 });
+      }
+    }
 
-    // Process through the same pipeline as the dashboard
-    const result = processRevenueData(invoices, orders, quotes, "invoice_date");
+    return NextResponse.json({ success: true, snapshotDate: today, entities: summaries });
+  } catch (err) {
+    console.error("POST /api/rw-revenue/snapshot error:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
 
+// Process and persist one entity's revenue snapshot for the given date.
+async function snapshotEntity(
+  supabase: ReturnType<typeof createAdminClient>,
+  today: string,
+  entity: { id: string; name: string },
+  rwData: RentalWorksRevenueData,
+) {
+  const entityId = entity.id;
+  const entityName = entity.name;
+  const { invoices, orders, quotes } = rwData;
+
+  // Process through the same pipeline as the dashboard, with this entity's filter
+  const result = processRevenueData(
+    invoices,
+    orders,
+    quotes,
+    "invoice_date",
+    getRevenueFilterForEntity(entityName),
+  );
+
+  try {
     // Upsert the main snapshot row
     const { data: snapshot, error: snapErr } = await supabase
       .from("rw_revenue_snapshots")
@@ -67,10 +116,11 @@ export async function POST(request: Request) {
       .single();
 
     if (snapErr) {
-      return NextResponse.json(
-        { error: "Failed to upsert snapshot", detail: snapErr.message },
-        { status: 500 }
-      );
+      return {
+        error: "Failed to upsert snapshot",
+        entity: entityName,
+        detail: snapErr.message,
+      };
     }
 
     // Delete existing month rows for this snapshot date (for idempotent upsert)
@@ -146,10 +196,8 @@ export async function POST(request: Request) {
       // Non-fatal — RW snapshot is already saved
     }
 
-    return NextResponse.json({
-      success: true,
+    return {
       entity: entityName,
-      snapshotDate: today,
       snapshotId: snapshot.id,
       kpis: {
         ytdRevenue: result.ytdRevenue,
@@ -159,12 +207,12 @@ export async function POST(request: Request) {
         quoteOpportunities: result.quoteOpportunities,
       },
       monthsRecorded: monthRows.length,
-    });
+    };
   } catch (err) {
-    console.error("POST /api/rw-revenue/snapshot error:", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Internal server error" },
-      { status: 500 }
-    );
+    console.error(`Snapshot error for ${entityName}:`, err);
+    return {
+      error: err instanceof Error ? err.message : "Internal server error",
+      entity: entityName,
+    };
   }
 }
