@@ -43,6 +43,7 @@ import {
   INQUIRY_STATUSES,
   STATUS_LABELS,
   visibleThreadMessages,
+  messageSide,
   fmtMoney,
 } from "@/lib/inquiries/shared";
 
@@ -585,7 +586,7 @@ export default function InquiryDetailPage() {
             </p>
           )}
           {thread.map((m) => {
-            const outbound = m.direction === "outbound";
+            const outbound = messageSide(m, inquiry.email) === "us";
             const evs = eventsByMessage.get(m.id);
             const recipients = [
               m.to_addrs?.length ? `To ${m.to_addrs.join(", ")}` : "",
