@@ -197,6 +197,9 @@ export function getEntityFeatures(entityName: string | undefined): Set<EntityFea
     features.add("rebates");
     features.add("revenue_projection");
   }
+  if (entityName?.includes("Silverco")) {
+    features.add("revenue_projection");
+  }
   if (entityName?.includes("Hollywood")) {
     features.add("inquiries");
   }

@@ -63,6 +63,8 @@ import {
   EQUIPMENT_TYPE_LABELS,
   processRevenueData,
   getMonthKey,
+  getRevenueFilterForEntity,
+  type EntityRevenueFilter,
   type RevenueProjectionResponse,
   type ClosedInvoice,
   type MonthlyRevenue,
@@ -254,9 +256,61 @@ function EquipmentTooltip({ active, payload }: { active?: boolean; payload?: Arr
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export default function RevenueProjectionPage({ entityId: entityIdProp, isEmbed, defaultTab }: { entityId?: string; isEmbed?: boolean; defaultTab?: string } = {}) {
+export default function RevenueProjectionPage({
+  entityId: entityIdProp,
+  isEmbed,
+  defaultTab,
+  revenueFilter: revenueFilterProp,
+  entityLabel,
+}: {
+  entityId?: string;
+  isEmbed?: boolean;
+  defaultTab?: string;
+  /** Entity record-prefix filter. When omitted, it's resolved from entity name. */
+  revenueFilter?: EntityRevenueFilter;
+  /** Display name for headings/exports. When omitted, it's fetched by entityId. */
+  entityLabel?: string;
+} = {}) {
   const params = useParams();
   const entityId = entityIdProp || (params.entityId as string);
+
+  // Resolve the entity's display name. Embeds pass it explicitly; the direct
+  // /[entityId]/revenue-projection route looks it up so the correct record
+  // prefix filter (Versatile "V" vs Silverco "AS"/"AC") is applied.
+  const [resolvedEntityName, setResolvedEntityName] = useState<string | null>(
+    entityLabel ?? null,
+  );
+  useEffect(() => {
+    if (entityLabel) {
+      setResolvedEntityName(entityLabel);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const supabase = createSupabaseClient();
+        const { data: row } = await supabase
+          .from("entities")
+          .select("name")
+          .eq("id", entityId)
+          .single();
+        if (!cancelled) {
+          setResolvedEntityName((row as { name?: string } | null)?.name ?? null);
+        }
+      } catch {
+        // non-fatal — falls back to the default Versatile filter/label
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [entityId, entityLabel]);
+
+  const revenueFilter = useMemo(
+    () => revenueFilterProp ?? getRevenueFilterForEntity(resolvedEntityName),
+    [revenueFilterProp, resolvedEntityName],
+  );
+  const displayName = entityLabel ?? resolvedEntityName ?? "Versatile";
 
   // Raw rows from the API — cached so we can re-process client-side on mode change
   const [rawInvoices, setRawInvoices] = useState<RWInvoiceRow[] | null>(null);
@@ -320,15 +374,15 @@ export default function RevenueProjectionPage({ entityId: entityIdProp, isEmbed,
   // Derive processed data client-side — instant on date mode switch
   const data = useMemo(() => {
     if (!rawInvoices || !rawOrders || !rawQuotes) return null;
-    return processRevenueData(rawInvoices, rawOrders, rawQuotes, dateMode);
-  }, [rawInvoices, rawOrders, rawQuotes, dateMode]);
+    return processRevenueData(rawInvoices, rawOrders, rawQuotes, dateMode, revenueFilter);
+  }, [rawInvoices, rawOrders, rawQuotes, dateMode, revenueFilter]);
 
   // Accruals tab always uses invoice_date mode
   const accrualData = useMemo(() => {
     if (!rawInvoices || !rawOrders || !rawQuotes) return null;
     if (dateMode === "invoice_date") return data;
-    return processRevenueData(rawInvoices, rawOrders, rawQuotes, "invoice_date");
-  }, [rawInvoices, rawOrders, rawQuotes, dateMode, data]);
+    return processRevenueData(rawInvoices, rawOrders, rawQuotes, "invoice_date", revenueFilter);
+  }, [rawInvoices, rawOrders, rawQuotes, dateMode, data, revenueFilter]);
 
   // Derive unique months from invoices for filter dropdown
   // In rental_period mode, include all months that any invoice spans via allocations
@@ -788,7 +842,7 @@ export default function RevenueProjectionPage({ entityId: entityIdProp, isEmbed,
         .eq("id", entityId)
         .single();
       const entityName =
-        (entityRow as { name?: string } | null)?.name ?? "Versatile";
+        (entityRow as { name?: string } | null)?.name ?? displayName;
 
       const showAllocation =
         dateMode === "rental_period" && invoiceMonthFilter !== "all";
@@ -984,6 +1038,7 @@ export default function RevenueProjectionPage({ entityId: entityIdProp, isEmbed,
     invoiceMonths,
     dateMode,
     entityId,
+    displayName,
   ]);
 
   if (loading && !data) {
@@ -1029,7 +1084,7 @@ export default function RevenueProjectionPage({ entityId: entityIdProp, isEmbed,
         <div>
           <h1 className="text-2xl font-bold">Revenue Projection</h1>
           <p className="text-muted-foreground text-sm">
-            Versatile — RentalWorks invoices, orders & quotes
+            {displayName} — RentalWorks invoices, orders & quotes
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -1782,7 +1837,7 @@ export default function RevenueProjectionPage({ entityId: entityIdProp, isEmbed,
                   <CardTitle>Open Orders</CardTitle>
                   <CardDescription>
                     {pipelineMonthFilter === "all"
-                      ? "Active Versatile orders from RentalWorks"
+                      ? `Active ${displayName} orders from RentalWorks`
                       : dateMode === "rental_period"
                         ? "Pipeline allocated by rental period (pro-rata)"
                         : dateMode === "billing_date"

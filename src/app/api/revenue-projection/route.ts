@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
-import { processRevenueData } from "@/lib/utils/revenue-projection";
+import {
+  processRevenueData,
+  getRevenueFilterForEntity,
+} from "@/lib/utils/revenue-projection";
 import { fetchRentalWorksRevenueData } from "@/lib/rentalworks/fetch-revenue-data";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const maxDuration = 60;
 
@@ -16,6 +20,17 @@ export async function POST(request: Request) {
       );
     }
 
+    // Resolve the entity's record-prefix filter from its name
+    const supabase = createAdminClient();
+    const { data: entityRow } = await supabase
+      .from("entities")
+      .select("name")
+      .eq("id", entityId)
+      .single();
+    const filter = getRevenueFilterForEntity(
+      (entityRow as { name?: string } | null)?.name,
+    );
+
     const { invoices, orders, quotes } = await fetchRentalWorksRevenueData();
 
     // Process with default invoice_date mode; client will re-process for other modes
@@ -24,6 +39,7 @@ export async function POST(request: Request) {
       orders,
       quotes,
       "invoice_date",
+      filter,
     );
 
     return NextResponse.json({
