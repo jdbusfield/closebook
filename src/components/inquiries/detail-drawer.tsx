@@ -507,9 +507,9 @@ export function ActivityTimeline({
                 onClick={() => onDeleteActivity(e.activity.id)}
                 title="Remove this activity"
                 aria-label="Remove this activity"
-                className="shrink-0 self-start rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+                className="shrink-0 self-start rounded p-1 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
               >
-                <Trash2 className="size-3.5" />
+                <Trash2 className="size-4" />
               </button>
             </div>
           )
