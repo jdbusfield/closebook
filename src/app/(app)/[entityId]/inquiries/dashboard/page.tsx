@@ -355,6 +355,7 @@ export default function InquiriesDashboardPage() {
         entityId={entityId}
         onClose={() => setSelectedId(null)}
         callbacks={callbacks}
+        actor={data.actor}
       />
     </div>
   );

@@ -149,6 +149,7 @@ export default function InquiriesCustomersPage() {
         entityId={entityId}
         onClose={() => setSelectedId(null)}
         callbacks={callbacks}
+        actor={data.actor}
       />
     </div>
   );
