@@ -410,9 +410,10 @@ export function daysStale(inq: Inquiry): number {
   return Math.max(0, daysBetween(last, today()));
 }
 
-// Calendar-eligible: assigned a unit AND in a booked stage with parseable dates.
+// A booked rental with dates — drives the dashboard's delivery/pickup schedule.
+// (Unit assignment was removed, so it's no longer part of the predicate.)
 export function isReservation(inq: Inquiry): boolean {
-  return !!inq.unit_id && isBookedStatus(inq.status) && !!parseDate(inq.start_date);
+  return isBookedStatus(inq.status) && !!parseDate(inq.start_date);
 }
 
 // Full timestamp parse that PRESERVES the time of day (unlike parseDate, which

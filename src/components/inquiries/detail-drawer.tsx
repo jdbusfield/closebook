@@ -37,8 +37,6 @@ import {
   type InquiryActivity,
   type InquiryMessage,
   STAGES,
-  FLEET,
-  FLEET_BY_ID,
   fmtMoney,
   fmtDateTime,
   fmtRange,
@@ -53,7 +51,6 @@ import {
 
 export interface DrawerCallbacks {
   onMove: (id: string, status: InquiryStatus) => void;
-  onAssignUnit: (id: string, unitId: string | null) => void;
   onSetValue: (id: string, value: number | null) => void;
   onAddTask: (id: string, title: string, kind?: InquiryTask["kind"]) => void;
   onToggleTask: (taskId: string, done: boolean) => void;
@@ -240,57 +237,6 @@ export function ContactGrid({
           <KV k="RW order" v={inquiry.rw_order_number} mono />
         </>
       )}
-    </div>
-  );
-}
-
-// --- Fleet-unit assignment -------------------------------------------------
-export function UnitAssign({
-  inquiry,
-  onAssignUnit,
-}: {
-  inquiry: Inquiry;
-  onAssignUnit: DrawerCallbacks["onAssignUnit"];
-}) {
-  return (
-    <div>
-      <div className="flex flex-wrap gap-1.5">
-        <button
-          onClick={() => onAssignUnit(inquiry.id, null)}
-          className="rounded-full border bg-background px-2.5 py-1 text-xs"
-          style={
-            !inquiry.unit_id
-              ? { borderColor: "#2845F0", borderWidth: 1.5 }
-              : undefined
-          }
-        >
-          None
-        </button>
-        {FLEET.map((u) => {
-          const active = inquiry.unit_id === u.id;
-          return (
-            <button
-              key={u.id}
-              onClick={() => onAssignUnit(inquiry.id, u.id)}
-              className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-xs font-semibold"
-              style={{
-                background: active ? hexA(u.color, 0.1) : "#fff",
-                color: active ? u.color : "var(--muted-foreground)",
-                borderColor: active ? u.color : "var(--border)",
-                borderWidth: active ? 1.5 : 1,
-              }}
-            >
-              <span className="size-1.5 rounded-full" style={{ background: u.color }} />
-              {u.name}
-            </button>
-          );
-        })}
-      </div>
-      <p className="mt-2 text-xs text-muted-foreground">
-        {inquiry.unit_id && FLEET_BY_ID[inquiry.unit_id]
-          ? `${FLEET_BY_ID[inquiry.unit_id].config} · ${FLEET_BY_ID[inquiry.unit_id].note}`
-          : "Assign a unit to place this rental on the calendar."}
-      </p>
     </div>
   );
 }
@@ -617,10 +563,6 @@ export function InquiryDrawer({
 
               <Section title="Event & contact">
                 <ContactGrid inquiry={inquiry} onSetValue={callbacks.onSetValue} />
-              </Section>
-
-              <Section title="Assigned unit">
-                <UnitAssign inquiry={inquiry} onAssignUnit={callbacks.onAssignUnit} />
               </Section>
 
               <Section title="Tasks & reminders">

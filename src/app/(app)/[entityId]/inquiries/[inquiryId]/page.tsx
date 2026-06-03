@@ -38,7 +38,6 @@ import { ArrowLeft, ArrowDownLeft, ArrowUpRight, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { StatusBadge } from "../status-badge";
 import { SectionTabs } from "@/components/inquiries/section-tabs";
-import { UnitTag } from "@/components/inquiries/atoms";
 import {
   INQUIRY_STATUSES,
   STATUS_LABELS,
@@ -427,10 +426,6 @@ export default function InquiryDetailPage() {
             />
             <Field label="Attendant" value={inquiry.attendant} />
             <Field label="Guest count" value={inquiry.guests} />
-            <Field
-              label="Assigned unit"
-              value={<UnitTag unitId={inquiry.unit_id} />}
-            />
             <Field
               label="Est. value"
               value={
