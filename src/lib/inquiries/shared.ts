@@ -261,6 +261,61 @@ export function messageDate(m: InquiryMessage): string {
   return m.sent_at || m.received_at || m.created_at;
 }
 
+// Convert simple HTML email markup to readable plain text (block tags → newlines).
+function htmlToText(html: string): string {
+  return html
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\/\s*(p|div|tr|li|h[1-6]|blockquote)\s*>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#3[49];/g, "'")
+    .replace(/[ \t]+\n/g, "\n");
+}
+
+// Full email body for the chat view: strips the quoted reply history and
+// forwarded headers so each bubble shows only its own new content (keeps the
+// sender's own text + signature). Prefers plain text, falls back to HTML.
+export function emailBodyText(m: {
+  body_text: string | null;
+  body_html: string | null;
+}): string {
+  let raw =
+    m.body_text && m.body_text.trim()
+      ? m.body_text
+      : m.body_html
+        ? htmlToText(m.body_html)
+        : "";
+  raw = raw.replace(/\r\n/g, "\n");
+  const lines = raw.split("\n");
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (/^on\b.*\bwrote:?\s*$/i.test(t)) break; // Gmail/Apple quote header
+    if (/^-{2,}\s*original message\s*-{2,}/i.test(t)) break; // Outlook
+    if (/^_{5,}$/.test(t)) break; // Outlook divider
+    if (/^from:\s/i.test(t) && out.some((l) => l.trim() !== "")) break; // forwarded block
+    if (t.startsWith(">")) break; // quoted history begins
+    out.push(lines[i]);
+  }
+  let text = out.join("\n");
+  text = text.replace(/\n-- \n[\s\S]*$/, ""); // drop standard signature delimiter block
+  return text.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+// Display name from an email address (capitalized local part), e.g.
+// daniel@hollywooddepot.com → "Daniel".
+export function addressName(addr: string | null | undefined): string | null {
+  if (!addr) return null;
+  const local = addr.split("@")[0];
+  if (!local) return null;
+  const cleaned = local.replace(/[._-]+/g, " ").replace(/\d+/g, "").trim();
+  return cleaned ? cleaned.replace(/\b\w/g, (c) => c.toUpperCase()) : null;
+}
+
 // Our staff email domains. The inbound-email worker can only stamp `direction`
 // from whatever single domain it knows, so staff who reply from a *different*
 // brand domain (e.g. daniel@hollywooddepot.com vs sales@hdrsiteservices.com) get
