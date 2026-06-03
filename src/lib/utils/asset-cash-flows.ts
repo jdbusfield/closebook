@@ -17,15 +17,32 @@
 
 import type { PeriodBucket } from "@/lib/utils/dates";
 
+/** One subledger line behind a bucket's additions or disposals (for drill-down). */
+export interface AssetCashFlowDetail {
+  entityId: string;
+  /** Asset name (with tag in parentheses when present). */
+  assetName: string;
+  /** "YYYY-MM-DD" event date (acquisition or disposal). */
+  date: string;
+  /** Signed cash amount: purchases negative (cash out), proceeds positive (cash in). */
+  amount: number;
+}
+
 export interface AssetCashFlows {
   /** Gross capital expenditures (positive magnitude) keyed by bucket.key */
   additionsByBucket: Record<string, number>;
   /** Gross proceeds from disposals (positive magnitude) keyed by bucket.key */
   disposalProceedsByBucket: Record<string, number>;
+  /** Per-asset acquisition detail behind each bucket's additions (amount = cash out, negative). */
+  additionsDetailByBucket: Record<string, AssetCashFlowDetail[]>;
+  /** Per-asset disposal detail behind each bucket's proceeds (amount = cash in, positive). */
+  disposalsDetailByBucket: Record<string, AssetCashFlowDetail[]>;
 }
 
 interface FixedAssetRow {
   entity_id: string;
+  asset_name: string | null;
+  asset_tag: string | null;
   acquisition_date: string | null;
   acquisition_cost: number | string | null;
   disposed_date: string | null;
@@ -54,13 +71,22 @@ export async function fetchAssetCashFlows(
 ): Promise<AssetCashFlows> {
   const additionsByBucket: Record<string, number> = {};
   const disposalProceedsByBucket: Record<string, number> = {};
+  const additionsDetailByBucket: Record<string, AssetCashFlowDetail[]> = {};
+  const disposalsDetailByBucket: Record<string, AssetCashFlowDetail[]> = {};
   for (const b of buckets) {
     additionsByBucket[b.key] = 0;
     disposalProceedsByBucket[b.key] = 0;
+    additionsDetailByBucket[b.key] = [];
+    disposalsDetailByBucket[b.key] = [];
   }
 
   if (entityIds.length === 0 || buckets.length === 0) {
-    return { additionsByBucket, disposalProceedsByBucket };
+    return {
+      additionsByBucket,
+      disposalProceedsByBucket,
+      additionsDetailByBucket,
+      disposalsDetailByBucket,
+    };
   }
 
   // Date window spanning all requested buckets, used to limit the query.
@@ -89,7 +115,7 @@ export async function fetchAssetCashFlows(
   for (;;) {
     const { data, error } = await admin
       .from("fixed_assets")
-      .select("entity_id, acquisition_date, acquisition_cost, disposed_date, disposed_sale_price")
+      .select("entity_id, asset_name, asset_tag, acquisition_date, acquisition_cost, disposed_date, disposed_sale_price")
       .in("entity_id", entityIds)
       .or(
         `and(acquisition_date.gte.${minDate},acquisition_date.lt.${maxDateExclusive}),` +
@@ -105,15 +131,35 @@ export async function fetchAssetCashFlows(
     const rows = (data ?? []) as FixedAssetRow[];
 
     for (const row of rows) {
+      const label =
+        (row.asset_name ?? "Asset") + (row.asset_tag ? ` (${row.asset_tag})` : "");
       const acq = ymOf(row.acquisition_date);
       if (acq) {
         const cost = Number(row.acquisition_cost ?? 0) || 0;
-        if (cost !== 0) for (const k of bucketsForMonth(acq)) additionsByBucket[k] += cost;
+        if (cost !== 0)
+          for (const k of bucketsForMonth(acq)) {
+            additionsByBucket[k] += cost;
+            additionsDetailByBucket[k].push({
+              entityId: row.entity_id,
+              assetName: label,
+              date: (row.acquisition_date ?? "").split("T")[0],
+              amount: -cost, // cash out
+            });
+          }
       }
       const disp = ymOf(row.disposed_date);
       if (disp) {
         const proceeds = Number(row.disposed_sale_price ?? 0) || 0;
-        if (proceeds !== 0) for (const k of bucketsForMonth(disp)) disposalProceedsByBucket[k] += proceeds;
+        if (proceeds !== 0)
+          for (const k of bucketsForMonth(disp)) {
+            disposalProceedsByBucket[k] += proceeds;
+            disposalsDetailByBucket[k].push({
+              entityId: row.entity_id,
+              assetName: label,
+              date: (row.disposed_date ?? "").split("T")[0],
+              amount: proceeds, // cash in
+            });
+          }
       }
     }
 
@@ -121,5 +167,10 @@ export async function fetchAssetCashFlows(
     offset += PAGE_SIZE;
   }
 
-  return { additionsByBucket, disposalProceedsByBucket };
+  return {
+    additionsByBucket,
+    disposalProceedsByBucket,
+    additionsDetailByBucket,
+    disposalsDetailByBucket,
+  };
 }

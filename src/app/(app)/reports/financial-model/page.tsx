@@ -18,6 +18,10 @@ import { ConfigToolbar } from "@/components/financial-statements/config-toolbar"
 import { useFinancialStatements } from "@/components/financial-statements/use-financial-statements";
 import { useDrillDown } from "@/components/financial-statements/use-drill-down";
 import { DrillDownDialog } from "@/components/financial-statements/drill-down-dialog";
+import {
+  DerivationDialog,
+  type DerivationCellInfo,
+} from "@/components/financial-statements/derivation-dialog";
 import { filterForEbitdaOnly } from "@/components/financial-statements/format-utils";
 import { usePrintFitToPage } from "@/components/financial-statements/use-print-fit-to-page";
 import { ProFormaTab } from "@/components/financial-statements/pro-forma-tab";
@@ -250,6 +254,9 @@ export default function FinancialModelPage() {
 
   const { data, loading, error, stale, generate } = useFinancialStatements(config, !!canFetch, true);
   const drillDown = useDrillDown(config);
+  const [derivationCell, setDerivationCell] = useState<DerivationCellInfo | null>(
+    null
+  );
   usePrintFitToPage();
 
   // When a template is loaded, set this flag so the next render — once
@@ -270,6 +277,12 @@ export default function FinancialModelPage() {
       columnType: "actual" | "budget",
       amount: number
     ) => {
+      // Derived cash-flow lines (e.g. the investing reconciling line) carry their
+      // own build-up rather than mapping to a single GL account — show that instead.
+      if (line.derivation) {
+        setDerivationCell({ line, periodKey, periodLabel, columnType });
+        return;
+      }
       drillDown.openDrillDown(line, periodKey, periodLabel, columnType, amount, statementId);
     };
   }
@@ -1051,6 +1064,15 @@ export default function FinancialModelPage() {
         data={drillDown.data}
         error={drillDown.error}
         cellInfo={drillDown.cellInfo}
+      />
+
+      {/* Derivation dialog (build-up for derived cash-flow lines) */}
+      <DerivationDialog
+        open={derivationCell !== null}
+        onOpenChange={(open) => {
+          if (!open) setDerivationCell(null);
+        }}
+        cellInfo={derivationCell}
       />
     </div>
   );

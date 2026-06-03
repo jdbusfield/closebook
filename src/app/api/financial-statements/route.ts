@@ -33,6 +33,7 @@ import type {
   FinancialStatementsResponse,
   Granularity,
   Scope,
+  CashFlowDerivation,
 } from "@/components/financial-statements/types";
 
 // ---------------------------------------------------------------------------
@@ -2258,9 +2259,14 @@ function buildCashFlowStatement(
   );
   const investingTotal: Record<string, number> = {};
   const pyInvestingTotal: Record<string, number> = {};
+  // Per-account carrying-value change (−ΔNBV) per bucket, for the recon drill-down.
+  const carryingDetailByBucket: Record<string, { label: string; amount: number }[]> = {};
+  const carryingChangeByBucket: Record<string, number> = {};
   for (const bucket of buckets) {
     investingTotal[bucket.key] = 0;
     pyInvestingTotal[bucket.key] = 0;
+    carryingDetailByBucket[bucket.key] = [];
+    carryingChangeByBucket[bucket.key] = 0;
   }
   for (const account of investingAssets) {
     const bucketed = aggregated.get(account.id);
@@ -2270,6 +2276,10 @@ function buildCashFlowStatement(
         (bucketed?.endingBalance[bucket.key] ?? 0) -
         (bucketed?.beginningBalance[bucket.key] ?? 0);
       investingTotal[bucket.key] += -change;
+      carryingChangeByBucket[bucket.key] += -change;
+      if (Math.abs(change) > 0.5) {
+        carryingDetailByBucket[bucket.key].push({ label: account.name, amount: -change });
+      }
       if (hasPY) {
         const pyChange =
           (pyBucketed?.endingBalance[bucket.key] ?? 0) -
@@ -2306,6 +2316,82 @@ function buildCashFlowStatement(
   const anyNonZero = (m: Record<string, number>) =>
     buckets.some((b) => Math.abs(m[b.key] ?? 0) > 0.5);
 
+  // --- Derivation build-ups (shown when a month cell is clicked) ---
+  const additionsDetail = assetCashFlows?.additionsDetailByBucket ?? {};
+  const disposalsDetail = assetCashFlows?.disposalsDetailByBucket ?? {};
+
+  const purchasesDerivation: CashFlowDerivation = {
+    description:
+      "Gross capital expenditures sourced directly from the fixed-asset subledger — every asset whose acquisition date falls in the period, recorded at its acquisition cost (a cash outflow).",
+    byPeriod: {},
+  };
+  const proceedsDerivation: CashFlowDerivation = {
+    description:
+      "Gross proceeds from disposals sourced directly from the fixed-asset subledger — every asset whose disposal date falls in the period, recorded at its sale price (a cash inflow).",
+    byPeriod: {},
+  };
+  const reconDerivation: CashFlowDerivation = {
+    description:
+      "A balancing line that keeps Investing tied to the balance sheet. It equals the general-ledger change in the carrying value of property & equipment, MINUS the depreciation already added back in Operating, MINUS the purchases and disposal proceeds itemized on the lines above. What remains is non-cash and timing activity — depreciation embedded in net-asset accounts, gain/loss on disposal, transfers, and any subledger-vs-general-ledger differences.",
+    byPeriod: {},
+  };
+  for (const bucket of buckets) {
+    const k = bucket.key;
+    purchasesDerivation.byPeriod[k] = {
+      total: purchaseAmounts[k] ?? 0,
+      components: [
+        {
+          label: "Property & equipment acquired in the period (subledger)",
+          amount: purchaseAmounts[k] ?? 0,
+          detail: (additionsDetail[k] ?? []).map((d) => ({
+            label: d.assetName,
+            meta: d.date,
+            amount: d.amount,
+          })),
+        },
+      ],
+    };
+    proceedsDerivation.byPeriod[k] = {
+      total: proceedsAmounts[k] ?? 0,
+      components: [
+        {
+          label: "Property & equipment disposed in the period (subledger)",
+          amount: proceedsAmounts[k] ?? 0,
+          detail: (disposalsDetail[k] ?? []).map((d) => ({
+            label: d.assetName,
+            meta: d.date,
+            amount: d.amount,
+          })),
+        },
+      ],
+    };
+    reconDerivation.byPeriod[k] = {
+      total: reconAmounts[k] ?? 0,
+      components: [
+        {
+          label: "Change in carrying value of property & equipment (per general ledger)",
+          amount: carryingChangeByBucket[k] ?? 0,
+          detail: (carryingDetailByBucket[k] ?? []).map((d) => ({
+            label: d.label,
+            amount: d.amount,
+          })),
+        },
+        {
+          label: "Depreciation & amortization in carrying value (non-cash; added back in Operating)",
+          amount: -(depreciationByBucket[k] ?? 0),
+        },
+        {
+          label: "Purchases of property & equipment (itemized on the line above)",
+          amount: -(purchaseAmounts[k] ?? 0),
+        },
+        {
+          label: "Proceeds from disposal (itemized on the line above)",
+          amount: -(proceedsAmounts[k] ?? 0),
+        },
+      ],
+    };
+  }
+
   const investingLines: LineItem[] = [];
   if (anyNonZero(purchaseAmounts)) {
     investingLines.push({
@@ -2320,6 +2406,7 @@ function buildCashFlowStatement(
       isSeparator: false,
       showDollarSign: false,
       drillDownMeta: { type: "none" },
+      derivation: purchasesDerivation,
     });
   }
   if (anyNonZero(proceedsAmounts)) {
@@ -2335,6 +2422,7 @@ function buildCashFlowStatement(
       isSeparator: false,
       showDollarSign: false,
       drillDownMeta: { type: "none" },
+      derivation: proceedsDerivation,
     });
   }
   investingLines.push({
@@ -2349,6 +2437,7 @@ function buildCashFlowStatement(
     isSeparator: false,
     showDollarSign: false,
     drillDownMeta: { type: "none" },
+    derivation: reconDerivation,
   });
 
   // Dynamic subtotal label — "provided by" when the net is a source.

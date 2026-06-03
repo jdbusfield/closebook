@@ -31,6 +31,37 @@ export interface DrillDownMeta {
   statementType?: "income_statement" | "balance_sheet" | "cash_flow";
 }
 
+/** One sub-line of detail behind a derivation component (e.g. an account or asset). */
+export interface DerivationDetailRow {
+  label: string;
+  /** Secondary descriptor shown muted (e.g. a date or account number). */
+  meta?: string;
+  amount: number;
+}
+
+/** One signed component in a derived cash-flow line's build-up. */
+export interface DerivationComponent {
+  label: string;
+  amount: number;
+  /** Optional itemized detail (accounts / assets) that sums to `amount`. */
+  detail?: DerivationDetailRow[];
+}
+
+/**
+ * Explains how a derived (non-account) cash-flow line is computed, per period.
+ * Attached to lines whose value is a formula of other figures rather than a
+ * single general-ledger account, so a cell click can show the build-up.
+ */
+export interface CashFlowDerivation {
+  /** Plain-language description of the formula. */
+  description: string;
+  /** Per-period (Period.key) build-up; components sum to `total`. */
+  byPeriod: Record<
+    string,
+    { components: DerivationComponent[]; total: number }
+  >;
+}
+
 /** A single row in a financial statement */
 export interface LineItem {
   id: string;
@@ -50,6 +81,8 @@ export interface LineItem {
   showDollarSign: boolean;  // Show $ on this row
   varianceInvertColor?: boolean;  // When true, positive variance is unfavorable (expense items)
   drillDownMeta?: DrillDownMeta;
+  /** For derived cash-flow lines: how the value is built up (shown on cell click). */
+  derivation?: CashFlowDerivation;
 }
 
 /** A group of line items under a section header */

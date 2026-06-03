@@ -221,6 +221,8 @@ export function StatementTable({
   let stripeIndex = 0;
 
   function isDrillable(line: LineItem): boolean {
+    // Derived cash-flow lines carry their own build-up rather than a GL account.
+    if (line.derivation) return true;
     const meta = line.drillDownMeta;
     return !!meta && meta.type !== "percentage" && meta.type !== "none";
   }
