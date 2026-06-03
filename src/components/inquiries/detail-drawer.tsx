@@ -418,12 +418,14 @@ export function ActivityTimeline({
   entityId,
   onAddActivity,
   onDeleteActivity,
+  onSetValue,
   actor = "You",
 }: {
   inquiry: Inquiry;
   entityId: string;
   onAddActivity: DrawerCallbacks["onAddActivity"];
   onDeleteActivity: DrawerCallbacks["onDeleteActivity"];
+  onSetValue?: DrawerCallbacks["onSetValue"];
   actor?: string;
 }) {
   const [type, setType] = useState<InquiryActivity["type"]>("note");
@@ -476,10 +478,12 @@ export function ActivityTimeline({
         ))}
         <div className="ml-auto">
           <TemplatePicker
+            key={inquiry.id}
             inquiry={inquiry}
             entityId={entityId}
             rep={actor}
             onLog={(t, body) => onAddActivity(inquiry.id, t, body)}
+            onSetValue={onSetValue}
           />
         </div>
       </div>
@@ -594,6 +598,7 @@ export function InquiryDrawer({
                   entityId={entityId}
                   onAddActivity={callbacks.onAddActivity}
                   onDeleteActivity={callbacks.onDeleteActivity}
+                  onSetValue={callbacks.onSetValue}
                   actor={actor}
                 />
               </Section>
