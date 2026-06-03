@@ -1,17 +1,15 @@
 "use client";
 
-// Inquiries → Templates: manage the follow-up copy reps send. Edit any default,
-// add custom templates, hide ones you don't use, and visualize each message
-// exactly as the customer will see it (email envelope / text bubble / call
-// script) with the merge fields filled from a sample lead. Edits persist per
-// entity and immediately drive the deal-drawer template picker.
+// Inquiries → Templates: manage the follow-up emails reps send. Edit any
+// default, add custom templates, hide ones you don't use, and visualize each
+// email exactly as the customer will see it, with the merge fields (including
+// {details} — everything they submitted) filled from a sample lead. Edits
+// persist per entity and immediately drive the deal-drawer template picker.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   Mail,
-  MessageSquare,
-  Phone,
   Plus,
   Save,
   RotateCcw,
@@ -39,9 +37,7 @@ import {
   type TemplateChannel,
   type TemplateTrack,
   DEFAULT_TEMPLATES,
-  CHANNEL_LABEL,
   TRACK_LABEL,
-  TEMPLATE_CHANNELS,
   TEMPLATE_TRACKS,
   MERGE_FIELDS,
   renderTemplate,
@@ -52,12 +48,6 @@ import {
   LOST_STAGE,
   STATUS_LABELS,
 } from "@/lib/inquiries/shared";
-
-const CHANNEL_ICON: Record<TemplateChannel, typeof Mail> = {
-  email: Mail,
-  sms: MessageSquare,
-  call: Phone,
-};
 
 const ALL_STAGES = [...STAGES, LOST_STAGE];
 
@@ -298,7 +288,6 @@ export default function TemplatesPage() {
                     {TRACK_LABEL[g.track]}
                   </div>
                   {g.items.map((t) => {
-                    const Icon = CHANNEL_ICON[t.channel];
                     const active = t.id === selectedKey;
                     return (
                       <button
@@ -308,7 +297,7 @@ export default function TemplatesPage() {
                           active ? "bg-muted" : "hover:bg-muted/50"
                         } ${t.archived ? "opacity-50" : ""}`}
                       >
-                        <Icon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                        <Mail className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-medium">
                             {t.label}
@@ -355,46 +344,25 @@ export default function TemplatesPage() {
             <div className="grid gap-4 xl:grid-cols-2">
               {/* Editor */}
               <div className="space-y-3 rounded-lg border bg-card p-4 shadow-sm">
-                <div className="grid grid-cols-2 gap-3">
-                  <Labeled label="Channel">
-                    <Select
-                      value={draft.channel}
-                      onValueChange={(v) =>
-                        setDraft({ ...draft, channel: v as TemplateChannel })
-                      }
-                    >
-                      <SelectTrigger className="h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {TEMPLATE_CHANNELS.map((c) => (
-                          <SelectItem key={c} value={c}>
-                            {CHANNEL_LABEL[c]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Labeled>
-                  <Labeled label="Track">
-                    <Select
-                      value={draft.track}
-                      onValueChange={(v) =>
-                        setDraft({ ...draft, track: v as TemplateTrack })
-                      }
-                    >
-                      <SelectTrigger className="h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {TEMPLATE_TRACKS.map((t) => (
-                          <SelectItem key={t} value={t}>
-                            {TRACK_LABEL[t]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Labeled>
-                </div>
+                <Labeled label="Track">
+                  <Select
+                    value={draft.track}
+                    onValueChange={(v) =>
+                      setDraft({ ...draft, track: v as TemplateTrack })
+                    }
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TEMPLATE_TRACKS.map((t) => (
+                        <SelectItem key={t} value={t}>
+                          {TRACK_LABEL[t]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Labeled>
 
                 <Labeled label="Name">
                   <Input
@@ -435,18 +403,14 @@ export default function TemplatesPage() {
                   </div>
                 </Labeled>
 
-                {draft.channel === "email" && (
-                  <Labeled label="Subject">
-                    <Input
-                      value={draft.subject}
-                      onChange={(e) =>
-                        setDraft({ ...draft, subject: e.target.value })
-                      }
-                      placeholder="Email subject line…"
-                      className="h-9"
-                    />
-                  </Labeled>
-                )}
+                <Labeled label="Subject">
+                  <Input
+                    value={draft.subject}
+                    onChange={(e) => setDraft({ ...draft, subject: e.target.value })}
+                    placeholder="Email subject line…"
+                    className="h-9"
+                  />
+                </Labeled>
 
                 <Labeled label="Message">
                   <div className="mb-1.5 flex flex-wrap gap-1">
@@ -466,9 +430,16 @@ export default function TemplatesPage() {
                     value={draft.body}
                     onChange={(e) => setDraft({ ...draft, body: e.target.value })}
                     rows={10}
-                    placeholder="Write your message… use the {tokens} above to merge in lead details."
+                    placeholder="Write your email… use the {tokens} above to merge in lead details."
                     className="font-sans text-sm"
                   />
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    <span className="font-mono">{"{details}"}</span> drops in
+                    everything the customer submitted.{" "}
+                    <span className="font-mono">{"{quote}"}</span> turns this email
+                    into a quote — you price it with the builder when sending from a
+                    deal.
+                  </p>
                 </Labeled>
 
                 <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -516,7 +487,7 @@ export default function TemplatesPage() {
                     {SAMPLE_INQUIRY.name}
                   </span>
                 </div>
-                <Preview channel={draft.channel} subject={preview.subject} body={preview.body} />
+                <Preview subject={preview.subject} body={preview.body} />
               </div>
             </div>
           ) : (
@@ -566,72 +537,34 @@ function HideButton({
   );
 }
 
-// Visualizes the rendered message the way the customer receives it.
-function Preview({
-  channel,
-  subject,
-  body,
-}: {
-  channel: TemplateChannel;
-  subject?: string;
-  body: string;
-}) {
-  if (channel === "email") {
-    return (
-      <div className="overflow-hidden rounded-lg border bg-white shadow-sm">
-        <div className="space-y-1 border-b bg-muted/30 px-4 py-3 text-xs">
-          <div className="flex gap-2">
-            <span className="w-12 shrink-0 text-muted-foreground">From</span>
-            <span className="font-medium text-foreground">
-              Hollywood Depot Rentals &lt;sales@hdrsiteservices.com&gt;
-            </span>
-          </div>
-          <div className="flex gap-2">
-            <span className="w-12 shrink-0 text-muted-foreground">To</span>
-            <span className="text-foreground">
-              {SAMPLE_INQUIRY.name} &lt;{SAMPLE_INQUIRY.email}&gt;
-            </span>
-          </div>
-          <div className="flex gap-2">
-            <span className="w-12 shrink-0 text-muted-foreground">Subject</span>
-            <span className="font-semibold text-foreground">
-              {subject || <span className="italic text-muted-foreground">No subject</span>}
-            </span>
-          </div>
-        </div>
-        <div className="whitespace-pre-wrap break-words px-4 py-4 text-sm leading-relaxed text-foreground/90">
-          {body || (
-            <span className="italic text-muted-foreground">Nothing to preview yet.</span>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  if (channel === "sms") {
-    return (
-      <div className="rounded-lg border bg-muted/20 p-4 shadow-sm">
-        <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-          <MessageSquare className="size-3.5" /> Text to {SAMPLE_INQUIRY.phone}
-        </div>
-        <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl rounded-bl-sm bg-primary px-3.5 py-2.5 text-sm text-primary-foreground">
-          {body || "Nothing to preview yet."}
-        </div>
-        <div className="mt-1.5 text-[11px] text-muted-foreground">
-          {body.length} characters · ~{Math.max(1, Math.ceil(body.length / 160))} SMS
-        </div>
-      </div>
-    );
-  }
-
-  // call script
+// Visualizes the rendered email the way the customer receives it.
+function Preview({ subject, body }: { subject?: string; body: string }) {
   return (
-    <div className="rounded-lg border bg-card p-4 shadow-sm">
-      <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-        <Phone className="size-3.5" /> Call talk track
+    <div className="overflow-hidden rounded-lg border bg-white shadow-sm">
+      <div className="space-y-1 border-b bg-muted/30 px-4 py-3 text-xs">
+        <div className="flex gap-2">
+          <span className="w-12 shrink-0 text-muted-foreground">From</span>
+          <span className="font-medium text-foreground">
+            Hollywood Depot Rentals &lt;sales@hdrsiteservices.com&gt;
+          </span>
+        </div>
+        <div className="flex gap-2">
+          <span className="w-12 shrink-0 text-muted-foreground">To</span>
+          <span className="text-foreground">
+            {SAMPLE_INQUIRY.name} &lt;{SAMPLE_INQUIRY.email}&gt;
+          </span>
+        </div>
+        <div className="flex gap-2">
+          <span className="w-12 shrink-0 text-muted-foreground">Subject</span>
+          <span className="font-semibold text-foreground">
+            {subject || <span className="italic text-muted-foreground">No subject</span>}
+          </span>
+        </div>
       </div>
-      <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">
-        {body || "Nothing to preview yet."}
+      <div className="whitespace-pre-wrap break-words px-4 py-4 text-sm leading-relaxed text-foreground/90">
+        {body || (
+          <span className="italic text-muted-foreground">Nothing to preview yet.</span>
+        )}
       </div>
     </div>
   );

@@ -1,18 +1,23 @@
-// Follow-up message templates for the HDR Sales CRM.
+// Follow-up email templates for the HDR Sales CRM.
 //
-// These are the copy "tracks" a rep pulls from when working an inbound Google
-// Ads lead: a cadence of call / text / email touches whose wording is tuned to
+// The copy a rep pulls from when working an inbound Google Ads lead, tuned to
 // the use case (production, construction, event, emergency) and to where the
-// deal sits in the pipeline. Templates are intentionally plain data so they can
-// be edited here without a migration; a future iteration can move them into a
-// table for in-app editing.
+// deal sits in the pipeline. Every template is an email. They're plain data so
+// the Templates page can persist edits as overrides in rental_inquiry_templates.
 //
 // Nothing here sends anything — the picker renders the merge fields, copies the
-// finished message to the clipboard (and offers a mailto compose), and logs the
-// touch to the activity timeline. The rep still sends from their own phone/inbox.
+// finished email to the clipboard (and offers a mailto compose), and logs the
+// touch to the activity timeline. The rep still sends from their own inbox.
 
-import { type Inquiry, type InquiryStatus, fmtDate, fmtMoney } from "./shared";
+import {
+  type Inquiry,
+  type InquiryStatus,
+  fmtDate,
+  fmtRange,
+  fmtMoney,
+} from "./shared";
 
+// Kept as a union for the persisted column, but every template is an email.
 export type TemplateChannel = "email" | "sms" | "call";
 export type TemplateTrack =
   | "production"
@@ -28,8 +33,8 @@ export interface MessageTemplate {
   track: TemplateTrack;
   stages: InquiryStatus[]; // pipeline stages this step belongs to
   cadence?: string; // human hint for when in the sequence this fires
-  subject?: string; // email only
-  body: string; // supports {first} {name} {use_case} {date} {location} {units} {value} {reference} {rep}
+  subject?: string;
+  body: string; // supports the {merge} tokens in MERGE_FIELDS
 }
 
 export const CHANNEL_LABEL: Record<TemplateChannel, string> = {
@@ -46,7 +51,6 @@ export const TRACK_LABEL: Record<TemplateTrack, string> = {
   general: "General",
 };
 
-export const TEMPLATE_CHANNELS: TemplateChannel[] = ["sms", "call", "email"];
 export const TEMPLATE_TRACKS: TemplateTrack[] = [
   "general",
   "production",
@@ -60,17 +64,31 @@ export const TEMPLATE_TRACKS: TemplateTrack[] = [
 // overrides in rental_inquiry_templates, keyed by the ids below).
 // ---------------------------------------------------------------------------
 export const DEFAULT_TEMPLATES: MessageTemplate[] = [
-  // --- Track: Production (film / TV) ---------------------------------------
+  // --- General: quote + recap (the workhorse first reply) ------------------
   {
-    id: "prod-sms-intro",
-    label: "Speed-to-lead text",
-    channel: "sms",
-    track: "production",
-    stages: ["new"],
-    cadence: "Within 5 min of the inquiry",
+    id: "quote-email-builder",
+    label: "Quote — recap + pricing",
+    channel: "email",
+    track: "general",
+    stages: ["new", "quoted"],
+    cadence: "First response — recap their request and price it",
+    subject: "Your Hollywood Depot Rentals quote ({reference})",
     body:
-      "Hi {first}, it's {rep} at Hollywood Depot Rentals — got your request for restroom trailers for your {location} shoot. Are the dates locked? I can hold a luxury unit before it's spoken for. Call/text me here anytime.",
+      "Hi {first},\n\nThanks for reaching out to Hollywood Depot Rentals! Here's a recap of what you sent over:\n\n{details}\n\nBased on that, here's your quote:\n\n{quote}\n\nThis includes delivery, setup, and servicing. The quote is good for 14 days and I'm glad to hold your date while you decide. Want me to lock it in?\n\n— {rep}\nHollywood Depot Rentals · sales@hdrsiteservices.com",
   },
+  {
+    id: "gen-email-intro",
+    label: "Intro + easy reply",
+    channel: "email",
+    track: "general",
+    stages: ["new"],
+    cadence: "Same day, if no live connect",
+    subject: "Your restroom trailer request",
+    body:
+      "Hi {first},\n\nThanks for reaching out to Hollywood Depot Rentals. We rent restroom and shower trailers across Southern California and deliver, set up, and service them for you.\n\nTo get you an accurate quote, just reply with: your dates, the location, and roughly how many people. I can usually turn a number around the same day — and hold a unit while you decide.\n\n— {rep}\nHollywood Depot Rentals · sales@hdrsiteservices.com",
+  },
+
+  // --- Track: Production (film / TV) ---------------------------------------
   {
     id: "prod-email-intro",
     label: "Intro + ballpark",
@@ -85,16 +103,6 @@ export const DEFAULT_TEMPLATES: MessageTemplate[] = [
 
   // --- Track: Construction / job site --------------------------------------
   {
-    id: "con-sms-intro",
-    label: "Speed-to-lead text",
-    channel: "sms",
-    track: "construction",
-    stages: ["new"],
-    cadence: "Within 5 min of the inquiry",
-    body:
-      "{first}, this is {rep} with Hollywood Depot Rentals re: your restroom trailer request for {location}. How many crew on site and how long's the job? I'll get you a compliant setup and a monthly rate today.",
-  },
-  {
     id: "con-email-compliance",
     label: "OSHA-compliant + monthly rate",
     channel: "email",
@@ -108,16 +116,6 @@ export const DEFAULT_TEMPLATES: MessageTemplate[] = [
 
   // --- Track: Events / weddings --------------------------------------------
   {
-    id: "evt-sms-intro",
-    label: "Speed-to-lead text",
-    channel: "sms",
-    track: "event",
-    stages: ["new"],
-    cadence: "Within 5 min of the inquiry",
-    body:
-      "Hi {first}! It's {rep} at Hollywood Depot Rentals — saw your request for a restroom trailer for {date}. That's a popular weekend and units go fast. Want me to hold one for you?",
-  },
-  {
     id: "evt-email-intro",
     label: "Luxury intro + reserve nudge",
     channel: "email",
@@ -129,60 +127,7 @@ export const DEFAULT_TEMPLATES: MessageTemplate[] = [
       "Hi {first},\n\nOur luxury restroom trailers are a guest favorite — climate control, real sinks, and nice finishes (a long way from a porta-potty). For {date} I'd recommend reserving soon, since weekend dates book out.\n\nHappy to send photos and a quote — roughly how many guests are you expecting?\n\n— {rep}\nHollywood Depot Rentals",
   },
 
-  // --- Track: Emergency / disaster / overflow ------------------------------
-  {
-    id: "emg-sms-intro",
-    label: "We have units now",
-    channel: "sms",
-    track: "emergency",
-    stages: ["new"],
-    cadence: "Within minutes",
-    body:
-      "{first}, {rep} at Hollywood Depot Rentals — we have restroom trailers available now and can deliver fast to {location}. Call me and I'll get you scheduled today.",
-  },
-
-  // --- General: works on any track, gated by stage -------------------------
-  {
-    id: "gen-sms-intro",
-    label: "Speed-to-lead text",
-    channel: "sms",
-    track: "general",
-    stages: ["new"],
-    cadence: "Within 5 min of the inquiry",
-    body:
-      "Hi {first}, it's {rep} at Hollywood Depot Rentals — got your request about a restroom trailer for {location}. Quick question to get you the right quote: how many people and what dates? Call or text me right here.",
-  },
-  {
-    id: "gen-email-intro",
-    label: "Intro + easy reply",
-    channel: "email",
-    track: "general",
-    stages: ["new"],
-    cadence: "Same day, if no live connect",
-    subject: "Your restroom trailer request",
-    body:
-      "Hi {first},\n\nThanks for reaching out to Hollywood Depot Rentals. We rent restroom and shower trailers across Southern California and deliver, set up, and service them for you.\n\nTo get you an accurate quote, just reply with: your dates, the location, and roughly how many people. I can usually turn a number around the same day — and hold a unit while you decide.\n\n— {rep}\nHollywood Depot Rentals · sales@hdrsiteservices.com",
-  },
-  {
-    id: "gen-call-script",
-    label: "First-call talk track",
-    channel: "call",
-    track: "general",
-    stages: ["new", "quoted", "followup"],
-    cadence: "Live call attempts",
-    body:
-      "Hi {first}, this is {rep} calling from Hollywood Depot Rentals — you reached out about a restroom trailer. Did I catch you at an OK time?\n\n• What's the event/use and the dates? ({use_case} / {date})\n• Where are we delivering? ({location})\n• How many people, and is power/water on site?\n• Any ADA or shower needs?\n\nGreat — I can get you a firm quote today and hold a unit while you decide. What's the best email for it?",
-  },
-  {
-    id: "quote-sms-followup",
-    label: "Did the quote land?",
-    channel: "sms",
-    track: "general",
-    stages: ["quoted"],
-    cadence: "Day +1 after the quote",
-    body:
-      "Hi {first}, {rep} here — did the quote for {date} come through OK? Happy to walk through it. I can hold your unit through tomorrow before I release it — want me to?",
-  },
+  // --- General: stage-gated follow-ups -------------------------------------
   {
     id: "quote-email-hold",
     label: "Still want me to hold it?",
@@ -269,7 +214,10 @@ export function selectTemplates<T extends MessageTemplate>(
   const status = (inq.status || "new") as InquiryStatus;
   const track = inferTrack(inq);
   const relevant = list.filter(
-    (t) => t.stages.includes(status) && (t.track === track || t.track === "general")
+    (t) =>
+      t.channel === "email" &&
+      t.stages.includes(status) &&
+      (t.track === track || t.track === "general")
   );
   return relevant.sort((a, b) => {
     const at = a.track === track && track !== "general" ? 0 : 1;
@@ -288,12 +236,35 @@ function firstName(name: string | null): string {
   return name.trim().split(/\s+/)[0] || "there";
 }
 
-// Fill the {merge} fields from the inquiry + rep name. Unknown tokens are left
-// visible (e.g. "{foo}") so a typo in a template is obvious rather than silent.
+// A formatted recap of everything the customer submitted through the website —
+// the {details} merge token. Only includes fields that are actually present.
+export function buildDetailsBlock(inq: Inquiry): string {
+  const lines: string[] = [];
+  if (inq.use_case) lines.push(`Event / use: ${inq.use_case}`);
+  const dates = fmtRange(inq.start_date, inq.end_date, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  if (dates) lines.push(`Dates: ${dates}`);
+  if (inq.duration) lines.push(`Duration: ${inq.duration}`);
+  if (inq.units != null) lines.push(`Units: ${inq.units} (${inq.units * 4} stalls)`);
+  if (inq.guests) lines.push(`Guest count: ${inq.guests}`);
+  if (inq.location) lines.push(`Location: ${inq.location}`);
+  if (inq.attendant) lines.push(`Attendant: ${inq.attendant}`);
+  if (inq.notes) lines.push(`Notes: ${inq.notes}`);
+  if (lines.length === 0) return "(no request details on file)";
+  return lines.map((l) => `• ${l}`).join("\n");
+}
+
+// Fill the {merge} fields from the inquiry + rep name. `extra` supplies dynamic
+// values built at send time (notably {quote} from the quote builder). Unknown
+// tokens are left visible (e.g. "{foo}") so a typo is obvious, not silent.
 export function renderTemplate(
   tpl: MessageTemplate,
   inq: Inquiry,
-  rep: string
+  rep: string,
+  extra?: { quote?: string }
 ): { subject?: string; body: string } {
   const map: Record<string, string> = {
     first: firstName(inq.name),
@@ -302,11 +273,21 @@ export function renderTemplate(
     date: inq.start_date
       ? fmtDate(inq.start_date, { weekday: "long", month: "long", day: "numeric" })
       : "your dates",
-    location: inq.location || "your site",
+    end_date: inq.end_date
+      ? fmtDate(inq.end_date, { month: "long", day: "numeric" })
+      : "—",
+    duration: inq.duration || "—",
     units: inq.units != null ? String(inq.units) : "the",
+    guests: inq.guests || "—",
+    attendant: inq.attendant || "—",
+    location: inq.location || "your site",
+    phone: inq.phone || "—",
+    email: inq.email || "—",
     value: inq.estimated_value != null ? fmtMoney(inq.estimated_value) : "your quote",
     reference: inq.reference || "",
     rep: rep && rep !== "You" ? rep : "the HDR team",
+    details: buildDetailsBlock(inq),
+    quote: extra?.quote ?? "— your itemized quote will appear here —",
   };
   const fill = (s?: string) =>
     s?.replace(/\{(\w+)\}/g, (_, k: string) => (k in map ? map[k] : `{${k}}`));
@@ -318,10 +299,18 @@ export function renderTemplate(
 export const MERGE_FIELDS: { token: string; label: string }[] = [
   { token: "first", label: "Customer first name" },
   { token: "name", label: "Customer full name" },
+  { token: "details", label: "All submitted request details" },
+  { token: "quote", label: "Itemized quote (built when sending)" },
   { token: "use_case", label: "Event / use case" },
   { token: "date", label: "Rental start date" },
-  { token: "location", label: "Location" },
+  { token: "end_date", label: "Rental end date" },
+  { token: "duration", label: "Rental duration" },
   { token: "units", label: "Number of units" },
+  { token: "guests", label: "Guest count" },
+  { token: "attendant", label: "Attendant" },
+  { token: "location", label: "Location" },
+  { token: "phone", label: "Customer phone" },
+  { token: "email", label: "Customer email" },
   { token: "value", label: "Estimated value" },
   { token: "reference", label: "Inquiry reference" },
   { token: "rep", label: "Your name" },
