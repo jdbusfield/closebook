@@ -415,11 +415,13 @@ function ActivityChip({
 
 export function ActivityTimeline({
   inquiry,
+  entityId,
   onAddActivity,
   onDeleteActivity,
   actor = "You",
 }: {
   inquiry: Inquiry;
+  entityId: string;
   onAddActivity: DrawerCallbacks["onAddActivity"];
   onDeleteActivity: DrawerCallbacks["onDeleteActivity"];
   actor?: string;
@@ -475,6 +477,7 @@ export function ActivityTimeline({
         <div className="ml-auto">
           <TemplatePicker
             inquiry={inquiry}
+            entityId={entityId}
             rep={actor}
             onLog={(t, body) => onAddActivity(inquiry.id, t, body)}
           />
@@ -588,6 +591,7 @@ export function InquiryDrawer({
               <Section title="Activity & emails">
                 <ActivityTimeline
                   inquiry={inquiry}
+                  entityId={entityId}
                   onAddActivity={callbacks.onAddActivity}
                   onDeleteActivity={callbacks.onDeleteActivity}
                   actor={actor}

@@ -30,10 +30,11 @@ import {
   type TemplateChannel,
   CHANNEL_LABEL,
   TRACK_LABEL,
-  templatesFor,
+  selectTemplates,
   inferTrack,
   renderTemplate,
 } from "@/lib/inquiries/templates";
+import { useTemplates } from "@/lib/inquiries/use-templates";
 import { type Inquiry, type InquiryActivity } from "@/lib/inquiries/shared";
 
 const CHANNEL_ICON: Record<TemplateChannel, typeof Mail> = {
@@ -68,10 +69,12 @@ async function copyText(text: string): Promise<boolean> {
 
 export function TemplatePicker({
   inquiry,
+  entityId,
   rep,
   onLog,
 }: {
   inquiry: Inquiry;
+  entityId: string;
   rep: string;
   onLog: (type: InquiryActivity["type"], body: string) => void;
 }) {
@@ -80,7 +83,11 @@ export function TemplatePicker({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const all = useMemo(() => templatesFor(inquiry), [inquiry]);
+  const { templates } = useTemplates(entityId);
+  const all = useMemo(
+    () => selectTemplates(templates, inquiry),
+    [templates, inquiry]
+  );
   const track = useMemo(() => inferTrack(inquiry), [inquiry]);
 
   // Channels present for this inquiry/stage, in a stable order.

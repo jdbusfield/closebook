@@ -46,10 +46,20 @@ export const TRACK_LABEL: Record<TemplateTrack, string> = {
   general: "General",
 };
 
+export const TEMPLATE_CHANNELS: TemplateChannel[] = ["sms", "call", "email"];
+export const TEMPLATE_TRACKS: TemplateTrack[] = [
+  "general",
+  "production",
+  "construction",
+  "event",
+  "emergency",
+];
+
 // ---------------------------------------------------------------------------
-// The templates
+// The default templates (shipped in code; the Templates page persists edits as
+// overrides in rental_inquiry_templates, keyed by the ids below).
 // ---------------------------------------------------------------------------
-export const TEMPLATES: MessageTemplate[] = [
+export const DEFAULT_TEMPLATES: MessageTemplate[] = [
   // --- Track: Production (film / TV) ---------------------------------------
   {
     id: "prod-sms-intro",
@@ -249,13 +259,16 @@ export function inferTrack(inq: Inquiry): TemplateTrack {
   return "general";
 }
 
-// Templates relevant to an inquiry: those whose stage matches the current
-// status, in the inferred track or the general fallback. Inferred-track copy is
-// ranked ahead of the generic version of the same step.
-export function templatesFor(inq: Inquiry): MessageTemplate[] {
+// Filter any template list down to the ones relevant to an inquiry: those whose
+// stage matches the current status, in the inferred track or the general
+// fallback. Inferred-track copy is ranked ahead of the generic version.
+export function selectTemplates<T extends MessageTemplate>(
+  list: T[],
+  inq: Inquiry
+): T[] {
   const status = (inq.status || "new") as InquiryStatus;
   const track = inferTrack(inq);
-  const relevant = TEMPLATES.filter(
+  const relevant = list.filter(
     (t) => t.stages.includes(status) && (t.track === track || t.track === "general")
   );
   return relevant.sort((a, b) => {
@@ -263,6 +276,11 @@ export function templatesFor(inq: Inquiry): MessageTemplate[] {
     const bt = b.track === track && track !== "general" ? 0 : 1;
     return at - bt;
   });
+}
+
+// Convenience over the shipped defaults (used when no DB overrides are loaded).
+export function templatesFor(inq: Inquiry): MessageTemplate[] {
+  return selectTemplates(DEFAULT_TEMPLATES, inq);
 }
 
 function firstName(name: string | null): string {
@@ -293,4 +311,105 @@ export function renderTemplate(
   const fill = (s?: string) =>
     s?.replace(/\{(\w+)\}/g, (_, k: string) => (k in map ? map[k] : `{${k}}`));
   return { subject: fill(tpl.subject), body: fill(tpl.body) ?? "" };
+}
+
+// The merge fields a template may use, with a short description — surfaced as
+// insertable chips in the editor.
+export const MERGE_FIELDS: { token: string; label: string }[] = [
+  { token: "first", label: "Customer first name" },
+  { token: "name", label: "Customer full name" },
+  { token: "use_case", label: "Event / use case" },
+  { token: "date", label: "Rental start date" },
+  { token: "location", label: "Location" },
+  { token: "units", label: "Number of units" },
+  { token: "value", label: "Estimated value" },
+  { token: "reference", label: "Inquiry reference" },
+  { token: "rep", label: "Your name" },
+];
+
+// ---------------------------------------------------------------------------
+// Effective templates = code defaults overlaid with the entity's saved edits.
+// ---------------------------------------------------------------------------
+
+// A persisted edit/override row from rental_inquiry_templates.
+export interface TemplateRow {
+  id: string;
+  template_key: string;
+  label: string;
+  channel: TemplateChannel;
+  track: TemplateTrack;
+  stages: string[];
+  cadence: string | null;
+  subject: string | null;
+  body: string;
+  sort_order: number;
+  archived: boolean;
+}
+
+export interface EffectiveTemplate extends MessageTemplate {
+  source: "default" | "custom"; // shipped in code vs. created in-app
+  overridden: boolean; // a default whose copy has been edited
+  archived: boolean; // a default the team chose to hide
+  rowId?: string; // rental_inquiry_templates.id, when persisted
+  sortOrder: number;
+}
+
+function rowToTemplate(row: TemplateRow): MessageTemplate {
+  return {
+    id: row.template_key,
+    label: row.label,
+    channel: row.channel,
+    track: row.track,
+    stages: row.stages as InquiryStatus[],
+    cadence: row.cadence ?? undefined,
+    subject: row.subject ?? undefined,
+    body: row.body,
+  };
+}
+
+// Merge the shipped defaults with the saved rows. A row sharing a default's key
+// overrides it (or hides it when archived); rows with new keys are custom
+// templates. Returns archived entries too so the editor can show/restore them —
+// filter on `.archived` for runtime use.
+export function mergeTemplates(rows: TemplateRow[]): EffectiveTemplate[] {
+  const byKey = new Map(rows.map((r) => [r.template_key, r]));
+  const out: EffectiveTemplate[] = [];
+  const defaultKeys = new Set(DEFAULT_TEMPLATES.map((d) => d.id));
+
+  DEFAULT_TEMPLATES.forEach((def, i) => {
+    const row = byKey.get(def.id);
+    if (row) {
+      out.push({
+        ...rowToTemplate(row),
+        source: "default",
+        overridden: true,
+        archived: row.archived,
+        rowId: row.id,
+        sortOrder: row.sort_order || i,
+      });
+    } else {
+      out.push({
+        ...def,
+        source: "default",
+        overridden: false,
+        archived: false,
+        sortOrder: i,
+      });
+    }
+  });
+
+  rows
+    .filter((r) => !defaultKeys.has(r.template_key))
+    .forEach((row, i) =>
+      out.push({
+        ...rowToTemplate(row),
+        source: "custom",
+        overridden: false,
+        archived: row.archived,
+        rowId: row.id,
+        sortOrder: row.sort_order || 1000 + i,
+      })
+    );
+
+  return out.sort((a, b) => a.sortOrder - b.sortOrder);
 }

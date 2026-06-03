@@ -138,6 +138,7 @@ export function getEntityNavGroups(entityId: string): NavGroup[] {
             { title: "Pipeline", href: `${prefix}/inquiries` },
             { title: "Calendar", href: `${prefix}/inquiries/calendar` },
             { title: "Customers", href: `${prefix}/inquiries/customers` },
+            { title: "Templates", href: `${prefix}/inquiries/templates` },
             { title: "Inbox Activity", href: `${prefix}/inquiries/inbox` },
           ],
         },
