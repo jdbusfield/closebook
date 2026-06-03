@@ -18,10 +18,13 @@ import {
   FINANCING_EQUITY_TYPES,
   ROU_ASSET_NAME_PATTERNS,
   ROU_LIABILITY_NAME_PATTERNS,
+  LINE_OF_CREDIT_NAME_PATTERNS,
+  INTANGIBLE_ASSET_NAME_PATTERNS,
   OTHER_EXPENSE_NAME_PATTERNS,
   type StatementSectionConfig,
   type ComputedLineConfig,
 } from "@/lib/config/statement-sections";
+import { fetchAssetCashFlows, type AssetCashFlows } from "@/lib/utils/asset-cash-flows";
 import type {
   Period,
   LineItem,
@@ -1848,10 +1851,31 @@ function buildCashFlowStatement(
   netIncomeByBucket: Record<string, number>,
   pyAggregated?: Map<string, BucketedAmounts>,
   pyNetIncomeByBucket?: Record<string, number>,
-  supplementalEntries?: CashFlowSupplementalEntry[]
+  supplementalEntries?: CashFlowSupplementalEntry[],
+  assetCashFlows?: AssetCashFlows
 ): StatementData {
   const sections: StatementSection[] = [];
   const hasPY = !!pyAggregated;
+
+  // Classification helpers (cash-flow geography, ASC 230).
+  // Line-of-credit / short-term debt accounts are credit-normal "Other Current
+  // Liability" but their movement is a FINANCING activity, not operating.
+  const isLineOfCredit = (a: AccountInfo) => {
+    const n = a.name.toLowerCase();
+    return LINE_OF_CREDIT_NAME_PATTERNS.some((p) => n.includes(p));
+  };
+  // Goodwill / intangible assets: their carrying-value decline is non-cash
+  // amortization (added back in Operating, excluded from Investing).
+  const isIntangibleAsset = (a: AccountInfo) => {
+    const n = a.name.toLowerCase();
+    return INTANGIBLE_ASSET_NAME_PATTERNS.some((p) => n.includes(p));
+  };
+  // Synthetic intercompany-elimination accounts should not appear on the face
+  // of the consolidated statement of cash flows.
+  const isIntercompanyElim = (a: AccountInfo) => {
+    const n = a.name.toLowerCase();
+    return a.id.startsWith("__intercompany") || n.includes("intercompany elimination");
+  };
 
   // --- Compute D&A from GL expense accounts ---
   // Depreciation/amortization expense accounts are identified by name pattern.
@@ -1875,6 +1899,42 @@ function buildCashFlowStatement(
     }
     depreciationByBucket[bucket.key] = total;
     pyDepreciationByBucket[bucket.key] = pyTotal;
+  }
+
+  // --- Non-cash intangible / goodwill amortization (ASC 230-10-45-28) ---
+  // The period decline in the carrying value of goodwill/intangible (Other Asset)
+  // masters is non-cash amortization.  It is added back here in Operating (and the
+  // same accounts are excluded from Investing below), so amortization no longer
+  // shows up as an investing "source".  Kept separate from depreciationByBucket so
+  // the Investing depreciation offset (tangible only) is unaffected.
+  const intangibleAssets = accounts.filter(
+    (a) => INVESTING_ACCOUNT_TYPES.includes(a.accountType) && isIntangibleAsset(a)
+  );
+  const intangibleAmortByBucket: Record<string, number> = {};
+  const pyIntangibleAmortByBucket: Record<string, number> = {};
+  for (const bucket of buckets) {
+    let amt = 0;
+    let pyAmt = 0;
+    for (const acct of intangibleAssets) {
+      const b = aggregated.get(acct.id);
+      // Debit-normal asset: a decline (beginning > ending) is positive amortization.
+      amt += (b?.beginningBalance[bucket.key] ?? 0) - (b?.endingBalance[bucket.key] ?? 0);
+      if (hasPY) {
+        const pb = pyAggregated!.get(acct.id);
+        pyAmt += (pb?.beginningBalance[bucket.key] ?? 0) - (pb?.endingBalance[bucket.key] ?? 0);
+      }
+    }
+    intangibleAmortByBucket[bucket.key] = amt;
+    pyIntangibleAmortByBucket[bucket.key] = pyAmt;
+  }
+  // Combined non-cash D&A shown on the single "Depreciation and amortization" line.
+  const daDisplayByBucket: Record<string, number> = {};
+  const pyDaDisplayByBucket: Record<string, number> = {};
+  for (const bucket of buckets) {
+    daDisplayByBucket[bucket.key] =
+      (depreciationByBucket[bucket.key] ?? 0) + (intangibleAmortByBucket[bucket.key] ?? 0);
+    pyDaDisplayByBucket[bucket.key] =
+      (pyDepreciationByBucket[bucket.key] ?? 0) + (pyIntangibleAmortByBucket[bucket.key] ?? 0);
   }
 
   // --- OPERATING ACTIVITIES ---
@@ -1911,8 +1971,8 @@ function buildCashFlowStatement(
   operatingLines.push({
     id: "cf-depreciation",
     label: "Depreciation and amortization",
-    amounts: { ...depreciationByBucket },
-    priorYearAmounts: hasPY ? { ...pyDepreciationByBucket } : undefined,
+    amounts: { ...daDisplayByBucket },
+    priorYearAmounts: hasPY ? { ...pyDaDisplayByBucket } : undefined,
     indent: 1,
     isTotal: false,
     isGrandTotal: false,
@@ -1939,8 +1999,9 @@ function buildCashFlowStatement(
   const wcAssets = accounts.filter((a) =>
     OPERATING_CURRENT_ASSET_TYPES.includes(a.accountType)
   );
-  const wcLiabilities = accounts.filter((a) =>
-    OPERATING_CURRENT_LIABILITY_TYPES.includes(a.accountType)
+  // Exclude line-of-credit / short-term debt — reclassified to Financing (ASC 230).
+  const wcLiabilities = accounts.filter(
+    (a) => OPERATING_CURRENT_LIABILITY_TYPES.includes(a.accountType) && !isLineOfCredit(a)
   );
 
   const operatingTotal: Record<string, number> = {};
@@ -1948,10 +2009,12 @@ function buildCashFlowStatement(
   for (const bucket of buckets) {
     operatingTotal[bucket.key] =
       (netIncomeByBucket[bucket.key] ?? 0) +
-      (depreciationByBucket[bucket.key] ?? 0);
+      (depreciationByBucket[bucket.key] ?? 0) +
+      (intangibleAmortByBucket[bucket.key] ?? 0);
     pyOperatingTotal[bucket.key] = hasPY
       ? (pyNetIncomeByBucket![bucket.key] ?? 0) +
-        (pyDepreciationByBucket![bucket.key] ?? 0)
+        (pyDepreciationByBucket![bucket.key] ?? 0) +
+        (pyIntangibleAmortByBucket[bucket.key] ?? 0)
       : 0;
   }
 
@@ -2097,7 +2160,7 @@ function buildCashFlowStatement(
       }
       operatingLines.push({
         id: `cf-rou-asset-${account.id}`,
-        label: account.name,
+        label: "Amortization of ROU assets (non-cash)",
         amounts,
         priorYearAmounts: pyAmounts,
         indent: 1,
@@ -2139,7 +2202,7 @@ function buildCashFlowStatement(
       }
       operatingLines.push({
         id: `cf-rou-liab-${account.id}`,
-        label: account.name,
+        label: "Principal payments on lease liabilities",
         amounts,
         priorYearAmounts: pyAmounts,
         indent: 1,
@@ -2176,83 +2239,109 @@ function buildCashFlowStatement(
   });
 
   // --- INVESTING ACTIVITIES ---
-  // Exclude ROU assets — their changes are reclassified to Operating above
-  const investingAccounts = accounts.filter(
-    (a) => INVESTING_ACCOUNT_TYPES.includes(a.accountType) && !isRouAsset(a)
+  // GAAP presentation (ASC 230-10-45-13): purchases of property & equipment and
+  // proceeds from disposals are shown gross, sourced from the fixed-asset
+  // subledger.  To guarantee the statement still articulates, the section TOTAL
+  // is kept equal to the balance-sheet-derived figure (period change in the net
+  // book value of investing-type asset masters, less the tangible-depreciation
+  // add-back that is captured in Operating).  Intangible/goodwill masters are
+  // excluded here (their non-cash amortization moved to Operating); ROU assets
+  // are excluded (reclassified to Operating); the synthetic intercompany line is
+  // not shown.  A single reconciling line carries gain/loss on disposal and any
+  // capex/disposals not itemized in the subledger so the displayed lines sum to
+  // the tied total (a material reconciling balance signals subledger-vs-GL drift).
+  const investingAssets = accounts.filter(
+    (a) =>
+      INVESTING_ACCOUNT_TYPES.includes(a.accountType) &&
+      !isRouAsset(a) &&
+      !isIntangibleAsset(a)
   );
-  const investingLines: LineItem[] = [];
   const investingTotal: Record<string, number> = {};
   const pyInvestingTotal: Record<string, number> = {};
   for (const bucket of buckets) {
     investingTotal[bucket.key] = 0;
     pyInvestingTotal[bucket.key] = 0;
   }
-
-  for (const account of investingAccounts) {
+  for (const account of investingAssets) {
     const bucketed = aggregated.get(account.id);
     const pyBucketed = hasPY ? pyAggregated!.get(account.id) : undefined;
-    const amounts: Record<string, number> = {};
-    const pyAmounts: Record<string, number> | undefined = hasPY ? {} : undefined;
     for (const bucket of buckets) {
       const change =
         (bucketed?.endingBalance[bucket.key] ?? 0) -
         (bucketed?.beginningBalance[bucket.key] ?? 0);
-      amounts[bucket.key] = -change;
       investingTotal[bucket.key] += -change;
-
-      if (hasPY && pyAmounts) {
+      if (hasPY) {
         const pyChange =
           (pyBucketed?.endingBalance[bucket.key] ?? 0) -
           (pyBucketed?.beginningBalance[bucket.key] ?? 0);
-        pyAmounts[bucket.key] = -pyChange;
         pyInvestingTotal[bucket.key] += -pyChange;
       }
     }
-    // Strip "(Net)" from labels — the D&A offset already isolates cash capex,
-    // so the balance-sheet "(Net)" qualifier is misleading on the cash flow.
-    const cfLabel = account.name.replace(/\s*\(Net\)\s*/i, "").trim();
+  }
+  // Remove the tangible depreciation embedded in the "(Net)" masters; it is
+  // already added back in Operating, so this keeps the section total = actual
+  // cash invested (matching the prior, tied behavior).
+  for (const bucket of buckets) {
+    investingTotal[bucket.key] -= depreciationByBucket[bucket.key] ?? 0;
+    if (hasPY) pyInvestingTotal[bucket.key] -= pyDepreciationByBucket[bucket.key] ?? 0;
+  }
+
+  // Gross capex / disposals from the subledger (current period only; YoY prior-
+  // year columns fold into the reconciling line).
+  const additions = assetCashFlows?.additionsByBucket ?? {};
+  const disposals = assetCashFlows?.disposalProceedsByBucket ?? {};
+  const purchaseAmounts: Record<string, number> = {};
+  const proceedsAmounts: Record<string, number> = {};
+  const reconAmounts: Record<string, number> = {};
+  const pyReconAmounts: Record<string, number> = {};
+  for (const bucket of buckets) {
+    purchaseAmounts[bucket.key] = -(additions[bucket.key] ?? 0); // cash out
+    proceedsAmounts[bucket.key] = disposals[bucket.key] ?? 0; // cash in
+    reconAmounts[bucket.key] =
+      (investingTotal[bucket.key] ?? 0) -
+      purchaseAmounts[bucket.key] -
+      proceedsAmounts[bucket.key];
+    pyReconAmounts[bucket.key] = pyInvestingTotal[bucket.key] ?? 0;
+  }
+  const anyNonZero = (m: Record<string, number>) =>
+    buckets.some((b) => Math.abs(m[b.key] ?? 0) > 0.5);
+
+  const investingLines: LineItem[] = [];
+  if (anyNonZero(purchaseAmounts)) {
     investingLines.push({
-      id: `cf-inv-${account.id}`,
-      label: cfLabel,
-      amounts,
-      priorYearAmounts: pyAmounts,
+      id: "cf-inv-purchases",
+      label: "Purchases of property and equipment",
+      amounts: purchaseAmounts,
+      priorYearAmounts: hasPY ? {} : undefined,
       indent: 1,
       isTotal: false,
       isGrandTotal: false,
       isHeader: false,
       isSeparator: false,
       showDollarSign: false,
-      drillDownMeta: {
-        type: "account",
-        masterAccountIds: [account.id],
-        statementType: "cash_flow",
-      },
+      drillDownMeta: { type: "none" },
     });
   }
-
-  // D&A offset: Master accounts like "Vehicles (Net)" consolidate gross cost
-  // and accumulated depreciation into a single balance, so their period-over-
-  // period change includes both cash capex AND non-cash depreciation.  The D&A
-  // is already added back in Operating Activities; we subtract it here so that
-  // Investing reflects only actual cash spent on / received from fixed assets.
-  const daOffset: Record<string, number> = {};
-  const pyDaOffset: Record<string, number> | undefined = hasPY ? {} : undefined;
-  for (const bucket of buckets) {
-    const da = depreciationByBucket[bucket.key] ?? 0;
-    daOffset[bucket.key] = -da;
-    investingTotal[bucket.key] -= da;
-
-    if (hasPY && pyDaOffset) {
-      const pyDa = pyDepreciationByBucket[bucket.key] ?? 0;
-      pyDaOffset[bucket.key] = -pyDa;
-      pyInvestingTotal[bucket.key] -= pyDa;
-    }
+  if (anyNonZero(proceedsAmounts)) {
+    investingLines.push({
+      id: "cf-inv-proceeds",
+      label: "Proceeds from disposal of property and equipment",
+      amounts: proceedsAmounts,
+      priorYearAmounts: hasPY ? {} : undefined,
+      indent: 1,
+      isTotal: false,
+      isGrandTotal: false,
+      isHeader: false,
+      isSeparator: false,
+      showDollarSign: false,
+      drillDownMeta: { type: "none" },
+    });
   }
   investingLines.push({
-    id: "cf-inv-da-offset",
-    label: "Less: Accumulated depreciation in net asset changes",
-    amounts: daOffset,
-    priorYearAmounts: pyDaOffset,
+    id: "cf-inv-noncash-recon",
+    label: "Other property & equipment activity, net (per general ledger)",
+    amounts: reconAmounts,
+    priorYearAmounts: hasPY ? pyReconAmounts : undefined,
     indent: 1,
     isTotal: false,
     isGrandTotal: false,
@@ -2262,13 +2351,17 @@ function buildCashFlowStatement(
     drillDownMeta: { type: "none" },
   });
 
+  // Dynamic subtotal label — "provided by" when the net is a source.
+  const investingIsSource = buckets.some((b) => (investingTotal[b.key] ?? 0) > 0);
   sections.push({
     id: "cf-investing",
     title: "CASH FLOWS FROM INVESTING ACTIVITIES",
     lines: investingLines,
     subtotalLine: {
       id: "cf-investing-total",
-      label: "Net cash used in investing activities",
+      label: investingIsSource
+        ? "Net cash provided by (used in) investing activities"
+        : "Net cash used in investing activities",
       amounts: investingTotal,
       priorYearAmounts: hasPY ? { ...pyInvestingTotal } : undefined,
       indent: 0,
@@ -2284,6 +2377,12 @@ function buildCashFlowStatement(
   // Exclude ROU lease liabilities — their changes are reclassified to Operating above
   const financingLiabilities = accounts.filter(
     (a) => FINANCING_LIABILITY_TYPES.includes(a.accountType) && !isRouLiability(a)
+  );
+  // Line-of-credit / short-term debt: credit-normal current liabilities whose
+  // borrowings and repayments are FINANCING activities (ASC 230-10-45-14/15).
+  // Reclassified here, out of Operating working-capital changes.
+  const lineOfCreditAccounts = accounts.filter(
+    (a) => OPERATING_CURRENT_LIABILITY_TYPES.includes(a.accountType) && isLineOfCredit(a)
   );
   // Exclude equity accounts whose balance changes represent accumulated net
   // income (already captured in operating activities).  Distributions, owner's
@@ -2308,7 +2407,7 @@ function buildCashFlowStatement(
     pyFinancingTotal[bucket.key] = 0;
   }
 
-  for (const account of [...financingLiabilities, ...financingEquity]) {
+  for (const account of [...lineOfCreditAccounts, ...financingLiabilities, ...financingEquity]) {
     const bucketed = aggregated.get(account.id);
     const pyBucketed = hasPY ? pyAggregated!.get(account.id) : undefined;
     const amounts: Record<string, number> = {};
@@ -2317,8 +2416,8 @@ function buildCashFlowStatement(
       const change =
         (bucketed?.endingBalance[bucket.key] ?? 0) -
         (bucketed?.beginningBalance[bucket.key] ?? 0);
-      // Negate: both long-term liabilities and equity are credit-normal
-      // (stored negative in GL). An increase should be a cash inflow (positive).
+      // Negate: long-term liabilities, the line of credit, and equity are all
+      // credit-normal (stored negative in GL). An increase is a cash inflow.
       amounts[bucket.key] = -change;
       financingTotal[bucket.key] += -change;
 
@@ -2366,6 +2465,68 @@ function buildCashFlowStatement(
       showDollarSign: true,
     },
   });
+
+  // --- Reconcile to actual cash (pro forma / non-cash adjustments) ---
+  // The statement above is built on ACTUAL GL movement, so operating + investing
+  // + financing already equals the change in bank cash.  When pro forma is enabled
+  // it alters net income (Operating) but shields the bank balance, leaving a
+  // residual.  We reverse that residual here as one explicit non-cash line so the
+  // GAAP statement always articulates to actual cash; the pro forma itself is
+  // presented in the supplemental block below.
+  {
+    const cashAccts = accounts.filter((a) => CASH_ACCOUNT_TYPES.includes(a.accountType));
+    const reversal: Record<string, number> = {};
+    const pyReversal: Record<string, number> = {};
+    let anyReversal = false;
+    for (const bucket of buckets) {
+      let beginBal = 0;
+      let endBal = 0;
+      for (const ca of cashAccts) {
+        const b = aggregated.get(ca.id);
+        beginBal += b?.beginningBalance[bucket.key] ?? 0;
+        endBal += b?.endingBalance[bucket.key] ?? 0;
+      }
+      const r =
+        endBal -
+        beginBal -
+        (operatingTotal[bucket.key] + investingTotal[bucket.key] + financingTotal[bucket.key]);
+      reversal[bucket.key] = r;
+      if (Math.abs(r) > 0.5) anyReversal = true;
+      operatingTotal[bucket.key] += r;
+      if (hasPY) {
+        let pyBegin = 0;
+        let pyEnd = 0;
+        for (const ca of cashAccts) {
+          const pb = pyAggregated!.get(ca.id);
+          pyBegin += pb?.beginningBalance[bucket.key] ?? 0;
+          pyEnd += pb?.endingBalance[bucket.key] ?? 0;
+        }
+        const pyR =
+          pyEnd -
+          pyBegin -
+          (pyOperatingTotal[bucket.key] +
+            pyInvestingTotal[bucket.key] +
+            pyFinancingTotal[bucket.key]);
+        pyReversal[bucket.key] = pyR;
+        pyOperatingTotal[bucket.key] += pyR;
+      }
+    }
+    if (anyReversal) {
+      operatingLines.push({
+        id: "cf-proforma-reversal",
+        label: "Other non-cash reconciling items, net",
+        amounts: reversal,
+        priorYearAmounts: hasPY ? pyReversal : undefined,
+        indent: 1,
+        isTotal: false,
+        isGrandTotal: false,
+        isHeader: false,
+        isSeparator: false,
+        showDollarSign: false,
+        drillDownMeta: { type: "none" },
+      });
+    }
+  }
 
   // --- NET CHANGE IN CASH ---
   const netCashChange: Record<string, number> = {};
@@ -2542,6 +2703,98 @@ function buildCashFlowStatement(
           isSeparator: false,
           showDollarSign: true,
         },
+      });
+
+      // Pro-forma management view: actual ending cash plus the period's pro forma
+      // cash impact — so the pro-forma view reconciles instead of leaving a stray
+      // residual.  (The GAAP statement above is on an actual-cash basis.)
+      const pfAdjustedEndingCash: Record<string, number> = {};
+      for (const bucket of buckets) {
+        pfAdjustedEndingCash[bucket.key] =
+          (cashEnding[bucket.key] ?? 0) + (pfTotal[bucket.key] ?? 0);
+      }
+      sections.push({
+        id: "cf-pro-forma-reconcile",
+        title: "",
+        lines: [
+          {
+            id: "cf-pf-adjusted-cash",
+            label: "Pro forma adjusted ending cash",
+            amounts: pfAdjustedEndingCash,
+            indent: 1,
+            isTotal: true,
+            isGrandTotal: false,
+            isHeader: false,
+            isSeparator: false,
+            showDollarSign: true,
+            drillDownMeta: { type: "none" },
+          },
+        ],
+      });
+    }
+  }
+
+  // --- SUPPLEMENTAL DISCLOSURES (ASC 230-10-50) ---
+  // Memo-only (not part of any subtotal): cash paid for interest and income
+  // taxes (approximated from the period expense, labeled as derived) and major
+  // non-cash investing/financing activity (ROU assets obtained for new leases).
+  {
+    const sumNetChange = (filter: (a: AccountInfo) => boolean): Record<string, number> => {
+      const out: Record<string, number> = {};
+      const matched = accounts.filter(filter);
+      for (const bucket of buckets) {
+        out[bucket.key] = matched.reduce(
+          (s, acct) => s + (aggregated.get(acct.id)?.netChange[bucket.key] ?? 0),
+          0,
+        );
+      }
+      return out;
+    };
+    const isExpenseClass = (a: AccountInfo) =>
+      a.classification === "Expense" || a.classification === "Other Expense";
+    const interestPaid = sumNetChange(
+      (a) => isExpenseClass(a) && a.name.toLowerCase().includes("interest"),
+    );
+    const incomeTaxPaid = sumNetChange(
+      (a) => isExpenseClass(a) && a.name.toLowerCase().includes("income tax"),
+    );
+    // Non-cash: gross increases in ROU asset balances = new lease recognitions.
+    const rouAdditions: Record<string, number> = {};
+    for (const bucket of buckets) {
+      let add = 0;
+      for (const acct of rouAssets) {
+        const b = aggregated.get(acct.id);
+        const delta = (b?.endingBalance[bucket.key] ?? 0) - (b?.beginningBalance[bucket.key] ?? 0);
+        if (delta > 0) add += delta;
+      }
+      rouAdditions[bucket.key] = add;
+    }
+
+    const discLines: LineItem[] = [];
+    const mk = (id: string, label: string, amounts: Record<string, number>) => {
+      if (!buckets.some((b) => Math.abs(amounts[b.key] ?? 0) > 0.5)) return;
+      discLines.push({
+        id,
+        label,
+        amounts,
+        indent: 1,
+        isTotal: false,
+        isGrandTotal: false,
+        isHeader: false,
+        isSeparator: false,
+        showDollarSign: false,
+        drillDownMeta: { type: "none" },
+      });
+    };
+    mk("cf-disc-interest", "Cash paid for interest (derived)", interestPaid);
+    mk("cf-disc-income-tax", "Cash paid for income taxes (derived)", incomeTaxPaid);
+    mk("cf-disc-rou", "Non-cash: ROU assets obtained for new lease liabilities", rouAdditions);
+
+    if (discLines.length > 0) {
+      sections.push({
+        id: "cf-supplemental",
+        title: "SUPPLEMENTAL DISCLOSURES",
+        lines: discLines,
       });
     }
   }
@@ -3404,6 +3657,8 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     ...allocReclassEntries,
   ];
 
+  // Gross capex / disposal proceeds from the fixed-asset subledger (Investing).
+  const assetCashFlows = await fetchAssetCashFlows(admin, entityIds, buckets);
   const cashFlowStatement = buildCashFlowStatement(
     displayAccounts,
     aggregated,
@@ -3411,7 +3666,8 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     netIncomeByBucket,
     includeYoY ? pyAggregated : undefined,
     includeYoY ? pyNetIncomeByBucket : undefined,
-    cfSupplementalEntries.length > 0 ? cfSupplementalEntries : undefined
+    cfSupplementalEntries.length > 0 ? cfSupplementalEntries : undefined,
+    assetCashFlows
   );
 
   const periods: Period[] = buckets.map((b) => ({
@@ -3917,6 +4173,8 @@ export async function GET(request: Request) {
     ];
 
     // Build Cash Flow Statement
+    // Gross capex / disposal proceeds from the fixed-asset subledger (Investing).
+    const assetCashFlows = await fetchAssetCashFlows(admin, [entityId!], buckets);
     const cashFlowStatement = buildCashFlowStatement(
       displayAccounts,
       aggregated,
@@ -3924,7 +4182,8 @@ export async function GET(request: Request) {
       netIncomeByBucket,
       includeYoY ? pyAggregated : undefined,
       includeYoY ? pyNetIncomeByBucket : undefined,
-      entityCfSupplementalEntries.length > 0 ? entityCfSupplementalEntries : undefined
+      entityCfSupplementalEntries.length > 0 ? entityCfSupplementalEntries : undefined,
+      assetCashFlows
     );
 
     // Build periods array

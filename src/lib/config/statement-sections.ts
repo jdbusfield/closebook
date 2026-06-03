@@ -233,6 +233,43 @@ export const ROU_LIABILITY_NAME_PATTERNS = [
 ];
 
 // ---------------------------------------------------------------------------
+// CASH FLOW — line-of-credit / short-term debt reclassification
+// ---------------------------------------------------------------------------
+// Revolving lines of credit and short-term borrowings are classified by QBO as
+// "Other Current Liability", which would route their movement through Operating
+// activities.  Under ASC 230-10-45-14/15, borrowings and repayments of debt
+// (including revolving lines) are FINANCING activities.  Master accounts whose
+// names match these patterns are moved from Operating working-capital changes
+// into the Financing section of the statement of cash flows.
+// Patterns are matched case-insensitively against master account names.
+// ---------------------------------------------------------------------------
+
+export const LINE_OF_CREDIT_NAME_PATTERNS = [
+  "line of credit",
+  "short term line",
+  "short-term line",
+  "revolv",
+];
+
+// ---------------------------------------------------------------------------
+// CASH FLOW — intangible / goodwill non-cash amortization
+// ---------------------------------------------------------------------------
+// Goodwill and other intangible assets are classified as "Other Asset" and
+// would otherwise flow through Investing activities as their carrying value
+// declines.  That decline is non-cash amortization (ASC 230-10-45-28) and
+// belongs in the Operating add-back instead.  Master accounts whose names match
+// these patterns are excluded from Investing and their period decline is added
+// back to "Depreciation and amortization" in Operating activities.
+// Patterns are matched case-insensitively against master account names.
+// ---------------------------------------------------------------------------
+
+export const INTANGIBLE_ASSET_NAME_PATTERNS = [
+  "goodwill",
+  "intangible",
+  "amortizable",
+];
+
+// ---------------------------------------------------------------------------
 // ENTITY-LEVEL RECLASSIFICATION
 // ---------------------------------------------------------------------------
 // QBO classifies all expense accounts as "Expense", but the financial model
