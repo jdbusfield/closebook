@@ -5,7 +5,7 @@
 // assignment, follow-up tasks, and the activity timeline. The sub-blocks are
 // exported so the full-page detail view can reuse them.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Sheet,
@@ -385,19 +385,49 @@ function EmailBubble({
   const who = mine
     ? addressName(message.from_addr) || "You"
     : customerName || addressName(message.from_addr) || "Customer";
+
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+
+  // Measure (while collapsed) whether the body is taller than the 2-line clamp,
+  // so the "Show more" toggle only appears when there's actually more to read.
+  useEffect(() => {
+    if (expanded) return;
+    const el = bodyRef.current;
+    if (el) setOverflowing(el.scrollHeight > el.clientHeight + 1);
+  }, [body, expanded]);
+
+  const canToggle = overflowing || expanded;
+
   return (
     <div className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
       <div
+        ref={bodyRef}
+        onClick={() => canToggle && setExpanded((e) => !e)}
         className={`max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm ${
+          canToggle ? "cursor-pointer" : ""
+        } ${
           mine
             ? "rounded-br-sm bg-primary text-primary-foreground"
             : "rounded-bl-sm bg-muted text-foreground"
-        }`}
+        } ${expanded ? "" : "line-clamp-2"}`}
       >
         {body}
       </div>
-      <div className="mt-1 px-1 text-[11px] text-muted-foreground">
-        {who} · {fmtDateTime(messageDate(message))}
+      <div className="mt-1 flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground">
+        <span>
+          {who} · {fmtDateTime(messageDate(message))}
+        </span>
+        {canToggle && (
+          <button
+            type="button"
+            onClick={() => setExpanded((e) => !e)}
+            className="font-medium text-primary hover:underline"
+          >
+            {expanded ? "Show less" : "Show more"}
+          </button>
+        )}
       </div>
     </div>
   );
