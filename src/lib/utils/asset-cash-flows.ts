@@ -33,6 +33,12 @@ export interface AssetCashFlows {
   additionsByBucket: Record<string, number>;
   /** Gross proceeds from disposals (positive magnitude) keyed by bucket.key */
   disposalProceedsByBucket: Record<string, number>;
+  /**
+   * Net book gain/(loss) on disposals (proceeds − net book value), keyed by
+   * bucket.key. Positive = gain. Non-cash: it's in net income and is reclassified
+   * out of Operating so full proceeds show in Investing.
+   */
+  gainLossByBucket: Record<string, number>;
   /** Per-asset acquisition detail behind each bucket's additions (amount = cash out, negative). */
   additionsDetailByBucket: Record<string, AssetCashFlowDetail[]>;
   /** Per-asset disposal detail behind each bucket's proceeds (amount = cash in, positive). */
@@ -47,6 +53,7 @@ interface FixedAssetRow {
   acquisition_cost: number | string | null;
   disposed_date: string | null;
   disposed_sale_price: number | string | null;
+  disposed_book_gain_loss: number | string | null;
 }
 
 const PAGE_SIZE = 1000;
@@ -71,11 +78,13 @@ export async function fetchAssetCashFlows(
 ): Promise<AssetCashFlows> {
   const additionsByBucket: Record<string, number> = {};
   const disposalProceedsByBucket: Record<string, number> = {};
+  const gainLossByBucket: Record<string, number> = {};
   const additionsDetailByBucket: Record<string, AssetCashFlowDetail[]> = {};
   const disposalsDetailByBucket: Record<string, AssetCashFlowDetail[]> = {};
   for (const b of buckets) {
     additionsByBucket[b.key] = 0;
     disposalProceedsByBucket[b.key] = 0;
+    gainLossByBucket[b.key] = 0;
     additionsDetailByBucket[b.key] = [];
     disposalsDetailByBucket[b.key] = [];
   }
@@ -84,6 +93,7 @@ export async function fetchAssetCashFlows(
     return {
       additionsByBucket,
       disposalProceedsByBucket,
+      gainLossByBucket,
       additionsDetailByBucket,
       disposalsDetailByBucket,
     };
@@ -115,7 +125,7 @@ export async function fetchAssetCashFlows(
   for (;;) {
     const { data, error } = await admin
       .from("fixed_assets")
-      .select("entity_id, asset_name, asset_tag, acquisition_date, acquisition_cost, disposed_date, disposed_sale_price")
+      .select("entity_id, asset_name, asset_tag, acquisition_date, acquisition_cost, disposed_date, disposed_sale_price, disposed_book_gain_loss")
       .in("entity_id", entityIds)
       .or(
         `and(acquisition_date.gte.${minDate},acquisition_date.lt.${maxDateExclusive}),` +
@@ -150,15 +160,18 @@ export async function fetchAssetCashFlows(
       const disp = ymOf(row.disposed_date);
       if (disp) {
         const proceeds = Number(row.disposed_sale_price ?? 0) || 0;
-        if (proceeds !== 0)
+        const gainLoss = Number(row.disposed_book_gain_loss ?? 0) || 0;
+        if (proceeds !== 0 || gainLoss !== 0)
           for (const k of bucketsForMonth(disp)) {
             disposalProceedsByBucket[k] += proceeds;
-            disposalsDetailByBucket[k].push({
-              entityId: row.entity_id,
-              assetName: label,
-              date: (row.disposed_date ?? "").split("T")[0],
-              amount: proceeds, // cash in
-            });
+            gainLossByBucket[k] += gainLoss;
+            if (proceeds !== 0)
+              disposalsDetailByBucket[k].push({
+                entityId: row.entity_id,
+                assetName: label,
+                date: (row.disposed_date ?? "").split("T")[0],
+                amount: proceeds, // cash in
+              });
           }
       }
     }
@@ -170,6 +183,7 @@ export async function fetchAssetCashFlows(
   return {
     additionsByBucket,
     disposalProceedsByBucket,
+    gainLossByBucket,
     additionsDetailByBucket,
     disposalsDetailByBucket,
   };

@@ -123,26 +123,27 @@ export async function GET(request: Request) {
     depIdByEntity.get(a.entity_id)!.add(a.id);
   }
 
-  const allAcctIds = [...faAccts.map((a) => a.id), ...expAccts.map((a) => a.id)];
-
-  // GL endings across the span
-  const gl = allAcctIds.length === 0
-    ? []
-    : await fetchAllPaginated<{
-        account_id: string;
-        entity_id: string;
-        period_year: number;
-        period_month: number;
-        ending_balance: number | string;
-      }>((offset, limit) =>
-        admin
-          .from("gl_balances")
-          .select("account_id, entity_id, period_year, period_month, ending_balance")
-          .in("account_id", allAcctIds)
-          .in("period_year", spanYears)
-          .in("period_month", spanMonthNums)
-          .range(offset, offset + limit - 1)
-      );
+  // GL endings across the span. Filter by ENTITY (small list) rather than by
+  // account_id — the account set can run to >1000 UUIDs, which overflows the
+  // PostgREST `.in()` URL and returns "Bad Request" (silently zeroing every
+  // GL-derived figure). Rows are classified by account membership below.
+  // `.order` is required for correct pagination across pages.
+  const gl = await fetchAllPaginated<{
+    account_id: string;
+    entity_id: string;
+    period_year: number;
+    period_month: number;
+    ending_balance: number | string;
+  }>((offset, limit) =>
+    admin
+      .from("gl_balances")
+      .select("account_id, entity_id, period_year, period_month, ending_balance")
+      .in("entity_id", entityIds)
+      .in("period_year", spanYears)
+      .in("period_month", spanMonthNums)
+      .order("account_id")
+      .range(offset, offset + limit - 1)
+  );
 
   // faEnd[entity][year-month] and depEnd[entity][year-month]
   const faEnd = new Map<string, Map<string, number>>();
@@ -209,6 +210,7 @@ export async function GET(request: Request) {
 
       const additions = asset.additionsByBucket[b.key] ?? 0;
       const disposals = asset.disposalProceedsByBucket[b.key] ?? 0;
+      const gainLoss = asset.gainLossByBucket[b.key] ?? 0;
       const purchaseLine = -additions;
       const proceedsLine = disposals;
       const schedCash = sched.cashPurchasesByBucket[b.key] ?? 0;
@@ -217,7 +219,9 @@ export async function GET(request: Request) {
 
       const subledgerNet = purchaseLine + proceedsLine;
       const scheduleNet = schedCash + schedProceeds + schedNonCash;
-      const investingTotal = carryingChange - depreciation;
+      // Investing is on a proceeds basis: GL carrying change less depreciation,
+      // plus the gain/(loss) reclassified out of Operating (matches the engine).
+      const investingTotal = carryingChange - depreciation + gainLoss;
       const residual = investingTotal - purchaseLine - proceedsLine - schedCash - schedProceeds - schedNonCash;
 
       byBucket[b.key] = {

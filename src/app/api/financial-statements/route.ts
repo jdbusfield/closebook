@@ -1952,6 +1952,14 @@ function buildCashFlowStatement(
       (pyDepreciationByBucket[bucket.key] ?? 0) + (pyIntangibleAmortByBucket[bucket.key] ?? 0);
   }
 
+  // Net book gain/(loss) on disposals from the subledger. A gain is non-cash
+  // (it's in net income), so it is removed from Operating and the full proceeds
+  // show in Investing (ASC 230-10-45-28).  Reclassifying it INCREASES Investing
+  // and DECREASES Operating by the same amount, so net change in cash is
+  // unchanged and the statement keeps articulating.
+  const gainLossByBucket = assetCashFlows?.gainLossByBucket ?? {};
+  const hasGainLoss = buckets.some((b) => Math.abs(gainLossByBucket[b.key] ?? 0) > 0.5);
+
   // --- OPERATING ACTIVITIES ---
   const operatingLines: LineItem[] = [];
 
@@ -1997,6 +2005,27 @@ function buildCashFlowStatement(
     drillDownMeta: { type: "none" },
   });
 
+  // (Gain)/loss on disposal of property & equipment — non-cash, removed from
+  // operating so the full proceeds appear in Investing. Gain → negative (deduct
+  // from net income); loss → positive (add back).
+  if (hasGainLoss) {
+    const glAddBack: Record<string, number> = {};
+    for (const bucket of buckets) glAddBack[bucket.key] = -(gainLossByBucket[bucket.key] ?? 0);
+    operatingLines.push({
+      id: "cf-gain-loss-disposal",
+      label: "(Gain) loss on disposal of property and equipment",
+      amounts: glAddBack,
+      priorYearAmounts: hasPY ? {} : undefined,
+      indent: 1,
+      isTotal: false,
+      isGrandTotal: false,
+      isHeader: false,
+      isSeparator: false,
+      showDollarSign: false,
+      drillDownMeta: { type: "none" },
+    });
+  }
+
   // Working capital changes header
   operatingLines.push({
     id: "cf-wc-header",
@@ -2025,7 +2054,8 @@ function buildCashFlowStatement(
     operatingTotal[bucket.key] =
       (netIncomeByBucket[bucket.key] ?? 0) +
       (depreciationByBucket[bucket.key] ?? 0) +
-      (intangibleAmortByBucket[bucket.key] ?? 0);
+      (intangibleAmortByBucket[bucket.key] ?? 0) -
+      (gainLossByBucket[bucket.key] ?? 0); // remove non-cash gain / add back loss
     pyOperatingTotal[bucket.key] = hasPY
       ? (pyNetIncomeByBucket![bucket.key] ?? 0) +
         (pyDepreciationByBucket![bucket.key] ?? 0) +
@@ -2304,9 +2334,15 @@ function buildCashFlowStatement(
   }
   // Remove the tangible depreciation embedded in the "(Net)" masters; it is
   // already added back in Operating, so this keeps the section total = actual
-  // cash invested (matching the prior, tied behavior).
+  // cash invested (matching the prior, tied behavior).  Then add back the net
+  // book gain/(loss) on disposals: the GL carrying change only removes net book
+  // value, but the cash received was the sale price.  Adding the gain/(loss)
+  // lifts Investing from a NBV basis to a proceeds basis (offsetting the
+  // matching deduction in Operating), so the disposal's gain no longer sits in
+  // the reconciling line.
   for (const bucket of buckets) {
     investingTotal[bucket.key] -= depreciationByBucket[bucket.key] ?? 0;
+    investingTotal[bucket.key] += gainLossByBucket[bucket.key] ?? 0;
     if (hasPY) pyInvestingTotal[bucket.key] -= pyDepreciationByBucket[bucket.key] ?? 0;
   }
 
@@ -2360,7 +2396,7 @@ function buildCashFlowStatement(
   };
   const reconDerivation: CashFlowDerivation = {
     description:
-      "A balancing line that keeps Investing tied to the balance sheet. It equals the general-ledger change in the carrying value of property & equipment, MINUS the depreciation already added back in Operating, MINUS the purchases, disposal proceeds, and any Fixed-Asset Activity schedule entries itemized on the lines above. What remains is unexplained non-cash and timing activity — gain/loss on disposal, and any subledger/schedule-vs-general-ledger differences. Enter the missing pieces on the Fixed-Asset Activity schedule to drive this toward zero.",
+      "A balancing line that keeps Investing tied to the balance sheet. It equals the general-ledger change in the carrying value of property & equipment, MINUS depreciation (added back in Operating), PLUS the net book gain/(loss) on disposal (reclassified out of Operating), MINUS the purchases, disposal proceeds, and any Fixed-Asset Activity schedule entries itemized above. What remains is general-ledger fixed-asset activity not yet recorded in the subledger or schedule. Enter the missing pieces on the Fixed-Asset Activity schedule to drive this toward zero.",
     byPeriod: {},
   };
   const scheduleDetail = scheduleCashFlows?.detailByBucket ?? {};
@@ -2444,6 +2480,11 @@ function buildCashFlowStatement(
         amount: -(proceedsAmounts[k] ?? 0),
       },
     ];
+    if (Math.abs(gainLossByBucket[k] ?? 0) > 0.5)
+      reconComponents.push({
+        label: "(Gain) loss on disposal reclassified to Operating",
+        amount: gainLossByBucket[k] ?? 0,
+      });
     // Include schedule reclasses only when present, so the build-up stays clean.
     if (Math.abs(schedCashPurchases[k] ?? 0) > 0.5)
       reconComponents.push({
