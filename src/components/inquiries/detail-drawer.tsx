@@ -22,8 +22,6 @@ import {
   Plus,
   Check,
   ExternalLink,
-  ArrowUpRight,
-  ArrowDownLeft,
   Trash2,
 } from "lucide-react";
 import {
@@ -47,7 +45,8 @@ import {
   relTime,
   isBookedStatus,
   visibleThreadMessages,
-  messageSnippet,
+  emailBodyText,
+  addressName,
   messageDate,
   messageSide,
 } from "@/lib/inquiries/shared";
@@ -363,52 +362,75 @@ const LOG_TABS: [InquiryActivity["type"], string][] = [
   ["quote", "Quote"],
 ];
 
-// A unified timeline entry — either a logged activity or a summarized email.
+// A unified timeline entry — either a logged activity or a real email.
 type TimelineEntry =
   | { kind: "activity"; id: string; date: string; activity: InquiryActivity }
   | { kind: "email"; id: string; date: string; message: InquiryMessage };
 
-function EmailEntry({
+// An email rendered as a chat bubble — ours on the right (filled), the
+// customer's on the left (muted). Shows the full body with the quoted reply
+// history and forwarded headers stripped; the bubble's side/colour identifies
+// the sender, so no From/To/subject clutter.
+function EmailBubble({
   message,
   customerEmail,
+  customerName,
 }: {
   message: InquiryMessage;
   customerEmail: string | null;
+  customerName: string | null;
 }) {
-  const outbound = messageSide(message, customerEmail) === "us";
-  const snippet = messageSnippet(message);
-  const who = outbound
-    ? message.to_addrs?.length
-      ? `To ${message.to_addrs.join(", ")}`
-      : "Sent"
-    : message.from_addr
-      ? `From ${message.from_addr}`
-      : "Received";
+  const mine = messageSide(message, customerEmail) === "us";
+  const body = emailBodyText(message) || "(no message content)";
+  const who = mine
+    ? addressName(message.from_addr) || "You"
+    : customerName || addressName(message.from_addr) || "Customer";
   return (
-    <div className="flex gap-2.5">
-      <ActivityIcon type="email" />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5 text-sm">
-          {outbound ? (
-            <ArrowUpRight className="size-3.5 shrink-0 text-blue-600" />
-          ) : (
-            <ArrowDownLeft className="size-3.5 shrink-0 text-emerald-600" />
-          )}
-          <span className="font-semibold">
-            {outbound ? "Email sent" : "Email received"}
-          </span>
-          {message.subject && (
-            <span className="truncate text-muted-foreground">— {message.subject}</span>
-          )}
-        </div>
-        {snippet && (
-          <div className="mt-0.5 line-clamp-3 rounded bg-muted/50 px-2 py-1 text-xs text-foreground/80">
-            {snippet}
-          </div>
-        )}
-        <div className="mt-0.5 text-xs text-muted-foreground">
-          {who} · {fmtDateTime(messageDate(message))} · {relTime(messageDate(message))}
-        </div>
+    <div className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
+      <div
+        className={`max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm ${
+          mine
+            ? "rounded-br-sm bg-primary text-primary-foreground"
+            : "rounded-bl-sm bg-muted text-foreground"
+        }`}
+      >
+        {body}
+      </div>
+      <div className="mt-1 px-1 text-[11px] text-muted-foreground">
+        {who} · {fmtDateTime(messageDate(message))}
+      </div>
+    </div>
+  );
+}
+
+// A logged note/call/quote, shown as a centered "system" line between bubbles.
+function ActivityChip({
+  activity,
+  onDelete,
+}: {
+  activity: InquiryActivity;
+  onDelete: DrawerCallbacks["onDeleteActivity"];
+}) {
+  return (
+    <div className="flex justify-center">
+      <div className="flex max-w-[92%] items-start gap-1.5 rounded-lg bg-muted/50 px-2.5 py-1 text-xs text-muted-foreground">
+        <ActivityIcon type={activity.type} size={10} />
+        <span className="min-w-0">
+          <span className="font-semibold capitalize text-foreground/80">
+            {activity.type}
+          </span>{" "}
+          {activity.body}
+          <span className="opacity-70"> · {relTime(activity.occurred_at)}</span>
+        </span>
+        <button
+          type="button"
+          onClick={() => onDelete(activity.id)}
+          title="Remove this activity"
+          aria-label="Remove this activity"
+          className="shrink-0 rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
+        >
+          <Trash2 className="size-3.5" />
+        </button>
       </div>
     </div>
   );
@@ -426,10 +448,20 @@ export function ActivityTimeline({
   const [type, setType] = useState<InquiryActivity["type"]>("note");
   const [text, setText] = useState("");
 
-  // Merge logged activity with the de-duplicated email thread into one
-  // chronological feed (newest first), so the timeline shows the full
-  // back-and-forth — what we sent and what came back — alongside manual notes.
+  // Build a chat-ordered (oldest → newest) feed: real emails as bubbles plus
+  // logged activity as system lines. The automated internal lead-notification is
+  // hidden — it's internal mail to sales@, not part of the customer conversation.
   const entries: TimelineEntry[] = [
+    ...visibleThreadMessages(inquiry.messages || [])
+      .filter((m) => m.kind !== "internal_notification")
+      .map(
+        (m): TimelineEntry => ({
+          kind: "email",
+          id: `m-${m.id}`,
+          date: messageDate(m),
+          message: m,
+        })
+      ),
     ...(inquiry.activity || []).map(
       (a): TimelineEntry => ({
         kind: "activity",
@@ -438,15 +470,7 @@ export function ActivityTimeline({
         activity: a,
       })
     ),
-    ...visibleThreadMessages(inquiry.messages || []).map(
-      (m): TimelineEntry => ({
-        kind: "email",
-        id: `m-${m.id}`,
-        date: messageDate(m),
-        message: m,
-      })
-    ),
-  ].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  ].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
 
   const submit = () => {
     if (!text.trim()) return;
@@ -484,34 +508,18 @@ export function ActivityTimeline({
       </div>
       <div className="mt-4 space-y-3">
         {entries.length === 0 && (
-          <p className="text-sm text-muted-foreground">No activity yet.</p>
+          <p className="text-sm text-muted-foreground">No messages yet.</p>
         )}
         {entries.map((e) =>
           e.kind === "email" ? (
-            <EmailEntry key={e.id} message={e.message} customerEmail={inquiry.email} />
+            <EmailBubble
+              key={e.id}
+              message={e.message}
+              customerEmail={inquiry.email}
+              customerName={inquiry.name}
+            />
           ) : (
-            <div key={e.id} className="group flex gap-2.5">
-              <ActivityIcon type={e.activity.type} />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm">
-                  <span className="font-semibold capitalize">{e.activity.type}</span> —{" "}
-                  {e.activity.body}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {e.activity.actor ? `${e.activity.actor} · ` : ""}
-                  {fmtDateTime(e.activity.occurred_at)} · {relTime(e.activity.occurred_at)}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => onDeleteActivity(e.activity.id)}
-                title="Remove this activity"
-                aria-label="Remove this activity"
-                className="shrink-0 self-start rounded p-1 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
-              >
-                <Trash2 className="size-4" />
-              </button>
-            </div>
+            <ActivityChip key={e.id} activity={e.activity} onDelete={onDeleteActivity} />
           )
         )}
       </div>
