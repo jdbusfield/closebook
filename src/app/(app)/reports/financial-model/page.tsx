@@ -25,6 +25,7 @@ import {
 import { filterForEbitdaOnly } from "@/components/financial-statements/format-utils";
 import { usePrintFitToPage } from "@/components/financial-statements/use-print-fit-to-page";
 import { ProFormaTab } from "@/components/financial-statements/pro-forma-tab";
+import { FixedAssetScheduleTab } from "@/components/financial-statements/fixed-asset-schedule-tab";
 import { ProFormaDetailSchedule } from "@/components/financial-statements/pro-forma-detail-schedule";
 import { AllocationTab } from "@/components/financial-statements/allocation-tab";
 import { EntityBreakdownTab } from "@/components/financial-statements/entity-breakdown-tab";
@@ -97,6 +98,9 @@ export default function FinancialModelPage() {
   const [includeBudget, setIncludeBudget] = useState(false);
   const [includeYoY, setIncludeYoY] = useState(false);
   const [includeProForma, setIncludeProForma] = useState(false);
+  // Fixed-Asset Activity schedule reclass — on by default (it makes the cash
+  // flow more correct from real, entered facts, not a hypothetical).
+  const [includeFixedAssetSchedule, setIncludeFixedAssetSchedule] = useState(true);
   const [showProFormaDetails, setShowProFormaDetails] = useState(false);
   // Controls whether the pro forma detail schedule is attached as an extra
   // page to the browser Print output. Defaults to off so printing the model
@@ -242,6 +246,7 @@ export default function FinancialModelPage() {
     includeBudget: isAccountantView ? false : includeBudget,
     includeProForma: isAccountantView ? false : includeProForma,
     includeAllocations: isAccountantView ? false : includeAllocations,
+    includeFixedAssetSchedule,
     includeTotal,
   };
 
@@ -606,6 +611,7 @@ export default function FinancialModelPage() {
         showProFormaDetails={showProFormaDetails}
         attachProFormaToPrint={attachProFormaToPrint}
         includeAllocations={includeAllocations}
+        includeFixedAssetSchedule={includeFixedAssetSchedule}
         ebitdaOnly={ebitdaOnly}
         includeTotal={includeTotal}
         onStartYearChange={setStartYear}
@@ -625,6 +631,7 @@ export default function FinancialModelPage() {
         onShowProFormaDetailsChange={setShowProFormaDetails}
         onAttachProFormaToPrintChange={setAttachProFormaToPrint}
         onIncludeAllocationsChange={setIncludeAllocations}
+        onIncludeFixedAssetScheduleChange={setIncludeFixedAssetSchedule}
         onEbitdaOnlyChange={setEbitdaOnly}
         onIncludeTotalChange={setIncludeTotal}
         varianceDisplay={varianceDisplay}
@@ -810,6 +817,7 @@ export default function FinancialModelPage() {
             <TabsTrigger value="cash-flow">Cash Flow</TabsTrigger>
             <TabsTrigger value="pro-forma">Pro Forma Adjustments</TabsTrigger>
             <TabsTrigger value="allocations">Allocations</TabsTrigger>
+            <TabsTrigger value="fixed-asset-schedule">Fixed-Asset Activity</TabsTrigger>
             <TabsTrigger value="entity-breakdown">Entity Breakdown</TabsTrigger>
             {scope === "organization" && reportingEntities.length > 0 && (
               <TabsTrigger value="re-breakdown">RE Breakdown</TabsTrigger>
@@ -992,6 +1000,22 @@ export default function FinancialModelPage() {
               endYear={endYear}
               endMonth={endMonth}
               onAllocationActivated={() => setIncludeAllocations(true)}
+            />
+          </TabsContent>
+
+          {/* Fixed-Asset Activity schedule */}
+          <TabsContent value="fixed-asset-schedule">
+            <FixedAssetScheduleTab
+              organizationId={organizationId}
+              entities={entities}
+              scope={scope}
+              selectedEntityId={selectedEntityId}
+              startYear={startYear}
+              startMonth={startMonth}
+              endYear={endYear}
+              endMonth={endMonth}
+              granularity={granularity}
+              onScheduleActivated={() => setIncludeFixedAssetSchedule(true)}
             />
           </TabsContent>
 

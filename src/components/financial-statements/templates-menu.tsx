@@ -52,6 +52,7 @@ export type FinancialModelTab =
   | "cash-flow"
   | "pro-forma"
   | "allocations"
+  | "fixed-asset-schedule"
   | "entity-breakdown"
   | "re-breakdown"
   | "bridge";
@@ -63,6 +64,7 @@ const TAB_LABELS: Record<FinancialModelTab, string> = {
   "cash-flow": "Cash Flow",
   "pro-forma": "Pro Forma Adjustments",
   allocations: "Allocations",
+  "fixed-asset-schedule": "Fixed-Asset Activity",
   "entity-breakdown": "Entity Breakdown",
   "re-breakdown": "RE Breakdown",
   bridge: "Bridge",

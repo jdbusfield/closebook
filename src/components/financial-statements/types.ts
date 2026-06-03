@@ -2,7 +2,7 @@
 
 export type Granularity = "monthly" | "quarterly" | "yearly";
 export type Scope = "entity" | "organization" | "reporting_entity";
-export type StatementTab = "income-statement" | "balance-sheet" | "cash-flow" | "pro-forma" | "allocations" | "entity-breakdown" | "re-breakdown" | "bridge" | "all";
+export type StatementTab = "income-statement" | "balance-sheet" | "cash-flow" | "pro-forma" | "allocations" | "fixed-asset-schedule" | "entity-breakdown" | "re-breakdown" | "bridge" | "all";
 export type VarianceDisplayMode = "dollars" | "percentage";
 
 /** A single time period column in the statements */
@@ -180,6 +180,8 @@ export interface FinancialModelConfig {
   includeYoY: boolean;
   includeProForma: boolean;
   includeAllocations: boolean;
+  /** Apply the Fixed-Asset Activity schedule reclass to the cash flow (default on). */
+  includeFixedAssetSchedule?: boolean;
   includeTotal: boolean;
 }
 
@@ -242,6 +244,37 @@ export interface AllocationAdjustment {
   master_account_number?: string;
   destination_master_account_name?: string;
   destination_master_account_number?: string;
+}
+
+/** Entry type for a Fixed-Asset Activity schedule row. */
+export type FixedAssetCfEntryType =
+  | "cash_purchase"
+  | "disposal_proceeds"
+  | "disposal_writeoff"
+  | "reclass_transfer";
+
+/** A Fixed-Asset Activity schedule row (explains GL fixed-asset movement in the SCF). */
+export interface FixedAssetCfEntry {
+  id: string;
+  organization_id: string;
+  entity_id: string;
+  period_year: number;
+  period_month: number;
+  entry_type: FixedAssetCfEntryType;
+  /** Positive magnitude; sign/section derived from entry_type. */
+  amount: number;
+  offset_master_account_id: string | null;
+  description: string;
+  notes: string | null;
+  is_excluded: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  // Joined fields for display
+  entity_name?: string;
+  entity_code?: string;
+  offset_master_account_name?: string | null;
+  offset_master_account_number?: string | null;
 }
 
 /** A column in the entity-breakdown view */

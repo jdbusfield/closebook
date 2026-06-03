@@ -25,6 +25,10 @@ import {
   type ComputedLineConfig,
 } from "@/lib/config/statement-sections";
 import { fetchAssetCashFlows, type AssetCashFlows } from "@/lib/utils/asset-cash-flows";
+import {
+  fetchScheduleCashFlows,
+  type ScheduleCashFlows,
+} from "@/lib/utils/fixed-asset-schedule";
 import type {
   Period,
   LineItem,
@@ -34,7 +38,16 @@ import type {
   Granularity,
   Scope,
   CashFlowDerivation,
+  FixedAssetCfEntryType,
 } from "@/components/financial-statements/types";
+
+/** Display labels for Fixed-Asset Activity schedule entry types. */
+const SCHEDULE_TYPE_LABEL: Record<FixedAssetCfEntryType, string> = {
+  cash_purchase: "Cash purchase",
+  disposal_proceeds: "Disposal proceeds",
+  disposal_writeoff: "Disposal / write-off (non-cash)",
+  reclass_transfer: "Reclass / transfer (non-cash)",
+};
 
 // ---------------------------------------------------------------------------
 // Types for raw DB rows
@@ -1853,7 +1866,8 @@ function buildCashFlowStatement(
   pyAggregated?: Map<string, BucketedAmounts>,
   pyNetIncomeByBucket?: Record<string, number>,
   supplementalEntries?: CashFlowSupplementalEntry[],
-  assetCashFlows?: AssetCashFlows
+  assetCashFlows?: AssetCashFlows,
+  scheduleCashFlows?: ScheduleCashFlows
 ): StatementData {
   const sections: StatementSection[] = [];
   const hasPY = !!pyAggregated;
@@ -2300,18 +2314,32 @@ function buildCashFlowStatement(
   // year columns fold into the reconciling line).
   const additions = assetCashFlows?.additionsByBucket ?? {};
   const disposals = assetCashFlows?.disposalProceedsByBucket ?? {};
+  // Hand-entered Fixed-Asset Activity schedule (explains GL-only movements that
+  // never went through the subledger). Each map is already cash-basis signed.
+  const schedCashPurchases = scheduleCashFlows?.cashPurchasesByBucket ?? {};
+  const schedProceeds = scheduleCashFlows?.disposalProceedsByBucket ?? {};
+  const schedWriteoff = scheduleCashFlows?.writeoffByBucket ?? {};
+  const schedReclass = scheduleCashFlows?.reclassByBucket ?? {};
   const purchaseAmounts: Record<string, number> = {};
   const proceedsAmounts: Record<string, number> = {};
   const reconAmounts: Record<string, number> = {};
   const pyReconAmounts: Record<string, number> = {};
   for (const bucket of buckets) {
-    purchaseAmounts[bucket.key] = -(additions[bucket.key] ?? 0); // cash out
-    proceedsAmounts[bucket.key] = disposals[bucket.key] ?? 0; // cash in
-    reconAmounts[bucket.key] =
-      (investingTotal[bucket.key] ?? 0) -
-      purchaseAmounts[bucket.key] -
-      proceedsAmounts[bucket.key];
-    pyReconAmounts[bucket.key] = pyInvestingTotal[bucket.key] ?? 0;
+    const k = bucket.key;
+    purchaseAmounts[k] = -(additions[k] ?? 0); // cash out
+    proceedsAmounts[k] = disposals[k] ?? 0; // cash in
+    // Recon = GL-anchored Investing total LESS every itemized line (subledger +
+    // schedule). Subtracting the schedule lines shrinks the plug; the Investing
+    // total is unchanged, so the statement still articulates.
+    reconAmounts[k] =
+      (investingTotal[k] ?? 0) -
+      purchaseAmounts[k] -
+      proceedsAmounts[k] -
+      (schedCashPurchases[k] ?? 0) -
+      (schedProceeds[k] ?? 0) -
+      (schedWriteoff[k] ?? 0) -
+      (schedReclass[k] ?? 0);
+    pyReconAmounts[k] = pyInvestingTotal[k] ?? 0;
   }
   const anyNonZero = (m: Record<string, number>) =>
     buckets.some((b) => Math.abs(m[b.key] ?? 0) > 0.5);
@@ -2332,9 +2360,38 @@ function buildCashFlowStatement(
   };
   const reconDerivation: CashFlowDerivation = {
     description:
-      "A balancing line that keeps Investing tied to the balance sheet. It equals the general-ledger change in the carrying value of property & equipment, MINUS the depreciation already added back in Operating, MINUS the purchases and disposal proceeds itemized on the lines above. What remains is non-cash and timing activity — depreciation embedded in net-asset accounts, gain/loss on disposal, transfers, and any subledger-vs-general-ledger differences.",
+      "A balancing line that keeps Investing tied to the balance sheet. It equals the general-ledger change in the carrying value of property & equipment, MINUS the depreciation already added back in Operating, MINUS the purchases, disposal proceeds, and any Fixed-Asset Activity schedule entries itemized on the lines above. What remains is unexplained non-cash and timing activity — gain/loss on disposal, and any subledger/schedule-vs-general-ledger differences. Enter the missing pieces on the Fixed-Asset Activity schedule to drive this toward zero.",
     byPeriod: {},
   };
+  const scheduleDetail = scheduleCashFlows?.detailByBucket ?? {};
+  // Schedule cash lines (per-bucket sums) and their derivation build-ups.
+  const schedPurchasesDerivation: CashFlowDerivation = {
+    description:
+      "Capital expenditures booked by journal entry (not in the fixed-asset subledger), captured on the Fixed-Asset Activity schedule. A cash outflow.",
+    byPeriod: {},
+  };
+  const schedProceedsDerivation: CashFlowDerivation = {
+    description:
+      "Disposal proceeds booked by journal entry (not in the fixed-asset subledger), captured on the Fixed-Asset Activity schedule. A cash inflow.",
+    byPeriod: {},
+  };
+  const schedNonCashDerivation: CashFlowDerivation = {
+    description:
+      "Non-cash fixed-asset activity (write-offs, impairments, reclasses, transfers) captured on the Fixed-Asset Activity schedule. No cash effect — shown to label what is inside the GL carrying-value change.",
+    byPeriod: {},
+  };
+  const schedNonCash: Record<string, number> = {};
+  for (const bucket of buckets) {
+    schedNonCash[bucket.key] =
+      (schedWriteoff[bucket.key] ?? 0) + (schedReclass[bucket.key] ?? 0);
+  }
+  const scheduleRowsForBucket = (
+    k: string,
+    types: FixedAssetCfEntryType[],
+  ): { label: string; amount: number }[] =>
+    (scheduleDetail[k] ?? [])
+      .filter((d) => types.includes(d.entryType))
+      .map((d) => ({ label: d.description || SCHEDULE_TYPE_LABEL[d.entryType], amount: d.amount }));
   for (const bucket of buckets) {
     const k = bucket.key;
     purchasesDerivation.byPeriod[k] = {
@@ -2365,28 +2422,73 @@ function buildCashFlowStatement(
         },
       ],
     };
-    reconDerivation.byPeriod[k] = {
-      total: reconAmounts[k] ?? 0,
+    const reconComponents = [
+      {
+        label: "Change in carrying value of property & equipment (per general ledger)",
+        amount: carryingChangeByBucket[k] ?? 0,
+        detail: (carryingDetailByBucket[k] ?? []).map((d) => ({
+          label: d.label,
+          amount: d.amount,
+        })),
+      },
+      {
+        label: "Depreciation & amortization in carrying value (non-cash; added back in Operating)",
+        amount: -(depreciationByBucket[k] ?? 0),
+      },
+      {
+        label: "Purchases of property & equipment (subledger, itemized above)",
+        amount: -(purchaseAmounts[k] ?? 0),
+      },
+      {
+        label: "Proceeds from disposal (subledger, itemized above)",
+        amount: -(proceedsAmounts[k] ?? 0),
+      },
+    ];
+    // Include schedule reclasses only when present, so the build-up stays clean.
+    if (Math.abs(schedCashPurchases[k] ?? 0) > 0.5)
+      reconComponents.push({
+        label: "Cash purchases (Fixed-Asset Activity schedule, itemized above)",
+        amount: -(schedCashPurchases[k] ?? 0),
+      });
+    if (Math.abs(schedProceeds[k] ?? 0) > 0.5)
+      reconComponents.push({
+        label: "Disposal proceeds (Fixed-Asset Activity schedule, itemized above)",
+        amount: -(schedProceeds[k] ?? 0),
+      });
+    if (Math.abs(schedNonCash[k] ?? 0) > 0.5)
+      reconComponents.push({
+        label: "Non-cash schedule activity (write-offs / reclasses, itemized above)",
+        amount: -(schedNonCash[k] ?? 0),
+      });
+    reconDerivation.byPeriod[k] = { total: reconAmounts[k] ?? 0, components: reconComponents };
+
+    schedPurchasesDerivation.byPeriod[k] = {
+      total: schedCashPurchases[k] ?? 0,
       components: [
         {
-          label: "Change in carrying value of property & equipment (per general ledger)",
-          amount: carryingChangeByBucket[k] ?? 0,
-          detail: (carryingDetailByBucket[k] ?? []).map((d) => ({
-            label: d.label,
-            amount: d.amount,
-          })),
+          label: "Capital expenditures (per schedule)",
+          amount: schedCashPurchases[k] ?? 0,
+          detail: scheduleRowsForBucket(k, ["cash_purchase"]),
         },
+      ],
+    };
+    schedProceedsDerivation.byPeriod[k] = {
+      total: schedProceeds[k] ?? 0,
+      components: [
         {
-          label: "Depreciation & amortization in carrying value (non-cash; added back in Operating)",
-          amount: -(depreciationByBucket[k] ?? 0),
+          label: "Disposal proceeds (per schedule)",
+          amount: schedProceeds[k] ?? 0,
+          detail: scheduleRowsForBucket(k, ["disposal_proceeds"]),
         },
+      ],
+    };
+    schedNonCashDerivation.byPeriod[k] = {
+      total: schedNonCash[k] ?? 0,
+      components: [
         {
-          label: "Purchases of property & equipment (itemized on the line above)",
-          amount: -(purchaseAmounts[k] ?? 0),
-        },
-        {
-          label: "Proceeds from disposal (itemized on the line above)",
-          amount: -(proceedsAmounts[k] ?? 0),
+          label: "Non-cash write-offs / reclasses (per schedule)",
+          amount: schedNonCash[k] ?? 0,
+          detail: scheduleRowsForBucket(k, ["disposal_writeoff", "reclass_transfer"]),
         },
       ],
     };
@@ -2423,6 +2525,56 @@ function buildCashFlowStatement(
       showDollarSign: false,
       drillDownMeta: { type: "none" },
       derivation: proceedsDerivation,
+    });
+  }
+  // Fixed-Asset Activity schedule lines (hand-entered explanations of GL-only
+  // movements). They decompose the recon plug; the Investing total is unchanged.
+  if (anyNonZero(schedCashPurchases)) {
+    investingLines.push({
+      id: "cf-inv-sched-purchases",
+      label: "Purchases of property and equipment (per schedule)",
+      amounts: schedCashPurchases,
+      priorYearAmounts: hasPY ? {} : undefined,
+      indent: 1,
+      isTotal: false,
+      isGrandTotal: false,
+      isHeader: false,
+      isSeparator: false,
+      showDollarSign: false,
+      drillDownMeta: { type: "none" },
+      derivation: schedPurchasesDerivation,
+    });
+  }
+  if (anyNonZero(schedProceeds)) {
+    investingLines.push({
+      id: "cf-inv-sched-proceeds",
+      label: "Proceeds from disposal of property and equipment (per schedule)",
+      amounts: schedProceeds,
+      priorYearAmounts: hasPY ? {} : undefined,
+      indent: 1,
+      isTotal: false,
+      isGrandTotal: false,
+      isHeader: false,
+      isSeparator: false,
+      showDollarSign: false,
+      drillDownMeta: { type: "none" },
+      derivation: schedProceedsDerivation,
+    });
+  }
+  if (anyNonZero(schedNonCash)) {
+    investingLines.push({
+      id: "cf-inv-sched-noncash",
+      label: "Non-cash fixed-asset activity (write-offs / reclasses, per schedule)",
+      amounts: schedNonCash,
+      priorYearAmounts: hasPY ? {} : undefined,
+      indent: 1,
+      isTotal: false,
+      isGrandTotal: false,
+      isHeader: false,
+      isSeparator: false,
+      showDollarSign: false,
+      drillDownMeta: { type: "none" },
+      derivation: schedNonCashDerivation,
     });
   }
   investingLines.push({
@@ -2913,6 +3065,7 @@ interface ConsolidatedStatementsParams {
   includeBudget: boolean;
   includeProForma: boolean;
   includeAllocations: boolean;
+  includeFixedAssetSchedule: boolean;
   granularity: Granularity;
   scope: Scope;
   startYear: number;
@@ -2934,6 +3087,7 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     includeBudget,
     includeProForma,
     includeAllocations,
+    includeFixedAssetSchedule,
     granularity,
     scope,
     startYear,
@@ -3748,6 +3902,10 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
 
   // Gross capex / disposal proceeds from the fixed-asset subledger (Investing).
   const assetCashFlows = await fetchAssetCashFlows(admin, entityIds, buckets);
+  // Hand-entered Fixed-Asset Activity schedule (explains GL-only movements).
+  const scheduleCashFlows = includeFixedAssetSchedule
+    ? await fetchScheduleCashFlows(admin, entityIds, buckets)
+    : undefined;
   const cashFlowStatement = buildCashFlowStatement(
     displayAccounts,
     aggregated,
@@ -3756,7 +3914,8 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     includeYoY ? pyAggregated : undefined,
     includeYoY ? pyNetIncomeByBucket : undefined,
     cfSupplementalEntries.length > 0 ? cfSupplementalEntries : undefined,
-    assetCashFlows
+    assetCashFlows,
+    scheduleCashFlows
   );
 
   const periods: Period[] = buckets.map((b) => ({
@@ -3836,6 +3995,9 @@ export async function GET(request: Request) {
   const includeYoY = searchParams.get("includeYoY") === "true";
   const includeProForma = searchParams.get("includeProForma") === "true";
   const includeAllocations = searchParams.get("includeAllocations") === "true";
+  // Fixed-Asset Activity schedule reclass is on by default; pass "false" to hide.
+  const includeFixedAssetSchedule =
+    searchParams.get("includeFixedAssetSchedule") !== "false";
   const includeTotal = searchParams.get("includeTotal") === "true";
   const chartIdParam = searchParams.get("chartId");
 
@@ -4264,6 +4426,10 @@ export async function GET(request: Request) {
     // Build Cash Flow Statement
     // Gross capex / disposal proceeds from the fixed-asset subledger (Investing).
     const assetCashFlows = await fetchAssetCashFlows(admin, [entityId!], buckets);
+    // Hand-entered Fixed-Asset Activity schedule (explains GL-only movements).
+    const scheduleCashFlows = includeFixedAssetSchedule
+      ? await fetchScheduleCashFlows(admin, [entityId!], buckets)
+      : undefined;
     const cashFlowStatement = buildCashFlowStatement(
       displayAccounts,
       aggregated,
@@ -4272,7 +4438,8 @@ export async function GET(request: Request) {
       includeYoY ? pyAggregated : undefined,
       includeYoY ? pyNetIncomeByBucket : undefined,
       entityCfSupplementalEntries.length > 0 ? entityCfSupplementalEntries : undefined,
-      assetCashFlows
+      assetCashFlows,
+      scheduleCashFlows
     );
 
     // Build periods array
@@ -4415,6 +4582,7 @@ export async function GET(request: Request) {
       includeBudget,
       includeProForma,
       includeAllocations,
+      includeFixedAssetSchedule,
       granularity,
       scope,
       startYear,
@@ -4536,6 +4704,7 @@ export async function GET(request: Request) {
       includeBudget,
       includeProForma,
       includeAllocations,
+      includeFixedAssetSchedule,
       granularity,
       scope,
       startYear,

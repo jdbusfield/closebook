@@ -25,6 +25,7 @@ const TAB_LABELS: Record<StatementTab, string> = {
   "cash-flow": "Cash Flow",
   "pro-forma": "Pro Forma Adjustments",
   allocations: "Allocations",
+  "fixed-asset-schedule": "Fixed-Asset Activity",
   "entity-breakdown": "Entity Breakdown",
   "re-breakdown": "RE Breakdown",
   bridge: "Bridge",
@@ -43,6 +44,7 @@ interface ConfigToolbarProps {
   showProFormaDetails?: boolean;
   attachProFormaToPrint?: boolean;
   includeAllocations?: boolean;
+  includeFixedAssetSchedule?: boolean;
   ebitdaOnly?: boolean;
   includeTotal?: boolean;
   onStartYearChange: (year: number) => void;
@@ -56,6 +58,7 @@ interface ConfigToolbarProps {
   onShowProFormaDetailsChange?: (val: boolean) => void;
   onAttachProFormaToPrintChange?: (val: boolean) => void;
   onIncludeAllocationsChange?: (val: boolean) => void;
+  onIncludeFixedAssetScheduleChange?: (val: boolean) => void;
   onEbitdaOnlyChange?: (val: boolean) => void;
   onIncludeTotalChange?: (val: boolean) => void;
   varianceDisplay?: VarianceDisplayMode;
@@ -90,6 +93,7 @@ export function ConfigToolbar({
   showProFormaDetails,
   attachProFormaToPrint,
   includeAllocations,
+  includeFixedAssetSchedule,
   ebitdaOnly,
   includeTotal,
   onStartYearChange,
@@ -103,6 +107,7 @@ export function ConfigToolbar({
   onShowProFormaDetailsChange,
   onAttachProFormaToPrintChange,
   onIncludeAllocationsChange,
+  onIncludeFixedAssetScheduleChange,
   onEbitdaOnlyChange,
   onIncludeTotalChange,
   varianceDisplay = "dollars",
@@ -276,6 +281,17 @@ export function ConfigToolbar({
               }
             />
             Allocations
+          </label>
+        )}
+        {onIncludeFixedAssetScheduleChange && (
+          <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+            <Checkbox
+              checked={includeFixedAssetSchedule ?? true}
+              onCheckedChange={(checked) =>
+                onIncludeFixedAssetScheduleChange(checked === true)
+              }
+            />
+            Fixed-Asset Schedule
           </label>
         )}
         {onEbitdaOnlyChange && (

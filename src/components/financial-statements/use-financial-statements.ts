@@ -40,6 +40,7 @@ function useFetchStatements(
       includeYoY: String(config.includeYoY),
       includeProForma: String(config.includeProForma),
       includeAllocations: String(config.includeAllocations),
+      includeFixedAssetSchedule: String(config.includeFixedAssetSchedule ?? true),
       includeTotal: String(config.includeTotal),
     });
 
@@ -84,7 +85,7 @@ function useFetchStatements(
     return () => {
       controller.abort();
     };
-  }, [enabled, trigger, config.scope, config.entityId, config.organizationId, config.reportingEntityId, config.chartId, config.startYear, config.startMonth, config.endYear, config.endMonth, config.granularity, config.includeBudget, config.includeYoY, config.includeProForma, config.includeAllocations, config.includeTotal]);
+  }, [enabled, trigger, config.scope, config.entityId, config.organizationId, config.reportingEntityId, config.chartId, config.startYear, config.startMonth, config.endYear, config.endMonth, config.granularity, config.includeBudget, config.includeYoY, config.includeProForma, config.includeAllocations, config.includeFixedAssetSchedule, config.includeTotal]);
 
   return { data, loading, error };
 }
