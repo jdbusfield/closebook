@@ -11,7 +11,6 @@ import {
   KanbanSquare,
   CalendarDays,
   Users,
-  Truck,
   Inbox,
   type LucideIcon,
 } from "lucide-react";
@@ -47,7 +46,6 @@ export function SectionTabs({
     },
     { key: "calendar", label: "Calendar", href: `${base}/calendar`, icon: CalendarDays },
     { key: "customers", label: "Customers", href: `${base}/customers`, icon: Users },
-    { key: "fleet", label: "Fleet", href: `${base}/fleet`, icon: Truck },
     { key: "inbox", label: "Inbox", href: `${base}/inbox`, icon: Inbox },
   ];
 

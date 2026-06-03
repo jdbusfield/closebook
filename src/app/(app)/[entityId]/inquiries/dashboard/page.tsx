@@ -21,7 +21,6 @@ import {
   KPI,
   StagePill,
   DueBadge,
-  UnitTag,
   InquiryAvatar,
 } from "@/components/inquiries/atoms";
 import {
@@ -48,7 +47,6 @@ export default function InquiriesDashboardPage() {
 
   const callbacks: DrawerCallbacks = {
     onMove: data.moveStage,
-    onAssignUnit: data.assignUnit,
     onSetValue: data.setEstimatedValue,
     onAddTask: data.addTask,
     onToggleTask: data.toggleTask,
@@ -294,7 +292,7 @@ export default function InquiriesDashboardPage() {
               </div>
               {m.sched.length === 0 ? (
                 <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-                  Nothing scheduled. Assign units to confirmed rentals to populate this.
+                  Nothing scheduled. Confirmed rentals with dates show up here.
                 </p>
               ) : (
                 <div className="divide-y">
@@ -324,7 +322,7 @@ export default function InquiriesDashboardPage() {
                             {isOut ? "Deliver" : "Pick up"} · {it.inq.name}
                           </div>
                           <div className="mt-0.5 flex items-center gap-2 text-xs">
-                            <UnitTag unitId={it.inq.unit_id} />
+                            <StagePill status={it.inq.status} />
                             <span className="truncate text-muted-foreground">
                               {it.inq.location}
                             </span>

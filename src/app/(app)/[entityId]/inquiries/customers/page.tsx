@@ -9,7 +9,6 @@ import { InquiryDrawer, type DrawerCallbacks } from "@/components/inquiries/deta
 import {
   InquiryAvatar,
   StagePill,
-  UnitTag,
   DueBadge,
 } from "@/components/inquiries/atoms";
 import { Input } from "@/components/ui/input";
@@ -24,7 +23,6 @@ export default function InquiriesCustomersPage() {
 
   const callbacks: DrawerCallbacks = {
     onMove: data.moveStage,
-    onAssignUnit: data.assignUnit,
     onSetValue: data.setEstimatedValue,
     onAddTask: data.addTask,
     onToggleTask: data.toggleTask,
@@ -79,7 +77,6 @@ export default function InquiriesCustomersPage() {
                 <th className="px-3 py-2 text-left font-semibold">Customer</th>
                 <th className="px-3 py-2 text-left font-semibold">Event</th>
                 <th className="px-3 py-2 text-left font-semibold">Dates</th>
-                <th className="px-3 py-2 text-left font-semibold">Unit</th>
                 <th className="px-3 py-2 text-left font-semibold">Stage</th>
                 <th className="px-3 py-2 text-right font-semibold">Value</th>
                 <th className="px-3 py-2 text-left font-semibold">Next action</th>
@@ -115,9 +112,6 @@ export default function InquiriesCustomersPage() {
                     </td>
                     <td className="px-3 py-2 font-mono text-xs">
                       {inq.start_date ? fmtRange(inq.start_date, inq.end_date) : "—"}
-                    </td>
-                    <td className="px-3 py-2">
-                      <UnitTag unitId={inq.unit_id} />
                     </td>
                     <td className="px-3 py-2">
                       <StagePill status={inq.status} />

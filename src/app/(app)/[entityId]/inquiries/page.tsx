@@ -8,7 +8,6 @@ import { SectionTabs } from "@/components/inquiries/section-tabs";
 import { InquiryDrawer, type DrawerCallbacks } from "@/components/inquiries/detail-drawer";
 import {
   InquiryAvatar,
-  UnitTag,
   LastTouched,
   CorrespondenceBadge,
 } from "@/components/inquiries/atoms";
@@ -77,14 +76,13 @@ function DealCard({
           </span>
         </div>
       )}
-      <div className="mt-2 flex items-center justify-between gap-2 border-t pt-2">
-        <UnitTag unitId={inq.unit_id} />
-        {inq.estimated_value != null && (
+      {inq.estimated_value != null && (
+        <div className="mt-2 flex items-center justify-end border-t pt-2">
           <span className="font-mono text-xs font-semibold">
             {fmtMoney(inq.estimated_value)}
           </span>
-        )}
-      </div>
+        </div>
+      )}
       <div className="mt-1.5 flex items-center justify-between gap-2">
         <LastTouched inq={inq} />
         <CorrespondenceBadge inq={inq} />
@@ -117,7 +115,6 @@ export default function InquiriesPipelinePage() {
 
   const callbacks: DrawerCallbacks = {
     onMove: data.moveStage,
-    onAssignUnit: data.assignUnit,
     onSetValue: data.setEstimatedValue,
     onAddTask: data.addTask,
     onToggleTask: data.toggleTask,

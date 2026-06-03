@@ -10,12 +10,12 @@ import { hexA } from "@/components/inquiries/atoms";
 import { Button } from "@/components/ui/button";
 import {
   type Inquiry,
-  FLEET,
-  FLEET_BY_ID,
+  STAGES,
+  STAGE_BY_KEY,
+  normalizeStatus,
   parseDate,
   toISODate,
   today,
-  isReservation,
 } from "@/lib/inquiries/shared";
 
 const MONTHS = [
@@ -28,7 +28,7 @@ interface Res {
   inq: Inquiry;
   startIso: string;
   endIso: string;
-  unitColor: string;
+  color: string;
 }
 
 export default function InquiriesCalendarPage() {
@@ -36,13 +36,11 @@ export default function InquiriesCalendarPage() {
   const entityId = params.entityId as string;
   const data = useInquiries(entityId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [unitFilter, setUnitFilter] = useState<string>("all");
   const t0 = today();
   const [cursor, setCursor] = useState(() => new Date(t0.getFullYear(), t0.getMonth(), 1));
 
   const callbacks: DrawerCallbacks = {
     onMove: data.moveStage,
-    onAssignUnit: data.assignUnit,
     onSetValue: data.setEstimatedValue,
     onAddTask: data.addTask,
     onToggleTask: data.toggleTask,
@@ -54,22 +52,22 @@ export default function InquiriesCalendarPage() {
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
 
+  // Every non-lost inquiry that has a start date, plotted from start → end and
+  // colored by its pipeline stage.
   const reservations: Res[] = useMemo(() => {
     return data.inquiries
-      .filter(isReservation)
-      .filter((i) => unitFilter === "all" || i.unit_id === unitFilter)
+      .filter((i) => i.status !== "lost" && parseDate(i.start_date))
       .map((inq) => {
         const s = parseDate(inq.start_date)!;
         const e = parseDate(inq.end_date) || s;
-        const u = inq.unit_id ? FLEET_BY_ID[inq.unit_id] : null;
         return {
           inq,
           startIso: toISODate(s),
           endIso: toISODate(e < s ? s : e),
-          unitColor: u?.color || "#64748b",
+          color: STAGE_BY_KEY[normalizeStatus(inq.status)].color,
         };
       });
-  }, [data.inquiries, unitFilter]);
+  }, [data.inquiries]);
 
   const cells = useMemo(() => {
     const first = new Date(year, month, 1);
@@ -94,9 +92,9 @@ export default function InquiriesCalendarPage() {
   return (
     <div className="space-y-4 p-4 md:p-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Reservation calendar</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Rental calendar</h1>
         <p className="text-sm text-muted-foreground">
-          Deliveries &amp; returns across the fleet
+          Rentals by date, colored by pipeline stage
         </p>
       </div>
       <SectionTabs entityId={entityId} />
@@ -130,30 +128,19 @@ export default function InquiriesCalendarPage() {
           Today
         </Button>
         <span className="text-xs font-medium text-muted-foreground">
-          {monthResCount} reservation{monthResCount === 1 ? "" : "s"} this month
+          {monthResCount} rental{monthResCount === 1 ? "" : "s"} this month
         </span>
 
-        <div className="ml-auto flex flex-wrap items-center gap-1.5">
-          <button
-            onClick={() => setUnitFilter("all")}
-            className={`rounded px-2 py-1 text-xs font-medium ${
-              unitFilter === "all"
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground"
-            }`}
-          >
-            All units
-          </button>
-          {FLEET.map((u) => (
-            <button
-              key={u.id}
-              onClick={() => setUnitFilter(unitFilter === u.id ? "all" : u.id)}
-              className="inline-flex items-center gap-1.5 px-1.5 py-1 text-xs"
-              style={{ opacity: unitFilter === "all" || unitFilter === u.id ? 1 : 0.4 }}
+        {/* Stage legend */}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {STAGES.map((s) => (
+            <span
+              key={s.key}
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
             >
-              <span className="size-2 rounded-full" style={{ background: u.color }} />
-              {u.name}
-            </button>
+              <span className="size-2 rounded-full" style={{ background: s.color }} />
+              {s.label}
+            </span>
           ))}
         </div>
       </div>
@@ -195,28 +182,25 @@ export default function InquiriesCalendarPage() {
                     {evs.map((r) => {
                       const isStart = dayIso === r.startIso;
                       const isEnd = dayIso === r.endIso;
-                      const u = r.inq.unit_id ? FLEET_BY_ID[r.inq.unit_id] : null;
                       return (
                         <button
                           key={r.inq.id}
                           onClick={() => setSelectedId(r.inq.id)}
-                          title={`${r.inq.name} · ${u?.name ?? ""}`}
+                          title={`${r.inq.name ?? "Inquiry"} · ${STAGE_BY_KEY[normalizeStatus(r.inq.status)].label}`}
                           className="flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-[11px] font-medium"
                           style={{
-                            background: hexA(r.unitColor, 0.12),
-                            color: r.unitColor,
-                            borderLeft: isStart ? `3px solid ${r.unitColor}` : undefined,
+                            background: hexA(r.color, 0.12),
+                            color: r.color,
+                            borderLeft: isStart ? `3px solid ${r.color}` : undefined,
                             opacity: isEnd && !isStart ? 0.72 : 1,
                           }}
                         >
                           {isStart && <ArrowUp className="size-3 shrink-0" />}
                           {isEnd && !isStart && <ArrowDown className="size-3 shrink-0" />}
                           <span className="truncate">
-                            {isStart
-                              ? r.inq.name
-                              : isEnd
-                                ? `Return · ${u?.name ?? "unit"}`
-                                : r.inq.name}
+                            {isEnd && !isStart
+                              ? `Return · ${r.inq.name ?? "rental"}`
+                              : r.inq.name ?? "Inquiry"}
                           </span>
                         </button>
                       );
@@ -231,10 +215,10 @@ export default function InquiriesCalendarPage() {
 
       <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5">
-          <ArrowUp className="size-3.5" /> Delivery (out)
+          <ArrowUp className="size-3.5" /> Rental start
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <ArrowDown className="size-3.5" /> Return (pickup)
+          <ArrowDown className="size-3.5" /> Rental end
         </span>
         <span>Bars span the full rental window · click any to open</span>
       </div>
