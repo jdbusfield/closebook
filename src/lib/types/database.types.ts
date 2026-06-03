@@ -318,6 +318,60 @@ export type Database = {
         }
         Relationships: []
       }
+      rental_inquiry_templates: {
+        Row: {
+          id: string
+          entity_id: string
+          template_key: string
+          label: string
+          channel: string
+          track: string
+          stages: string[]
+          cadence: string | null
+          subject: string | null
+          body: string
+          sort_order: number
+          archived: boolean
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          template_key: string
+          label: string
+          channel: string
+          track: string
+          stages?: string[]
+          cadence?: string | null
+          subject?: string | null
+          body?: string
+          sort_order?: number
+          archived?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          template_key?: string
+          label?: string
+          channel?: string
+          track?: string
+          stages?: string[]
+          cadence?: string | null
+          subject?: string | null
+          body?: string
+          sort_order?: number
+          archived?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       asset_depreciation_rules: {
         Row: {
           id: string

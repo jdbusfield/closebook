@@ -30,6 +30,7 @@ import {
   ActivityIcon,
   hexA,
 } from "@/components/inquiries/atoms";
+import { TemplatePicker } from "@/components/inquiries/template-picker";
 import {
   type Inquiry,
   type InquiryStatus,
@@ -414,12 +415,16 @@ function ActivityChip({
 
 export function ActivityTimeline({
   inquiry,
+  entityId,
   onAddActivity,
   onDeleteActivity,
+  actor = "You",
 }: {
   inquiry: Inquiry;
+  entityId: string;
   onAddActivity: DrawerCallbacks["onAddActivity"];
   onDeleteActivity: DrawerCallbacks["onDeleteActivity"];
+  actor?: string;
 }) {
   const [type, setType] = useState<InquiryActivity["type"]>("note");
   const [text, setText] = useState("");
@@ -455,7 +460,7 @@ export function ActivityTimeline({
   };
   return (
     <div>
-      <div className="flex gap-1">
+      <div className="flex items-center gap-1">
         {LOG_TABS.map(([k, lbl]) => (
           <button
             key={k}
@@ -469,6 +474,14 @@ export function ActivityTimeline({
             {lbl}
           </button>
         ))}
+        <div className="ml-auto">
+          <TemplatePicker
+            inquiry={inquiry}
+            entityId={entityId}
+            rep={actor}
+            onLog={(t, body) => onAddActivity(inquiry.id, t, body)}
+          />
+        </div>
       </div>
       <div className="mt-2 flex gap-2">
         <Input
@@ -526,11 +539,13 @@ export function InquiryDrawer({
   entityId,
   onClose,
   callbacks,
+  actor = "You",
 }: {
   inquiry: Inquiry | null;
   entityId: string;
   onClose: () => void;
   callbacks: DrawerCallbacks;
+  actor?: string;
 }) {
   return (
     <Sheet open={!!inquiry} onOpenChange={(o) => !o && onClose()}>
@@ -576,8 +591,10 @@ export function InquiryDrawer({
               <Section title="Activity & emails">
                 <ActivityTimeline
                   inquiry={inquiry}
+                  entityId={entityId}
                   onAddActivity={callbacks.onAddActivity}
                   onDeleteActivity={callbacks.onDeleteActivity}
+                  actor={actor}
                 />
               </Section>
 

@@ -12,6 +12,7 @@ import {
   CalendarDays,
   Users,
   Inbox,
+  MessageSquareText,
   type LucideIcon,
 } from "lucide-react";
 
@@ -46,6 +47,7 @@ export function SectionTabs({
     },
     { key: "calendar", label: "Calendar", href: `${base}/calendar`, icon: CalendarDays },
     { key: "customers", label: "Customers", href: `${base}/customers`, icon: Users },
+    { key: "templates", label: "Templates", href: `${base}/templates`, icon: MessageSquareText },
     { key: "inbox", label: "Inbox", href: `${base}/inbox`, icon: Inbox },
   ];
 

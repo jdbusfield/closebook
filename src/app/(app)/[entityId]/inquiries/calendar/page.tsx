@@ -228,6 +228,7 @@ export default function InquiriesCalendarPage() {
         entityId={entityId}
         onClose={() => setSelectedId(null)}
         callbacks={callbacks}
+        actor={data.actor}
       />
     </div>
   );
