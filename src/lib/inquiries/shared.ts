@@ -452,6 +452,47 @@ export function relTime(s: string | Date | null | undefined): string {
   return relDays(d);
 }
 
+// The automated intake mails — the lead notification and the customer "thank
+// you" autoreply — are never genuine correspondence. They're recorded by kind
+// at ingest, but the sales mailbox also forwards them back into the system,
+// where the inbound-email worker re-records them as outbound "reply" rows (it
+// tags everything it captures as "reply"). Those echoes carry the same subject,
+// so we recognise them and exclude them too — otherwise the bounced-back lead
+// notification reads as us replying.
+function automatedIntakeSubjects<
+  T extends { kind: string | null; subject: string | null }
+>(messages: T[]): Set<string> {
+  const subs = new Set<string>();
+  for (const m of messages) {
+    if (m.kind === "internal_notification" || m.kind === "customer_autoreply") {
+      subs.add(normalizeSubject(m.subject));
+    }
+  }
+  return subs;
+}
+
+export function isAutomatedIntakeMail<
+  T extends { kind: string | null; direction?: string; subject: string | null }
+>(m: T, automatedSubjects: Set<string>): boolean {
+  if (m.kind === "internal_notification" || m.kind === "customer_autoreply") return true;
+  // The forwarded echo of those mails reappears as an outbound message with the
+  // same subject — not something a human on our side actually wrote.
+  if (m.direction === "outbound" && automatedSubjects.has(normalizeSubject(m.subject))) {
+    return true;
+  }
+  return false;
+}
+
+// Genuine, human correspondence only: real inbound customer mail and the
+// outbound replies we actually wrote — with every flavour of automated intake
+// mail (and its forwarded echo) removed.
+export function genuineMessages<
+  T extends { kind: string | null; direction?: string; subject: string | null }
+>(messages: T[]): T[] {
+  const auto = automatedIntakeSubjects(messages);
+  return messages.filter((m) => !isAutomatedIntakeMail(m, auto));
+}
+
 // Most recent moment of a real touchpoint — an email exchanged or an activity
 // logged (call/email/note/quote/stage move). Deliberately ignores the inquiry's
 // `last_activity_at` stamp, which gets bumped by record edits (e.g. creating the
@@ -459,9 +500,10 @@ export function relTime(s: string | Date | null | undefined): string {
 // call rather than when the record was touched. Falls back to created_at only
 // when there's no correspondence or activity at all.
 export function lastTouchedAt(inq: Inquiry): Date | null {
+  const auto = automatedIntakeSubjects(inq.messages || []);
   const candidates: Date[] = [];
   for (const m of inq.messages || []) {
-    if (m.kind === "internal_notification" || m.kind === "customer_autoreply") continue;
+    if (isAutomatedIntakeMail(m, auto)) continue;
     const d = parseTimestamp(messageDate(m));
     if (d) candidates.push(d);
   }
@@ -500,9 +542,10 @@ export function lastCorrespondence(
     }
   };
 
+  const auto = automatedIntakeSubjects(inq.messages || []);
   for (const m of inq.messages || []) {
-    // Automated intake mail is never "correspondence".
-    if (m.kind === "internal_notification" || m.kind === "customer_autoreply") continue;
+    // Automated intake mail (and its forwarded echo) is never "correspondence".
+    if (isAutomatedIntakeMail(m, auto)) continue;
     const iso = messageDate(m);
     offer(messageSide(m, inq.email), parseTimestamp(iso), iso);
   }

@@ -183,14 +183,18 @@ export function CorrespondenceBadge({
       className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${
         customer ? "bg-amber-100 text-amber-800" : "bg-sky-100 text-sky-800"
       }`}
-      title={customer ? "Customer sent the last email" : "We sent the last email"}
+      title={
+        customer
+          ? "The ball's in our court — they're waiting on us"
+          : "We sent the last message — awaiting the customer"
+      }
     >
       {customer ? (
         <ArrowDownLeft className="size-3" />
       ) : (
         <ArrowUpRight className="size-3" />
       )}
-      {customer ? "Customer replied" : "You replied"}
+      {customer ? "Awaiting your reply" : "You replied"}
       {withTime ? ` · ${relTime(corr.at)}` : ""}
     </span>
   );
