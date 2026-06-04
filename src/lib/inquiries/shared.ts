@@ -493,12 +493,22 @@ export function genuineMessages<
   return messages.filter((m) => !isAutomatedIntakeMail(m, auto));
 }
 
-// Most recent moment of a real touchpoint — an email exchanged or an activity
-// logged (call/email/note/quote/stage move). Deliberately ignores the inquiry's
-// `last_activity_at` stamp, which gets bumped by record edits (e.g. creating the
-// inquiry from inbox mail), so the card time reflects the actual last email or
-// call rather than when the record was touched. Falls back to created_at only
-// when there's no correspondence or activity at all.
+// Activity types that count as an actual outreach touch for the card's "most
+// recent activity" time — a call placed or an email sent. Deliberately excludes
+// stage moves (logged as "note"/"payment"), quotes, payments, notes, and the
+// original "inquiry" event, so reorganizing the board never makes a deal look
+// freshly worked.
+const TOUCH_ACTIVITY_TYPES: ReadonlySet<InquiryActivity["type"]> = new Set([
+  "call",
+  "email",
+]);
+
+// Most recent moment a customer was actually contacted — an email exchanged or a
+// call/email logged. Stage moves and other bookkeeping activity do NOT count, so
+// shuffling a deal across the board never resets its "most recent activity"
+// clock. Also ignores the inquiry's `last_activity_at` stamp (bumped by record
+// edits), so the card time reflects the genuine last call or email. Falls back to
+// created_at only when there's no correspondence or qualifying activity at all.
 export function lastTouchedAt(inq: Inquiry): Date | null {
   const auto = automatedIntakeSubjects(inq.messages || []);
   const candidates: Date[] = [];
@@ -508,6 +518,7 @@ export function lastTouchedAt(inq: Inquiry): Date | null {
     if (d) candidates.push(d);
   }
   for (const a of inq.activity || []) {
+    if (!TOUCH_ACTIVITY_TYPES.has(a.type)) continue;
     const d = parseTimestamp(a.occurred_at);
     if (d) candidates.push(d);
   }
