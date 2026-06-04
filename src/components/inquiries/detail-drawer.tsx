@@ -43,7 +43,7 @@ import {
   fmtRange,
   relTime,
   isBookedStatus,
-  visibleThreadMessages,
+  genuineMessages,
   emailBodyText,
   addressName,
   messageDate,
@@ -432,19 +432,18 @@ export function ActivityTimeline({
   const [text, setText] = useState("");
 
   // Build a chat-ordered (oldest → newest) feed: real emails as bubbles plus
-  // logged activity as system lines. The automated internal lead-notification is
-  // hidden — it's internal mail to sales@, not part of the customer conversation.
+  // logged activity as system lines. The automated lead-notification and "thank
+  // you" autoreply (and their forwarded echoes) are hidden — they're not part of
+  // the customer conversation.
   const entries: TimelineEntry[] = [
-    ...visibleThreadMessages(inquiry.messages || [])
-      .filter((m) => m.kind !== "internal_notification")
-      .map(
-        (m): TimelineEntry => ({
-          kind: "email",
-          id: `m-${m.id}`,
-          date: messageDate(m),
-          message: m,
-        })
-      ),
+    ...genuineMessages(inquiry.messages || []).map(
+      (m): TimelineEntry => ({
+        kind: "email",
+        id: `m-${m.id}`,
+        date: messageDate(m),
+        message: m,
+      })
+    ),
     ...(inquiry.activity || []).map(
       (a): TimelineEntry => ({
         kind: "activity",
