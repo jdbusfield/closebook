@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useEmbed } from "@/lib/inquiries/embed-context";
 import { toast } from "sonner";
 import {
   type Inquiry,
@@ -50,34 +51,73 @@ function isoDateInDays(days: number): string {
 }
 
 export function useInquiries(entityId: string): UseInquiries {
+  const embed = useEmbed();
+  const isEmbed = !!embed?.embedKey;
+  const embedKey = embed?.embedKey;
+  const eid = entityId || embed?.entityId || "";
+
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [actor, setActor] = useState("You");
+  const [actor, setActor] = useState(isEmbed ? "HDR Team" : "You");
 
   const inquiriesRef = useRef<Inquiry[]>([]);
   useEffect(() => {
     inquiriesRef.current = inquiries;
   }, [inquiries]);
 
+  // POST an embed action to the key-authenticated route (no-op shape when not
+  // embedded — callers guard on isEmbed first).
+  const embedPost = useCallback(
+    async (payload: Record<string, unknown>) => {
+      const res = await fetch("/api/inquiries/embed", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(embedKey ? { "x-embed-key": embedKey } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Request failed (HTTP ${res.status})`);
+      }
+      return res.json();
+    },
+    [embedKey]
+  );
+
   const load = useCallback(async () => {
-    const supabase = createClient();
-    const [{ data: inqs }, { data: tasks }, { data: activity }, { data: messages }, userRes] =
-      await Promise.all([
+    let inqs: Inquiry[] | null;
+    let tasks: InquiryTask[] | null;
+    let activity: InquiryActivity[] | null;
+    let messages: InquiryMessage[] | null;
+
+    if (isEmbed) {
+      // No Supabase session in the iframe — read everything through the
+      // key-authenticated embed route (admin client, scoped to HDR).
+      const data = await embedPost({ action: "list_pipeline" });
+      inqs = data.inquiries;
+      tasks = data.tasks;
+      activity = data.activity;
+      messages = data.messages;
+    } else {
+      const supabase = createClient();
+      const [inqRes, taskRes, actRes, msgRes, userRes] = await Promise.all([
         supabase
           .from("rental_inquiries")
           .select(INQUIRY_COLUMNS)
-          .eq("entity_id", entityId)
+          .eq("entity_id", eid)
           .order("last_activity_at", { ascending: false })
           .limit(1000),
         supabase
           .from("rental_inquiry_tasks")
           .select("id, inquiry_id, title, due_date, done, kind, created_at")
-          .eq("entity_id", entityId)
+          .eq("entity_id", eid)
           .limit(2000),
         supabase
           .from("rental_inquiry_activity")
           .select("id, inquiry_id, type, body, actor, occurred_at")
-          .eq("entity_id", entityId)
+          .eq("entity_id", eid)
           .order("occurred_at", { ascending: false })
           .limit(2000),
         supabase
@@ -85,11 +125,25 @@ export function useInquiries(entityId: string): UseInquiries {
           .select(
             "id, inquiry_id, direction, kind, from_addr, to_addrs, cc_addrs, subject, body_text, body_html, sent_at, received_at, created_at"
           )
-          .eq("entity_id", entityId)
+          .eq("entity_id", eid)
           .order("created_at", { ascending: true })
           .limit(3000),
         supabase.auth.getUser(),
       ]);
+      inqs = inqRes.data as Inquiry[] | null;
+      tasks = taskRes.data as InquiryTask[] | null;
+      activity = actRes.data as InquiryActivity[] | null;
+      messages = msgRes.data as InquiryMessage[] | null;
+      const user = userRes.data.user;
+      if (user) {
+        const meta = user.user_metadata as Record<string, unknown> | undefined;
+        const name =
+          (typeof meta?.full_name === "string" && meta.full_name) ||
+          (typeof meta?.name === "string" && meta.name) ||
+          (user.email ? user.email.split("@")[0] : "You");
+        setActor(name as string);
+      }
+    }
 
     const tasksByInquiry = new Map<string, InquiryTask[]>();
     for (const t of (tasks as InquiryTask[]) ?? []) {
@@ -115,18 +169,8 @@ export function useInquiries(entityId: string): UseInquiries {
       messages: messagesByInquiry.get(inq.id) ?? [],
     }));
     setInquiries(assembled);
-
-    const user = userRes.data.user;
-    if (user) {
-      const meta = user.user_metadata as Record<string, unknown> | undefined;
-      const name =
-        (typeof meta?.full_name === "string" && meta.full_name) ||
-        (typeof meta?.name === "string" && meta.name) ||
-        (user.email ? user.email.split("@")[0] : "You");
-      setActor(name as string);
-    }
     setLoading(false);
-  }, [entityId]);
+  }, [isEmbed, eid, embedPost]);
 
   useEffect(() => {
     load();
@@ -137,7 +181,10 @@ export function useInquiries(entityId: string): UseInquiries {
     async (id: string, body: Record<string, unknown>): Promise<boolean> => {
       const res = await fetch(`/api/inquiries/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(embedKey ? { "x-embed-key": embedKey } : {}),
+        },
         body: JSON.stringify(body),
       });
       if (!res.ok) {
@@ -146,16 +193,23 @@ export function useInquiries(entityId: string): UseInquiries {
       }
       return true;
     },
-    []
+    [embedKey]
   );
 
-  const bumpActivityClock = useCallback(async (id: string) => {
-    const supabase = createClient();
-    await supabase
-      .from("rental_inquiries")
-      .update({ last_activity_at: new Date().toISOString() })
-      .eq("id", id);
-  }, []);
+  const bumpActivityClock = useCallback(
+    async (id: string) => {
+      if (isEmbed) {
+        await embedPost({ action: "bump_activity_clock", id });
+        return;
+      }
+      const supabase = createClient();
+      await supabase
+        .from("rental_inquiries")
+        .update({ last_activity_at: new Date().toISOString() })
+        .eq("id", id);
+    },
+    [isEmbed, embedPost]
+  );
 
   // --- mutations -----------------------------------------------------------
   const moveStage = useCallback(
@@ -169,14 +223,26 @@ export function useInquiries(entityId: string): UseInquiries {
       try {
         await patch(id, { status });
         // Log the move on the timeline (best-effort, like the design).
-        const supabase = createClient();
-        await supabase.from("rental_inquiry_activity").insert({
-          inquiry_id: id,
-          entity_id: entityId,
-          type: status === "confirmed" ? "payment" : "note",
-          body: `Stage moved to “${STATUS_LABELS[status]}”.`,
-          actor,
-        });
+        const moveType = status === "confirmed" ? "payment" : "note";
+        const moveBody = `Stage moved to “${STATUS_LABELS[status]}”.`;
+        if (isEmbed) {
+          await embedPost({
+            action: "insert_activity",
+            id,
+            type: moveType,
+            activityBody: moveBody,
+            actor,
+          });
+        } else {
+          const supabase = createClient();
+          await supabase.from("rental_inquiry_activity").insert({
+            inquiry_id: id,
+            entity_id: eid,
+            type: moveType,
+            body: moveBody,
+            actor,
+          });
+        }
         toast.success(`Moved to ${STATUS_LABELS[status]}`);
         await load();
       } catch (e) {
@@ -184,7 +250,7 @@ export function useInquiries(entityId: string): UseInquiries {
         await load();
       }
     },
-    [patch, entityId, actor, load]
+    [patch, eid, isEmbed, embedPost, actor, load]
   );
 
   const assignUnit = useCallback(
@@ -233,36 +299,57 @@ export function useInquiries(entityId: string): UseInquiries {
       kind: InquiryTask["kind"] = "call",
       dueOffsetDays = 2
     ) => {
-      const supabase = createClient();
-      const { error } = await supabase.from("rental_inquiry_tasks").insert({
-        inquiry_id: id,
-        entity_id: entityId,
-        title,
-        kind,
-        due_date: isoDateInDays(dueOffsetDays),
-        done: false,
-      });
-      if (error) {
-        toast.error(error.message);
+      try {
+        if (isEmbed) {
+          await embedPost({
+            action: "add_task",
+            id,
+            title,
+            kind,
+            due_date: isoDateInDays(dueOffsetDays),
+          });
+        } else {
+          const supabase = createClient();
+          const { error } = await supabase.from("rental_inquiry_tasks").insert({
+            inquiry_id: id,
+            entity_id: eid,
+            title,
+            kind,
+            due_date: isoDateInDays(dueOffsetDays),
+            done: false,
+          });
+          if (error) throw new Error(error.message);
+        }
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Couldn't add reminder");
         return;
       }
       await bumpActivityClock(id);
       toast.success("Reminder added");
       await load();
     },
-    [entityId, bumpActivityClock, load]
+    [eid, isEmbed, embedPost, bumpActivityClock, load]
   );
 
   const toggleTask = useCallback(
     async (taskId: string, done: boolean) => {
-      const supabase = createClient();
-      const { error } = await supabase
-        .from("rental_inquiry_tasks")
-        .update({ done, completed_at: done ? new Date().toISOString() : null })
-        .eq("id", taskId);
-      if (error) {
-        toast.error(error.message);
-        return;
+      if (isEmbed) {
+        try {
+          await embedPost({ action: "toggle_task", taskId, done });
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : "Couldn't update task");
+          return;
+        }
+      } else {
+        const supabase = createClient();
+        const { error } = await supabase
+          .from("rental_inquiry_tasks")
+          .update({ done, completed_at: done ? new Date().toISOString() : null })
+          .eq("id", taskId);
+        if (error) {
+          toast.error(error.message);
+          return;
+        }
       }
       // Optimistic local toggle for snappy checkboxes.
       setInquiries((prev) =>
@@ -274,28 +361,34 @@ export function useInquiries(entityId: string): UseInquiries {
         }))
       );
     },
-    []
+    [isEmbed, embedPost]
   );
 
   const addActivity = useCallback(
     async (id: string, type: InquiryActivity["type"], body: string) => {
-      const supabase = createClient();
-      const { error } = await supabase.from("rental_inquiry_activity").insert({
-        inquiry_id: id,
-        entity_id: entityId,
-        type,
-        body,
-        actor,
-      });
-      if (error) {
-        toast.error(error.message);
+      try {
+        if (isEmbed) {
+          await embedPost({ action: "insert_activity", id, type, activityBody: body, actor });
+        } else {
+          const supabase = createClient();
+          const { error } = await supabase.from("rental_inquiry_activity").insert({
+            inquiry_id: id,
+            entity_id: eid,
+            type,
+            body,
+            actor,
+          });
+          if (error) throw new Error(error.message);
+        }
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Couldn't log activity");
         return;
       }
       await bumpActivityClock(id);
       toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} logged`);
       await load();
     },
-    [entityId, actor, bumpActivityClock, load]
+    [eid, isEmbed, embedPost, actor, bumpActivityClock, load]
   );
 
   const deleteActivity = useCallback(
@@ -307,6 +400,17 @@ export function useInquiries(entityId: string): UseInquiries {
           activity: (i.activity || []).filter((a) => a.id !== activityId),
         }))
       );
+      if (isEmbed) {
+        try {
+          await embedPost({ action: "delete_activity", activityId });
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : "Couldn't remove activity");
+          await load();
+          return;
+        }
+        toast.success("Activity removed");
+        return;
+      }
       const supabase = createClient();
       const { error } = await supabase
         .from("rental_inquiry_activity")
@@ -319,13 +423,16 @@ export function useInquiries(entityId: string): UseInquiries {
       }
       toast.success("Activity removed");
     },
-    [load]
+    [isEmbed, embedPost, load]
   );
 
   const deleteInquiry = useCallback(
     async (id: string): Promise<boolean> => {
       try {
-        const res = await fetch(`/api/inquiries/${id}`, { method: "DELETE" });
+        const res = await fetch(`/api/inquiries/${id}`, {
+          method: "DELETE",
+          headers: embedKey ? { "x-embed-key": embedKey } : undefined,
+        });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
           throw new Error(err.error || "Delete failed");
@@ -338,7 +445,7 @@ export function useInquiries(entityId: string): UseInquiries {
         return false;
       }
     },
-    []
+    [embedKey]
   );
 
   return {

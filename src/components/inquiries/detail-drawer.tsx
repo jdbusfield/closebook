@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useEmbed } from "@/lib/inquiries/embed-context";
 import {
   Sheet,
   SheetContent,
@@ -550,6 +551,8 @@ export function InquiryDrawer({
   callbacks: DrawerCallbacks;
   actor?: string;
 }) {
+  const embed = useEmbed();
+  const base = embed ? embed.basePath : `/${entityId}/inquiries`;
   return (
     <Sheet open={!!inquiry} onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="w-full gap-0 overflow-y-auto p-0 sm:max-w-[560px]">
@@ -604,7 +607,7 @@ export function InquiryDrawer({
 
               <div className="py-4">
                 <Link
-                  href={`/${entityId}/inquiries/${inquiry.id}`}
+                  href={`${base}/${inquiry.id}`}
                   className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
                 >
                   <ExternalLink className="size-4" />

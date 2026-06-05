@@ -1,9 +1,19 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { messageSide, isStaffAddress, messageSnippet } from "@/lib/inquiries/shared";
+import {
+  messageSide,
+  isStaffAddress,
+  messageSnippet,
+  HDR_ENTITY_ID,
+} from "@/lib/inquiries/shared";
 
 export const runtime = "nodejs";
+
+function validEmbedKey(request: Request): boolean {
+  const k = request.headers.get("x-embed-key");
+  return !!k && !!process.env.EMBED_API_KEY && k === process.env.EMBED_API_KEY;
+}
 
 // Create a brand-new inquiry from an unmatched inbox message (e.g. mail that
 // came in without an HDR-XXXXX reference, so it never auto-matched), and link
@@ -26,28 +36,32 @@ function genReference(): string {
 }
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const supabase = await createClient();
+  const isEmbed = validEmbedKey(request);
+  const supabase = isEmbed ? createAdminClient() : await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isEmbed) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
   }
 
-  // Read the message via the session client — RLS confirms the user may access
-  // this message's entity.
-  const { data: msg } = await supabase
+  // Read the message: RLS confirms the session user may access this message's
+  // entity; the embed (admin client) is hard-scoped to HDR instead.
+  let msgQuery = supabase
     .from("rental_inquiry_messages")
     .select(
       "id, entity_id, inquiry_id, direction, from_addr, to_addrs, cc_addrs, subject, body_text, body_html"
     )
-    .eq("id", id)
-    .maybeSingle();
+    .eq("id", id);
+  if (isEmbed) msgQuery = msgQuery.eq("entity_id", HDR_ENTITY_ID);
+  const { data: msg } = await msgQuery.maybeSingle();
 
   if (!msg) {
     return NextResponse.json({ error: "Not found or not permitted" }, { status: 404 });

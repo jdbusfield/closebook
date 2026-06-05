@@ -1,12 +1,20 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { HDR_ENTITY_ID } from "@/lib/inquiries/shared";
 
 export const runtime = "nodejs";
 
-// Assign an inbox message to an inquiry (or detach it). Uses the user's session
-// client so RLS enforces that only members of the message's entity can edit, and
-// that the target inquiry is in one of their entities.
+// Assign an inbox message to an inquiry (or detach it). Normally uses the user's
+// session client so RLS enforces that only members of the message's entity can
+// edit. The embedded HDR CRM authenticates with the EMBED_API_KEY; when valid we
+// use the admin client but hard-scope every query to HDR_ENTITY_ID.
+
+function validEmbedKey(request: Request): boolean {
+  const k = request.headers.get("x-embed-key");
+  return !!k && !!process.env.EMBED_API_KEY && k === process.env.EMBED_API_KEY;
+}
 
 const UpdateSchema = z.object({
   inquiry_id: z.string().uuid().nullable(),
@@ -17,13 +25,16 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const supabase = await createClient();
+  const isEmbed = validEmbedKey(request);
+  const supabase = isEmbed ? createAdminClient() : await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isEmbed) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
   }
 
   let patch: z.infer<typeof UpdateSchema>;
@@ -36,23 +47,27 @@ export async function PATCH(
     );
   }
 
-  // If assigning to an inquiry, confirm it's visible to this user (RLS) before
-  // linking — otherwise you could attach a message to an inquiry you can't see.
+  // If assigning to an inquiry, confirm it's visible (RLS for sessions; explicit
+  // HDR scope for the embed) before linking — otherwise you could attach a
+  // message to an inquiry you can't see.
   if (patch.inquiry_id) {
-    const { data: inq } = await supabase
+    let inqQuery = supabase
       .from("rental_inquiries")
       .select("id")
-      .eq("id", patch.inquiry_id)
-      .maybeSingle();
+      .eq("id", patch.inquiry_id);
+    if (isEmbed) inqQuery = inqQuery.eq("entity_id", HDR_ENTITY_ID);
+    const { data: inq } = await inqQuery.maybeSingle();
     if (!inq) {
       return NextResponse.json({ error: "Inquiry not found or not permitted" }, { status: 404 });
     }
   }
 
-  const { data, error } = await supabase
+  let updateQuery = supabase
     .from("rental_inquiry_messages")
     .update({ inquiry_id: patch.inquiry_id })
-    .eq("id", id)
+    .eq("id", id);
+  if (isEmbed) updateQuery = updateQuery.eq("entity_id", HDR_ENTITY_ID);
+  const { data, error } = await updateQuery
     .select("id, inquiry_id")
     .maybeSingle();
 

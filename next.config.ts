@@ -10,13 +10,14 @@ const nextConfig: NextConfig = {
       {
         source: "/embed/:path*",
         headers: [
-          {
-            key: "X-Frame-Options",
-            value: "ALLOW-FROM https://rentalworks-dashboard.vercel.app",
-          },
+          // X-Frame-Options: ALLOW-FROM is obsolete and accepts only ONE origin,
+          // so we rely solely on CSP frame-ancestors (which supports multiple) to
+          // control who may iframe the embeds. The HDR admin portal frames the
+          // HDR inquiries CRM; the RentalWorks dashboard frames the rebates embed.
           {
             key: "Content-Security-Policy",
-            value: "frame-ancestors 'self' https://rentalworks-dashboard.vercel.app",
+            value:
+              "frame-ancestors 'self' https://rentalworks-dashboard.vercel.app https://hdrsiteservices.com https://www.hdrsiteservices.com https://*.vercel.app",
           },
         ],
       },
