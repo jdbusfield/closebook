@@ -32,6 +32,8 @@ import {
   hexA,
 } from "@/components/inquiries/atoms";
 import { TemplatePicker } from "@/components/inquiries/template-picker";
+import { useTemplates } from "@/lib/inquiries/use-templates";
+import { selectTemplates } from "@/lib/inquiries/templates";
 import {
   type Inquiry,
   type InquiryStatus,
@@ -105,12 +107,22 @@ export function StageBar({
 // --- Quick action buttons --------------------------------------------------
 export function QuickActions({
   inquiry,
+  entityId,
+  actor = "You",
   onAddActivity,
+  onSetValue,
 }: {
   inquiry: Inquiry;
+  entityId: string;
+  actor?: string;
   onAddActivity: DrawerCallbacks["onAddActivity"];
+  onSetValue?: DrawerCallbacks["onSetValue"];
 }) {
   const tel = inquiry.phone ? inquiry.phone.replace(/[^\d+]/g, "") : "";
+  const { templates } = useTemplates(entityId);
+  const hasTemplates = selectTemplates(templates, inquiry).length > 0;
+  const [emailOpen, setEmailOpen] = useState(false);
+
   return (
     <div className="flex gap-2">
       <Button
@@ -124,17 +136,45 @@ export function QuickActions({
           <Phone className="size-4" /> Call
         </a>
       </Button>
-      <Button
-        asChild
-        variant="outline"
-        size="sm"
-        className="flex-1"
-        disabled={!inquiry.email}
-      >
-        <a href={inquiry.email ? `mailto:${inquiry.email}` : undefined}>
-          <Mail className="size-4" /> Email
-        </a>
-      </Button>
+
+      {/* Email — opens the template picker pre-filled from this inquiry. Falls
+          back to a plain mailto: when the stage has no templates. */}
+      {hasTemplates ? (
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1"
+            onClick={() => setEmailOpen(true)}
+          >
+            <Mail className="size-4" /> Email
+          </Button>
+          <TemplatePicker
+            key={inquiry.id}
+            inquiry={inquiry}
+            entityId={entityId}
+            rep={actor}
+            onLog={(t, body) => onAddActivity(inquiry.id, t, body)}
+            onSetValue={onSetValue}
+            open={emailOpen}
+            onOpenChange={setEmailOpen}
+            trigger={null}
+          />
+        </>
+      ) : (
+        <Button
+          asChild
+          variant="outline"
+          size="sm"
+          className="flex-1"
+          disabled={!inquiry.email}
+        >
+          <a href={inquiry.email ? `mailto:${inquiry.email}` : undefined}>
+            <Mail className="size-4" /> Email
+          </a>
+        </Button>
+      )}
+
       <Button
         variant="outline"
         size="sm"
@@ -576,7 +616,10 @@ export function InquiryDrawer({
                 <div className="mb-3">
                   <QuickActions
                     inquiry={inquiry}
+                    entityId={entityId}
+                    actor={actor}
                     onAddActivity={callbacks.onAddActivity}
+                    onSetValue={callbacks.onSetValue}
                   />
                 </div>
                 <StageBar inquiry={inquiry} onMove={callbacks.onMove} />
