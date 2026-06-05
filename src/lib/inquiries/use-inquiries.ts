@@ -16,12 +16,27 @@ import {
   type InquiryTask,
   type InquiryActivity,
   type InquiryMessage,
+  type InquiryQuote,
   type InquiryStatus,
   STATUS_LABELS,
 } from "@/lib/inquiries/shared";
 
 const INQUIRY_COLUMNS =
   "id, reference, status, name, email, phone, use_case, start_date, end_date, duration, units, attendant, guests, location, notes, internal_notes, rw_quote_number, rw_order_number, source, unit_id, estimated_value, last_activity_at, created_at";
+
+const QUOTE_COLUMNS =
+  "id, inquiry_id, quote_number, status, lines, subtotal, tax_rate, tax, total, valid_until, terms, created_by, created_at, updated_at";
+
+// The fields a rep fills in when drafting a quote (number + totals are computed).
+export interface QuoteDraft {
+  lines: { description: string; qty: number; rate: number }[];
+  subtotal: number;
+  tax_rate: number;
+  tax: number;
+  total: number;
+  valid_until?: string | null;
+  terms?: string | null;
+}
 
 export interface UseInquiries {
   inquiries: Inquiry[];
@@ -42,6 +57,9 @@ export interface UseInquiries {
   addActivity: (id: string, type: InquiryActivity["type"], body: string) => Promise<void>;
   deleteActivity: (activityId: string) => Promise<void>;
   deleteInquiry: (id: string) => Promise<boolean>;
+  addQuote: (id: string, draft: QuoteDraft) => Promise<InquiryQuote | null>;
+  updateQuoteStatus: (quoteId: string, status: InquiryQuote["status"]) => Promise<void>;
+  deleteQuote: (quoteId: string) => Promise<void>;
 }
 
 function isoDateInDays(days: number): string {
@@ -91,6 +109,7 @@ export function useInquiries(entityId: string): UseInquiries {
     let tasks: InquiryTask[] | null;
     let activity: InquiryActivity[] | null;
     let messages: InquiryMessage[] | null;
+    let quotes: InquiryQuote[] | null;
 
     if (isEmbed) {
       // No Supabase session in the iframe — read everything through the
@@ -100,9 +119,10 @@ export function useInquiries(entityId: string): UseInquiries {
       tasks = data.tasks;
       activity = data.activity;
       messages = data.messages;
+      quotes = data.quotes;
     } else {
       const supabase = createClient();
-      const [inqRes, taskRes, actRes, msgRes, userRes] = await Promise.all([
+      const [inqRes, taskRes, actRes, msgRes, quoteRes, userRes] = await Promise.all([
         supabase
           .from("rental_inquiries")
           .select(INQUIRY_COLUMNS)
@@ -128,12 +148,19 @@ export function useInquiries(entityId: string): UseInquiries {
           .eq("entity_id", eid)
           .order("created_at", { ascending: true })
           .limit(3000),
+        supabase
+          .from("rental_inquiry_quotes")
+          .select(QUOTE_COLUMNS)
+          .eq("entity_id", eid)
+          .order("created_at", { ascending: false })
+          .limit(2000),
         supabase.auth.getUser(),
       ]);
       inqs = inqRes.data as Inquiry[] | null;
       tasks = taskRes.data as InquiryTask[] | null;
       activity = actRes.data as InquiryActivity[] | null;
       messages = msgRes.data as InquiryMessage[] | null;
+      quotes = quoteRes.data as InquiryQuote[] | null;
       const user = userRes.data.user;
       if (user) {
         const meta = user.user_metadata as Record<string, unknown> | undefined;
@@ -161,12 +188,19 @@ export function useInquiries(entityId: string): UseInquiries {
       if (!messagesByInquiry.has(msg.inquiry_id)) messagesByInquiry.set(msg.inquiry_id, []);
       messagesByInquiry.get(msg.inquiry_id)!.push(msg);
     }
+    const quotesByInquiry = new Map<string, InquiryQuote[]>();
+    for (const q of (quotes as InquiryQuote[]) ?? []) {
+      if (!q.inquiry_id) continue;
+      if (!quotesByInquiry.has(q.inquiry_id)) quotesByInquiry.set(q.inquiry_id, []);
+      quotesByInquiry.get(q.inquiry_id)!.push(q);
+    }
 
     const assembled = ((inqs as Inquiry[]) ?? []).map((inq) => ({
       ...inq,
       tasks: tasksByInquiry.get(inq.id) ?? [],
       activity: activityByInquiry.get(inq.id) ?? [],
       messages: messagesByInquiry.get(inq.id) ?? [],
+      quotes: quotesByInquiry.get(inq.id) ?? [],
     }));
     setInquiries(assembled);
     setLoading(false);
@@ -426,6 +460,109 @@ export function useInquiries(entityId: string): UseInquiries {
     [isEmbed, embedPost, load]
   );
 
+  // --- Quotes --------------------------------------------------------------
+  const addQuote = useCallback(
+    async (id: string, draft: QuoteDraft): Promise<InquiryQuote | null> => {
+      let created: InquiryQuote | null = null;
+      try {
+        if (isEmbed) {
+          const res = await embedPost({ action: "create_quote", id, draft });
+          created = res.quote as InquiryQuote;
+        } else {
+          const supabase = createClient();
+          const { data, error } = await supabase
+            .from("rental_inquiry_quotes")
+            .insert({
+              inquiry_id: id,
+              entity_id: eid,
+              lines: draft.lines,
+              subtotal: draft.subtotal,
+              tax_rate: draft.tax_rate,
+              tax: draft.tax,
+              total: draft.total,
+              valid_until: draft.valid_until ?? null,
+              terms: draft.terms ?? null,
+              created_by: actor,
+            })
+            .select(QUOTE_COLUMNS)
+            .single();
+          if (error) throw new Error(error.message);
+          created = data as unknown as InquiryQuote;
+        }
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Couldn't save quote");
+        return null;
+      }
+      // Log the quote on the timeline, bump the clock, and refresh.
+      await addActivity(
+        id,
+        "quote",
+        `Drafted quote ${created?.quote_number ?? ""} — $${(draft.total || 0).toLocaleString("en-US")}.`
+      );
+      await load();
+      return created;
+    },
+    [eid, isEmbed, embedPost, actor, addActivity, load]
+  );
+
+  const updateQuoteStatus = useCallback(
+    async (quoteId: string, status: InquiryQuote["status"]) => {
+      // Optimistic local status flip.
+      setInquiries((prev) =>
+        prev.map((i) => ({
+          ...i,
+          quotes: (i.quotes || []).map((q) =>
+            q.id === quoteId ? { ...q, status } : q
+          ),
+        }))
+      );
+      try {
+        if (isEmbed) {
+          await embedPost({ action: "update_quote", quoteId, status });
+        } else {
+          const supabase = createClient();
+          const { error } = await supabase
+            .from("rental_inquiry_quotes")
+            .update({ status })
+            .eq("id", quoteId);
+          if (error) throw new Error(error.message);
+        }
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Couldn't update quote");
+        await load();
+      }
+    },
+    [isEmbed, embedPost, load]
+  );
+
+  const deleteQuote = useCallback(
+    async (quoteId: string) => {
+      setInquiries((prev) =>
+        prev.map((i) => ({
+          ...i,
+          quotes: (i.quotes || []).filter((q) => q.id !== quoteId),
+        }))
+      );
+      try {
+        if (isEmbed) {
+          await embedPost({ action: "delete_quote", quoteId });
+        } else {
+          const supabase = createClient();
+          const { error } = await supabase
+            .from("rental_inquiry_quotes")
+            .delete()
+            .eq("id", quoteId);
+          if (error) throw new Error(error.message);
+        }
+        toast.success("Quote removed");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Couldn't remove quote");
+        await load();
+      }
+    },
+    [isEmbed, embedPost, load]
+  );
+
   const deleteInquiry = useCallback(
     async (id: string): Promise<boolean> => {
       try {
@@ -462,5 +599,8 @@ export function useInquiries(entityId: string): UseInquiries {
     addActivity,
     deleteActivity,
     deleteInquiry,
+    addQuote,
+    updateQuoteStatus,
+    deleteQuote,
   };
 }

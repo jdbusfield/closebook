@@ -229,6 +229,34 @@ export interface InquiryActivity {
   occurred_at: string;
 }
 
+// A single line on a saved quote. Mirrors QuoteLine in the quote-builder, minus
+// the client-only row id (rebuilt on load).
+export interface QuoteLineItem {
+  description: string;
+  qty: number;
+  rate: number;
+}
+
+// A saved, numbered quote attached to an inquiry. The PDF is regenerated on
+// demand from these fields (src/lib/inquiries/quote-pdf.ts) — we persist the
+// data, not a binary — so any rep can re-download an identical quote.
+export interface InquiryQuote {
+  id: string;
+  inquiry_id: string;
+  quote_number: string;
+  status: "draft" | "sent" | "accepted" | "declined" | "expired";
+  lines: QuoteLineItem[];
+  subtotal: number;
+  tax_rate: number;
+  tax: number;
+  total: number;
+  valid_until: string | null;
+  terms: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface InquiryMessage {
   id: string;
   inquiry_id: string | null;
@@ -386,6 +414,7 @@ export interface Inquiry {
   tasks?: InquiryTask[];
   activity?: InquiryActivity[];
   messages?: InquiryMessage[];
+  quotes?: InquiryQuote[];
 }
 
 // Most recent activity timestamp (for staleness). Falls back to last_activity_at

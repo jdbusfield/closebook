@@ -264,7 +264,7 @@ export function renderTemplate(
   tpl: MessageTemplate,
   inq: Inquiry,
   rep: string,
-  extra?: { quote?: string }
+  extra?: { quote?: string; quote_number?: string }
 ): { subject?: string; body: string } {
   const map: Record<string, string> = {
     first: firstName(inq.name),
@@ -288,6 +288,7 @@ export function renderTemplate(
     rep: rep && rep !== "You" ? rep : "the HDR team",
     details: buildDetailsBlock(inq),
     quote: extra?.quote ?? "— your itemized quote will appear here —",
+    quote_number: extra?.quote_number ?? "",
   };
   const fill = (s?: string) =>
     s?.replace(/\{(\w+)\}/g, (_, k: string) => (k in map ? map[k] : `{${k}}`));
@@ -301,6 +302,7 @@ export const MERGE_FIELDS: { token: string; label: string }[] = [
   { token: "name", label: "Customer full name" },
   { token: "details", label: "All submitted request details" },
   { token: "quote", label: "Itemized quote (built when sending)" },
+  { token: "quote_number", label: "Latest saved quote number" },
   { token: "use_case", label: "Event / use case" },
   { token: "date", label: "Rental start date" },
   { token: "end_date", label: "Rental end date" },

@@ -141,6 +141,9 @@ export default function InquiriesPipelinePage() {
     onToggleTask: data.toggleTask,
     onAddActivity: data.addActivity,
     onDeleteActivity: data.deleteActivity,
+    onAddQuote: data.addQuote,
+    onUpdateQuoteStatus: data.updateQuoteStatus,
+    onDeleteQuote: data.deleteQuote,
   };
 
   const selected = data.inquiries.find((i) => i.id === selectedId) ?? null;
@@ -268,6 +271,7 @@ export default function InquiriesPipelinePage() {
           rep={data.actor}
           onLog={(t, body) => data.addActivity(emailInquiry.id, t, body)}
           onSetValue={data.setEstimatedValue}
+          onSaveQuote={data.addQuote}
           open
           onOpenChange={(o) => {
             if (!o) setEmailId(null);

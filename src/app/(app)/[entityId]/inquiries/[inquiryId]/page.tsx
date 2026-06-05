@@ -39,12 +39,17 @@ import { ArrowLeft, ArrowDownLeft, ArrowUpRight, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { StatusBadge } from "../status-badge";
 import { SectionTabs } from "@/components/inquiries/section-tabs";
+import { QuoteDialog } from "@/components/inquiries/quote-dialog";
+import { QuotesList } from "@/components/inquiries/quotes-list";
+import { type QuoteDraft } from "@/lib/inquiries/use-inquiries";
 import {
   INQUIRY_STATUSES,
   STATUS_LABELS,
   visibleThreadMessages,
   messageSide,
   fmtMoney,
+  type Inquiry as CrmInquiry,
+  type InquiryQuote,
 } from "@/lib/inquiries/shared";
 
 interface Inquiry {
@@ -267,6 +272,7 @@ export default function InquiryDetailPage() {
   const [inquiry, setInquiry] = useState<Inquiry | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [events, setEvents] = useState<EmailEvent[]>([]);
+  const [quotes, setQuotes] = useState<InquiryQuote[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
@@ -303,6 +309,7 @@ export default function InquiryDetailPage() {
       setRwOrder(inq?.rw_order_number ?? "");
       setMessages((data.messages as Message[]) ?? []);
       setEvents((data.events as EmailEvent[]) ?? []);
+      setQuotes((data.quotes as InquiryQuote[]) ?? []);
       setLoading(false);
       return;
     }
@@ -338,6 +345,16 @@ export default function InquiryDetailPage() {
     } else {
       setEvents([]);
     }
+
+    const { data: qs } = await supabase
+      .from("rental_inquiry_quotes")
+      .select(
+        "id, inquiry_id, quote_number, status, lines, subtotal, tax_rate, tax, total, valid_until, terms, created_by, created_at, updated_at"
+      )
+      .eq("inquiry_id", inquiryId)
+      .order("created_at", { ascending: false });
+    setQuotes((qs as unknown as InquiryQuote[]) ?? []);
+
     setLoading(false);
   }, [inquiryId, isEmbed, embedKey]);
 
@@ -389,6 +406,106 @@ export default function InquiryDetailPage() {
     }
   }
 
+  // --- Quote mutations (mirror useInquiries, scoped to this inquiry) --------
+  async function embedAction(payload: Record<string, unknown>) {
+    const res = await fetch("/api/inquiries/embed", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(embedKey ? { "x-embed-key": embedKey } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Request failed");
+    return data;
+  }
+
+  const addQuote = useCallback(
+    async (id: string, draft: QuoteDraft): Promise<InquiryQuote | null> => {
+      try {
+        if (isEmbed) {
+          const data = await embedAction({ action: "create_quote", id, draft });
+          await load();
+          return data.quote as InquiryQuote;
+        }
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from("rental_inquiry_quotes")
+          .insert({
+            inquiry_id: id,
+            entity_id: entityId,
+            lines: draft.lines,
+            subtotal: draft.subtotal,
+            tax_rate: draft.tax_rate,
+            tax: draft.tax,
+            total: draft.total,
+            valid_until: draft.valid_until ?? null,
+            terms: draft.terms ?? null,
+          })
+          .select(
+            "id, inquiry_id, quote_number, status, lines, subtotal, tax_rate, tax, total, valid_until, terms, created_by, created_at, updated_at"
+          )
+          .single();
+        if (error) throw new Error(error.message);
+        await load();
+        return data as unknown as InquiryQuote;
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Couldn't save quote");
+        return null;
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isEmbed, embedKey, entityId, load]
+  );
+
+  const updateQuoteStatus = useCallback(
+    async (quoteId: string, status: InquiryQuote["status"]) => {
+      setQuotes((prev) => prev.map((q) => (q.id === quoteId ? { ...q, status } : q)));
+      try {
+        if (isEmbed) {
+          await embedAction({ action: "update_quote", quoteId, status });
+        } else {
+          const supabase = createClient();
+          const { error } = await supabase
+            .from("rental_inquiry_quotes")
+            .update({ status })
+            .eq("id", quoteId);
+          if (error) throw new Error(error.message);
+        }
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Couldn't update quote");
+        await load();
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isEmbed, embedKey, load]
+  );
+
+  const deleteQuote = useCallback(
+    async (quoteId: string) => {
+      setQuotes((prev) => prev.filter((q) => q.id !== quoteId));
+      try {
+        if (isEmbed) {
+          await embedAction({ action: "delete_quote", quoteId });
+        } else {
+          const supabase = createClient();
+          const { error } = await supabase
+            .from("rental_inquiry_quotes")
+            .delete()
+            .eq("id", quoteId);
+          if (error) throw new Error(error.message);
+        }
+        toast.success("Quote removed");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Couldn't remove quote");
+        await load();
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isEmbed, embedKey, load]
+  );
+
   if (loading) {
     return <div className="p-6 text-muted-foreground">Loading…</div>;
   }
@@ -406,6 +523,10 @@ export default function InquiryDetailPage() {
   // Drop the automated autoreply and collapse the duplicated inquiry
   // notification so the thread shows genuine correspondence only.
   const thread = visibleThreadMessages(messages);
+
+  // The quote builder + list operate on the shared CRM Inquiry shape; this
+  // page's local Inquiry is a structural subset, so adapt it with the quotes.
+  const quoteInquiry = { ...inquiry, quotes } as unknown as CrmInquiry;
 
   // Distinct latest event types per message for the delivery chips.
   const eventsByMessage = new Map<string, Set<string>>();
@@ -594,6 +715,23 @@ export default function InquiryDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Quotes */}
+      <Card>
+        <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
+          <CardTitle className="text-base">
+            Quotes{quotes.length > 0 ? ` (${quotes.length})` : ""}
+          </CardTitle>
+          <QuoteDialog inquiry={quoteInquiry} onSave={addQuote} />
+        </CardHeader>
+        <CardContent>
+          <QuotesList
+            inquiry={quoteInquiry}
+            onUpdateStatus={updateQuoteStatus}
+            onDelete={deleteQuote}
+          />
+        </CardContent>
+      </Card>
 
       {/* Communication thread */}
       <Card>

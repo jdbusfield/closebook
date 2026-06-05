@@ -24,6 +24,9 @@ const INQUIRY_COLUMNS =
 const TEMPLATE_COLUMNS =
   "id, template_key, label, channel, track, stages, cadence, subject, body, sort_order, archived";
 
+const QUOTE_COLUMNS =
+  "id, inquiry_id, quote_number, status, lines, subtotal, tax_rate, tax, total, valid_until, terms, created_by, created_at, updated_at";
+
 function validKey(request: Request): boolean {
   const k = request.headers.get("x-embed-key");
   return !!k && !!process.env.EMBED_API_KEY && k === process.env.EMBED_API_KEY;
@@ -57,7 +60,7 @@ export async function POST(request: Request) {
     // --- Reads --------------------------------------------------------------
     case "list_pipeline": {
       // The four datasets use-inquiries.load() assembles (same columns/ordering).
-      const [inqs, tasks, activity, messages] = await Promise.all([
+      const [inqs, tasks, activity, messages, quotes] = await Promise.all([
         admin
           .from("rental_inquiries")
           .select(INQUIRY_COLUMNS)
@@ -83,12 +86,19 @@ export async function POST(request: Request) {
           .eq("entity_id", entityId)
           .order("created_at", { ascending: true })
           .limit(3000),
+        admin
+          .from("rental_inquiry_quotes")
+          .select(QUOTE_COLUMNS)
+          .eq("entity_id", entityId)
+          .order("created_at", { ascending: false })
+          .limit(2000),
       ]);
       return NextResponse.json({
         inquiries: inqs.data ?? [],
         tasks: tasks.data ?? [],
         activity: activity.data ?? [],
         messages: messages.data ?? [],
+        quotes: quotes.data ?? [],
       });
     }
 
@@ -146,7 +156,17 @@ export async function POST(request: Request) {
           .order("occurred_at", { ascending: true });
         events = evs ?? [];
       }
-      return NextResponse.json({ inquiry, messages: messages ?? [], events });
+      const { data: quotes } = await admin
+        .from("rental_inquiry_quotes")
+        .select(QUOTE_COLUMNS)
+        .eq("inquiry_id", inquiryId)
+        .order("created_at", { ascending: false });
+      return NextResponse.json({
+        inquiry,
+        messages: messages ?? [],
+        events,
+        quotes: quotes ?? [],
+      });
     }
 
     case "list_templates": {
@@ -256,6 +276,65 @@ export async function POST(request: Request) {
         .delete()
         .eq("entity_id", entityId)
         .eq("template_key", templateKey);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true });
+    }
+
+    // --- Quote writes -------------------------------------------------------
+    case "create_quote": {
+      const { id, draft } = body as {
+        id: string;
+        draft: {
+          lines: { description: string; qty: number; rate: number }[];
+          subtotal: number;
+          tax_rate: number;
+          tax: number;
+          total: number;
+          valid_until?: string | null;
+          terms?: string | null;
+        };
+      };
+      if (!(await inquiryIsHDR(admin, id))) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      const { data, error } = await admin
+        .from("rental_inquiry_quotes")
+        .insert({
+          inquiry_id: id,
+          entity_id: entityId,
+          lines: draft.lines,
+          subtotal: draft.subtotal,
+          tax_rate: draft.tax_rate,
+          tax: draft.tax,
+          total: draft.total,
+          valid_until: draft.valid_until ?? null,
+          terms: draft.terms ?? null,
+          created_by: "HDR Team",
+        })
+        .select(QUOTE_COLUMNS)
+        .single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true, quote: data });
+    }
+
+    case "update_quote": {
+      const { quoteId, status } = body as { quoteId: string; status: string };
+      const { error } = await admin
+        .from("rental_inquiry_quotes")
+        .update({ status })
+        .eq("id", quoteId)
+        .eq("entity_id", entityId);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true });
+    }
+
+    case "delete_quote": {
+      const { quoteId } = body as { quoteId: string };
+      const { error } = await admin
+        .from("rental_inquiry_quotes")
+        .delete()
+        .eq("id", quoteId)
+        .eq("entity_id", entityId);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       return NextResponse.json({ ok: true });
     }

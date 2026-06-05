@@ -32,14 +32,18 @@ import {
   hexA,
 } from "@/components/inquiries/atoms";
 import { TemplatePicker } from "@/components/inquiries/template-picker";
+import { QuoteDialog } from "@/components/inquiries/quote-dialog";
+import { QuotesList } from "@/components/inquiries/quotes-list";
 import { useTemplates } from "@/lib/inquiries/use-templates";
 import { selectTemplates } from "@/lib/inquiries/templates";
+import { type QuoteDraft } from "@/lib/inquiries/use-inquiries";
 import {
   type Inquiry,
   type InquiryStatus,
   type InquiryTask,
   type InquiryActivity,
   type InquiryMessage,
+  type InquiryQuote,
   STAGES,
   fmtMoney,
   fmtDateTime,
@@ -60,6 +64,9 @@ export interface DrawerCallbacks {
   onToggleTask: (taskId: string, done: boolean) => void;
   onAddActivity: (id: string, type: InquiryActivity["type"], body: string) => void;
   onDeleteActivity: (activityId: string) => void;
+  onAddQuote: (id: string, draft: QuoteDraft) => Promise<InquiryQuote | null>;
+  onUpdateQuoteStatus: (quoteId: string, status: InquiryQuote["status"]) => void;
+  onDeleteQuote: (quoteId: string) => void;
 }
 
 // --- Stage progress bar ----------------------------------------------------
@@ -111,17 +118,20 @@ export function QuickActions({
   actor = "You",
   onAddActivity,
   onSetValue,
+  onAddQuote,
 }: {
   inquiry: Inquiry;
   entityId: string;
   actor?: string;
   onAddActivity: DrawerCallbacks["onAddActivity"];
   onSetValue?: DrawerCallbacks["onSetValue"];
+  onAddQuote?: DrawerCallbacks["onAddQuote"];
 }) {
   const tel = inquiry.phone ? inquiry.phone.replace(/[^\d+]/g, "") : "";
   const { templates } = useTemplates(entityId);
   const hasTemplates = selectTemplates(templates, inquiry).length > 0;
   const [emailOpen, setEmailOpen] = useState(false);
+  const [quoteOpen, setQuoteOpen] = useState(false);
 
   return (
     <div className="flex gap-2">
@@ -156,6 +166,7 @@ export function QuickActions({
             rep={actor}
             onLog={(t, body) => onAddActivity(inquiry.id, t, body)}
             onSetValue={onSetValue}
+            onSaveQuote={onAddQuote}
             open={emailOpen}
             onOpenChange={setEmailOpen}
             trigger={null}
@@ -175,20 +186,45 @@ export function QuickActions({
         </Button>
       )}
 
-      <Button
-        variant="outline"
-        size="sm"
-        className="flex-1"
-        onClick={() =>
-          onAddActivity(
-            inquiry.id,
-            "quote",
-            `Sent written quote — ${fmtMoney(inquiry.estimated_value)}.`
-          )
-        }
-      >
-        <FileText className="size-4" /> Quote
-      </Button>
+      {/* Draft a Quote — opens the line-item builder, saves the quote to the
+          deal, and downloads the branded PDF to attach. Falls back to logging a
+          written quote when the quote callback isn't wired (rare). */}
+      {onAddQuote ? (
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1"
+            onClick={() => setQuoteOpen(true)}
+          >
+            <FileText className="size-4" /> Draft a Quote
+          </Button>
+          <QuoteDialog
+            key={inquiry.id}
+            inquiry={inquiry}
+            onSave={onAddQuote}
+            onSetValue={onSetValue}
+            open={quoteOpen}
+            onOpenChange={setQuoteOpen}
+            trigger={null}
+          />
+        </>
+      ) : (
+        <Button
+          variant="outline"
+          size="sm"
+          className="flex-1"
+          onClick={() =>
+            onAddActivity(
+              inquiry.id,
+              "quote",
+              `Sent written quote — ${fmtMoney(inquiry.estimated_value)}.`
+            )
+          }
+        >
+          <FileText className="size-4" /> Quote
+        </Button>
+      )}
     </div>
   );
 }
@@ -620,6 +656,7 @@ export function InquiryDrawer({
                     actor={actor}
                     onAddActivity={callbacks.onAddActivity}
                     onSetValue={callbacks.onSetValue}
+                    onAddQuote={callbacks.onAddQuote}
                   />
                 </div>
                 <StageBar inquiry={inquiry} onMove={callbacks.onMove} />
@@ -627,6 +664,14 @@ export function InquiryDrawer({
 
               <Section title="Event & contact">
                 <ContactGrid inquiry={inquiry} onSetValue={callbacks.onSetValue} />
+              </Section>
+
+              <Section title="Quotes">
+                <QuotesList
+                  inquiry={inquiry}
+                  onUpdateStatus={callbacks.onUpdateQuoteStatus}
+                  onDelete={callbacks.onDeleteQuote}
+                />
               </Section>
 
               <Section title="Tasks & reminders">

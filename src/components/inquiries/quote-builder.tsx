@@ -44,6 +44,34 @@ export function lineAmount(l: QuoteLine): number {
   return (Number(l.qty) || 0) * (Number(l.rate) || 0);
 }
 
+// Strip the client-only row id for persistence (matches QuoteLineItem in shared).
+export function toLineItems(
+  lines: QuoteLine[]
+): { description: string; qty: number; rate: number }[] {
+  return lines
+    .filter((l) => l.description.trim() !== "" || Number(l.rate) > 0)
+    .map((l) => ({
+      description: l.description.trim() || "Item",
+      qty: Number(l.qty) || 0,
+      rate: Number(l.rate) || 0,
+    }));
+}
+
+// Round to cents to avoid float drift in stored totals.
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+// Subtotal / tax / total for a set of lines and an optional tax percent.
+export function computeQuoteTotals(
+  lines: QuoteLine[],
+  taxRate = 0
+): { subtotal: number; tax: number; total: number } {
+  const subtotal = round2(lines.reduce((s, l) => s + lineAmount(l), 0));
+  const tax = round2(subtotal * ((Number(taxRate) || 0) / 100));
+  return { subtotal, tax, total: round2(subtotal + tax) };
+}
+
 // Render the itemized quote as the plain-text block that fills {quote}.
 export function formatQuote(lines: QuoteLine[]): { text: string; total: number } {
   const active = lines.filter(

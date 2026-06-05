@@ -1,0 +1,129 @@
+"use client";
+
+// The saved quotes on a deal. This is the "harvest" surface: when one rep has
+// already drafted a quote for a customer, any other rep who opens the deal sees
+// it here and can re-download the identical PDF (regenerated from the saved
+// data), flip its status, or remove it. Rendered in both the side drawer and the
+// full inquiry page.
+
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Download, Trash2 } from "lucide-react";
+import { downloadQuotePdf } from "@/lib/inquiries/quote-pdf";
+import {
+  type Inquiry,
+  type InquiryQuote,
+  fmtMoney,
+  fmtDateTime,
+} from "@/lib/inquiries/shared";
+
+const STATUS_OPTIONS: InquiryQuote["status"][] = [
+  "draft",
+  "sent",
+  "accepted",
+  "declined",
+  "expired",
+];
+
+const STATUS_STYLE: Record<InquiryQuote["status"], string> = {
+  draft: "bg-slate-100 text-slate-600",
+  sent: "bg-blue-100 text-blue-700",
+  accepted: "bg-emerald-100 text-emerald-700",
+  declined: "bg-red-100 text-red-700",
+  expired: "bg-amber-100 text-amber-700",
+};
+
+export function QuotesList({
+  inquiry,
+  onUpdateStatus,
+  onDelete,
+}: {
+  inquiry: Inquiry;
+  onUpdateStatus: (quoteId: string, status: InquiryQuote["status"]) => void;
+  onDelete: (quoteId: string) => void;
+}) {
+  const quotes = inquiry.quotes ?? [];
+
+  if (quotes.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No quotes yet. Use <span className="font-medium">Draft a Quote</span> to build one.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {quotes.map((q) => (
+        <div key={q.id} className="rounded-lg border bg-card p-3">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-sm font-semibold">{q.quote_number}</span>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_STYLE[q.status]}`}
+            >
+              {q.status}
+            </span>
+            <span className="ml-auto font-mono text-sm font-semibold tabular-nums">
+              {fmtMoney(q.total)}
+            </span>
+          </div>
+
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            {q.lines.length} line{q.lines.length === 1 ? "" : "s"}
+            {q.created_by ? ` · ${q.created_by}` : ""}
+            {` · ${fmtDateTime(q.created_at)}`}
+          </div>
+
+          <div className="mt-2 flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-xs"
+              onClick={async () => {
+                try {
+                  await downloadQuotePdf(q, inquiry);
+                } catch {
+                  toast.error("Couldn't generate the PDF");
+                }
+              }}
+            >
+              <Download className="size-3.5" /> Download PDF
+            </Button>
+
+            <Select
+              value={q.status}
+              onValueChange={(v) => onUpdateStatus(q.id, v as InquiryQuote["status"])}
+            >
+              <SelectTrigger size="sm" className="h-8 w-[120px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STATUS_OPTIONS.map((s) => (
+                  <SelectItem key={s} value={s} className="text-xs capitalize">
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <button
+              type="button"
+              onClick={() => onDelete(q.id)}
+              className="ml-auto grid size-8 place-items-center rounded text-muted-foreground/60 hover:bg-muted hover:text-destructive"
+              aria-label="Delete quote"
+            >
+              <Trash2 className="size-4" />
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

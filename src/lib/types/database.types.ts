@@ -399,6 +399,60 @@ export type Database = {
         }
         Relationships: []
       }
+      rental_inquiry_quotes: {
+        Row: {
+          id: string
+          entity_id: string
+          inquiry_id: string
+          quote_number: string
+          status: string
+          lines: Json
+          subtotal: number
+          tax_rate: number
+          tax: number
+          total: number
+          valid_until: string | null
+          terms: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          inquiry_id: string
+          quote_number?: string
+          status?: string
+          lines?: Json
+          subtotal?: number
+          tax_rate?: number
+          tax?: number
+          total?: number
+          valid_until?: string | null
+          terms?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          inquiry_id?: string
+          quote_number?: string
+          status?: string
+          lines?: Json
+          subtotal?: number
+          tax_rate?: number
+          tax?: number
+          total?: number
+          valid_until?: string | null
+          terms?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       asset_depreciation_rules: {
         Row: {
           id: string

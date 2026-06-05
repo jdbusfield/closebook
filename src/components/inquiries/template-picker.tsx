@@ -17,7 +17,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Copy, Check, Send, Sparkles } from "lucide-react";
+import { Copy, Check, Send, Sparkles, Download } from "lucide-react";
 import {
   type MessageTemplate,
   TRACK_LABEL,
@@ -30,9 +30,13 @@ import {
   QuoteBuilder,
   seedQuoteLines,
   formatQuote,
+  computeQuoteTotals,
+  toLineItems,
   type QuoteLine,
 } from "@/components/inquiries/quote-builder";
-import { type Inquiry, type InquiryActivity } from "@/lib/inquiries/shared";
+import { downloadQuotePdf } from "@/lib/inquiries/quote-pdf";
+import { type QuoteDraft } from "@/lib/inquiries/use-inquiries";
+import { type Inquiry, type InquiryActivity, type InquiryQuote } from "@/lib/inquiries/shared";
 
 async function copyText(text: string): Promise<boolean> {
   try {
@@ -52,6 +56,7 @@ export function TemplatePicker({
   rep,
   onLog,
   onSetValue,
+  onSaveQuote,
   open: openProp,
   onOpenChange,
   trigger,
@@ -61,6 +66,12 @@ export function TemplatePicker({
   rep: string;
   onLog: (type: InquiryActivity["type"], body: string) => void;
   onSetValue?: (id: string, value: number | null) => void;
+  /**
+   * Persist the quote built here so it's saved on the deal (and re-downloadable
+   * by any rep), then hand back the saved row so we can download its PDF. When
+   * omitted, the quote still merges into the email body as text but isn't saved.
+   */
+  onSaveQuote?: (id: string, draft: QuoteDraft) => Promise<InquiryQuote | null>;
   /** Controlled open state. Omit to let the built-in trigger manage it. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -80,6 +91,7 @@ export function TemplatePicker({
   };
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [savingQuote, setSavingQuote] = useState(false);
   const [quoteLines, setQuoteLines] = useState<QuoteLine[]>(() =>
     seedQuoteLines(inquiry)
   );
@@ -95,13 +107,12 @@ export function TemplatePicker({
   const showQuote = !!selected && selected.body.includes("{quote}");
   const quote = useMemo(() => formatQuote(quoteLines), [quoteLines]);
 
+  const latestQuoteNumber = inquiry.quotes?.[0]?.quote_number;
   const rendered: { subject?: string; body: string } = selected
-    ? renderTemplate(
-        selected,
-        inquiry,
-        rep,
-        showQuote ? { quote: quote.text } : undefined
-      )
+    ? renderTemplate(selected, inquiry, rep, {
+        quote: showQuote ? quote.text : undefined,
+        quote_number: latestQuoteNumber,
+      })
     : { subject: undefined, body: "" };
 
   const reset = () => {
@@ -118,6 +129,36 @@ export function TemplatePicker({
   const maybeSaveValue = () => {
     if (showQuote && onSetValue && quote.total > 0) {
       onSetValue(inquiry.id, quote.total);
+    }
+  };
+
+  // Persist the quote built in this email (so any rep can re-download it) and
+  // download the branded PDF the rep attaches to the message.
+  const doSaveQuoteAndDownload = async () => {
+    if (!onSaveQuote) return;
+    const totals = computeQuoteTotals(quoteLines, 0);
+    const draft: QuoteDraft = {
+      lines: toLineItems(quoteLines),
+      subtotal: totals.subtotal,
+      tax_rate: 0,
+      tax: 0,
+      total: totals.total,
+      valid_until: null,
+      terms: null,
+    };
+    if (draft.lines.length === 0) {
+      toast.error("Add at least one line item");
+      return;
+    }
+    setSavingQuote(true);
+    try {
+      const created = await onSaveQuote(inquiry.id, draft);
+      if (!created) return; // onSaveQuote already surfaced the error
+      if (onSetValue && totals.total > 0) onSetValue(inquiry.id, totals.total);
+      toast.success(`Quote ${created.quote_number} saved`);
+      await downloadQuotePdf(created, inquiry);
+    } finally {
+      setSavingQuote(false);
     }
   };
 
@@ -239,6 +280,19 @@ export function TemplatePicker({
 
             {/* Actions */}
             <div className="flex flex-wrap items-center gap-2 border-t px-5 py-3">
+              {showQuote && onSaveQuote && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={doSaveQuoteAndDownload}
+                  disabled={savingQuote}
+                  className="gap-1.5"
+                  title="Save this quote to the deal and download the PDF to attach"
+                >
+                  <Download className="size-4" />
+                  Save quote &amp; PDF
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={doCopy} className="gap-1.5">
                 {copied ? (
                   <Check className="size-4 text-emerald-600" />

@@ -46,6 +46,9 @@ export default function InquiriesCalendarPage() {
     onToggleTask: data.toggleTask,
     onAddActivity: data.addActivity,
     onDeleteActivity: data.deleteActivity,
+    onAddQuote: data.addQuote,
+    onUpdateQuoteStatus: data.updateQuoteStatus,
+    onDeleteQuote: data.deleteQuote,
   };
   const selected = data.inquiries.find((i) => i.id === selectedId) ?? null;
 
