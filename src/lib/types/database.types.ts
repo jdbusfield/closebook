@@ -153,6 +153,30 @@ export type Database = {
         }
         Relationships: []
       }
+      gmail_sync_state: {
+        Row: {
+          email_address: string
+          history_id: string | null
+          watch_expiration: string | null
+          last_synced_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          email_address: string
+          history_id?: string | null
+          watch_expiration?: string | null
+          last_synced_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          email_address?: string
+          history_id?: string | null
+          watch_expiration?: string | null
+          last_synced_at?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       rental_inquiry_messages: {
         Row: {
           id: string
@@ -169,6 +193,7 @@ export type Database = {
           body_html: string | null
           resend_email_id: string | null
           provider_message_id: string | null
+          gmail_thread_id: string | null
           sent_at: string | null
           received_at: string | null
           created_at: string
@@ -188,6 +213,7 @@ export type Database = {
           body_html?: string | null
           resend_email_id?: string | null
           provider_message_id?: string | null
+          gmail_thread_id?: string | null
           sent_at?: string | null
           received_at?: string | null
           created_at?: string
@@ -207,6 +233,7 @@ export type Database = {
           body_html?: string | null
           resend_email_id?: string | null
           provider_message_id?: string | null
+          gmail_thread_id?: string | null
           sent_at?: string | null
           received_at?: string | null
           created_at?: string
@@ -2294,6 +2321,252 @@ export type Database = {
           raw_data?: Json | null
           created_at?: string
         }
+        Relationships: []
+      }
+      payroll_pay_statements: {
+        Row: {
+          id: string
+          employee_id: string
+          paylocity_company_id: string
+          employee_name: string
+          pay_period_begin: string
+          pay_period_end: string
+          check_date: string
+          transaction_number: string | null
+          check_number: number | null
+          voucher_number: number | null
+          year: number
+          gross_pay: number
+          net_pay: number
+          net_check: number
+          direct_deposit_amount: number
+          total_hours: number
+          summary_regular_hours: number
+          summary_regular_dollars: number
+          summary_overtime_hours: number
+          summary_overtime_dollars: number
+          detail_regular_hours: number
+          detail_regular_dollars: number
+          detail_overtime_hours: number
+          detail_overtime_dollars: number
+          detail_doubletime_hours: number
+          detail_doubletime_dollars: number
+          detail_meal_premium_hours: number
+          detail_meal_premium_dollars: number
+          detail_holiday_hours: number
+          detail_holiday_dollars: number
+          detail_vacation_hours: number
+          detail_vacation_dollars: number
+          detail_sick_hours: number
+          detail_sick_dollars: number
+          detail_bonus_dollars: number
+          detail_commission_dollars: number
+          detail_reimbursement_dollars: number
+          detail_other_earnings_dollars: number
+          ee_tax_dollars: number
+          er_tax_dollars: number
+          ee_deduction_dollars: number
+          er_contribution_dollars: number
+          cost_center_code: string | null
+          department: string | null
+          class: string | null
+          operating_entity_id: string | null
+          operating_entity_name: string | null
+          job_title: string | null
+          pay_type: string | null
+          base_rate: number | null
+          process: number | null
+          workers_comp_code: string | null
+          is_autopay: boolean
+          raw_summary: Json | null
+          synced_at: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          employee_id: string
+          paylocity_company_id: string
+          employee_name: string
+          pay_period_begin: string
+          pay_period_end: string
+          check_date: string
+          transaction_number?: string | null
+          check_number?: number | null
+          voucher_number?: number | null
+          year: number
+          gross_pay?: number
+          net_pay?: number
+          net_check?: number
+          direct_deposit_amount?: number
+          total_hours?: number
+          summary_regular_hours?: number
+          summary_regular_dollars?: number
+          summary_overtime_hours?: number
+          summary_overtime_dollars?: number
+          detail_regular_hours?: number
+          detail_regular_dollars?: number
+          detail_overtime_hours?: number
+          detail_overtime_dollars?: number
+          detail_doubletime_hours?: number
+          detail_doubletime_dollars?: number
+          detail_meal_premium_hours?: number
+          detail_meal_premium_dollars?: number
+          detail_holiday_hours?: number
+          detail_holiday_dollars?: number
+          detail_vacation_hours?: number
+          detail_vacation_dollars?: number
+          detail_sick_hours?: number
+          detail_sick_dollars?: number
+          detail_bonus_dollars?: number
+          detail_commission_dollars?: number
+          detail_reimbursement_dollars?: number
+          detail_other_earnings_dollars?: number
+          ee_tax_dollars?: number
+          er_tax_dollars?: number
+          ee_deduction_dollars?: number
+          er_contribution_dollars?: number
+          cost_center_code?: string | null
+          department?: string | null
+          class?: string | null
+          operating_entity_id?: string | null
+          operating_entity_name?: string | null
+          job_title?: string | null
+          pay_type?: string | null
+          base_rate?: number | null
+          process?: number | null
+          workers_comp_code?: string | null
+          is_autopay?: boolean
+          raw_summary?: Json | null
+          synced_at?: string
+          created_at?: string
+        }
+        Update: Partial<Database["public"]["Tables"]["payroll_pay_statements"]["Insert"]>
+        Relationships: []
+      }
+      payroll_pay_statement_lines: {
+        Row: {
+          id: string
+          pay_statement_id: string
+          employee_id: string
+          paylocity_company_id: string
+          employee_name: string | null
+          check_date: string
+          pay_period_begin: string | null
+          pay_period_end: string | null
+          year: number
+          det_code: string
+          det_type: string | null
+          description: string | null
+          transaction_type: string | null
+          transaction_number: string | null
+          amount: number
+          hours: number
+          rate: number
+          eligible_compensation: number
+          category: string
+          subcategory: string | null
+          is_premium: boolean
+          cost_center_code: string | null
+          department: string | null
+          class: string | null
+          operating_entity_id: string | null
+          operating_entity_name: string | null
+          raw: Json | null
+          synced_at: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          pay_statement_id: string
+          employee_id: string
+          paylocity_company_id: string
+          employee_name?: string | null
+          check_date: string
+          pay_period_begin?: string | null
+          pay_period_end?: string | null
+          year: number
+          det_code: string
+          det_type?: string | null
+          description?: string | null
+          transaction_type?: string | null
+          transaction_number?: string | null
+          amount?: number
+          hours?: number
+          rate?: number
+          eligible_compensation?: number
+          category: string
+          subcategory?: string | null
+          is_premium?: boolean
+          cost_center_code?: string | null
+          department?: string | null
+          class?: string | null
+          operating_entity_id?: string | null
+          operating_entity_name?: string | null
+          raw?: Json | null
+          synced_at?: string
+          created_at?: string
+        }
+        Update: Partial<Database["public"]["Tables"]["payroll_pay_statement_lines"]["Insert"]>
+        Relationships: [
+          {
+            foreignKeyName: "payroll_pay_statement_lines_pay_statement_id_fkey"
+            columns: ["pay_statement_id"]
+            isOneToOne: false
+            referencedRelation: "payroll_pay_statements"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      payroll_earning_codes: {
+        Row: {
+          id: string
+          paylocity_company_id: string
+          code: string
+          description: string | null
+          check_stub_description: string | null
+          auto_category: string | null
+          auto_subcategory: string | null
+          auto_is_premium: boolean
+          manual_category: string | null
+          manual_subcategory: string | null
+          manual_is_premium: boolean | null
+          effective_category: string | null
+          effective_subcategory: string | null
+          effective_is_premium: boolean | null
+          paylocity_type_code: string | null
+          paylocity_type_category: string | null
+          is_deduction: boolean
+          notes: string | null
+          is_active: boolean
+          first_seen_at: string
+          last_seen_at: string
+          synced_at: string
+        }
+        Insert: {
+          id?: string
+          paylocity_company_id: string
+          code: string
+          description?: string | null
+          check_stub_description?: string | null
+          auto_category?: string | null
+          auto_subcategory?: string | null
+          auto_is_premium?: boolean
+          manual_category?: string | null
+          manual_subcategory?: string | null
+          manual_is_premium?: boolean | null
+          effective_category?: string | null
+          effective_subcategory?: string | null
+          effective_is_premium?: boolean | null
+          paylocity_type_code?: string | null
+          paylocity_type_category?: string | null
+          is_deduction?: boolean
+          notes?: string | null
+          is_active?: boolean
+          first_seen_at?: string
+          last_seen_at?: string
+          synced_at?: string
+        }
+        Update: Partial<Database["public"]["Tables"]["payroll_earning_codes"]["Insert"]>
         Relationships: []
       }
       revenue_schedules: {
