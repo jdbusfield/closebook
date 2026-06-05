@@ -2,10 +2,13 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { MapPin, AlertTriangle, Flame } from "lucide-react";
+import { MapPin, AlertTriangle, Flame, Mail } from "lucide-react";
 import { useInquiries } from "@/lib/inquiries/use-inquiries";
+import { useTemplates } from "@/lib/inquiries/use-templates";
+import { selectTemplates } from "@/lib/inquiries/templates";
 import { SectionTabs } from "@/components/inquiries/section-tabs";
 import { InquiryDrawer, type DrawerCallbacks } from "@/components/inquiries/detail-drawer";
+import { TemplatePicker } from "@/components/inquiries/template-picker";
 import {
   InquiryAvatar,
   LastTouched,
@@ -31,11 +34,13 @@ function firstOpenTask(inq: Inquiry) {
 function DealCard({
   inq,
   onOpen,
+  onEmail,
   onDragStart,
   dragging,
 }: {
   inq: Inquiry;
   onOpen: () => void;
+  onEmail?: () => void;
   onDragStart: (e: React.DragEvent) => void;
   dragging: boolean;
 }) {
@@ -57,6 +62,20 @@ function DealCard({
         <InquiryAvatar name={inq.name} size={26} />
         <span className="flex-1 truncate text-sm font-semibold">{inq.name || "—"}</span>
         <span className="font-mono text-[11px] text-muted-foreground">{inq.reference}</span>
+        {onEmail && (
+          <button
+            type="button"
+            title="Email this customer from a template"
+            aria-label="Email this customer from a template"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEmail();
+            }}
+            className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Mail className="size-3.5" />
+          </button>
+        )}
       </div>
       <div className="mt-1.5 text-xs">
         <span className="font-semibold">{inq.use_case || "Inquiry"}</span>
@@ -108,8 +127,10 @@ export default function InquiriesPipelinePage() {
   const params = useParams();
   const entityId = params.entityId as string;
   const data = useInquiries(entityId);
+  const { templates } = useTemplates(entityId);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [emailId, setEmailId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<InquiryStatus | null>(null);
   const draggedRef = useRef(false);
 
@@ -123,6 +144,7 @@ export default function InquiriesPipelinePage() {
   };
 
   const selected = data.inquiries.find((i) => i.id === selectedId) ?? null;
+  const emailInquiry = data.inquiries.find((i) => i.id === emailId) ?? null;
 
   const { openCount, overdueCount } = useMemo(() => {
     const open = data.inquiries.filter((i) => isOpenStatus(i.status)).length;
@@ -214,6 +236,11 @@ export default function InquiriesPipelinePage() {
                         if (draggedRef.current) return;
                         setSelectedId(inq.id);
                       }}
+                      onEmail={
+                        selectTemplates(templates, inq).length > 0
+                          ? () => setEmailId(inq.id)
+                          : undefined
+                      }
                     />
                   ))}
                 </div>
@@ -230,6 +257,24 @@ export default function InquiriesPipelinePage() {
         callbacks={callbacks}
         actor={data.actor}
       />
+
+      {/* Quick-compose: clicking a card's email icon opens the template picker
+          straight away, pre-filled from that inquiry's quote request. */}
+      {emailInquiry && (
+        <TemplatePicker
+          key={emailInquiry.id}
+          inquiry={emailInquiry}
+          entityId={entityId}
+          rep={data.actor}
+          onLog={(t, body) => data.addActivity(emailInquiry.id, t, body)}
+          onSetValue={data.setEstimatedValue}
+          open
+          onOpenChange={(o) => {
+            if (!o) setEmailId(null);
+          }}
+          trigger={null}
+        />
+      )}
     </div>
   );
 }

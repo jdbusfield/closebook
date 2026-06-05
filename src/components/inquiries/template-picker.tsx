@@ -7,7 +7,7 @@
 // it in their mail client) and log the touch to the timeline in one click. It
 // does not send anything itself — the rep still sends from their own inbox.
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -52,14 +52,32 @@ export function TemplatePicker({
   rep,
   onLog,
   onSetValue,
+  open: openProp,
+  onOpenChange,
+  trigger,
 }: {
   inquiry: Inquiry;
   entityId: string;
   rep: string;
   onLog: (type: InquiryActivity["type"], body: string) => void;
   onSetValue?: (id: string, value: number | null) => void;
+  /** Controlled open state. Omit to let the built-in trigger manage it. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /**
+   * Custom trigger element (e.g. a card's email icon). Omit for the default
+   * "Email templates" button; pass `null` to render no trigger when driving
+   * `open` from outside.
+   */
+  trigger?: ReactNode | null;
 }) {
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? openProp : openState;
+  const setOpen = (o: boolean) => {
+    if (!isControlled) setOpenState(o);
+    onOpenChange?.(o);
+  };
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [quoteLines, setQuoteLines] = useState<QuoteLine[]>(() =>
@@ -143,12 +161,16 @@ export function TemplatePicker({
         if (!o) reset();
       }}
     >
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
-          <Sparkles className="size-3.5" />
-          Email templates
-        </Button>
-      </DialogTrigger>
+      {trigger !== null && (
+        <DialogTrigger asChild>
+          {trigger ?? (
+            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
+              <Sparkles className="size-3.5" />
+              Email templates
+            </Button>
+          )}
+        </DialogTrigger>
+      )}
       <DialogContent className="max-w-[calc(100%-2rem)] gap-0 p-0 sm:max-w-3xl">
         <DialogHeader className="border-b px-5 py-3.5">
           <DialogTitle className="flex items-center gap-2 text-base">
