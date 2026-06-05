@@ -6,6 +6,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEmbed } from "@/lib/inquiries/embed-context";
 import {
   LayoutDashboard,
   KanbanSquare,
@@ -35,7 +36,9 @@ export function SectionTabs({
   overdueCount?: number;
 }) {
   const pathname = usePathname();
-  const base = `/${entityId}/inquiries`;
+  const embed = useEmbed();
+  // In the embed, tabs navigate within the embed route group, not the app.
+  const base = embed ? embed.basePath : `/${entityId}/inquiries`;
   const tabs: Tab[] = [
     { key: "dashboard", label: "Dashboard", href: `${base}/dashboard`, icon: LayoutDashboard },
     {

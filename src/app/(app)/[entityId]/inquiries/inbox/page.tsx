@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { useEmbed } from "@/lib/inquiries/embed-context";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,7 +59,11 @@ function snippet(m: FeedMessage): string {
 export default function InboxFeedPage() {
   const params = useParams();
   const router = useRouter();
-  const entityId = params.entityId as string;
+  const embed = useEmbed();
+  const isEmbed = !!embed?.embedKey;
+  const embedKey = embed?.embedKey;
+  const entityId = (params.entityId as string) || embed?.entityId || "";
+  const base = embed ? embed.basePath : `/${entityId}/inquiries`;
 
   const [messages, setMessages] = useState<FeedMessage[]>([]);
   const [inquiries, setInquiries] = useState<InquiryLite[]>([]);
@@ -69,6 +74,21 @@ export default function InboxFeedPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    if (isEmbed) {
+      const res = await fetch("/api/inquiries/embed", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(embedKey ? { "x-embed-key": embedKey } : {}),
+        },
+        body: JSON.stringify({ action: "inbox_feed" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      setMessages((data.messages as FeedMessage[]) ?? []);
+      setInquiries((data.inquiries as InquiryLite[]) ?? []);
+      setLoading(false);
+      return;
+    }
     const supabase = createClient();
     const [{ data: msgs }, { data: inqs }] = await Promise.all([
       supabase
@@ -89,7 +109,7 @@ export default function InboxFeedPage() {
     setMessages((msgs as FeedMessage[]) ?? []);
     setInquiries((inqs as InquiryLite[]) ?? []);
     setLoading(false);
-  }, [entityId]);
+  }, [entityId, isEmbed, embedKey]);
 
   useEffect(() => {
     load();
@@ -101,7 +121,10 @@ export default function InboxFeedPage() {
     try {
       const res = await fetch(`/api/inquiry-messages/${messageId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(embedKey ? { "x-embed-key": embedKey } : {}),
+        },
         body: JSON.stringify({ inquiry_id: inquiryId }),
       });
       if (!res.ok) {
@@ -123,19 +146,19 @@ export default function InboxFeedPage() {
     try {
       const res = await fetch(
         `/api/inquiry-messages/${messageId}/create-inquiry`,
-        { method: "POST" }
+        { method: "POST", headers: embedKey ? { "x-embed-key": embedKey } : undefined }
       );
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         // If it was already linked, just go to that inquiry.
         if (res.status === 409 && json.inquiryId) {
-          router.push(`/${entityId}/inquiries/${json.inquiryId}`);
+          router.push(`${base}/${json.inquiryId}`);
           return;
         }
         throw new Error(json.error || "Create failed");
       }
       toast.success(`Created inquiry ${json.reference}`);
-      router.push(`/${entityId}/inquiries/${json.inquiryId}`);
+      router.push(`${base}/${json.inquiryId}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Create failed");
       setCreating(null);
@@ -152,7 +175,7 @@ export default function InboxFeedPage() {
     <div className="space-y-4 p-4 md:p-6 max-w-4xl">
       <div className="flex items-center gap-3">
         <Link
-          href={`/${entityId}/inquiries`}
+          href={base}
           className="text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
@@ -232,7 +255,7 @@ export default function InboxFeedPage() {
                   <div className="mt-2">
                     {linked ? (
                       <Link
-                        href={`/${entityId}/inquiries/${linked.id}`}
+                        href={`${base}/${linked.id}`}
                         className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
                       >
                         <Link2 className="size-3" />

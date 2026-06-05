@@ -1,12 +1,21 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { INQUIRY_STATUSES } from "@/lib/inquiries/shared";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { INQUIRY_STATUSES, HDR_ENTITY_ID } from "@/lib/inquiries/shared";
 
 export const runtime = "nodejs";
 
-// In-app status / triage updates from the Inquiries dashboard. Uses the user's
-// session client so RLS enforces that only members of the HDR entity can edit.
+// In-app status / triage updates from the Inquiries dashboard. Normally uses the
+// user's session client so RLS enforces that only members of the HDR entity can
+// edit. The embedded HDR CRM (no session) authenticates with the EMBED_API_KEY
+// via an `x-embed-key` header; when valid we use the admin client but HARD-SCOPE
+// every query to HDR_ENTITY_ID, which replaces the RLS guard.
+
+function validEmbedKey(request: Request): boolean {
+  const k = request.headers.get("x-embed-key");
+  return !!k && !!process.env.EMBED_API_KEY && k === process.env.EMBED_API_KEY;
+}
 
 const UpdateSchema = z.object({
   status: z.enum(INQUIRY_STATUSES).optional(),
@@ -22,13 +31,16 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const supabase = await createClient();
+  const isEmbed = validEmbedKey(request);
+  const supabase = isEmbed ? createAdminClient() : await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isEmbed) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
   }
 
   let patch: z.infer<typeof UpdateSchema>;
@@ -45,12 +57,15 @@ export async function PATCH(
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
   }
 
-  // RLS restricts the update to inquiries in the user's entities; a disallowed
-  // row simply matches nothing and returns no data.
-  const { data, error } = await supabase
+  // For session users, RLS restricts the update to their entities. For the embed
+  // (admin client, RLS bypassed) we explicitly scope to HDR so a valid key can
+  // only ever touch HDR inquiries. Either way a disallowed row matches nothing.
+  let query = supabase
     .from("rental_inquiries")
     .update({ ...patch, last_activity_at: new Date().toISOString() })
-    .eq("id", id)
+    .eq("id", id);
+  if (isEmbed) query = query.eq("entity_id", HDR_ENTITY_ID);
+  const { data, error } = await query
     .select(
       "id, status, internal_notes, rw_quote_number, rw_order_number, unit_id, estimated_value"
     )
@@ -70,28 +85,28 @@ export async function PATCH(
 // client so RLS enforces that only members of the inquiry's entity can delete it.
 // The inquiry's messages and email events cascade via their FK ON DELETE CASCADE.
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const supabase = await createClient();
+  const isEmbed = validEmbedKey(request);
+  const supabase = isEmbed ? createAdminClient() : await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isEmbed) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
   }
 
-  // RLS restricts the delete to inquiries in the user's entities; a disallowed
-  // row simply matches nothing. We .select() the deleted row so we can tell the
-  // difference between "deleted" and "not found / not permitted".
-  const { data, error } = await supabase
-    .from("rental_inquiries")
-    .delete()
-    .eq("id", id)
-    .select("id")
-    .maybeSingle();
+  // RLS restricts the delete to the user's entities; the embed is hard-scoped to
+  // HDR. A disallowed row simply matches nothing. We .select() the deleted row so
+  // we can tell the difference between "deleted" and "not found / not permitted".
+  let query = supabase.from("rental_inquiries").delete().eq("id", id);
+  if (isEmbed) query = query.eq("entity_id", HDR_ENTITY_ID);
+  const { data, error } = await query.select("id").maybeSingle();
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

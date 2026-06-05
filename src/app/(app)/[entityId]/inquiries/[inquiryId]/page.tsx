@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { useEmbed } from "@/lib/inquiries/embed-context";
 import {
   Card,
   CardContent,
@@ -256,7 +257,11 @@ function MessageBody({
 export default function InquiryDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const entityId = params.entityId as string;
+  const embed = useEmbed();
+  const isEmbed = !!embed?.embedKey;
+  const embedKey = embed?.embedKey;
+  const entityId = (params.entityId as string) || embed?.entityId || "";
+  const base = embed ? embed.basePath : `/${entityId}/inquiries`;
   const inquiryId = params.inquiryId as string;
 
   const [inquiry, setInquiry] = useState<Inquiry | null>(null);
@@ -281,6 +286,26 @@ export default function InquiryDetailPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    if (isEmbed) {
+      const res = await fetch("/api/inquiries/embed", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(embedKey ? { "x-embed-key": embedKey } : {}),
+        },
+        body: JSON.stringify({ action: "inquiry_detail", inquiryId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      const inq = (data.inquiry as Inquiry) ?? null;
+      setInquiry(inq);
+      setInternalNotes(inq?.internal_notes ?? "");
+      setRwQuote(inq?.rw_quote_number ?? "");
+      setRwOrder(inq?.rw_order_number ?? "");
+      setMessages((data.messages as Message[]) ?? []);
+      setEvents((data.events as EmailEvent[]) ?? []);
+      setLoading(false);
+      return;
+    }
     const supabase = createClient();
     const { data: inq } = await supabase
       .from("rental_inquiries")
@@ -314,7 +339,7 @@ export default function InquiryDetailPage() {
       setEvents([]);
     }
     setLoading(false);
-  }, [inquiryId]);
+  }, [inquiryId, isEmbed, embedKey]);
 
   useEffect(() => {
     load();
@@ -325,7 +350,10 @@ export default function InquiryDetailPage() {
     try {
       const res = await fetch(`/api/inquiries/${inquiryId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(embedKey ? { "x-embed-key": embedKey } : {}),
+        },
         body: JSON.stringify(body),
       });
       if (!res.ok) {
@@ -344,14 +372,17 @@ export default function InquiryDetailPage() {
   async function remove() {
     setDeleting(true);
     try {
-      const res = await fetch(`/api/inquiries/${inquiryId}`, { method: "DELETE" });
+      const res = await fetch(`/api/inquiries/${inquiryId}`, {
+        method: "DELETE",
+        headers: embedKey ? { "x-embed-key": embedKey } : undefined,
+      });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || "Delete failed");
       }
       toast.success("Inquiry deleted");
       // Leave the (now-gone) detail page and return to the board.
-      router.replace(`/${entityId}/inquiries`);
+      router.replace(base);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Delete failed");
       setDeleting(false);
@@ -365,7 +396,7 @@ export default function InquiryDetailPage() {
     return (
       <div className="p-6 space-y-4">
         <p className="text-muted-foreground">Inquiry not found.</p>
-        <Link href={`/${entityId}/inquiries`} className="text-primary hover:underline">
+        <Link href={base} className="text-primary hover:underline">
           ← Back to inquiries
         </Link>
       </div>
@@ -388,7 +419,7 @@ export default function InquiryDetailPage() {
     <div className="space-y-6 p-4 md:p-6 max-w-5xl">
       <div className="flex items-center gap-3">
         <Link
-          href={`/${entityId}/inquiries`}
+          href={base}
           className="text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
