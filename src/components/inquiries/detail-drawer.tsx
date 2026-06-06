@@ -24,6 +24,8 @@ import {
   Check,
   ExternalLink,
   Trash2,
+  XCircle,
+  RotateCcw,
 } from "lucide-react";
 import {
   InquiryAvatar,
@@ -45,6 +47,7 @@ import {
   type InquiryMessage,
   type InquiryQuote,
   STAGES,
+  LOST_STAGE,
   fmtMoney,
   fmtDateTime,
   fmtRange,
@@ -77,36 +80,68 @@ export function StageBar({
   inquiry: Inquiry;
   onMove: DrawerCallbacks["onMove"];
 }) {
+  // A lost deal lives off the board — show a terminal banner with a one-click
+  // reopen (back to the first stage) instead of the progress bar.
+  if (inquiry.status === LOST_STAGE.key) {
+    return (
+      <div className="flex items-center gap-2 rounded-md border border-dashed bg-muted/40 px-3 py-2">
+        <XCircle className="size-4 shrink-0 text-muted-foreground" />
+        <span className="flex-1 text-sm font-medium text-muted-foreground">
+          Marked as lost — off the pipeline
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onMove(inquiry.id, STAGES[0].key)}
+        >
+          <RotateCcw className="size-4" /> Reopen
+        </Button>
+      </div>
+    );
+  }
+
   const idx = STAGES.findIndex((s) => s.key === inquiry.status);
   return (
-    <div className="flex gap-1">
-      {STAGES.map((s, i) => {
-        const done = idx >= 0 && i < idx;
-        const cur = i === idx;
-        return (
-          <button
-            key={s.key}
-            title={`Move to ${s.label}`}
-            onClick={() => onMove(inquiry.id, s.key)}
-            className={`flex-1 rounded px-1 py-1.5 text-[10px] font-semibold leading-tight transition-colors ${
-              cur
-                ? "text-white"
-                : done
-                  ? "text-foreground"
-                  : "bg-muted text-muted-foreground hover:bg-muted/70"
-            }`}
-            style={
-              cur
-                ? { background: s.color }
-                : done
-                  ? { background: hexA(s.color, 0.14), color: s.color }
-                  : undefined
-            }
-          >
-            {s.label}
-          </button>
-        );
-      })}
+    <div className="space-y-2">
+      <div className="flex gap-1">
+        {STAGES.map((s, i) => {
+          const done = idx >= 0 && i < idx;
+          const cur = i === idx;
+          return (
+            <button
+              key={s.key}
+              title={`Move to ${s.label}`}
+              onClick={() => onMove(inquiry.id, s.key)}
+              className={`flex-1 rounded px-1 py-1.5 text-[10px] font-semibold leading-tight transition-colors ${
+                cur
+                  ? "text-white"
+                  : done
+                    ? "text-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-muted/70"
+              }`}
+              style={
+                cur
+                  ? { background: s.color }
+                  : done
+                    ? { background: hexA(s.color, 0.14), color: s.color }
+                    : undefined
+              }
+            >
+              {s.label}
+            </button>
+          );
+        })}
+      </div>
+      {/* Off-board terminal state: drop a lead that won't convert. Reversible
+          from the lost banner above, so no confirm needed. */}
+      <button
+        type="button"
+        title="Mark this rental as lost"
+        onClick={() => onMove(inquiry.id, LOST_STAGE.key)}
+        className="flex w-full items-center justify-center gap-1.5 rounded px-1 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+      >
+        <XCircle className="size-3.5" /> Mark as lost
+      </button>
     </div>
   );
 }
