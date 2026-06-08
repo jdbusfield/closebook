@@ -1167,7 +1167,7 @@ function buildStatement(
           comp.id === "gross_margin"
             ? "Gross Margin %"
             : comp.id === "operating_margin"
-              ? "Operating Margin %"
+              ? "EBITDA %"
               : "Net Income Margin %";
 
         finalSections.push({

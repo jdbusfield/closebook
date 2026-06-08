@@ -68,7 +68,7 @@ export const INCOME_STATEMENT_COMPUTED: ComputedLineConfig[] = [
   },
   {
     id: "operating_margin",
-    label: "Total Operating Margin",
+    label: "Total EBITDA",
     afterSection: "other_operating_costs",
     formula: [
       { sectionId: "revenue", sign: 1 },
