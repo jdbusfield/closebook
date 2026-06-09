@@ -1010,15 +1010,24 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
                           <p className="text-xs text-muted-foreground uppercase tracking-wider">
                             Variance
                           </p>
+                          {/* Headline reflects the prior-period adjustment, so a
+                              fully-adjusted account reads $0.00 (reconciled)
+                              rather than the raw gross variance. */}
                           <p
                             className={`text-lg font-semibold tabular-nums ${
-                              Math.abs(variance) > 0.01
+                              Math.abs(adjustedVariance) > 0.01
                                 ? "text-red-600"
                                 : "text-green-600"
                             }`}
                           >
-                            {formatCurrency(variance)}
+                            {formatCurrency(adjustedVariance)}
                           </p>
+                          {hasPpa && (
+                            <p className="text-[11px] text-muted-foreground mt-0.5">
+                              {formatCurrency(variance)} gross, net of{" "}
+                              {formatCurrency(ppa)} PPA
+                            </p>
+                          )}
                         </div>
                       </div>
                     )}
