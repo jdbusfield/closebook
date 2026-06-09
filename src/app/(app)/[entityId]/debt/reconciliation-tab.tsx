@@ -429,18 +429,40 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
       }
     }
 
-    // For any group with no current-period recon row, seed the input from the
-    // carry-forward so it's visible and will be persisted when the user
-    // reconciles this period.
+    // Seed the PPA input from the carried-forward adjustment when this period
+    // hasn't set its own. A period only "owns" its adjustment if its
+    // reconciliation row carries an explicit PPA — a reconciled row with no PPA
+    // of its own (e.g. an older reconciliation done before this adjustment
+    // existed) should still inherit the carry-forward. A dollar adjustment is
+    // only seeded when it actually offsets this period's variance, so periods
+    // whose variance has already resolved aren't disturbed.
     for (const group of DEBT_GL_ACCOUNT_GROUPS) {
-      if (reconMap[group.key]) continue;
+      const existing = reconMap[group.key];
+      const existingPpa = Number(existing?.prior_period_adjustment ?? 0);
+      const existingNote = existing?.prior_period_adjustment_note ?? "";
+      if (existing && (Math.abs(existingPpa) > 0.005 || existingNote.length > 0)) {
+        continue;
+      }
+
       const cf = carryForwardMap[group.key];
       if (!cf) continue;
-      if (cf.amount !== 0 || (cf.note ?? "").length > 0) {
-        ppaAmountMap[group.key] = cf.amount !== 0 ? String(cf.amount) : "";
-        ppaNoteMap[group.key] = cf.note ?? "";
-        ppaOpenSet.add(group.key);
+      const hasAmount = Math.abs(cf.amount) > 0.005;
+      const hasNote = (cf.note ?? "").length > 0;
+      if (!hasAmount && !hasNote) continue;
+
+      // Only require the offset check for an actual dollar adjustment; a
+      // note-only carry-forward is informational and always carries.
+      if (hasAmount) {
+        const groupVariance =
+          (balances[group.key] ?? 0) - (grouped[group.key]?.total ?? 0);
+        if (Math.abs(groupVariance - cf.amount) >= Math.abs(groupVariance)) {
+          continue;
+        }
       }
+
+      ppaAmountMap[group.key] = hasAmount ? String(cf.amount) : "";
+      ppaNoteMap[group.key] = cf.note ?? "";
+      ppaOpenSet.add(group.key);
     }
 
     setReconciliations(reconMap);
@@ -851,10 +873,17 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
                 (ppaNote[group.key] ?? "") !==
                   (recon?.prior_period_adjustment_note ?? "");
               const carryForward = carryForwardPpa[group.key];
+              // A period "owns" its adjustment only if its row carries an
+              // explicit PPA; a reconciled row with no PPA of its own still
+              // inherits the carry-forward.
+              const reconOwnsPpa =
+                !!recon &&
+                (Math.abs(savedPpa) > 0.005 ||
+                  (recon?.prior_period_adjustment_note ?? "").length > 0);
               // Carry-forward note shows when the displayed PPA matches a prior
-              // period's value AND no current-period record exists yet.
+              // period's value AND this period hasn't set its own adjustment.
               const showCarryForwardNote =
-                !recon &&
+                !reconOwnsPpa &&
                 carryForward != null &&
                 Math.abs(ppa - carryForward.amount) < 0.005 &&
                 Math.abs(carryForward.amount) > 0.005;
