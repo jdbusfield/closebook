@@ -1135,7 +1135,7 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
                                 className="h-9 text-sm"
                               />
                             </div>
-                            {recon && ppaDirty && (
+                            {ppaDirty && (
                               <Button
                                 variant="outline"
                                 size="sm"
