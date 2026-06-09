@@ -111,9 +111,27 @@ function monthFactor(
   }
 }
 
-export function computeUnpaidInterestAtPeriod(
+export interface InterestScheduleResult {
+  /** Unpaid (accrued-but-not-paid) interest at the end of the target period. */
+  unpaidInterest: number;
+  /**
+   * Interest ACCRUED during the target year, summed across months
+   * 1..targetMonth (PIK-compounded when applicable), regardless of whether it
+   * has been paid. This is the year-to-date interest expense.
+   */
+  ytdInterestExpense: number;
+}
+
+/**
+ * Full interest replay returning both the unpaid-interest balance and the
+ * year-to-date accrued interest expense at the end of the target period.
+ * Every interest figure in the app (debt summary subledger, reconciliation
+ * subledger, interest-expense roll-up) flows through this one engine so the
+ * numbers can never drift apart.
+ */
+export function computeInterestScheduleAtPeriod(
   input: AccruedInterestInput
-): number {
+): InterestScheduleResult {
   const { instrument, transactions, rateHistory, targetYear, targetMonth } =
     input;
 
@@ -130,7 +148,7 @@ export function computeUnpaidInterestAtPeriod(
     targetYear < start.year ||
     (targetYear === start.year && targetMonth < start.month)
   ) {
-    return openingAccrued;
+    return { unpaidInterest: openingAccrued, ytdInterestExpense: 0 };
   }
 
   let balance = Math.max(
@@ -140,6 +158,7 @@ export function computeUnpaidInterestAtPeriod(
       : Number(instrument.original_amount)) || 0
   );
   let unpaid = openingAccrued;
+  let ytdInterestExpense = 0;
 
   const convention = instrument.day_count_convention ?? "30/360";
   const baseRate = Number(instrument.interest_rate ?? 0);
@@ -251,16 +270,21 @@ export function computeUnpaidInterestAtPeriod(
     const intPaid = interestPaidByMonth[key] ?? 0;
     unpaid = Math.max(0, unpaid + monthInterest - intPaid);
 
+    // Accumulate interest accrued in the target year (year-to-date expense).
+    if (cy === targetYear) {
+      ytdInterestExpense += monthInterest;
+    }
+
     // Apply net balance change for next month's opening balance.
     let netChange = 0;
     for (const dc of dayChanges) netChange += dc.amount;
     balance = Math.max(0, balance + netChange);
 
     if (cy === targetYear && cm === targetMonth) {
-      return unpaid;
+      return { unpaidInterest: unpaid, ytdInterestExpense };
     }
     if (cy > targetYear || (cy === targetYear && cm > targetMonth)) {
-      return unpaid;
+      return { unpaidInterest: unpaid, ytdInterestExpense };
     }
 
     if (cm >= 12) {
@@ -271,5 +295,15 @@ export function computeUnpaidInterestAtPeriod(
     }
   }
 
-  return unpaid;
+  return { unpaidInterest: unpaid, ytdInterestExpense };
+}
+
+/**
+ * Backwards-compatible wrapper returning unpaid interest only. Thin shim over
+ * computeInterestScheduleAtPeriod so existing callers are unaffected.
+ */
+export function computeUnpaidInterestAtPeriod(
+  input: AccruedInterestInput
+): number {
+  return computeInterestScheduleAtPeriod(input).unpaidInterest;
 }

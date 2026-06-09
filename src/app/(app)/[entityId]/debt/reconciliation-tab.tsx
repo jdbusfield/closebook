@@ -46,7 +46,11 @@ import {
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils/dates";
 import { DEBT_GL_ACCOUNT_GROUPS } from "@/lib/utils/debt-gl-groups";
-import { interestFactor } from "@/lib/utils/amortization";
+import {
+  computeInterestScheduleAtPeriod,
+  type AccruedInterestTransaction,
+  type AccruedInterestRateChange,
+} from "@/lib/utils/debt-accrued-interest";
 import { toast } from "sonner";
 
 interface DebtReconciliationTabProps {
@@ -93,18 +97,6 @@ const MONTHS = [
 ];
 
 const LOC_TYPES = new Set(["line_of_credit", "revolving_credit", "investor_loc"]);
-
-/**
- * Parse an ISO "YYYY-MM-DD" effective_date as a local calendar date.
- * `new Date(iso)` parses it as UTC midnight, which lands a day earlier in
- * any timezone west of UTC — e.g. April 1 reads as March 31 in Pacific.
- * All month-bucketing on this tab goes through this helper so transactions
- * land in the correct month regardless of the user's timezone.
- */
-function parseLocalYmd(iso: string): { year: number; month: number; day: number } {
-  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
-  return { year: y, month: m, day: d };
-}
 
 export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) {
   const supabase = createClient();
@@ -284,11 +276,13 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
       }
     }
 
-    // Interest payable & expense: dynamically compute unpaid interest and YTD interest
-    // using the same algorithm as the instrument detail page (pro-rated first period,
-    // actual transactions for past months, running unpaid interest balance).
+    // Interest payable & expense come from the SAME shared engine the debt
+    // summary subledger uses (computeInterestScheduleAtPeriod), so the
+    // reconciliation numbers can never drift from the Interest Payable section
+    // on the debt page. Per instrument: unpaid (accrued-but-unpaid) interest
+    // and year-to-date accrued interest expense, both as of the selected period.
     if (instrIds.length > 0) {
-      // Fetch rate history for all instruments
+      // Rate history per instrument (shape matches AccruedInterestRateChange).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: rateData } = await (supabase as any)
         .from("debt_rate_history")
@@ -296,13 +290,16 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
         .in("debt_instrument_id", instrIds)
         .order("effective_date", { ascending: true });
 
-      const ratesByInstrument: Record<string, { effective_date: string; interest_rate: number }[]> = {};
+      const ratesByInstrument: Record<string, AccruedInterestRateChange[]> = {};
       for (const r of (rateData ?? []) as { debt_instrument_id: string; effective_date: string; interest_rate: number }[]) {
         if (!ratesByInstrument[r.debt_instrument_id]) ratesByInstrument[r.debt_instrument_id] = [];
-        ratesByInstrument[r.debt_instrument_id].push(r);
+        ratesByInstrument[r.debt_instrument_id].push({
+          effective_date: r.effective_date,
+          interest_rate: r.interest_rate,
+        });
       }
 
-      // Fetch ALL transactions through end of selected period
+      // All transactions through end of selected period, grouped per instrument.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: allTxnData } = await (supabase as any)
         .from("debt_transactions")
@@ -313,221 +310,59 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
         .order("created_at", { ascending: true })
         .limit(5000);
 
-      // Group transactions by instrument → month
-      const principalTxnTypes = ["principal_payment", "vehicle_payoff", "payoff"];
-      const interestTxnTypes = ["interest_payment"];
-
-      interface MonthActuals { totalPayment: number; toPrincipal: number; toInterest: number; }
-      const txnsByInstrMonth: Record<string, Record<string, MonthActuals>> = {};
-      const advancesByInstrMonth: Record<string, Record<string, number>> = {};
-
-      // Day-level balance changes for day-weighted interest calc
-      interface DayChange { day: number; amount: number; }
-      const dayChangesByInstrMonth: Record<string, Record<string, DayChange[]>> = {};
-
-      for (const txn of (allTxnData ?? []) as { debt_instrument_id: string; transaction_type: string; amount: number; to_principal: number; to_interest: number; effective_date: string }[]) {
-        const ymd = parseLocalYmd(txn.effective_date);
-        const mKey = `${ymd.year}-${ymd.month}`;
-        const iid = txn.debt_instrument_id;
-
-        // Track day-level balance changes for day-weighted interest
-        let delta = 0;
-        if (txn.transaction_type === "advance") {
-          delta = Math.abs(txn.amount);
-        } else if (principalTxnTypes.includes(txn.transaction_type)) {
-          delta = -Math.abs(txn.to_principal ?? txn.amount);
-        }
-        if (delta !== 0) {
-          if (!dayChangesByInstrMonth[iid]) dayChangesByInstrMonth[iid] = {};
-          if (!dayChangesByInstrMonth[iid][mKey]) dayChangesByInstrMonth[iid][mKey] = [];
-          dayChangesByInstrMonth[iid][mKey].push({ day: ymd.day, amount: delta });
-        }
-
-        if (txn.transaction_type === "advance") {
-          if (!advancesByInstrMonth[iid]) advancesByInstrMonth[iid] = {};
-          advancesByInstrMonth[iid][mKey] = (advancesByInstrMonth[iid][mKey] ?? 0) + Math.abs(txn.amount);
-          continue;
-        }
-
-        if (![...principalTxnTypes, ...interestTxnTypes].includes(txn.transaction_type)) continue;
-
-        if (!txnsByInstrMonth[iid]) txnsByInstrMonth[iid] = {};
-        if (!txnsByInstrMonth[iid][mKey]) txnsByInstrMonth[iid][mKey] = { totalPayment: 0, toPrincipal: 0, toInterest: 0 };
-        const ma = txnsByInstrMonth[iid][mKey];
-        const amt = Math.abs(txn.amount);
-        ma.totalPayment += amt;
-
-        if ((txn.to_principal ?? 0) !== 0 || (txn.to_interest ?? 0) !== 0) {
-          ma.toPrincipal += Math.abs(txn.to_principal ?? 0);
-          ma.toInterest += Math.abs(txn.to_interest ?? 0);
-        } else if (principalTxnTypes.includes(txn.transaction_type)) {
-          ma.toPrincipal += amt;
-        } else if (interestTxnTypes.includes(txn.transaction_type)) {
-          ma.toInterest += amt;
-        }
+      const interestTxnsByInstr: Record<string, AccruedInterestTransaction[]> = {};
+      for (const t of (allTxnData ?? []) as { debt_instrument_id: string; transaction_type: string; amount: number; to_principal: number | null; to_interest: number | null; effective_date: string }[]) {
+        if (!interestTxnsByInstr[t.debt_instrument_id]) interestTxnsByInstr[t.debt_instrument_id] = [];
+        interestTxnsByInstr[t.debt_instrument_id].push({
+          effective_date: t.effective_date,
+          transaction_type: t.transaction_type,
+          amount: t.amount,
+          to_principal: t.to_principal,
+          to_interest: t.to_interest,
+        });
       }
 
-      // For each instrument, replay month-by-month to compute unpaid interest + YTD interest
       const round2 = (n: number) => Math.round(n * 100) / 100;
       let totalUnpaid = 0;
       let ytdTotal = 0;
       const unpaidInstruments: InstrumentSummary[] = [];
-      const ytdByInstrument: Record<string, number> = {};
+      const ytdInstruments: InstrumentSummary[] = [];
 
       for (const instr of instruments) {
         if (instr.status === "inactive") continue;
 
-        const baseRate = instr.interest_rate ?? 0;
-        const convention = instr.day_count_convention ?? "30/360";
-        const rateChanges = ratesByInstrument[instr.id] ?? [];
-        const isLOC = ["line_of_credit", "revolving_credit", "investor_loc"].includes(instr.debt_type);
-        let balance = isLOC ? (instr.current_draw ?? instr.original_amount) : instr.original_amount;
-        // Seed unpaid interest from the instrument's declared opening accrued
-        // interest so the subledger reflects ALL interest the borrower owes —
-        // including what had already accrued before the instrument was booked,
-        // not just what has accrued since it's been active.
-        let unpaidInt = Math.max(0, Number(instr.opening_accrued_interest ?? 0));
+        const { unpaidInterest, ytdInterestExpense } =
+          computeInterestScheduleAtPeriod({
+            instrument: {
+              start_date: instr.start_date,
+              interest_rate: instr.interest_rate ?? 0,
+              debt_type: instr.debt_type,
+              day_count_convention: instr.day_count_convention,
+              current_draw: instr.current_draw,
+              original_amount: instr.original_amount,
+              opening_accrued_interest: instr.opening_accrued_interest,
+              is_pik: instr.is_pik,
+            },
+            transactions: interestTxnsByInstr[instr.id] ?? [],
+            rateHistory: ratesByInstrument[instr.id] ?? [],
+            targetYear: periodYear,
+            targetMonth: periodMonth,
+          });
 
-        // Parse start date (string split to avoid UTC timezone shift)
-        const [sdY, sdM, sdD] = (instr.start_date as string).split("T")[0].split("-").map(Number);
-        let cy = sdY;
-        let cm = sdM;
-        const startDay = sdD;
-
-        // Scheduled payment for projections. PIK loans have no scheduled cash
-        // payments during the term (bullet at maturity), so leave at 0 unless
-        // explicitly set.
-        let scheduledPayment = instr.payment_amount ?? 0;
-        if (!instr.is_pik) {
-          if (scheduledPayment <= 0 && instr.term_months && baseRate > 0) {
-            const r = baseRate / 12;
-            const n = instr.term_months;
-            const f = Math.pow(1 + r, n);
-            scheduledPayment = round2(instr.original_amount * (r * f) / (f - 1));
-          } else if (scheduledPayment <= 0 && instr.term_months && baseRate === 0) {
-            scheduledPayment = round2(instr.original_amount / instr.term_months);
-          }
+        const unpaid = round2(unpaidInterest);
+        if (unpaid > 0.005) {
+          totalUnpaid += unpaid;
+          unpaidInstruments.push({ ...instr, ending_balance: unpaid });
         }
 
-        const now = new Date();
-        const nowY = now.getFullYear();
-        const nowM = now.getMonth() + 1;
-        let instrYtd = 0;
-
-        // Rate lookup
-        function getRateForMonth(y: number, m: number): number {
-          if (rateChanges.length === 0) return baseRate;
-          const ps = new Date(y, m - 1, 1);
-          let effective = baseRate;
-          for (const rc of rateChanges) {
-            if (new Date(rc.effective_date) <= ps) effective = rc.interest_rate;
-          }
-          return effective;
-        }
-
-        for (let i = 0; i < 600; i++) {
-          if (cy > periodYear || (cy === periodYear && cm > periodMonth)) break;
-          if (balance <= 0.005 && unpaidInt <= 0.005) break;
-
-          const rate = getRateForMonth(cy, cm);
-          const fullFactor = interestFactor(cy, cm, convention);
-          // Pro-rate first period
-          const isFirst = i === 0;
-          const totalDays = new Date(cy, cm, 0).getDate();
-          const accrualDays = isFirst ? totalDays - startDay + 1 : totalDays;
-          const factor = isFirst ? fullFactor * (accrualDays / totalDays) : fullFactor;
-
-          const isPast = cy < nowY || (cy === nowY && cm < nowM);
-          const mKey = `${cy}-${cm}`;
-          const advance = advancesByInstrMonth[instr.id]?.[mKey] ?? 0;
-
-          // Day-weighted average balance for mid-month transactions
-          const dayChanges = dayChangesByInstrMonth[instr.id]?.[mKey] ?? [];
-          let monthInterest: number;
-          // Only use instrument start day for the first period; all others start at day 1
-          const effectiveStartDay = isFirst ? startDay : 1;
-
-          if (dayChanges.length > 0 || (isFirst && startDay > 1)) {
-            const sorted = [...dayChanges].sort((a, b) => a.day - b.day);
-            let runBal = balance;
-            let weightedSum = 0;
-            let prevDay = effectiveStartDay;
-
-            for (const dc of sorted) {
-              if (dc.day < effectiveStartDay) continue;
-              const daysAtBal = Math.max(0, dc.day - prevDay);
-              weightedSum += runBal * daysAtBal;
-              runBal = Math.max(0, runBal + dc.amount);
-              prevDay = dc.day;
-            }
-            weightedSum += runBal * (totalDays - prevDay + 1);
-
-            const avgBal = accrualDays > 0 ? weightedSum / accrualDays : 0;
-            monthInterest = round2(avgBal * rate * factor);
-          } else {
-            monthInterest = round2(balance * rate * factor);
-          }
-
-          // PIK: compound this period's accrual on the running unpaid-interest
-          // balance so the subledger matches the detail page's
-          // interest-on-interest behavior.
-          if (instr.is_pik && unpaidInt > 0) {
-            monthInterest = round2(monthInterest + unpaidInt * rate * factor);
-          }
-
-          let toInterest = 0;
-          let toPrincipal = 0;
-
-          if (isPast) {
-            const ma = txnsByInstrMonth[instr.id]?.[mKey];
-            if (ma) {
-              toInterest = ma.toInterest;
-              toPrincipal = Math.min(ma.toPrincipal, balance);
-            }
-          } else if (scheduledPayment > 0) {
-            const totalOwed = balance + unpaidInt + monthInterest;
-            const payment = Math.min(scheduledPayment, round2(totalOwed));
-            const totalIntOwed = unpaidInt + monthInterest;
-            toInterest = round2(Math.min(payment, totalIntOwed));
-            const remainder = round2(payment - toInterest);
-            toPrincipal = round2(Math.min(remainder, balance));
-          }
-
-          unpaidInt = round2(Math.max(0, unpaidInt + monthInterest - toInterest));
-          balance = round2(Math.max(0, balance - toPrincipal + advance));
-
-          // Track YTD interest (accrued, not paid)
-          if (cy === periodYear) {
-            instrYtd += monthInterest;
-          }
-
-          // Advance to next month
-          if (cm >= 12) { cy++; cm = 1; } else { cm++; }
-        }
-
-        if (unpaidInt > 0.005) {
-          totalUnpaid += unpaidInt;
-          unpaidInstruments.push({ ...instr, ending_balance: unpaidInt });
-        }
-
-        if (instrYtd > 0) {
-          ytdByInstrument[instr.id] = round2(instrYtd);
-          ytdTotal += instrYtd;
+        const ytd = round2(ytdInterestExpense);
+        if (ytd > 0) {
+          ytdTotal += ytd;
+          ytdInstruments.push({ ...instr, ending_balance: ytd });
         }
       }
 
       grouped["interest_payable"] = { total: round2(totalUnpaid), instruments: unpaidInstruments };
-
-      // YTD interest expense
-      const ytdInstruments: InstrumentSummary[] = [];
-      for (const [instrId, ytdAmt] of Object.entries(ytdByInstrument)) {
-        if (ytdAmt > 0) {
-          const instr = instruments.find((i) => i.id === instrId);
-          if (instr) {
-            ytdInstruments.push({ ...instr, ending_balance: ytdAmt });
-          }
-        }
-      }
       grouped["interest_expense"] = { total: round2(ytdTotal), instruments: ytdInstruments };
     }
 
