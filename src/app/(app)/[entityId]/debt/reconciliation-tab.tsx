@@ -98,6 +98,11 @@ const MONTHS = [
 
 const LOC_TYPES = new Set(["line_of_credit", "revolving_credit", "investor_loc"]);
 
+// A variance (or GL drift since reconciliation) within this dollar amount is
+// treated as reconciled — immaterial sub-dollar rounding shouldn't block a
+// clean reconcile or flag an account as changed.
+const RECONCILE_TOLERANCE = 1;
+
 export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) {
   const supabase = createClient();
   const now = new Date();
@@ -522,7 +527,7 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
           // Check if GL balance has changed since reconciliation was recorded
           const storedGl = recon.gl_balance ?? 0;
           const currentGl = yearGlTotals[key] ?? 0;
-          if (Math.abs(storedGl - currentGl) > 0.01) {
+          if (Math.abs(storedGl - currentGl) > RECONCILE_TOLERANCE) {
             scheduleMap[key] = "stale";
           } else {
             scheduleMap[key] = "reconciled";
@@ -858,7 +863,7 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
               const recon = reconciliations[group.key];
               const isReconciled = recon?.is_reconciled ?? false;
               const isStale = isReconciled && recon?.gl_balance != null
-                && Math.abs((recon.gl_balance ?? 0) - glBal) > 0.01;
+                && Math.abs((recon.gl_balance ?? 0) - glBal) > RECONCILE_TOLERANCE;
               const instrumentList = subledgerBalances[group.key]?.instruments ?? [];
               const isExpanded = expandedGroups.has(group.key);
               const groupMappings = mappedAccounts[group.key] ?? [];
@@ -909,12 +914,12 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
                           Reconciled
                           {Math.abs(savedPpa) > 0.005 && " (w/ PPA)"}
                         </Badge>
-                      ) : hasPpa && Math.abs(adjustedVariance) <= 0.01 ? (
+                      ) : hasPpa && Math.abs(adjustedVariance) <= RECONCILE_TOLERANCE ? (
                         <Badge variant="outline" className="border-amber-400 text-amber-700">
                           <AlertTriangle className="mr-1 h-3.5 w-3.5" />
                           PPA Pending
                         </Badge>
-                      ) : Math.abs(adjustedVariance) > 0.01 && groupMappings.length > 0 ? (
+                      ) : Math.abs(adjustedVariance) > RECONCILE_TOLERANCE && groupMappings.length > 0 ? (
                         <Badge variant="destructive">
                           <AlertTriangle className="mr-1 h-3.5 w-3.5" />
                           Variance
@@ -1044,7 +1049,7 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
                               rather than the raw gross variance. */}
                           <p
                             className={`text-lg font-semibold tabular-nums ${
-                              Math.abs(adjustedVariance) > 0.01
+                              Math.abs(adjustedVariance) > RECONCILE_TOLERANCE
                                 ? "text-red-600"
                                 : "text-green-600"
                             }`}
@@ -1138,7 +1143,7 @@ export function DebtReconciliationTab({ entityId }: DebtReconciliationTabProps) 
                                 </label>
                                 <p
                                   className={`text-base font-semibold tabular-nums h-9 flex items-center ${
-                                    Math.abs(adjustedVariance) > 0.01
+                                    Math.abs(adjustedVariance) > RECONCILE_TOLERANCE
                                       ? "text-red-600"
                                       : "text-green-600"
                                   }`}
