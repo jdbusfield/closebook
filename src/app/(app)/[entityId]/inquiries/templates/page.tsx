@@ -68,6 +68,8 @@ const SAMPLE_INQUIRY: Inquiry = {
   guests: "60",
   location: "Griffith Park, Los Angeles",
   notes: null,
+  request_type: "inquiry",
+  deposit: null,
   internal_notes: null,
   rw_quote_number: null,
   rw_order_number: null,

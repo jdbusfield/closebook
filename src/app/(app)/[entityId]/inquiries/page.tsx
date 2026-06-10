@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { MapPin, AlertTriangle, Flame, Mail } from "lucide-react";
+import { MapPin, AlertTriangle, Flame, Mail, Sparkles } from "lucide-react";
 import { useInquiries } from "@/lib/inquiries/use-inquiries";
 import { useTemplates } from "@/lib/inquiries/use-templates";
 import { selectTemplates } from "@/lib/inquiries/templates";
@@ -25,6 +25,7 @@ import {
   today,
   parseDate,
   isOpenStatus,
+  isReservationRequest,
 } from "@/lib/inquiries/shared";
 
 function firstOpenTask(inq: Inquiry) {
@@ -48,16 +49,33 @@ function DealCard({
   const due = parseDate(openTask?.due_date ?? null);
   const overdue = !!due && daysBetween(today(), due) < 0;
   const stale = isOpenStatus(inq.status) && daysStale(inq) >= 5;
+  // Priced self-serve reservation requests are warmer leads — tint them green
+  // so they stand out from plain quote inquiries on the same board.
+  const reservation = isReservationRequest(inq);
 
   return (
     <div
       draggable
       onDragStart={onDragStart}
       onClick={onOpen}
-      className={`cursor-pointer rounded-md border bg-card p-2.5 shadow-sm transition-shadow hover:shadow-md ${
-        dragging ? "opacity-40" : ""
-      }`}
+      className={`cursor-pointer rounded-md border p-2.5 shadow-sm transition-shadow hover:shadow-md ${
+        reservation
+          ? "border-green-300 bg-green-50 dark:border-green-900/60 dark:bg-green-950/30"
+          : "bg-card"
+      } ${dragging ? "opacity-40" : ""}`}
     >
+      {reservation && (
+        <div className="mb-1.5 flex items-center gap-1.5">
+          <span className="inline-flex items-center gap-1 rounded-full bg-green-600 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white">
+            <Sparkles className="size-3" /> Reservation request
+          </span>
+          {inq.deposit != null && inq.deposit > 0 && (
+            <span className="text-[11px] font-medium text-green-700 dark:text-green-400">
+              {fmtMoney(inq.deposit)} deposit
+            </span>
+          )}
+        </div>
+      )}
       <div className="flex items-center gap-2">
         <InquiryAvatar name={inq.name} size={26} />
         <span className="flex-1 truncate text-sm font-semibold">{inq.name || "—"}</span>

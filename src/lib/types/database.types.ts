@@ -85,6 +85,8 @@ export type Database = {
           guests: string | null
           location: string | null
           notes: string | null
+          request_type: string
+          deposit: number | null
           rw_quote_number: string | null
           rw_order_number: string | null
           unit_id: string | null
@@ -113,6 +115,8 @@ export type Database = {
           guests?: string | null
           location?: string | null
           notes?: string | null
+          request_type?: string
+          deposit?: number | null
           rw_quote_number?: string | null
           rw_order_number?: string | null
           unit_id?: string | null
@@ -141,6 +145,8 @@ export type Database = {
           guests?: string | null
           location?: string | null
           notes?: string | null
+          request_type?: string
+          deposit?: number | null
           rw_quote_number?: string | null
           rw_order_number?: string | null
           unit_id?: string | null
