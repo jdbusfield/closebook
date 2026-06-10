@@ -403,6 +403,11 @@ export interface Inquiry {
   guests: string | null;
   location: string | null;
   notes: string | null;
+  // 'inquiry' (plain quote request) or 'reservation' (priced self-serve
+  // /reserve lead — a warmer, higher-converting request).
+  request_type: string | null;
+  // Estimated booking deposit (USD) — set only on reservation requests.
+  deposit: number | null;
   internal_notes: string | null;
   rw_quote_number: string | null;
   rw_order_number: string | null;
@@ -443,6 +448,14 @@ export function daysStale(inq: Inquiry): number {
 // (Unit assignment was removed, so it's no longer part of the predicate.)
 export function isReservation(inq: Inquiry): boolean {
   return isBookedStatus(inq.status) && !!parseDate(inq.start_date);
+}
+
+// A priced self-serve reservation request that came in through the website's
+// /reserve calculator (vs. a plain "request a quote" inquiry). These leads
+// already picked dates, sized the order, and saw a deposit, so they convert at
+// a much higher rate — the board tints them green to flag the warmer lead.
+export function isReservationRequest(inq: Inquiry): boolean {
+  return inq.request_type === "reservation";
 }
 
 // Full timestamp parse that PRESERVES the time of day (unlike parseDate, which

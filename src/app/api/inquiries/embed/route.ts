@@ -19,7 +19,7 @@ type TemplateInsert = Database["public"]["Tables"]["rental_inquiry_templates"]["
 // can therefore only ever read/write HDR inquiry data, nothing else.
 
 const INQUIRY_COLUMNS =
-  "id, reference, status, name, email, phone, use_case, start_date, end_date, duration, units, attendant, guests, location, notes, internal_notes, rw_quote_number, rw_order_number, source, unit_id, estimated_value, last_activity_at, created_at";
+  "id, reference, status, name, email, phone, use_case, start_date, end_date, duration, units, attendant, guests, location, notes, request_type, deposit, internal_notes, rw_quote_number, rw_order_number, source, unit_id, estimated_value, last_activity_at, created_at";
 
 const TEMPLATE_COLUMNS =
   "id, template_key, label, channel, track, stages, cadence, subject, body, sort_order, archived";

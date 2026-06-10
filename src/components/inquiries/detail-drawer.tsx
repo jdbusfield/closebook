@@ -58,6 +58,7 @@ import {
   addressName,
   messageDate,
   messageSide,
+  isReservationRequest,
 } from "@/lib/inquiries/shared";
 
 export interface DrawerCallbacks {
@@ -681,6 +682,21 @@ export function InquiryDrawer({
                 </div>
               </div>
             </SheetHeader>
+
+            {isReservationRequest(inquiry) && (
+              <div className="flex items-center gap-2 border-b border-green-200 bg-green-50 px-5 py-2.5 text-sm dark:border-green-900/60 dark:bg-green-950/30">
+                <span className="inline-flex items-center gap-1 rounded-full bg-green-600 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white">
+                  Reservation request
+                </span>
+                <span className="text-green-800 dark:text-green-300">
+                  Priced online via /reserve
+                  {inquiry.deposit != null && inquiry.deposit > 0
+                    ? ` · ${fmtMoney(inquiry.deposit)} deposit`
+                    : ""}
+                  {" — call to take the card on file."}
+                </span>
+              </div>
+            )}
 
             <div className="px-5">
               <Section title="Pipeline stage">
