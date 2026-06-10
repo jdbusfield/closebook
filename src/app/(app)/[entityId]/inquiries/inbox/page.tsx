@@ -8,9 +8,17 @@ import { useEmbed } from "@/lib/inquiries/embed-context";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, ArrowDownLeft, ArrowUpRight, Link2, Plus } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowDownLeft,
+  ArrowUpRight,
+  ChevronDown,
+  Link2,
+  Plus,
+} from "lucide-react";
 import { toast } from "sonner";
 import { SectionTabs } from "@/components/inquiries/section-tabs";
+import { MessageBody } from "@/components/inquiries/email-body";
 import { messageSide } from "@/lib/inquiries/shared";
 
 interface FeedMessage {
@@ -35,11 +43,28 @@ interface InquiryLite {
   name: string | null;
 }
 
-function fmt(iso: string | null): string {
+// Gmail-style list timestamp: time for today, "Jun 5" within the year,
+// "6/5/25" for older mail. The expanded header shows the full date.
+function listDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+  if (d.getFullYear() === now.getFullYear()) {
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+  return d.toLocaleDateString(undefined, { month: "numeric", day: "numeric", year: "2-digit" });
+}
+
+function fullDate(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "";
   return d.toLocaleString(undefined, {
+    weekday: "short",
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -54,6 +79,13 @@ function snippet(m: FeedMessage): string {
     m.body_text ||
     (m.body_html ? m.body_html.replace(/<[^>]+>/g, " ") : "");
   return raw.replace(/\s+/g, " ").trim().slice(0, 220);
+}
+
+// "Jane Doe <jane@x.com>" → "Jane Doe"; bare addresses show as-is.
+function senderName(addr: string | null): string {
+  if (!addr) return "(unknown sender)";
+  const m = addr.match(/^\s*"?([^"<]+?)"?\s*</);
+  return m ? m[1].trim() : addr;
 }
 
 export default function InboxFeedPage() {
@@ -71,6 +103,20 @@ export default function InboxFeedPage() {
   const [unmatchedOnly, setUnmatchedOnly] = useState(false);
   const [assigning, setAssigning] = useState<string | null>(null);
   const [creating, setCreating] = useState<string | null>(null);
+  // Which rows are open (Gmail-style expand), and which open rows have had
+  // their long body un-clamped.
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const [bodyExpanded, setBodyExpanded] = useState<Set<string>>(new Set());
+
+  const toggleSet = (setter: typeof setOpen) => (id: string) =>
+    setter((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleOpen = toggleSet(setOpen);
+  const toggleBody = toggleSet(setBodyExpanded);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -172,7 +218,7 @@ export default function InboxFeedPage() {
   const unmatchedCount = messages.filter((m) => !m.inquiry_id).length;
 
   return (
-    <div className="space-y-4 p-4 md:p-6 max-w-4xl">
+    <div className="space-y-4 p-4 md:p-6 max-w-5xl">
       <div className="flex items-center gap-3">
         <Link
           href={base}
@@ -184,7 +230,7 @@ export default function InboxFeedPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Inbox activity</h1>
           <p className="text-sm text-muted-foreground">
             Every email to sales@hdrsiteservices.com — including messages that
-            didn&apos;t auto-match an inquiry.
+            didn&apos;t auto-match an inquiry. Click a row to read the email.
           </p>
         </div>
       </div>
@@ -217,86 +263,134 @@ export default function InboxFeedPage() {
           {visible.map((m) => {
             const outbound = messageSide(m) === "us";
             const linked = m.inquiry_id ? inquiryMap.get(m.inquiry_id) : null;
-            return (
-              <div key={m.id} className="flex gap-3 p-3.5 text-sm">
-                <div className="pt-0.5">
-                  {outbound ? (
-                    <ArrowUpRight className="size-4 text-blue-600" />
-                  ) : (
-                    <ArrowDownLeft className="size-4 text-green-600" />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">
-                      {m.from_addr || "(unknown sender)"}
-                    </span>
-                    {m.kind && (
-                      <Badge variant="outline" className="text-[10px]">
-                        {m.kind.replace(/_/g, " ")}
-                      </Badge>
-                    )}
-                    <span className="ml-auto text-xs text-muted-foreground">
-                      {fmt(m.sent_at || m.received_at || m.created_at)}
-                    </span>
-                  </div>
-                  {m.to_addrs && m.to_addrs.length > 0 && (
-                    <div className="text-xs text-muted-foreground">
-                      To {m.to_addrs.join(", ")}
-                    </div>
-                  )}
-                  {m.subject && <div className="mt-0.5 font-medium">{m.subject}</div>}
-                  {snippet(m) && (
-                    <div className="mt-0.5 line-clamp-2 text-muted-foreground">
-                      {snippet(m)}
-                    </div>
-                  )}
+            const isOpen = open.has(m.id);
+            const snip = snippet(m);
 
-                  <div className="mt-2">
-                    {linked ? (
-                      <Link
-                        href={`${base}/${linked.id}`}
-                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                      >
-                        <Link2 className="size-3" />
-                        {linked.reference}
-                        {linked.name ? ` · ${linked.name}` : ""}
-                      </Link>
+            return (
+              <div key={m.id}>
+                {/* ------------------------------------------- collapsed row */}
+                <button
+                  type="button"
+                  onClick={() => toggleOpen(m.id)}
+                  aria-expanded={isOpen}
+                  className={`flex w-full items-center gap-3 px-3.5 py-2.5 text-left text-sm transition-colors hover:bg-muted/60 ${
+                    isOpen ? "bg-muted/40" : ""
+                  }`}
+                >
+                  <span className="shrink-0">
+                    {outbound ? (
+                      <ArrowUpRight className="size-4 text-blue-600" />
                     ) : (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">
-                          Unmatched
-                        </Badge>
-                        <Button
-                          size="sm"
-                          className="h-7"
-                          disabled={creating === m.id}
-                          onClick={() => createInquiry(m.id)}
-                        >
-                          <Plus className="size-3.5" />
-                          {creating === m.id ? "Creating…" : "Create inquiry"}
-                        </Button>
-                        <span className="text-xs text-muted-foreground">or</span>
-                        <select
-                          className="rounded-md border bg-background px-2 py-1 text-xs"
-                          defaultValue=""
-                          disabled={assigning === m.id || creating === m.id}
-                          onChange={(e) => assign(m.id, e.target.value)}
-                        >
-                          <option value="">
-                            {assigning === m.id ? "Linking…" : "Assign to existing…"}
-                          </option>
-                          {inquiries.map((i) => (
-                            <option key={i.id} value={i.id}>
-                              {i.reference}
-                              {i.name ? ` · ${i.name}` : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <ArrowDownLeft className="size-4 text-green-600" />
                     )}
+                  </span>
+                  <span className="w-40 shrink-0 truncate font-medium md:w-48">
+                    {senderName(m.from_addr)}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className="font-medium">{m.subject || "(no subject)"}</span>
+                    {snip && (
+                      <span className="text-muted-foreground"> — {snip}</span>
+                    )}
+                  </span>
+                  {!linked && (
+                    <Badge className="shrink-0 bg-amber-100 text-amber-800 hover:bg-amber-100">
+                      Unmatched
+                    </Badge>
+                  )}
+                  <span className="w-16 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                    {listDate(m.sent_at || m.received_at || m.created_at)}
+                  </span>
+                  <ChevronDown
+                    className={`size-4 shrink-0 text-muted-foreground transition-transform ${
+                      isOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+
+                {/* ------------------------------------------- expanded mail */}
+                {isOpen && (
+                  <div className="border-t bg-muted/20 px-4 pb-4 pt-3 md:px-6">
+                    <div className="flex flex-wrap items-start gap-2">
+                      <div className="min-w-0 flex-1 space-y-0.5 text-xs text-muted-foreground">
+                        <div className="text-sm font-semibold text-foreground">
+                          {m.subject || "(no subject)"}
+                        </div>
+                        <div>
+                          <span className="font-medium text-foreground/80">From:</span>{" "}
+                          {m.from_addr || "(unknown sender)"}
+                        </div>
+                        {m.to_addrs && m.to_addrs.length > 0 && (
+                          <div>
+                            <span className="font-medium text-foreground/80">To:</span>{" "}
+                            {m.to_addrs.join(", ")}
+                          </div>
+                        )}
+                        {m.cc_addrs && m.cc_addrs.length > 0 && (
+                          <div>
+                            <span className="font-medium text-foreground/80">Cc:</span>{" "}
+                            {m.cc_addrs.join(", ")}
+                          </div>
+                        )}
+                        <div>{fullDate(m.sent_at || m.received_at || m.created_at)}</div>
+                      </div>
+                      {m.kind && (
+                        <Badge variant="outline" className="text-[10px]">
+                          {m.kind.replace(/_/g, " ")}
+                        </Badge>
+                      )}
+                    </div>
+
+                    <MessageBody
+                      html={m.body_html}
+                      text={m.body_text}
+                      expanded={bodyExpanded.has(m.id)}
+                      onToggle={() => toggleBody(m.id)}
+                    />
+
+                    <div className="mt-3">
+                      {linked ? (
+                        <Link
+                          href={`${base}/${linked.id}`}
+                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                        >
+                          <Link2 className="size-3" />
+                          {linked.reference}
+                          {linked.name ? ` · ${linked.name}` : ""}
+                        </Link>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            size="sm"
+                            className="h-7"
+                            disabled={creating === m.id}
+                            onClick={() => createInquiry(m.id)}
+                          >
+                            <Plus className="size-3.5" />
+                            {creating === m.id ? "Creating…" : "Create inquiry"}
+                          </Button>
+                          <span className="text-xs text-muted-foreground">or</span>
+                          <select
+                            className="rounded-md border bg-background px-2 py-1 text-xs"
+                            defaultValue=""
+                            disabled={assigning === m.id || creating === m.id}
+                            onChange={(e) => assign(m.id, e.target.value)}
+                          >
+                            <option value="">
+                              {assigning === m.id ? "Linking…" : "Assign to existing…"}
+                            </option>
+                            {inquiries.map((i) => (
+                              <option key={i.id} value={i.id}>
+                                {i.reference}
+                                {i.name ? ` · ${i.name}` : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             );
           })}
