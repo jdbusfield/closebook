@@ -153,6 +153,8 @@ export interface ParsedGmailMessage {
   internalDate: string | null;
   /** True when the SENT label is present (staff sent it → outbound). */
   isSent: boolean;
+  /** True for drafts — autosaves churn through history and must not be recorded. */
+  isDraft: boolean;
 }
 
 function headerValue(part: GmailPart | undefined, name: string): string | null {
@@ -229,7 +231,46 @@ export async function getMessage(
     messageId: headerValue(msg.payload, "Message-Id"),
     internalDate,
     isSent: (msg.labelIds ?? []).includes("SENT"),
+    isDraft: (msg.labelIds ?? []).includes("DRAFT"),
   };
+}
+
+// ---------------------------------------------------------------------------
+// messages.list — recent message ids by query (the backfill / repair sweep)
+// ---------------------------------------------------------------------------
+interface MessagesListResponse {
+  messages?: Array<{ id?: string; threadId?: string }>;
+  nextPageToken?: string;
+}
+
+/**
+ * All message ids from the last `days` days, excluding drafts/chats/spam/trash.
+ * Used to repair anything the push path lost — ingest dedupes on Message-Id,
+ * so re-listing already-recorded mail is a cheap no-op.
+ */
+export async function listRecentMessageIds(
+  mailbox: string,
+  days: number
+): Promise<string[]> {
+  const ids = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const qs = new URLSearchParams({
+      q: `newer_than:${Math.max(1, Math.floor(days))}d -in:drafts -in:chats -in:spam -in:trash`,
+      maxResults: "100",
+      includeSpamTrash: "false",
+    });
+    if (pageToken) qs.set("pageToken", pageToken);
+    const data = await gapi<MessagesListResponse>(
+      mailbox,
+      `/users/${encodeURIComponent(mailbox)}/messages?${qs.toString()}`
+    );
+    for (const m of data.messages ?? []) {
+      if (m.id) ids.add(m.id);
+    }
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+  return [...ids];
 }
 
 // ---------------------------------------------------------------------------

@@ -4,6 +4,8 @@ import {
   HistoryGoneError,
   getMessage,
   listAddedMessageIds,
+  listRecentMessageIds,
+  type ParsedGmailMessage,
 } from "@/lib/google/gmail";
 
 // ============================================================================
@@ -32,6 +34,58 @@ export interface SyncCounts {
   skipped: number;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Fetch one message with a single delayed retry. Gmail's history feed is
+ * eventually consistent: a brand-new message id can briefly 404 on fetch, and
+ * skipping it loses the email forever (the cursor advances past it). The other
+ * common 404 is a deleted draft autosave — those are gone for good and are
+ * safe to drop, which the retry confirms.
+ */
+async function fetchMessage(
+  mailbox: string,
+  id: string
+): Promise<ParsedGmailMessage | null> {
+  try {
+    return await getMessage(mailbox, id);
+  } catch (firstErr) {
+    await sleep(1500);
+    try {
+      return await getMessage(mailbox, id);
+    } catch (err) {
+      if (err instanceof HistoryGoneError) {
+        // Still 404 after the retry — a deleted draft autosave. Not a loss.
+        return null;
+      }
+      console.error(`[gmail-sync] getMessage failed twice ${mailbox}/${id}`, firstErr, err);
+      return null;
+    }
+  }
+}
+
+/** Ingest one parsed message; returns how it was counted. */
+async function ingestParsed(parsed: ParsedGmailMessage, counts: SyncCounts) {
+  if (parsed.isDraft) return; // never record draft autosaves
+  counts.processed++;
+  const result = await ingestEmailMessage({
+    fromAddr: parsed.fromAddr,
+    toAddrs: parsed.toAddrs,
+    ccAddrs: parsed.ccAddrs,
+    subject: parsed.subject,
+    bodyText: parsed.bodyText,
+    bodyHtml: parsed.bodyHtml,
+    providerMessageId: parsed.messageId,
+    gmailThreadId: parsed.threadId,
+    receivedAt: parsed.internalDate,
+    sentAt: parsed.isSent ? parsed.internalDate : null,
+    directionHint: parsed.isSent ? "outbound" : "inbound",
+  });
+  if (result.deduped) counts.deduped++;
+  else if (result.skipped) counts.skipped++;
+  else if (result.ok) counts.recorded++;
+}
+
 /** Fetch + ingest every message added since `startHistoryId`. */
 async function processHistory(
   mailbox: string,
@@ -40,31 +94,29 @@ async function processHistory(
   const counts: SyncCounts = { processed: 0, recorded: 0, deduped: 0, skipped: 0 };
   const ids = await listAddedMessageIds(mailbox, startHistoryId);
   for (const id of ids) {
-    let parsed;
-    try {
-      parsed = await getMessage(mailbox, id);
-    } catch (err) {
-      // A single unreadable message must not stall the whole batch.
-      console.error(`[gmail-sync] getMessage failed ${mailbox}/${id}`, err);
-      continue;
-    }
-    counts.processed++;
-    const result = await ingestEmailMessage({
-      fromAddr: parsed.fromAddr,
-      toAddrs: parsed.toAddrs,
-      ccAddrs: parsed.ccAddrs,
-      subject: parsed.subject,
-      bodyText: parsed.bodyText,
-      bodyHtml: parsed.bodyHtml,
-      providerMessageId: parsed.messageId,
-      gmailThreadId: parsed.threadId,
-      receivedAt: parsed.internalDate,
-      sentAt: parsed.isSent ? parsed.internalDate : null,
-      directionHint: parsed.isSent ? "outbound" : "inbound",
-    });
-    if (result.deduped) counts.deduped++;
-    else if (result.skipped) counts.skipped++;
-    else if (result.ok) counts.recorded++;
+    const parsed = await fetchMessage(mailbox, id);
+    if (!parsed) continue;
+    await ingestParsed(parsed, counts);
+  }
+  return counts;
+}
+
+/**
+ * Repair sweep: re-list every message from the last `days` days and ingest
+ * whatever the push path missed. Message-Id dedupe makes this idempotent, so
+ * it's safe to run daily; it's what recovers mail lost to transient fetch
+ * failures or watch-expiry gaps.
+ */
+export async function backfillMailbox(
+  mailbox: string,
+  days: number
+): Promise<SyncCounts> {
+  const counts: SyncCounts = { processed: 0, recorded: 0, deduped: 0, skipped: 0 };
+  const ids = await listRecentMessageIds(mailbox, days);
+  for (const id of ids) {
+    const parsed = await fetchMessage(mailbox, id);
+    if (!parsed) continue;
+    await ingestParsed(parsed, counts);
   }
   return counts;
 }

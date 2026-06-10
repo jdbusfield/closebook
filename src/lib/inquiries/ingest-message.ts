@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  BOOKED_STATUSES,
   HDR_ENTITY_ID,
   OPEN_INQUIRY_STATUSES,
   STAFF_EMAIL_DOMAINS,
@@ -169,18 +170,31 @@ export async function ingestEmailMessage(
   }
 
   if (!inquiry && participants.length > 0) {
-    const lowered = participants.map((p) => p.toLowerCase());
-    const { data } = await supabase
-      .from("rental_inquiries")
-      .select("id, email, status")
-      .eq("entity_id", HDR_ENTITY_ID)
-      .in("status", OPEN_INQUIRY_STATUSES)
-      .order("last_activity_at", { ascending: false })
-      .limit(50);
-    inquiry =
-      (data ?? []).find(
-        (i) => i.email && lowered.includes(i.email.toLowerCase())
-      ) ?? null;
+    // Direct, case-insensitive lookup per external participant — open deals
+    // first, then booked ones (a customer emailing about a confirmed rental
+    // still belongs on that deal). No recency cap: an old-but-open inquiry
+    // must still match.
+    const externals = [...new Set(participants.filter((p) => !isStaff(p)))];
+    outer: for (const statuses of [OPEN_INQUIRY_STATUSES, BOOKED_STATUSES]) {
+      for (const addr of externals) {
+        // ilike = case-insensitive equality here, so escape its wildcards
+        // (emails legitimately contain "_").
+        const pattern = addr.replace(/[\\%_]/g, "\\$&");
+        const { data } = await supabase
+          .from("rental_inquiries")
+          .select("id, email, status")
+          .eq("entity_id", HDR_ENTITY_ID)
+          .in("status", statuses)
+          .ilike("email", pattern)
+          .order("last_activity_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (data) {
+          inquiry = data;
+          break outer;
+        }
+      }
+    }
   }
 
   // --- Classify direction ---------------------------------------------------
