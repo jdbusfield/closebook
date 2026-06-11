@@ -15,12 +15,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Download, Trash2 } from "lucide-react";
+import { CheckCircle2, Download, Trash2 } from "lucide-react";
 import { downloadQuotePdf } from "@/lib/inquiries/quote-pdf";
 import {
   type Inquiry,
   type InquiryQuote,
   fmtMoney,
+  fmtDate,
   fmtDateTime,
 } from "@/lib/inquiries/shared";
 
@@ -61,69 +62,109 @@ export function QuotesList({
 
   return (
     <div className="space-y-2">
-      {quotes.map((q) => (
-        <div key={q.id} className="rounded-lg border bg-card p-3">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-sm font-semibold">{q.quote_number}</span>
-            <span
-              className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_STYLE[q.status]}`}
-            >
-              {q.status}
-            </span>
-            <span className="ml-auto font-mono text-sm font-semibold tabular-nums">
-              {fmtMoney(q.total)}
-            </span>
+      {quotes.map((q) => {
+        const isAccepted = q.status === "accepted";
+        return (
+          <div
+            key={q.id}
+            className={`rounded-lg border bg-card p-3 ${
+              isAccepted ? "border-emerald-300" : ""
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-sm font-semibold">{q.quote_number}</span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_STYLE[q.status]}`}
+              >
+                {isAccepted && q.accepted_at
+                  ? `accepted ${fmtDate(q.accepted_at, { month: "short", day: "numeric" })}`
+                  : q.status}
+              </span>
+              <span className="ml-auto font-mono text-sm font-semibold tabular-nums">
+                {fmtMoney(q.total)}
+              </span>
+            </div>
+
+            <div className="mt-1 text-[11px] text-muted-foreground">
+              {q.lines.length} line{q.lines.length === 1 ? "" : "s"}
+              {q.created_by ? ` · ${q.created_by}` : ""}
+              {` · ${fmtDateTime(q.created_at)}`}
+            </div>
+
+            <div className="mt-2 flex items-center gap-2">
+              {isAccepted ? (
+                <Button
+                  size="sm"
+                  className="h-8 gap-1.5 bg-emerald-600 text-xs text-white hover:bg-emerald-700"
+                  onClick={async () => {
+                    try {
+                      await downloadQuotePdf(q, inquiry);
+                    } catch {
+                      toast.error("Couldn't generate the PDF");
+                    }
+                  }}
+                >
+                  <Download className="size-3.5" /> Download accepted quote
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 text-xs"
+                    onClick={async () => {
+                      try {
+                        await downloadQuotePdf(q, inquiry);
+                      } catch {
+                        toast.error("Couldn't generate the PDF");
+                      }
+                    }}
+                  >
+                    <Download className="size-3.5" /> Download PDF
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-8 gap-1.5 bg-emerald-600 text-xs text-white hover:bg-emerald-700"
+                    onClick={() => {
+                      onUpdateStatus(q.id, "accepted");
+                      toast.success(
+                        `${q.quote_number} marked accepted — download the accepted copy to send to the customer`
+                      );
+                    }}
+                  >
+                    <CheckCircle2 className="size-3.5" /> Confirm accepted
+                  </Button>
+                </>
+              )}
+
+              <Select
+                value={q.status}
+                onValueChange={(v) => onUpdateStatus(q.id, v as InquiryQuote["status"])}
+              >
+                <SelectTrigger size="sm" className="h-8 w-[120px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUS_OPTIONS.map((s) => (
+                    <SelectItem key={s} value={s} className="text-xs capitalize">
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <button
+                type="button"
+                onClick={() => onDelete(q.id)}
+                className="ml-auto grid size-8 place-items-center rounded text-muted-foreground/60 hover:bg-muted hover:text-destructive"
+                aria-label="Delete quote"
+              >
+                <Trash2 className="size-4" />
+              </button>
+            </div>
           </div>
-
-          <div className="mt-1 text-[11px] text-muted-foreground">
-            {q.lines.length} line{q.lines.length === 1 ? "" : "s"}
-            {q.created_by ? ` · ${q.created_by}` : ""}
-            {` · ${fmtDateTime(q.created_at)}`}
-          </div>
-
-          <div className="mt-2 flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5 text-xs"
-              onClick={async () => {
-                try {
-                  await downloadQuotePdf(q, inquiry);
-                } catch {
-                  toast.error("Couldn't generate the PDF");
-                }
-              }}
-            >
-              <Download className="size-3.5" /> Download PDF
-            </Button>
-
-            <Select
-              value={q.status}
-              onValueChange={(v) => onUpdateStatus(q.id, v as InquiryQuote["status"])}
-            >
-              <SelectTrigger size="sm" className="h-8 w-[120px] text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {STATUS_OPTIONS.map((s) => (
-                  <SelectItem key={s} value={s} className="text-xs capitalize">
-                    {s}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <button
-              type="button"
-              onClick={() => onDelete(q.id)}
-              className="ml-auto grid size-8 place-items-center rounded text-muted-foreground/60 hover:bg-muted hover:text-destructive"
-              aria-label="Delete quote"
-            >
-              <Trash2 className="size-4" />
-            </button>
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

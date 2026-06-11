@@ -25,7 +25,7 @@ const INQUIRY_COLUMNS =
   "id, reference, status, name, email, phone, use_case, start_date, end_date, duration, units, attendant, guests, location, notes, request_type, deposit, internal_notes, rw_quote_number, rw_order_number, source, unit_id, estimated_value, last_activity_at, created_at";
 
 const QUOTE_COLUMNS =
-  "id, inquiry_id, quote_number, status, lines, subtotal, tax_rate, tax, total, valid_until, terms, created_by, created_at, updated_at";
+  "id, inquiry_id, quote_number, status, lines, subtotal, tax_rate, tax, total, valid_until, terms, accepted_at, created_by, created_at, updated_at";
 
 // The fields a rep fills in when drafting a quote (number + totals are computed).
 export interface QuoteDraft {
@@ -507,12 +507,15 @@ export function useInquiries(entityId: string): UseInquiries {
 
   const updateQuoteStatus = useCallback(
     async (quoteId: string, status: InquiryQuote["status"]) => {
+      // Acceptance is stamped so the accepted PDF can show the date; moving a
+      // quote out of accepted clears the stamp.
+      const acceptedAt = status === "accepted" ? new Date().toISOString() : null;
       // Optimistic local status flip.
       setInquiries((prev) =>
         prev.map((i) => ({
           ...i,
           quotes: (i.quotes || []).map((q) =>
-            q.id === quoteId ? { ...q, status } : q
+            q.id === quoteId ? { ...q, status, accepted_at: acceptedAt } : q
           ),
         }))
       );
@@ -523,7 +526,7 @@ export function useInquiries(entityId: string): UseInquiries {
           const supabase = createClient();
           const { error } = await supabase
             .from("rental_inquiry_quotes")
-            .update({ status })
+            .update({ status, accepted_at: acceptedAt })
             .eq("id", quoteId);
           if (error) throw new Error(error.message);
         }

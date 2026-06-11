@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -130,7 +130,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
       <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold">
         {label}
       </div>
-      <div className="text-sm">{value || "—"}</div>
+      <div className="text-sm">{value || "â€”"}</div>
     </div>
   );
 }
@@ -225,7 +225,7 @@ export default function InquiryDetailPage() {
     const { data: qs } = await supabase
       .from("rental_inquiry_quotes")
       .select(
-        "id, inquiry_id, quote_number, status, lines, subtotal, tax_rate, tax, total, valid_until, terms, created_by, created_at, updated_at"
+        "id, inquiry_id, quote_number, status, lines, subtotal, tax_rate, tax, total, valid_until, terms, accepted_at, created_by, created_at, updated_at"
       )
       .eq("inquiry_id", inquiryId)
       .order("created_at", { ascending: false });
@@ -320,7 +320,7 @@ export default function InquiryDetailPage() {
             terms: draft.terms ?? null,
           })
           .select(
-            "id, inquiry_id, quote_number, status, lines, subtotal, tax_rate, tax, total, valid_until, terms, created_by, created_at, updated_at"
+            "id, inquiry_id, quote_number, status, lines, subtotal, tax_rate, tax, total, valid_until, terms, accepted_at, created_by, created_at, updated_at"
           )
           .single();
         if (error) throw new Error(error.message);
@@ -337,7 +337,10 @@ export default function InquiryDetailPage() {
 
   const updateQuoteStatus = useCallback(
     async (quoteId: string, status: InquiryQuote["status"]) => {
-      setQuotes((prev) => prev.map((q) => (q.id === quoteId ? { ...q, status } : q)));
+      const acceptedAt = status === "accepted" ? new Date().toISOString() : null;
+      setQuotes((prev) =>
+        prev.map((q) => (q.id === quoteId ? { ...q, status, accepted_at: acceptedAt } : q))
+      );
       try {
         if (isEmbed) {
           await embedAction({ action: "update_quote", quoteId, status });
@@ -345,7 +348,7 @@ export default function InquiryDetailPage() {
           const supabase = createClient();
           const { error } = await supabase
             .from("rental_inquiry_quotes")
-            .update({ status })
+            .update({ status, accepted_at: acceptedAt })
             .eq("id", quoteId);
           if (error) throw new Error(error.message);
         }
@@ -383,14 +386,14 @@ export default function InquiryDetailPage() {
   );
 
   if (loading) {
-    return <div className="p-6 text-muted-foreground">Loading…</div>;
+    return <div className="p-6 text-muted-foreground">Loadingâ€¦</div>;
   }
   if (!inquiry) {
     return (
       <div className="p-6 space-y-4">
         <p className="text-muted-foreground">Inquiry not found.</p>
         <Link href={base} className="text-primary hover:underline">
-          ← Back to inquiries
+          â† Back to inquiries
         </Link>
       </div>
     );
@@ -443,7 +446,7 @@ export default function InquiryDetailPage() {
               label="Dates"
               value={
                 inquiry.start_date
-                  ? `${inquiry.start_date}${inquiry.end_date ? ` → ${inquiry.end_date}` : ""}`
+                  ? `${inquiry.start_date}${inquiry.end_date ? ` â†’ ${inquiry.end_date}` : ""}`
                   : null
               }
             />
@@ -537,7 +540,7 @@ export default function InquiryDetailPage() {
                 value={internalNotes}
                 onChange={(e) => setInternalNotes(e.target.value)}
                 rows={4}
-                placeholder="Private notes for the team…"
+                placeholder="Private notes for the teamâ€¦"
               />
               <Button
                 variant="outline"
@@ -562,7 +565,7 @@ export default function InquiryDetailPage() {
                     className="w-full border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
                   >
                     <Trash2 className="size-4" />
-                    {deleting ? "Deleting…" : "Delete inquiry"}
+                    {deleting ? "Deletingâ€¦" : "Delete inquiry"}
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
@@ -582,7 +585,7 @@ export default function InquiryDetailPage() {
                       disabled={deleting}
                       className="bg-destructive text-white hover:bg-destructive/90"
                     >
-                      {deleting ? "Deleting…" : "Delete"}
+                      {deleting ? "Deletingâ€¦" : "Delete"}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -633,7 +636,7 @@ export default function InquiryDetailPage() {
               m.cc_addrs?.length ? `Cc ${m.cc_addrs.join(", ")}` : "",
             ]
               .filter(Boolean)
-              .join(" · ");
+              .join(" Â· ");
             return (
               <div
                 key={m.id}
@@ -661,7 +664,7 @@ export default function InquiryDetailPage() {
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
                   {m.from_addr ? `From ${m.from_addr}` : ""}
-                  {recipients ? ` · ${recipients}` : ""}
+                  {recipients ? ` Â· ${recipients}` : ""}
                 </div>
                 {m.subject && <div className="mt-1 font-medium">{m.subject}</div>}
                 <MessageBody
@@ -686,7 +689,7 @@ export default function InquiryDetailPage() {
                         ))
                     ) : (
                       <span className="text-xs text-muted-foreground">
-                        {m.resend_email_id ? "Awaiting delivery events…" : "No tracking"}
+                        {m.resend_email_id ? "Awaiting delivery eventsâ€¦" : "No tracking"}
                       </span>
                     )}
                   </div>

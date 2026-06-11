@@ -252,6 +252,8 @@ export interface InquiryQuote {
   total: number;
   valid_until: string | null;
   terms: string | null;
+  /** Stamped when a rep confirms the customer accepted this quote. */
+  accepted_at: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

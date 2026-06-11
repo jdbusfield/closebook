@@ -25,7 +25,7 @@ const TEMPLATE_COLUMNS =
   "id, template_key, label, channel, track, stages, cadence, subject, body, sort_order, archived";
 
 const QUOTE_COLUMNS =
-  "id, inquiry_id, quote_number, status, lines, subtotal, tax_rate, tax, total, valid_until, terms, created_by, created_at, updated_at";
+  "id, inquiry_id, quote_number, status, lines, subtotal, tax_rate, tax, total, valid_until, terms, accepted_at, created_by, created_at, updated_at";
 
 function validKey(request: Request): boolean {
   const k = request.headers.get("x-embed-key");
@@ -321,7 +321,10 @@ export async function POST(request: Request) {
       const { quoteId, status } = body as { quoteId: string; status: string };
       const { error } = await admin
         .from("rental_inquiry_quotes")
-        .update({ status })
+        .update({
+          status,
+          accepted_at: status === "accepted" ? new Date().toISOString() : null,
+        })
         .eq("id", quoteId)
         .eq("entity_id", entityId);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });

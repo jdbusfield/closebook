@@ -27,6 +27,8 @@ export interface QuotePdfDoc {
   total: number;
   valid_until?: string | null;
   terms?: string | null;
+  /** When set (with status "accepted"), the PDF renders as an order confirmation. */
+  accepted_at?: string | null;
   created_by?: string | null;
   created_at?: string | null;
 }
@@ -42,6 +44,8 @@ const BRAND = {
 
 // Palette — HDR cobalt re-skin of the RentalWorks order's blue chrome.
 const COBALT = [40, 69, 240] as const; // --hdr-500, headings + number + rule
+const GREEN = [21, 128, 61] as const; // accepted treatment (emerald-700)
+const GREEN_TINT = [220, 252, 231] as const; // pale green fill for accepted bars
 const TINT = [221, 228, 252] as const; // section bars (light cobalt)
 const TINT_SOFT = [241, 243, 255] as const; // --hdr-050, label cells
 const AMOUNT_HL = [255, 250, 209] as const; // pale gold grand-total highlight (echoes the source)
@@ -87,7 +91,7 @@ function setDraw(d: Doc, c: RGB) {
   d.setDrawColor(c[0], c[1], c[2]);
 }
 
-async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
+export async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
   const { default: jsPDF } = await import("jspdf");
   const autoTableMod = await import("jspdf-autotable");
   const autoTable = (autoTableMod.default ?? autoTableMod) as unknown as (
@@ -104,6 +108,14 @@ async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
   const usable = right - margin;
   const center = pageWidth / 2;
 
+  // Accepted variant: same document, re-chromed as a confirmation the rep can
+  // send back to the customer — green ACCEPTED stamp, acceptance date in place
+  // of the validity window, and confirmation terms.
+  const accepted = quote.status === "accepted";
+  const acceptedDate = quote.accepted_at
+    ? fmtDate(quote.accepted_at, { month: "short", day: "numeric", year: "numeric" })
+    : todayLong();
+
   // ─── Masthead ─────────────────────────────────────────────────────────────
   try {
     d.addImage(HDR_LOGO_DATA_URL, "JPEG", margin, 28, 52, 52);
@@ -119,6 +131,22 @@ async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
   d.setFontSize(23);
   setText(d, COBALT);
   d.text("QUOTE", center, 76, { align: "center", charSpace: 1 });
+
+  // Green ACCEPTED stamp under the title.
+  if (accepted) {
+    const stamp = `ACCEPTED  ·  ${acceptedDate}`;
+    d.setFont("helvetica", "bold");
+    d.setFontSize(9);
+    // getTextWidth ignores charSpace — pad enough that the tracked text clears
+    // the box on both sides.
+    const sw = d.getTextWidth(stamp) + 40;
+    setFill(d, GREEN_TINT);
+    setDraw(d, GREEN);
+    d.setLineWidth(1);
+    d.rect(center - sw / 2, 86, sw, 17, "FD");
+    setText(d, GREEN);
+    d.text(stamp, center, 97.5, { align: "center", charSpace: 0.6 });
+  }
 
   // Right: No. box + Date / Valid.
   const labelRX = right - 124;
@@ -142,7 +170,14 @@ async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
   d.setFont("helvetica", "normal");
   setText(d, MUTED);
   d.text(todayLong(), labelRX + 10, 68);
-  if (quote.valid_until) {
+  if (accepted) {
+    d.setFont("helvetica", "bold");
+    setText(d, GREEN);
+    d.text("Accepted:", labelRX, 82, { align: "right" });
+    d.setFont("helvetica", "normal");
+    setText(d, MUTED);
+    d.text(acceptedDate, labelRX + 10, 82);
+  } else if (quote.valid_until) {
     d.setFont("helvetica", "bold");
     setText(d, INK);
     d.text("Valid:", labelRX, 82, { align: "right" });
@@ -201,10 +236,15 @@ async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
   field(cols[1].x, gy + 30, "Phone", inquiry.phone || "-");
   // Column 3
   field(cols[2].x, gy, "Date", todayLong());
-  field(cols[2].x, gy + 15, "Valid", quote.valid_until
-    ? fmtDate(quote.valid_until, { month: "short", day: "numeric", year: "numeric" })
-    : "14 days");
-  field(cols[2].x, gy + 30, "Terms", "Due on acceptance");
+  if (accepted) {
+    field(cols[2].x, gy + 15, "Accepted", acceptedDate);
+    field(cols[2].x, gy + 30, "Status", "Confirmed");
+  } else {
+    field(cols[2].x, gy + 15, "Valid", quote.valid_until
+      ? fmtDate(quote.valid_until, { month: "short", day: "numeric", year: "numeric" })
+      : "14 days");
+    field(cols[2].x, gy + 30, "Terms", "Due on acceptance");
+  }
 
   // ─── Section bars: Issued To / Event Location / Rental Dates ───────────────
   const by = gy + 52;
@@ -257,21 +297,24 @@ async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
     d.text(String(inquiry.duration), cols[2].x, cy + 11);
   }
 
-  // ─── Line-item section heading (boxed, dashed cobalt) ─────────────────────
+  // ─── Line-item section heading (boxed, dashed cobalt / solid green) ───────
   const headBoxY = cy + 30;
-  setDraw(d, COBALT);
+  setDraw(d, accepted ? GREEN : COBALT);
   d.setLineWidth(0.8);
-  d.setLineDashPattern([2, 2], 0);
+  if (!accepted) d.setLineDashPattern([2, 2], 0);
   d.rect(margin, headBoxY, usable, 22);
   d.setLineDashPattern([], 0);
   d.setFont("helvetica", "bold");
   d.setFontSize(14);
-  setText(d, COBALT);
-  d.text("QUOTE", margin + 8, headBoxY + 16);
+  setText(d, accepted ? GREEN : COBALT);
+  d.text(accepted ? "ACCEPTED QUOTE" : "QUOTE", margin + 8, headBoxY + 16);
   d.setFont("helvetica", "bold");
   d.setFontSize(7.5);
   setText(d, SUBTLE);
-  d.text("ITEMIZED RENTAL", right - 12, headBoxY + 14.5, { align: "right", charSpace: 0.5 });
+  d.text(accepted ? "CONFIRMED RENTAL" : "ITEMIZED RENTAL", right - 12, headBoxY + 14.5, {
+    align: "right",
+    charSpace: 0.5,
+  });
 
   // ─── Line items table ─────────────────────────────────────────────────────
   const activeLines = quote.lines.filter(
@@ -326,7 +369,7 @@ async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
     setFill(d, opts?.strong ? TINT : TINT_SOFT);
     d.rect(tx, ty, tlw, h, "F");
     if (opts?.hl) {
-      setFill(d, AMOUNT_HL);
+      setFill(d, accepted ? GREEN_TINT : AMOUNT_HL);
       d.rect(tx + tlw, ty, tw - tlw, h, "F");
     }
     setDraw(d, BORDER);
@@ -347,7 +390,10 @@ async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
     totalBar(`Tax (${Number(quote.tax_rate) || 0}%)`, money(quote.tax));
   }
   ty += 2;
-  totalBar("Quote Total", money(quote.total), { strong: true, hl: true });
+  totalBar(accepted ? "Accepted Total" : "Quote Total", money(quote.total), {
+    strong: true,
+    hl: true,
+  });
 
   // ─── Terms ────────────────────────────────────────────────────────────────
   ty += 26;
@@ -358,8 +404,12 @@ async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
   ty += 13;
   const termsText =
     (quote.terms && quote.terms.trim()) ||
-    "Quote includes delivery, setup, and servicing. Pricing is held for 14 days. " +
-      "Reply to confirm and we will hold your date.";
+    (accepted
+      ? `This quote was accepted on ${acceptedDate} and your rental is confirmed. ` +
+        "Pricing includes delivery, setup, and servicing. We will reach out ahead of " +
+        "your start date to coordinate delivery access, power, and water."
+      : "Quote includes delivery, setup, and servicing. Pricing is held for 14 days. " +
+        "Reply to confirm and we will hold your date.");
   d.setFont("helvetica", "normal");
   d.setFontSize(9);
   setText(d, MUTED);
@@ -380,8 +430,10 @@ async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
   return doc;
 }
 
-// Trigger a browser download of the quote PDF (filename = the quote number).
+// Trigger a browser download of the quote PDF (filename = the quote number,
+// suffixed when it's the accepted confirmation copy).
 export async function downloadQuotePdf(quote: QuotePdfDoc, inquiry: Inquiry): Promise<void> {
   const doc = await buildQuoteDoc(quote, inquiry);
-  doc.save(`${quote.quote_number}.pdf`);
+  const suffix = quote.status === "accepted" ? "-ACCEPTED" : "";
+  doc.save(`${quote.quote_number}${suffix}.pdf`);
 }

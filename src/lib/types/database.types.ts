@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -419,6 +419,7 @@ export type Database = {
           total: number
           valid_until: string | null
           terms: string | null
+          accepted_at: string | null
           created_by: string | null
           created_at: string
           updated_at: string
@@ -436,6 +437,7 @@ export type Database = {
           total?: number
           valid_until?: string | null
           terms?: string | null
+          accepted_at?: string | null
           created_by?: string | null
           created_at?: string
           updated_at?: string
@@ -453,6 +455,7 @@ export type Database = {
           total?: number
           valid_until?: string | null
           terms?: string | null
+          accepted_at?: string | null
           created_by?: string | null
           created_at?: string
           updated_at?: string
@@ -4684,7 +4687,7 @@ export type Database = {
         }
         Relationships: []
       }
-      // ── Insurance Module ──────────────────────────────────────────
+      // â”€â”€ Insurance Module â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       insurance_carriers: {
         Row: {
           id: string
