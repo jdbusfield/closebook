@@ -159,21 +159,19 @@ async function fetchAllGLBalances(
 // Helper: expand allocation adjustments into per-entity, per-period entries
 // ---------------------------------------------------------------------------
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function expandAllocationEntries(allocRows: any[]): Array<{
+interface AllocationBreakdownEntry {
   entity_id: string;
   master_account_id: string;
   period_year: number;
   period_month: number;
   amount: number;
-}> {
-  const entries: Array<{
-    entity_id: string;
-    master_account_id: string;
-    period_year: number;
-    period_month: number;
-    amount: number;
-  }> = [];
+  /** Inter-entity legs only: the entity holding the other leg of the pair. */
+  counterpart_entity_id?: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function expandAllocationEntries(allocRows: any[]): AllocationBreakdownEntry[] {
+  const entries: AllocationBreakdownEntry[] = [];
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function pushPair(alloc: any, year: number, month: number, amt: number) {
@@ -201,6 +199,7 @@ function expandAllocationEntries(allocRows: any[]): Array<{
         period_year: year,
         period_month: month,
         amount: -amt,
+        counterpart_entity_id: alloc.destination_entity_id,
       });
       entries.push({
         entity_id: alloc.destination_entity_id,
@@ -208,6 +207,7 @@ function expandAllocationEntries(allocRows: any[]): Array<{
         period_year: year,
         period_month: month,
         amount: amt,
+        counterpart_entity_id: alloc.source_entity_id,
       });
     }
   }
@@ -989,6 +989,13 @@ export async function GET(request: Request) {
   }
 
   // Allocation adjustments
+  // Synthetic BS account holding the missing leg of cross-column allocations
+  // ("Due to/from affiliates").  An inter-entity allocation is a balanced
+  // +/- pair of P&L legs; when a reporting-entity column contains only one
+  // side, its Net Income shifts with no balance-sheet offset and the column
+  // stops balancing.  The offset leg is injected per column below.
+  const ALLOC_DUE_TO_FROM_ACCOUNT_ID = "__alloc_due_to_from__";
+  let allocDueToFromUsed = false;
   if (includeAllocations) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const allocRows = await fetchAllPaginated<any>((offset, limit) =>
@@ -1013,6 +1020,17 @@ export async function GET(request: Request) {
 
       const expanded = expandAllocationEntries(allocRows);
 
+      // Lazily-created column amounts for the synthetic due-to/from account
+      function allocOffsetCA(): ColumnAmounts {
+        let ca = columnAmounts.get(ALLOC_DUE_TO_FROM_ACCOUNT_ID);
+        if (!ca) {
+          ca = { netChange: {}, endingBalance: {} };
+          columnAmounts.set(ALLOC_DUE_TO_FROM_ACCOUNT_ID, ca);
+        }
+        allocDueToFromUsed = true;
+        return ca;
+      }
+
       for (const entry of expanded) {
         const adjMonthKey = `${entry.period_year}-${String(entry.period_month).padStart(2, "0")}`;
         if (!allMonthsSet.has(adjMonthKey)) continue;
@@ -1021,13 +1039,26 @@ export async function GET(request: Request) {
         if (!ca) continue;
 
         const amount = entry.amount;
+        const counterpart = entry.counterpart_entity_id;
 
-        // Add to the reporting entity column(s) this entity belongs to
+        // Add to the reporting entity column(s) this entity belongs to.
+        // When the counterpart entity is NOT in the same column, this leg is
+        // one-sided there — inject the offsetting "Due to/from affiliates"
+        // leg so the column's balance sheet stays balanced.  The offset
+        // mirrors the same endingBalance condition as the P&L leg, keeping
+        // it symmetric with the Net Income shift it compensates.
         const reIdsForEntity = entityToRE.get(entry.entity_id) ?? [];
         for (const reId of reIdsForEntity) {
           ca.netChange[reId] = (ca.netChange[reId] ?? 0) + amount;
           if (adjMonthKey === lastMonthKey) {
             ca.endingBalance[reId] = (ca.endingBalance[reId] ?? 0) + amount;
+          }
+          if (counterpart && !(reMemberMap.get(reId) ?? []).includes(counterpart)) {
+            const oca = allocOffsetCA();
+            oca.netChange[reId] = (oca.netChange[reId] ?? 0) - amount;
+            if (adjMonthKey === lastMonthKey) {
+              oca.endingBalance[reId] = (oca.endingBalance[reId] ?? 0) - amount;
+            }
           }
         }
 
@@ -1036,6 +1067,13 @@ export async function GET(request: Request) {
           ca.netChange["other"] = (ca.netChange["other"] ?? 0) + amount;
           if (adjMonthKey === lastMonthKey) {
             ca.endingBalance["other"] = (ca.endingBalance["other"] ?? 0) + amount;
+          }
+          if (counterpart && !unassignedEntityIds.includes(counterpart)) {
+            const oca = allocOffsetCA();
+            oca.netChange["other"] = (oca.netChange["other"] ?? 0) - amount;
+            if (adjMonthKey === lastMonthKey) {
+              oca.endingBalance["other"] = (oca.endingBalance["other"] ?? 0) - amount;
+            }
           }
         }
 
@@ -1047,6 +1085,16 @@ export async function GET(request: Request) {
           if (adjMonthKey === lastMonthKey) {
             ca.endingBalance["consolidated"] =
               (ca.endingBalance["consolidated"] ?? 0) + amount;
+          }
+          // One-sided at consolidated only when the counterpart is excluded
+          if (counterpart && excludedEntityIds.has(counterpart)) {
+            const oca = allocOffsetCA();
+            oca.netChange["consolidated"] =
+              (oca.netChange["consolidated"] ?? 0) - amount;
+            if (adjMonthKey === lastMonthKey) {
+              oca.endingBalance["consolidated"] =
+                (oca.endingBalance["consolidated"] ?? 0) - amount;
+            }
           }
         }
       }
@@ -1061,6 +1109,15 @@ export async function GET(request: Request) {
     classification: ma.classification,
     accountType: ma.account_type,
   }));
+  if (allocDueToFromUsed) {
+    consolidatedAccounts.push({
+      id: ALLOC_DUE_TO_FROM_ACCOUNT_ID,
+      name: "Due to/from affiliates (allocations)",
+      accountNumber: null,
+      classification: "Liability",
+      accountType: "Other Current Liability",
+    });
+  }
 
   // Column keys: RE IDs + optional "other" + "consolidated"
   const columnKeys: string[] = reportingEntities.map(
