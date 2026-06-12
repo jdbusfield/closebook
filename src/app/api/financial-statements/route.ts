@@ -601,11 +601,23 @@ interface RawAllocationAdjustment {
   repeat_end_month: number | null;
 }
 
+/** One expanded leg of an allocation adjustment. counterpart_entity_id is set
+ *  only for inter-entity allocations and names the entity holding the other
+ *  leg of the pair — used to detect when a scope sees only one side. */
+interface AllocationEntry {
+  entity_id: string;
+  master_account_id: string;
+  period_year: number;
+  period_month: number;
+  amount: number;
+  counterpart_entity_id?: string;
+}
+
 /** Push a +/- pair of entries for source and destination.
  *  For reclass (same entity, different accounts): -amt on source account, +amt on dest account.
  *  For inter-entity: -amt on source entity, +amt on destination entity (same account). */
 function pushAllocPair(
-  entries: Array<{ entity_id: string; master_account_id: string; period_year: number; period_month: number; amount: number }>,
+  entries: AllocationEntry[],
   alloc: RawAllocationAdjustment,
   year: number,
   month: number,
@@ -635,6 +647,7 @@ function pushAllocPair(
       period_year: year,
       period_month: month,
       amount: -amt,
+      counterpart_entity_id: alloc.destination_entity_id,
     });
     entries.push({
       entity_id: alloc.destination_entity_id,
@@ -642,6 +655,7 @@ function pushAllocPair(
       period_year: year,
       period_month: month,
       amount: amt,
+      counterpart_entity_id: alloc.source_entity_id,
     });
   }
 }
@@ -653,8 +667,8 @@ function pushAllocPair(
  */
 function expandAllocationAdjustments(
   allocations: RawAllocationAdjustment[]
-): Array<{ entity_id: string; master_account_id: string; period_year: number; period_month: number; amount: number }> {
-  const entries: Array<{ entity_id: string; master_account_id: string; period_year: number; period_month: number; amount: number }> = [];
+): AllocationEntry[] {
+  const entries: AllocationEntry[] = [];
 
   for (const alloc of allocations) {
     const totalAmount = Number(alloc.amount);
@@ -718,6 +732,63 @@ function injectAllocationAdjustments(
 ): void {
   // Re-use the same injection logic as pro forma
   injectProFormaAdjustments(consolidatedBalances, entries, entityId);
+}
+
+/**
+ * Synthetic balance-sheet account holding the missing leg of cross-scope
+ * allocation adjustments ("Due to/from affiliates").
+ *
+ * An inter-entity allocation expands into a balanced +/- pair of P&L legs,
+ * one per entity.  When a statement scope (single entity or reporting
+ * entity) contains only ONE side of the pair, that one-sided P&L leg shifts
+ * the scope's net income — and therefore equity — with no offsetting
+ * balance-sheet entry, so Assets ≠ Liabilities + Equity by exactly the net
+ * cross-scope allocation amount.  (At consolidated scope both legs survive
+ * and cancel, which is why only entity/RE views fail to balance.)
+ *
+ * GAAP-wise the missing leg of an unsettled affiliate allocation is an
+ * intercompany settlement balance (ASC 850): "Due to/from affiliates".
+ * buildAllocationDueToFromOffsets() generates that leg here, typed
+ * "Other Current Liability" so it lands in BS current liabilities and in
+ * the cash-flow operating working-capital section, where it nets against
+ * the net-income shift (no cash moved, so the statement keeps articulating).
+ */
+const ALLOC_DUE_TO_FROM_ACCOUNT_ID = "__alloc_due_to_from__";
+
+function makeAllocDueToFromAccount(): AccountInfo {
+  return {
+    id: ALLOC_DUE_TO_FROM_ACCOUNT_ID,
+    name: "Due to/from affiliates (allocations)",
+    accountNumber: null,
+    classification: "Liability",
+    accountType: "Other Current Liability",
+    parentAccountId: null,
+  };
+}
+
+/**
+ * For each in-scope allocation leg whose counterpart entity is OUTSIDE the
+ * scope, emit the offsetting "Due to/from affiliates" leg (same entity and
+ * period, opposite amount).  Legs whose counterpart is also in scope cancel
+ * naturally and get no offset, so consolidated output is unchanged.
+ */
+function buildAllocationDueToFromOffsets(
+  entries: AllocationEntry[],
+  isInScope: (entityId: string) => boolean
+): AllocationEntry[] {
+  const offsets: AllocationEntry[] = [];
+  for (const e of entries) {
+    if (!e.counterpart_entity_id) continue; // intra-entity reclass — already balanced
+    if (isInScope(e.counterpart_entity_id)) continue; // both legs visible — nets out
+    offsets.push({
+      entity_id: e.entity_id,
+      master_account_id: ALLOC_DUE_TO_FROM_ACCOUNT_ID,
+      period_year: e.period_year,
+      period_month: e.period_month,
+      amount: -e.amount,
+    });
+  }
+  return offsets;
 }
 
 // ---------------------------------------------------------------------------
@@ -3370,7 +3441,7 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
   // Applied post-aggregation (like pro forma) to avoid corrupting adjacent
   // months' net change via the ending_balance diff calculation.
   let allocReclassEntries: CashFlowSupplementalEntry[] = [];
-  let allocEntries: Array<{ entity_id: string; master_account_id: string; period_year: number; period_month: number; amount: number }> = [];
+  let allocEntries: AllocationEntry[] = [];
   if (includeAllocations) {
     const allocRows = await fetchAllPaginated<RawAllocationAdjustment>((offset, limit) =>
       (admin as any)
@@ -3388,6 +3459,18 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
       // For reporting_entity scope this shows the net effect of cross-RE allocations.
       const entityIdSet = new Set(entityIds);
       allocEntries = expanded.filter((e) => entityIdSet.has(e.entity_id));
+
+      // One-sided legs (counterpart outside scope) shift net income with no
+      // balance-sheet offset, unbalancing the RE-scope balance sheet.  Add
+      // the missing "Due to/from affiliates" leg so Assets = L + E.
+      const dueToFromOffsets = buildAllocationDueToFromOffsets(
+        allocEntries,
+        (eid) => entityIdSet.has(eid)
+      );
+      if (dueToFromOffsets.length > 0) {
+        allocEntries.push(...dueToFromOffsets);
+        consolidatedAccounts.push(makeAllocDueToFromAccount());
+      }
 
       // Build supplemental entries for intra-entity reclass allocations
       // (inter-entity transfers net to zero at consolidated and are omitted)
@@ -4330,7 +4413,7 @@ export async function GET(request: Request) {
     // Applied post-aggregation (like pro forma) to avoid corrupting adjacent
     // months' net change via the ending_balance diff calculation.
     let entityAllocReclassEntries: CashFlowSupplementalEntry[] = [];
-    let entityAllocEntries: Array<{ entity_id: string; master_account_id: string; period_year: number; period_month: number; amount: number }> = [];
+    let entityAllocEntries: AllocationEntry[] = [];
     if (includeAllocations) {
       // Fetch allocations where this entity is source or destination (paginated)
       const allocRows = await fetchAllPaginated<RawAllocationAdjustment>((offset, limit) =>
@@ -4346,6 +4429,19 @@ export async function GET(request: Request) {
         const expanded = expandAllocationAdjustments(allocRows);
         // Only keep entries that belong to this entity
         entityAllocEntries = expanded.filter((e) => e.entity_id === entityId!);
+
+        // Inter-entity legs are one-sided at entity scope: the counterpart
+        // lives in another entity, so the net-income shift has no balance-
+        // sheet offset.  Add the "Due to/from affiliates" leg to balance.
+        const dueToFromOffsets = buildAllocationDueToFromOffsets(
+          entityAllocEntries,
+          (eid) => eid === entityId!
+        );
+        if (dueToFromOffsets.length > 0) {
+          entityAllocEntries.push(...dueToFromOffsets);
+          consolidatedAccounts.push(makeAllocDueToFromAccount());
+        }
+
         // Build supplemental entries for intra-entity reclass allocations
         entityAllocReclassEntries = buildAllocationSupplementalEntries(allocRows, buckets);
       }
