@@ -2997,6 +2997,18 @@ function buildCashFlowStatement(
         showDollarSign: true,
       },
       {
+        id: "cf-cash-begin",
+        label: "Cash at beginning of period",
+        amounts: cashBeginning,
+        priorYearAmounts: hasPY ? pyCashBeginning : undefined,
+        indent: 1,
+        isTotal: false,
+        isGrandTotal: false,
+        isHeader: false,
+        isSeparator: false,
+        showDollarSign: false,
+      },
+      {
         id: "cf-cash-end",
         label: "Cash at end of period",
         amounts: cashEnding,
@@ -3214,7 +3226,7 @@ function buildCashFlowStatement(
   {
     const isZero = (rec?: Record<string, number>) =>
       !rec || buckets.every((b) => Math.abs(rec[b.key] ?? 0) < 0.005);
-    const ALWAYS_SHOW = new Set(["cf-net-income", "cf-net-change", "cf-cash-end"]);
+    const ALWAYS_SHOW = new Set(["cf-net-income", "cf-net-change", "cf-cash-begin", "cf-cash-end"]);
     for (const section of sections) {
       section.lines = section.lines.filter(
         (l) =>
