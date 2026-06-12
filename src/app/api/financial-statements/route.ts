@@ -2827,9 +2827,17 @@ function buildCashFlowStatement(
         pyFinancingTotal[bucket.key] += -pyChange;
       }
     }
+    // On the statement of cash flows the distributions equity account carries
+    // flows in both directions (owner contributions in, distributions out),
+    // so it gets a two-sided label; the balance sheet keeps the account name.
+    const cfLabel =
+      account.classification === "Equity" &&
+      account.name.toLowerCase().includes("distribution")
+        ? "Contributions / (Distributions)"
+        : account.name;
     financingLines.push({
       id: `cf-fin-${account.id}`,
-      label: account.name,
+      label: cfLabel,
       amounts,
       priorYearAmounts: pyAmounts,
       indent: 1,
@@ -3193,6 +3201,37 @@ function buildCashFlowStatement(
         id: "cf-supplemental",
         title: "SUPPLEMENTAL DISCLOSURES",
         lines: discLines,
+      });
+    }
+  }
+
+  // --- Hide blank detail lines ---
+  // Account-level rows whose amounts (current and prior year) are zero in
+  // every bucket carry no information (e.g., an equity account with no
+  // activity in the period).  Structural rows (headers, totals, separators)
+  // and the lines every statement must show (net income, ending cash) are
+  // always kept.  Headers whose entire group was filtered out are dropped.
+  {
+    const isZero = (rec?: Record<string, number>) =>
+      !rec || buckets.every((b) => Math.abs(rec[b.key] ?? 0) < 0.005);
+    const ALWAYS_SHOW = new Set(["cf-net-income", "cf-net-change", "cf-cash-end"]);
+    for (const section of sections) {
+      section.lines = section.lines.filter(
+        (l) =>
+          l.isHeader ||
+          l.isTotal ||
+          l.isGrandTotal ||
+          l.isSeparator ||
+          ALWAYS_SHOW.has(l.id) ||
+          !(isZero(l.amounts) && isZero(l.priorYearAmounts))
+      );
+      section.lines = section.lines.filter((l, i) => {
+        if (!l.isHeader) return true;
+        for (let j = i + 1; j < section.lines.length; j++) {
+          if (section.lines[j].isHeader) break;
+          return true; // header keeps at least one following line
+        }
+        return false; // empty group — drop the header
       });
     }
   }
