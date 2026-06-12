@@ -161,21 +161,19 @@ async function fetchAllGLBalances(
 // Helper: expand allocation adjustments into per-entity, per-period entries
 // ---------------------------------------------------------------------------
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function expandAllocationEntries(allocRows: any[]): Array<{
+interface AllocationBreakdownEntry {
   entity_id: string;
   master_account_id: string;
   period_year: number;
   period_month: number;
   amount: number;
-}> {
-  const entries: Array<{
-    entity_id: string;
-    master_account_id: string;
-    period_year: number;
-    period_month: number;
-    amount: number;
-  }> = [];
+  /** Inter-entity legs only: the entity holding the other leg of the pair. */
+  counterpart_entity_id?: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function expandAllocationEntries(allocRows: any[]): AllocationBreakdownEntry[] {
+  const entries: AllocationBreakdownEntry[] = [];
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function pushPair(alloc: any, year: number, month: number, amt: number) {
@@ -203,6 +201,7 @@ function expandAllocationEntries(allocRows: any[]): Array<{
         period_year: year,
         period_month: month,
         amount: -amt,
+        counterpart_entity_id: alloc.destination_entity_id,
       });
       entries.push({
         entity_id: alloc.destination_entity_id,
@@ -210,6 +209,7 @@ function expandAllocationEntries(allocRows: any[]): Array<{
         period_year: year,
         period_month: month,
         amount: amt,
+        counterpart_entity_id: alloc.source_entity_id,
       });
     }
   }
@@ -873,16 +873,39 @@ export async function GET(request: Request) {
     entityAmounts.set(ma.id, ea);
   }
 
-  // Pro forma adjustments (add to consolidated column only)
+  // Synthetic accounts for double-entry completeness of adjustments:
+  //  • Pro forma offset legs that hit Bank accounts (or accounts outside this
+  //    chart) are redirected to a "Pro Forma Adjustments" equity line so real
+  //    bank balances stay untouched — mirrors the main route's shielding.
+  //  • One-sided inter-entity allocation legs get a "Due to/from affiliates"
+  //    liability leg so each entity column's balance sheet balances.
+  const PRO_FORMA_ADJ_ACCOUNT_ID = "__pro_forma_adj__";
+  const ALLOC_DUE_TO_FROM_ACCOUNT_ID = "__alloc_due_to_from__";
+  let proFormaAdjUsed = false;
+  let allocDueToFromUsed = false;
+  function syntheticEA(id: string): EntityAmounts {
+    let ea = entityAmounts.get(id);
+    if (!ea) {
+      ea = { netChange: {}, endingBalance: {} };
+      entityAmounts.set(id, ea);
+    }
+    return ea;
+  }
+  const knownMasterIds = new Set(masterAccounts.map((ma) => ma.id));
+  const bankMasterIds = new Set(
+    masterAccounts.filter((ma) => ma.account_type === "Bank").map((ma) => ma.id)
+  );
+
+  // Pro forma adjustments (both legs, per entity column + consolidated)
   if (includeProForma) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const proFormaRows = await fetchAllPaginated<{
-      master_account_id: string; entity_id: string;
+      master_account_id: string; entity_id: string; offset_master_account_id: string | null;
       period_year: number; period_month: number; amount: number;
     }>((offset, limit) =>
       (admin as any)
         .from("pro_forma_adjustments")
-        .select("master_account_id, entity_id, period_year, period_month, amount")
+        .select("master_account_id, entity_id, offset_master_account_id, period_year, period_month, amount")
         .eq("organization_id", organizationId)
         .eq("is_excluded", false)
         .range(offset, offset + limit - 1)
@@ -894,25 +917,50 @@ export async function GET(request: Request) {
         // Only include adjustments within the selected range
         if (!allMonthsSet.has(adjMonthKey)) continue;
 
-        const ea = entityAmounts.get(adj.master_account_id);
-        if (!ea) continue;
-
         const amount = Number(adj.amount);
 
-        // Add to the specific entity's column
-        ea.netChange[adj.entity_id] =
-          (ea.netChange[adj.entity_id] ?? 0) + amount;
-        if (adjMonthKey === lastMonthKey) {
-          ea.endingBalance[adj.entity_id] =
-            (ea.endingBalance[adj.entity_id] ?? 0) + amount;
+        // Both legs of the double entry.  Without the offset leg the
+        // adjustment is one-sided and unbalances the balance sheet (in the
+        // entity column AND consolidated).  Bank or unknown-chart offsets
+        // are redirected to the synthetic Pro Forma Adjustments equity line.
+        const legs: Array<{ accountId: string; amt: number }> = [
+          { accountId: adj.master_account_id, amt: amount },
+        ];
+        if (adj.offset_master_account_id) {
+          const useSynthetic =
+            bankMasterIds.has(adj.offset_master_account_id) ||
+            !knownMasterIds.has(adj.offset_master_account_id);
+          if (useSynthetic) proFormaAdjUsed = true;
+          legs.push({
+            accountId: useSynthetic
+              ? PRO_FORMA_ADJ_ACCOUNT_ID
+              : adj.offset_master_account_id,
+            amt: -amount,
+          });
         }
 
-        // Add to consolidated
-        ea.netChange["consolidated"] =
-          (ea.netChange["consolidated"] ?? 0) + amount;
-        if (adjMonthKey === lastMonthKey) {
-          ea.endingBalance["consolidated"] =
-            (ea.endingBalance["consolidated"] ?? 0) + amount;
+        for (const leg of legs) {
+          const ea =
+            leg.accountId === PRO_FORMA_ADJ_ACCOUNT_ID
+              ? syntheticEA(leg.accountId)
+              : entityAmounts.get(leg.accountId);
+          if (!ea) continue;
+
+          // Add to the specific entity's column
+          ea.netChange[adj.entity_id] =
+            (ea.netChange[adj.entity_id] ?? 0) + leg.amt;
+          if (adjMonthKey === lastMonthKey) {
+            ea.endingBalance[adj.entity_id] =
+              (ea.endingBalance[adj.entity_id] ?? 0) + leg.amt;
+          }
+
+          // Add to consolidated
+          ea.netChange["consolidated"] =
+            (ea.netChange["consolidated"] ?? 0) + leg.amt;
+          if (adjMonthKey === lastMonthKey) {
+            ea.endingBalance["consolidated"] =
+              (ea.endingBalance["consolidated"] ?? 0) + leg.amt;
+          }
         }
       }
     }
@@ -951,7 +999,25 @@ export async function GET(request: Request) {
             (ea.endingBalance[entry.entity_id] ?? 0) + amount;
         }
 
-        // Add to consolidated
+        // Inter-entity legs are always one-sided in their entity column
+        // (the counterpart leg lives in another column), so the Net Income
+        // shift has no balance-sheet offset there.  Inject the missing
+        // "Due to/from affiliates" leg so the column balances.  The offset
+        // mirrors the leg's endingBalance condition, staying symmetric with
+        // the Net Income shift it compensates.
+        if (entry.counterpart_entity_id) {
+          const oca = syntheticEA(ALLOC_DUE_TO_FROM_ACCOUNT_ID);
+          allocDueToFromUsed = true;
+          oca.netChange[entry.entity_id] =
+            (oca.netChange[entry.entity_id] ?? 0) - amount;
+          if (adjMonthKey === lastMonthKey) {
+            oca.endingBalance[entry.entity_id] =
+              (oca.endingBalance[entry.entity_id] ?? 0) - amount;
+          }
+        }
+
+        // Add to consolidated (both legs of the pair land here, so they
+        // net to zero and no due-to/from offset is needed)
         ea.netChange["consolidated"] =
           (ea.netChange["consolidated"] ?? 0) + amount;
         if (adjMonthKey === lastMonthKey) {
@@ -970,6 +1036,24 @@ export async function GET(request: Request) {
     classification: ma.classification,
     accountType: ma.account_type,
   }));
+  if (allocDueToFromUsed) {
+    consolidatedAccounts.push({
+      id: ALLOC_DUE_TO_FROM_ACCOUNT_ID,
+      name: "Due to/from affiliates (allocations)",
+      accountNumber: null,
+      classification: "Liability",
+      accountType: "Other Current Liability",
+    });
+  }
+  if (proFormaAdjUsed) {
+    consolidatedAccounts.push({
+      id: PRO_FORMA_ADJ_ACCOUNT_ID,
+      name: "Pro Forma Adjustments",
+      accountNumber: null,
+      classification: "Equity",
+      accountType: "Equity",
+    });
+  }
 
   // Column keys: entity IDs + consolidated
   const columnKeys = [...entities.map((e) => e.id), "consolidated"];
