@@ -40,6 +40,34 @@ Steps required to adopt, or "None".
 
 ---
 
+## [PR #149] - Fix per-entity/RE balance sheet imbalance from cross-scope allocation adjustments - 2026-06-12
+
+**Author:** jdbusfield
+**Type:** Bug Fix
+**Related Issues:** N/A
+
+### Summary
+Inter-entity allocation adjustments expand into a balanced +/− pair of P&L legs (one leg per entity involved). The consolidated view keeps both legs, so it always balanced; but entity- and reporting-entity-scoped statements kept only the in-scope leg, shifting Net Income (and therefore equity) with no offsetting balance-sheet entry. The result was `Assets ≠ Liabilities + Equity`, off by exactly the net cross-scope allocation — but **only** when scoped to a single entity or reporting entity. This PR makes the engine, whenever it keeps a leg whose counterpart entity is outside the statement scope, inject the missing leg into a synthetic account `__alloc_due_to_from__` ("Due to/from affiliates (allocations)"). That is the GAAP treatment of an unsettled affiliate allocation — an ASC 850 intercompany settlement balance — so the per-entity/RE balance sheet re-articulates and all three statements tie again. The income statement and the consolidated output are unchanged.
+
+### Changes Made
+- In `src/app/api/financial-statements/route.ts`: allocation legs now carry a `counterpart_entity_id`. When a kept leg's counterpart entity is outside the current scope (single-entity or reporting-entity), the engine emits the offsetting leg into the synthetic account `__alloc_due_to_from__`, named **"Due to/from affiliates (allocations)"**, classification **Liability**, account type **Other Current Liability**. It renders in balance-sheet current liabilities and flows through the cash-flow operating working-capital section, netting against the Net Income shift so the statement stays articulated. Legs whose counterpart is also in scope cancel out and inject nothing (consolidated behavior is unchanged).
+- In `src/app/api/financial-statements/reporting-entity-breakdown/route.ts`: the same per-column treatment was applied. For each reporting-entity column a leg whose counterpart entity is not a member of that column is offset into the "Due to/from affiliates" line; the Consolidated column gets the offset only in the excluded-counterpart case (when the counterpart entity belongs exclusively to an excluded reporting entity).
+
+### User Impact
+Operators viewing a **single-entity or reporting-entity** balance sheet that was previously out of balance by the net of cross-scope allocations now see a balanced statement, with the offset shown as a **"Due to/from affiliates (allocations)"** line in current liabilities. On 2026 live data the imbalances were: HDR equity understated by **$332,636.40**, Versatile understated by **$658,563.43**, and Avon overstated by **$991,199.83** (summing to $0 across the group). After the fix each entity/RE balance sheet articulates. Consolidated statements and every income statement are numerically unchanged — they already balanced.
+
+### Migration Notes
+None. This is a derivation-logic fix; no schema, configuration, or stored-data changes. Corrected balance sheets appear on the next render.
+
+> **Maintenance note:** the synthetic account `__alloc_due_to_from__` must **never** be flagged `isIntercompany` or renamed to start with `__intercompany`. The cash-flow intercompany-elimination filters added in PR #147 would drop it, which would re-break the balance.
+
+### Wiki Pages Updated
+- /settings/wiki/core-concepts (new "Cross-scope allocations and the Due to/from affiliates line" subsection under Allocations; note added to Statement of cash flows)
+- /settings/wiki/troubleshooting (new "Balance sheet balances consolidated but not by entity/reporting entity" entry; cross-reference added to "Balance sheet does not balance")
+- /settings/wiki/changelog
+
+---
+
 ## [PR #147] - Fix cash flow misclassification: intangible amortization double-count + dead IC exclusion - 2026-06-12
 
 **Author:** jdbusfield

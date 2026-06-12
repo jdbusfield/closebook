@@ -922,16 +922,35 @@ export async function GET(request: Request) {
     columnAmounts.set(ma.id, ca);
   }
 
-  // Pro forma adjustments
+  // Synthetic equity line absorbing pro forma offset legs that hit Bank
+  // accounts (or accounts outside this chart) — real bank balances stay
+  // untouched, mirroring the main route's shielding.
+  const PRO_FORMA_ADJ_ACCOUNT_ID = "__pro_forma_adj__";
+  let proFormaAdjUsed = false;
+  function syntheticCA(id: string): ColumnAmounts {
+    let ca = columnAmounts.get(id);
+    if (!ca) {
+      ca = { netChange: {}, endingBalance: {} };
+      columnAmounts.set(id, ca);
+    }
+    return ca;
+  }
+  const knownMasterIds = new Set(masterAccounts.map((ma) => ma.id));
+  const bankMasterIds = new Set(
+    masterAccounts.filter((ma) => ma.account_type === "Bank").map((ma) => ma.id)
+  );
+
+  // Pro forma adjustments (both legs of the double entry — applying only the
+  // primary leg unbalanced every column's balance sheet, consolidated included)
   if (includeProForma) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const proFormaRows = await fetchAllPaginated<{
-      master_account_id: string; entity_id: string;
+      master_account_id: string; entity_id: string; offset_master_account_id: string | null;
       period_year: number; period_month: number; amount: number;
     }>((offset, limit) =>
       (admin as any)
         .from("pro_forma_adjustments")
-        .select("master_account_id, entity_id, period_year, period_month, amount")
+        .select("master_account_id, entity_id, offset_master_account_id, period_year, period_month, amount")
         .eq("organization_id", organizationId)
         .eq("is_excluded", false)
         .range(offset, offset + limit - 1)
@@ -952,36 +971,57 @@ export async function GET(request: Request) {
         const adjMonthKey = `${adj.period_year}-${String(adj.period_month).padStart(2, "0")}`;
         if (!allMonthsSet.has(adjMonthKey)) continue;
 
-        const ca = columnAmounts.get(adj.master_account_id);
-        if (!ca) continue;
-
         const amount = Number(adj.amount);
 
-        // Add to the reporting entity column(s) this entity belongs to
-        const reIdsForEntity = entityToRE.get(adj.entity_id) ?? [];
-        for (const reId of reIdsForEntity) {
-          ca.netChange[reId] = (ca.netChange[reId] ?? 0) + amount;
-          if (adjMonthKey === lastMonthKey) {
-            ca.endingBalance[reId] = (ca.endingBalance[reId] ?? 0) + amount;
-          }
+        const legs: Array<{ accountId: string; amt: number }> = [
+          { accountId: adj.master_account_id, amt: amount },
+        ];
+        if (adj.offset_master_account_id) {
+          const useSynthetic =
+            bankMasterIds.has(adj.offset_master_account_id) ||
+            !knownMasterIds.has(adj.offset_master_account_id);
+          if (useSynthetic) proFormaAdjUsed = true;
+          legs.push({
+            accountId: useSynthetic
+              ? PRO_FORMA_ADJ_ACCOUNT_ID
+              : adj.offset_master_account_id,
+            amt: -amount,
+          });
         }
 
-        // If entity is unassigned, add to "other"
-        if (reIdsForEntity.length === 0 && unassignedEntityIds.includes(adj.entity_id)) {
-          ca.netChange["other"] = (ca.netChange["other"] ?? 0) + amount;
-          if (adjMonthKey === lastMonthKey) {
-            ca.endingBalance["other"] = (ca.endingBalance["other"] ?? 0) + amount;
-          }
-        }
+        for (const leg of legs) {
+          const ca =
+            leg.accountId === PRO_FORMA_ADJ_ACCOUNT_ID
+              ? syntheticCA(leg.accountId)
+              : columnAmounts.get(leg.accountId);
+          if (!ca) continue;
 
-        // Add to consolidated only if this entity isn't excluded from
-        // breakdown — keeps consolidated in sync with the visible columns.
-        if (!excludedEntityIds.has(adj.entity_id)) {
-          ca.netChange["consolidated"] =
-            (ca.netChange["consolidated"] ?? 0) + amount;
-          if (adjMonthKey === lastMonthKey) {
-            ca.endingBalance["consolidated"] =
-              (ca.endingBalance["consolidated"] ?? 0) + amount;
+          // Add to the reporting entity column(s) this entity belongs to
+          const reIdsForEntity = entityToRE.get(adj.entity_id) ?? [];
+          for (const reId of reIdsForEntity) {
+            ca.netChange[reId] = (ca.netChange[reId] ?? 0) + leg.amt;
+            if (adjMonthKey === lastMonthKey) {
+              ca.endingBalance[reId] = (ca.endingBalance[reId] ?? 0) + leg.amt;
+            }
+          }
+
+          // If entity is unassigned, add to "other"
+          if (reIdsForEntity.length === 0 && unassignedEntityIds.includes(adj.entity_id)) {
+            ca.netChange["other"] = (ca.netChange["other"] ?? 0) + leg.amt;
+            if (adjMonthKey === lastMonthKey) {
+              ca.endingBalance["other"] = (ca.endingBalance["other"] ?? 0) + leg.amt;
+            }
+          }
+
+          // Add to consolidated only if this entity isn't excluded from
+          // breakdown — keeps consolidated in sync with the visible columns.
+          if (!excludedEntityIds.has(adj.entity_id)) {
+            ca.netChange["consolidated"] =
+              (ca.netChange["consolidated"] ?? 0) + leg.amt;
+            if (adjMonthKey === lastMonthKey) {
+              ca.endingBalance["consolidated"] =
+                (ca.endingBalance["consolidated"] ?? 0) + leg.amt;
+            }
           }
         }
       }
@@ -1116,6 +1156,15 @@ export async function GET(request: Request) {
       accountNumber: null,
       classification: "Liability",
       accountType: "Other Current Liability",
+    });
+  }
+  if (proFormaAdjUsed) {
+    consolidatedAccounts.push({
+      id: PRO_FORMA_ADJ_ACCOUNT_ID,
+      name: "Pro Forma Adjustments",
+      accountNumber: null,
+      classification: "Equity",
+      accountType: "Equity",
     });
   }
 
