@@ -39,6 +39,32 @@ Check:
 - Reporting entity scoping — make sure you are comparing apples to apples
   (full org vs. reporting entity vs. single entity).
 
+## "Cash flow Operating looks too high / 'Other non-cash reconciling items, net' is large"
+
+If a chart books goodwill/intangible amortization through a dedicated
+expense account (e.g. master 7300 "Amortization of Goodwill") *and* carries
+the matching intangible master (e.g. 1600 Goodwill), older builds added the
+amortization back twice — once from the expense account and once from the
+asset's carrying-value decline. That overstated Operating, understated
+Investing by the same amount, and left a residual in the **"Other non-cash
+reconciling items, net"** plug line.
+
+This was fixed in **PR #147** (intangible amortization is now an Operating
+add-back only; the carrying-decline add-back is a fallback used only when no
+amortization expense account exists). If you still see an inflated Operating
+total or a large plug line on a recent period:
+
+- Confirm the intangible amortization expense account name matches
+  `INTANGIBLE_ASSET_NAME_PATTERNS` so it is recognized as intangible rather
+  than counted as tangible depreciation.
+- Check the *Other non-cash reconciling items, net* drill-down — a leftover
+  intercompany residual now surfaces here on purpose (it is excluded from
+  Investing/Financing), so a nonzero value points at an unbalanced
+  `__intercompany_*` account rather than a cash-flow bug.
+
+See [Core Concepts → Statement of cash flows](/settings/wiki/core-concepts)
+for the methodology and the [PR #147 changelog entry](/settings/wiki/changelog#pr-147---fix-cash-flow-misclassification-intangible-amortization-double-count--dead-ic-exclusion---2026-06-12).
+
 ## "RentalWorks API returns 500"
 
 Some RW endpoints are known broken on the HDR instance:

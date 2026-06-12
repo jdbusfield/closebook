@@ -40,6 +40,33 @@ Steps required to adopt, or "None".
 
 ---
 
+## [PR #147] - Fix cash flow misclassification: intangible amortization double-count + dead IC exclusion - 2026-06-12
+
+**Author:** jdbusfield
+**Type:** Bug Fix
+**Related Issues:** N/A
+
+### Summary
+A review of the Q1 2026 statement of cash flows found a hidden Operating/Investing misclassification that netted to zero (so the statement still tied) plus a dead-code intercompany exclusion. When a chart has both a dedicated intangible-amortization expense account (master 7300 "Amortization of Goodwill") and the matching intangible master (1600 Goodwill), the old `buildCashFlowStatement` logic added the amortization back twice — once from the D&A expense name filter (Operating) and again from the goodwill carrying-value decline — while the Investing "tangible depreciation" offset incorrectly netted out the intangible amortization expense that is not embedded in any P&E carrying value. The fix splits D&A into tangible vs. intangible, makes the carrying-decline add-back a fallback, and wires in the previously-dead `isIntercompanyElim` filter. Net change in cash is unchanged; only the Operating/Investing split and the "Other non-cash reconciling items, net" plug line move.
+
+### Changes Made
+- In `src/app/api/financial-statements/route.ts` (`buildCashFlowStatement`): D&A expense accounts are split via `INTANGIBLE_ASSET_NAME_PATTERNS` into **tangible depreciation** (`tangibleDepAccounts`) and **intangible amortization** (`intangibleAmortExpenseAccounts`). Only tangible depreciation feeds the Investing carrying-value offset; intangible amortization is an Operating add-back only.
+- The intangible carrying-value-decline add-back is now a **fallback** (`useCarryingDeclineFallback = intangibleAmortExpenseAccounts.length === 0`), applied only when a chart has no pattern-matched amortization expense account — eliminating the double count.
+- `isIntercompanyElim` (previously defined but never called) is now applied to the Investing, Financing-liability, and Financing-equity account filters, so synthetic `__intercompany_*` elimination residuals can no longer appear as investing/financing cash flows; any nonzero residual falls through to the visible Operating "Other non-cash reconciling items, net" line.
+
+### User Impact
+Operators viewing the statement of cash flows get a correctly classified statement. For the Q1 2026 Management chart (consolidated), net cash from operating activities was overstated by **$509,733** and investing understated by the same amount, with a ~$54.6K residual surfacing in the "Other non-cash reconciling items, net" plug line. After the fix: Operating −$509,733 / Investing +$509,733 (net change in cash unchanged), the D&A line shows the true expense ($1,441,728, no longer inflated by the ~$455K carrying decline), and the $54.6K plug line drops to roughly zero. No data migration or user action is required — the corrected numbers appear on the next render.
+
+### Migration Notes
+None. This is a derivation-logic fix; no schema, configuration, or stored data changes. Net change in cash is unaffected, so historical period totals still tie — only the Operating/Investing split and the plug line are restated when a period is re-rendered.
+
+### Wiki Pages Updated
+- /settings/wiki/core-concepts (new "Statement of cash flows" section)
+- /settings/wiki/troubleshooting (new "Cash flow Operating looks too high" entry)
+- /settings/wiki/changelog
+
+---
+
 ## [PR #110] - Wiki sub-pages bouncing to /dashboard - 2026-05-21
 
 **Author:** jdbusfield

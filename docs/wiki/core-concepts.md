@@ -119,3 +119,52 @@ imbalance on the *IC Eliminations* dashboard.
 
 > **Gotcha:** ARH and Silverco are **different** entities for IC purposes.
 > Intercompany flag must be set on the relevant accounts.
+
+## Statement of cash flows
+
+Closebook derives the statement of cash flows indirectly (ASC 230) from the
+trial-balance movements, in `buildCashFlowStatement`
+(`src/app/api/financial-statements/route.ts`). The geography of each line —
+Operating, Investing, or Financing — is decided by classification helpers, and
+a few rules are worth understanding because they affect how non-cash items
+reconcile.
+
+### Depreciation vs. amortization (tangible vs. intangible)
+
+Depreciation/amortization (D&A) expense accounts are identified by name
+pattern, then **split into two buckets** (PR #147):
+
+- **Tangible depreciation** — D&A accounts that do *not* match the intangible
+  patterns. This is the only depreciation figure that feeds the Investing
+  section, where it offsets the change in property & equipment carrying value.
+- **Intangible amortization** — D&A expense accounts whose names match
+  `INTANGIBLE_ASSET_NAME_PATTERNS` (e.g. master 7300 "Amortization of
+  Goodwill"). This is an **Operating add-back only**. It is never netted into
+  the Investing carrying-value offset, because intangible masters (goodwill,
+  etc.) are excluded from Investing, so their amortization is not embedded in
+  any P&E carrying-value change.
+
+### The intangible carrying-decline fallback
+
+The period decline in the carrying value of a goodwill/intangible master is
+also non-cash amortization. Closebook adds it back **only as a fallback** —
+specifically when a chart has *no* pattern-matched intangible-amortization
+expense account. When a dedicated amortization expense account exists, that
+expense already carries the Operating add-back, and adding the carrying decline
+*as well* would double-count the same amortization (overstating Operating and,
+via the offset, distorting Investing). See the PR #147 changelog entry for the
+quantified Q1 2026 impact.
+
+### Intercompany residuals stay off the face of the statement
+
+Synthetic `__intercompany_*` elimination accounts (and any account named
+"intercompany elimination") are excluded from the Investing, Financing-liability,
+and Financing-equity filters (PR #147). Any nonzero residual on those synthetic
+accounts therefore cannot masquerade as an investing or financing cash flow — it
+falls through to the visible **"Other non-cash reconciling items, net"** line in
+Operating, where it is easy to spot rather than silently misclassified.
+
+> **Note:** The PR #147 fix is a *reclassification* — net change in cash is
+> unchanged. It corrects only the Operating/Investing split and the size of the
+> "Other non-cash reconciling items, net" plug line. See
+> [Changelog → PR #147](/settings/wiki/changelog#pr-147---fix-cash-flow-misclassification-intangible-amortization-double-count--dead-ic-exclusion---2026-06-12).
