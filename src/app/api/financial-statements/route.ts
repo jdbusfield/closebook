@@ -3203,8 +3203,8 @@ function buildCashFlowStatement(
   }
 
   // --- SUPPLEMENTAL DISCLOSURES (ASC 230-10-50) ---
-  // Memo-only (not part of any subtotal): cash paid for interest and income
-  // taxes (approximated from the period expense, labeled as derived) and major
+  // Memo-only (not part of any subtotal): cash paid for income taxes
+  // (approximated from the period expense, labeled as derived) and major
   // non-cash investing/financing activity (ROU assets obtained for new leases).
   {
     const sumNetChange = (filter: (a: AccountInfo) => boolean): Record<string, number> => {
@@ -3220,9 +3220,6 @@ function buildCashFlowStatement(
     };
     const isExpenseClass = (a: AccountInfo) =>
       a.classification === "Expense" || a.classification === "Other Expense";
-    const interestPaid = sumNetChange(
-      (a) => isExpenseClass(a) && a.name.toLowerCase().includes("interest"),
-    );
     const incomeTaxPaid = sumNetChange(
       (a) => isExpenseClass(a) && a.name.toLowerCase().includes("income tax"),
     );
@@ -3254,7 +3251,6 @@ function buildCashFlowStatement(
         drillDownMeta: { type: "none" },
       });
     };
-    mk("cf-disc-interest", "Cash paid for interest (derived)", interestPaid);
     mk("cf-disc-income-tax", "Cash paid for income taxes (derived)", incomeTaxPaid);
     mk("cf-disc-rou", "Non-cash: ROU assets obtained for new lease liabilities", rouAdditions);
 
