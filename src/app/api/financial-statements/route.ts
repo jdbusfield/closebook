@@ -1078,9 +1078,19 @@ function buildStatement(
         }
       }
 
+      // Like the cash flow statement, the distributions equity account carries
+      // flows in both directions (owner contributions in, distributions out), so
+      // a net-contribution period would otherwise show a positive "Distributions".
+      const displayLabel =
+        statementId === "balance_sheet" &&
+        config.classification === "Equity" &&
+        account.name.toLowerCase().includes("distribution")
+          ? "Contributions / (Distributions)"
+          : account.name;
+
       lines.push({
         id: `${config.id}-${account.id}`,
-        label: account.name,
+        label: displayLabel,
         accountNumber: account.accountNumber ?? undefined,
         amounts,
         budgetAmounts,
@@ -2057,12 +2067,44 @@ function buildCashFlowStatement(
       (pyIntangibleAmortByBucket[bucket.key] ?? 0);
   }
 
-  // Net book gain/(loss) on disposals from the subledger. A gain is non-cash
-  // (it's in net income), so it is removed from Operating and the full proceeds
-  // show in Investing (ASC 230-10-45-28).  Reclassifying it INCREASES Investing
-  // and DECREASES Operating by the same amount, so net change in cash is
-  // unchanged and the statement keeps articulating.
-  const gainLossByBucket = assetCashFlows?.gainLossByBucket ?? {};
+  // Gain/(loss) on disposals. A gain is non-cash (it's in net income), so it is
+  // removed from Operating and the full proceeds show in Investing
+  // (ASC 230-10-45-28).  Reclassifying it INCREASES Investing and DECREASES
+  // Operating by the same amount, so net change in cash is unchanged and the
+  // statement keeps articulating.
+  //
+  // The figure is sourced from the GL gain/loss-on-disposal accounts because the
+  // add-back must reverse exactly what is inside net income — when the
+  // fixed-asset subledger's disposed_book_gain_loss disagrees with the GL, using
+  // the subledger number makes the income statement and cash flow show disposals
+  // moving in opposite directions.  The subledger figure is kept only as a
+  // fallback for charts with no GL gain/loss account; any subledger-vs-GL drift
+  // then sits in the Investing reconciling line where it belongs.
+  const disposalGainLossAccounts = accounts.filter((a) => {
+    if (["Asset", "Liability", "Equity"].includes(a.classification)) return false;
+    const n = a.name.toLowerCase();
+    return (
+      (n.includes("gain") || n.includes("loss")) &&
+      (n.includes("sale") || n.includes("disposal") || n.includes("disposition"))
+    );
+  });
+  const gainLossByBucket: Record<string, number> = {};
+  const pyGainLossByBucket: Record<string, number> = {};
+  if (disposalGainLossAccounts.length > 0) {
+    for (const bucket of buckets) {
+      let net = 0;
+      let pyNet = 0;
+      for (const acct of disposalGainLossAccounts) {
+        // Raw GL sign: debit (loss) positive, credit (gain) negative.
+        net += aggregated.get(acct.id)?.netChange[bucket.key] ?? 0;
+        if (hasPY) pyNet += pyAggregated!.get(acct.id)?.netChange[bucket.key] ?? 0;
+      }
+      gainLossByBucket[bucket.key] = -net; // positive = gain
+      pyGainLossByBucket[bucket.key] = -pyNet;
+    }
+  } else {
+    Object.assign(gainLossByBucket, assetCashFlows?.gainLossByBucket ?? {});
+  }
   const hasGainLoss = buckets.some((b) => Math.abs(gainLossByBucket[b.key] ?? 0) > 0.5);
 
   // --- OPERATING ACTIVITIES ---
@@ -2115,12 +2157,16 @@ function buildCashFlowStatement(
   // from net income); loss → positive (add back).
   if (hasGainLoss) {
     const glAddBack: Record<string, number> = {};
-    for (const bucket of buckets) glAddBack[bucket.key] = -(gainLossByBucket[bucket.key] ?? 0);
+    const pyGlAddBack: Record<string, number> = {};
+    for (const bucket of buckets) {
+      glAddBack[bucket.key] = -(gainLossByBucket[bucket.key] ?? 0);
+      pyGlAddBack[bucket.key] = -(pyGainLossByBucket[bucket.key] ?? 0);
+    }
     operatingLines.push({
       id: "cf-gain-loss-disposal",
       label: "(Gain) loss on disposal of property and equipment",
       amounts: glAddBack,
-      priorYearAmounts: hasPY ? {} : undefined,
+      priorYearAmounts: hasPY ? pyGlAddBack : undefined,
       indent: 1,
       isTotal: false,
       isGrandTotal: false,
@@ -2451,7 +2497,11 @@ function buildCashFlowStatement(
   for (const bucket of buckets) {
     investingTotal[bucket.key] -= depreciationByBucket[bucket.key] ?? 0;
     investingTotal[bucket.key] += gainLossByBucket[bucket.key] ?? 0;
-    if (hasPY) pyInvestingTotal[bucket.key] -= pyDepreciationByBucket[bucket.key] ?? 0;
+    if (hasPY) {
+      pyInvestingTotal[bucket.key] -= pyDepreciationByBucket[bucket.key] ?? 0;
+      // Mirror the PY Operating add-back so the prior-year columns articulate too.
+      pyInvestingTotal[bucket.key] += pyGainLossByBucket[bucket.key] ?? 0;
+    }
   }
 
   // Gross capex / disposals from the subledger (current period only; YoY prior-
