@@ -28,6 +28,36 @@ it on TB Variance. Common causes:
   double-entry).
 - Allocation reclass missed its offsetting entry.
 - Period closed mid-month with stale opening balances.
+- **If it balances consolidated but not by entity/reporting entity**, the
+  cause is almost always a cross-scope allocation — see the dedicated entry
+  below.
+
+## "Balance sheet balances consolidated but not by entity/reporting entity"
+
+If the **consolidated** balance sheet ties but a **single-entity** or
+**reporting-entity** view is off by exactly the net of a cross-scope
+allocation, the cause is a cross-entity allocation whose offsetting leg lives
+in an out-of-scope entity. The in-scope leg shifts that entity's Net Income
+and equity with no offsetting asset/liability movement.
+
+Closebook handles this by injecting a synthetic **"Due to/from affiliates
+(allocations)"** current-liability line (account `__alloc_due_to_from__`,
+ASC 850 intercompany settlement balance) on entity/RE-scoped statements so the
+balance sheet re-articulates (PR #149). If you still see an imbalance of this
+shape:
+
+- Confirm the **"Due to/from affiliates (allocations)"** line appears in
+  current liabilities on the out-of-balance entity/RE view. Its absence means
+  the allocation leg's `counterpart_entity_id` was not set, so the engine
+  could not tell the counterpart was out of scope.
+- Make sure the synthetic account `__alloc_due_to_from__` has **not** been
+  flagged `isIntercompany` or renamed to start with `__intercompany`. If it
+  has, the cash-flow intercompany-elimination filters (PR #147) will drop it
+  and the balance breaks again.
+
+See [Core Concepts → Cross-scope allocations](/settings/wiki/core-concepts#cross-scope-allocations-and-the-due-tofrom-affiliates-line)
+for the methodology and the
+[PR #149 changelog entry](/settings/wiki/changelog#pr-149---fix-per-entityre-balance-sheet-imbalance-from-cross-scope-allocation-adjustments---2026-06-12).
 
 ## "Consolidated total does not equal sum of entities"
 

@@ -90,6 +90,39 @@ two kinds:
 - **Cross-entity allocations** — move dollars between entities (these
   generate matching intercompany entries automatically)
 
+### Cross-scope allocations and the "Due to/from affiliates" line
+
+A cross-entity allocation expands into a **balanced +/− pair of P&L legs**,
+one leg per entity involved. When you view the **consolidated** statements,
+both legs are present, so Net Income and equity are unaffected and the
+balance sheet ties.
+
+But when you scope to a **single entity** or a **reporting entity**, only the
+in-scope leg is kept. That leg shifts Net Income (and therefore equity) with
+no offsetting balance-sheet entry, which would leave
+`Assets ≠ Liabilities + Equity` by exactly the net cross-scope allocation.
+
+To keep the per-entity / per-reporting-entity balance sheet articulated,
+Closebook injects the missing leg into a synthetic account
+`__alloc_due_to_from__`, shown as **"Due to/from affiliates (allocations)"**
+(classification **Liability**, type **Other Current Liability**) — the GAAP
+treatment of an unsettled affiliate allocation, i.e. an ASC 850 intercompany
+settlement balance (PR #149). The line:
+
+- renders in **balance-sheet current liabilities**, and
+- flows through the **operating working-capital** section of the statement of
+  cash flows,
+
+so it nets against the Net Income shift and all three statements tie. Legs
+whose counterpart entity is *also* in scope cancel out and inject nothing, so
+consolidated output is unchanged.
+
+> **Gotcha:** the `__alloc_due_to_from__` account must never be flagged
+> `isIntercompany` or renamed to start with `__intercompany` — the cash-flow
+> intercompany-elimination filters (PR #147) would drop it and re-break the
+> balance. See
+> [Changelog → PR #149](/settings/wiki/changelog#pr-149---fix-per-entityre-balance-sheet-imbalance-from-cross-scope-allocation-adjustments---2026-06-12).
+
 ## Year-end adjustments
 
 Chart-scoped one-time entries that true up a master GL account at year
@@ -168,3 +201,17 @@ Operating, where it is easy to spot rather than silently misclassified.
 > unchanged. It corrects only the Operating/Investing split and the size of the
 > "Other non-cash reconciling items, net" plug line. See
 > [Changelog → PR #147](/settings/wiki/changelog#pr-147---fix-cash-flow-misclassification-intangible-amortization-double-count--dead-ic-exclusion---2026-06-12).
+
+### "Due to/from affiliates" balances articulate through working capital
+
+On entity- and reporting-entity-scoped statements, the synthetic
+**"Due to/from affiliates (allocations)"** current-liability balance — injected
+to balance cross-scope allocations (see
+[Allocations → Cross-scope allocations](#cross-scope-allocations-and-the-due-tofrom-affiliates-line))
+— is a real balance-sheet movement, so its period change flows through the
+**operating working-capital** section of the cash-flow statement (PR #149). That
+working-capital change nets against the Net Income shift the kept allocation leg
+caused, which is what keeps the entity/RE balance sheet and cash-flow statement
+articulated. Unlike the `__intercompany_*` elimination accounts, this account is
+**not** flagged intercompany, so it is intentionally *not* filtered out of the
+statement.
