@@ -1055,8 +1055,106 @@ export async function GET(request: Request) {
     });
   }
 
-  // Column keys: entity IDs + consolidated
-  const columnKeys = [...entities.map((e) => e.id), "consolidated"];
+  // ---------------------------------------------------------------------------
+  // Intercompany eliminations column (combining-schedule presentation).
+  //
+  // The main consolidated view auto-eliminates intercompany accounts (DB flag,
+  // or name starting "due from "/"due to " outside a parent/child rollup) and
+  // shows only a net "Intercompany Eliminations, Net" residual.  The breakdown
+  // previously summed those accounts gross into "consolidated", so its Total
+  // Assets disagreed with the consolidated view by the gross IC balances.
+  //
+  // Standard combining-schedule fix: entity columns stay gross, a new
+  // "Eliminations" column reverses each IC account's included total, and the
+  // consolidated column becomes the eliminated figure — tying to the main
+  // view to the dollar, with residuals surfaced on the same synthetic lines.
+  // ---------------------------------------------------------------------------
+  const childIds = new Set(
+    masterAccounts.filter((ma) => ma.parent_account_id).map((ma) => ma.id)
+  );
+  const parentIds = new Set(
+    masterAccounts
+      .filter((ma) => ma.parent_account_id)
+      .map((ma) => ma.parent_account_id as string)
+  );
+  const icMasters = masterAccounts.filter((ma) => {
+    const n = (ma.name as string).toLowerCase();
+    const inHierarchy = childIds.has(ma.id) || parentIds.has(ma.id);
+    return (
+      (ma as { is_intercompany?: boolean }).is_intercompany === true ||
+      (!inHierarchy && (n.startsWith("due from ") || n.startsWith("due to ")))
+    );
+  });
+  let hasEliminations = false;
+  if (icMasters.length > 0) {
+    let bsNetEnding = 0;
+    let bsNetChange = 0;
+    let plNetEnding = 0;
+    let plNetChange = 0;
+    for (const ma of icMasters) {
+      const ea = entityAmounts.get(ma.id);
+      if (!ea) continue;
+      const endCons = ea.endingBalance["consolidated"] ?? 0;
+      const ncCons = ea.netChange["consolidated"] ?? 0;
+      if (endCons === 0 && ncCons === 0) continue;
+      hasEliminations = true;
+      // Reverse the included gross total in the Eliminations column; the
+      // consolidated column nets to zero for this account.
+      ea.netChange["eliminations"] = -ncCons;
+      ea.endingBalance["eliminations"] = -endCons;
+      ea.netChange["consolidated"] = 0;
+      ea.endingBalance["consolidated"] = 0;
+      if (ma.classification === "Revenue" || ma.classification === "Expense") {
+        plNetChange += ncCons;
+        plNetEnding += endCons;
+      } else {
+        bsNetChange += ncCons;
+        bsNetEnding += endCons;
+      }
+    }
+    // Imperfectly-matched pairs leave a residual; surface it on the same
+    // synthetic net lines the consolidated view uses (GL-sign values:
+    // positive = net receivable → asset side, negative = net payable →
+    // liability side).
+    if (Math.abs(bsNetEnding) >= 0.5 || Math.abs(bsNetChange) >= 0.5) {
+      const isAsset = bsNetEnding >= 0;
+      const id = isAsset
+        ? "__intercompany_bs_net_asset__"
+        : "__intercompany_bs_net_liab__";
+      consolidatedAccounts.push({
+        id,
+        name: "Intercompany Eliminations, Net",
+        accountNumber: null,
+        classification: isAsset ? "Asset" : "Liability",
+        accountType: isAsset ? "Other Asset" : "Long Term Liability",
+      });
+      entityAmounts.set(id, {
+        netChange: { eliminations: bsNetChange, consolidated: bsNetChange },
+        endingBalance: { eliminations: bsNetEnding, consolidated: bsNetEnding },
+      });
+    }
+    if (Math.abs(plNetEnding) >= 0.5 || Math.abs(plNetChange) >= 0.5) {
+      const id = "__intercompany_net__";
+      consolidatedAccounts.push({
+        id,
+        name: "Intercompany Eliminations, Net",
+        accountNumber: null,
+        classification: "Expense",
+        accountType: "Other Expense",
+      });
+      entityAmounts.set(id, {
+        netChange: { eliminations: plNetChange, consolidated: plNetChange },
+        endingBalance: { eliminations: plNetEnding, consolidated: plNetEnding },
+      });
+    }
+  }
+
+  // Column keys: entity IDs + optional eliminations + consolidated
+  const columnKeys = [
+    ...entities.map((e) => e.id),
+    ...(hasEliminations ? ["eliminations"] : []),
+    "consolidated",
+  ];
 
   // Build statements
   const incomeStatement = buildEntityStatement(
@@ -1096,6 +1194,15 @@ export async function GET(request: Request) {
       label: e.code,
       fullName: e.name,
     })),
+    ...(hasEliminations
+      ? [
+          {
+            key: "eliminations",
+            label: "Elim.",
+            fullName: "Intercompany Eliminations",
+          },
+        ]
+      : []),
     {
       key: "consolidated",
       label: reportingEntityName ? reportingEntityName : "Consolidated",
