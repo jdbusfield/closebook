@@ -1895,33 +1895,61 @@ function buildCashFlowStatement(
   // --- Compute D&A from GL expense accounts ---
   // Depreciation/amortization expense accounts are identified by name pattern.
   // Their netChange (debit-normal, positive) is the non-cash expense to add back.
+  // Accounts whose names also match the intangible patterns (e.g. "Amortization
+  // of Goodwill") are tracked separately: they belong in the Operating add-back
+  // but NOT in the Investing depreciation offset, which must stay tangible-only —
+  // intangible masters are excluded from Investing, so their amortization is not
+  // embedded in the P&E carrying-value change.
   const daAccounts = accounts.filter((a) => {
     if (a.classification !== "Expense") return false;
     const nameLower = a.name.toLowerCase();
     return nameLower.includes("depreciation") || nameLower.includes("amortization");
   });
+  const tangibleDepAccounts = daAccounts.filter((a) => !isIntangibleAsset(a));
+  const intangibleAmortExpenseAccounts = daAccounts.filter((a) => isIntangibleAsset(a));
 
+  // Tangible depreciation only — this is the figure the Investing section nets
+  // out of the P&E carrying-value change.
   const depreciationByBucket: Record<string, number> = {};
   const pyDepreciationByBucket: Record<string, number> = {};
+  // Intangible amortization expense — Operating add-back only.
+  const intangibleAmortExpenseByBucket: Record<string, number> = {};
+  const pyIntangibleAmortExpenseByBucket: Record<string, number> = {};
   for (const bucket of buckets) {
     let total = 0;
     let pyTotal = 0;
-    for (const acct of daAccounts) {
+    let amortExp = 0;
+    let pyAmortExp = 0;
+    for (const acct of tangibleDepAccounts) {
       total += aggregated.get(acct.id)?.netChange[bucket.key] ?? 0;
       if (hasPY) {
         pyTotal += pyAggregated!.get(acct.id)?.netChange[bucket.key] ?? 0;
       }
     }
+    for (const acct of intangibleAmortExpenseAccounts) {
+      amortExp += aggregated.get(acct.id)?.netChange[bucket.key] ?? 0;
+      if (hasPY) {
+        pyAmortExp += pyAggregated!.get(acct.id)?.netChange[bucket.key] ?? 0;
+      }
+    }
     depreciationByBucket[bucket.key] = total;
     pyDepreciationByBucket[bucket.key] = pyTotal;
+    intangibleAmortExpenseByBucket[bucket.key] = amortExp;
+    pyIntangibleAmortExpenseByBucket[bucket.key] = pyAmortExp;
   }
 
   // --- Non-cash intangible / goodwill amortization (ASC 230-10-45-28) ---
   // The period decline in the carrying value of goodwill/intangible (Other Asset)
-  // masters is non-cash amortization.  It is added back here in Operating (and the
-  // same accounts are excluded from Investing below), so amortization no longer
-  // shows up as an investing "source".  Kept separate from depreciationByBucket so
-  // the Investing depreciation offset (tangible only) is unaffected.
+  // masters is non-cash amortization.  The same accounts are excluded from
+  // Investing below, so amortization never shows up as an investing "source".
+  // When the chart has dedicated intangible-amortization EXPENSE accounts (e.g.
+  // "Amortization of Goodwill"), those carry the Operating add-back and the
+  // carrying-value decline must NOT also be added — it is the same amortization,
+  // and adding both overstated Operating while the expense distorted the
+  // Investing offset.  The carrying-decline derivation is kept only as a
+  // fallback for charts where amortization is booked directly against the asset
+  // with no pattern-matched expense account.
+  const useCarryingDeclineFallback = intangibleAmortExpenseAccounts.length === 0;
   const intangibleAssets = accounts.filter(
     (a) => INVESTING_ACCOUNT_TYPES.includes(a.accountType) && isIntangibleAsset(a)
   );
@@ -1930,13 +1958,15 @@ function buildCashFlowStatement(
   for (const bucket of buckets) {
     let amt = 0;
     let pyAmt = 0;
-    for (const acct of intangibleAssets) {
-      const b = aggregated.get(acct.id);
-      // Debit-normal asset: a decline (beginning > ending) is positive amortization.
-      amt += (b?.beginningBalance[bucket.key] ?? 0) - (b?.endingBalance[bucket.key] ?? 0);
-      if (hasPY) {
-        const pb = pyAggregated!.get(acct.id);
-        pyAmt += (pb?.beginningBalance[bucket.key] ?? 0) - (pb?.endingBalance[bucket.key] ?? 0);
+    if (useCarryingDeclineFallback) {
+      for (const acct of intangibleAssets) {
+        const b = aggregated.get(acct.id);
+        // Debit-normal asset: a decline (beginning > ending) is positive amortization.
+        amt += (b?.beginningBalance[bucket.key] ?? 0) - (b?.endingBalance[bucket.key] ?? 0);
+        if (hasPY) {
+          const pb = pyAggregated!.get(acct.id);
+          pyAmt += (pb?.beginningBalance[bucket.key] ?? 0) - (pb?.endingBalance[bucket.key] ?? 0);
+        }
       }
     }
     intangibleAmortByBucket[bucket.key] = amt;
@@ -1947,9 +1977,13 @@ function buildCashFlowStatement(
   const pyDaDisplayByBucket: Record<string, number> = {};
   for (const bucket of buckets) {
     daDisplayByBucket[bucket.key] =
-      (depreciationByBucket[bucket.key] ?? 0) + (intangibleAmortByBucket[bucket.key] ?? 0);
+      (depreciationByBucket[bucket.key] ?? 0) +
+      (intangibleAmortExpenseByBucket[bucket.key] ?? 0) +
+      (intangibleAmortByBucket[bucket.key] ?? 0);
     pyDaDisplayByBucket[bucket.key] =
-      (pyDepreciationByBucket[bucket.key] ?? 0) + (pyIntangibleAmortByBucket[bucket.key] ?? 0);
+      (pyDepreciationByBucket[bucket.key] ?? 0) +
+      (pyIntangibleAmortExpenseByBucket[bucket.key] ?? 0) +
+      (pyIntangibleAmortByBucket[bucket.key] ?? 0);
   }
 
   // Net book gain/(loss) on disposals from the subledger. A gain is non-cash
@@ -2054,11 +2088,13 @@ function buildCashFlowStatement(
     operatingTotal[bucket.key] =
       (netIncomeByBucket[bucket.key] ?? 0) +
       (depreciationByBucket[bucket.key] ?? 0) +
+      (intangibleAmortExpenseByBucket[bucket.key] ?? 0) +
       (intangibleAmortByBucket[bucket.key] ?? 0) -
       (gainLossByBucket[bucket.key] ?? 0); // remove non-cash gain / add back loss
     pyOperatingTotal[bucket.key] = hasPY
       ? (pyNetIncomeByBucket![bucket.key] ?? 0) +
         (pyDepreciationByBucket![bucket.key] ?? 0) +
+        (pyIntangibleAmortExpenseByBucket[bucket.key] ?? 0) +
         (pyIntangibleAmortByBucket[bucket.key] ?? 0)
       : 0;
   }
@@ -2299,7 +2335,8 @@ function buildCashFlowStatement(
     (a) =>
       INVESTING_ACCOUNT_TYPES.includes(a.accountType) &&
       !isRouAsset(a) &&
-      !isIntangibleAsset(a)
+      !isIntangibleAsset(a) &&
+      !isIntercompanyElim(a)
   );
   const investingTotal: Record<string, number> = {};
   const pyInvestingTotal: Record<string, number> = {};
@@ -2468,7 +2505,7 @@ function buildCashFlowStatement(
         })),
       },
       {
-        label: "Depreciation & amortization in carrying value (non-cash; added back in Operating)",
+        label: "Depreciation in carrying value (tangible, non-cash; added back in Operating)",
         amount: -(depreciationByBucket[k] ?? 0),
       },
       {
@@ -2656,9 +2693,16 @@ function buildCashFlowStatement(
   });
 
   // --- FINANCING ACTIVITIES ---
-  // Exclude ROU lease liabilities — their changes are reclassified to Operating above
+  // Exclude ROU lease liabilities — their changes are reclassified to Operating
+  // above.  Exclude the synthetic intercompany-elimination residual — its
+  // movement is not a cash flow of the consolidated entity (any nonzero
+  // residual change falls through to the Operating reconciling line, where it
+  // is visible instead of masquerading as financing activity).
   const financingLiabilities = accounts.filter(
-    (a) => FINANCING_LIABILITY_TYPES.includes(a.accountType) && !isRouLiability(a)
+    (a) =>
+      FINANCING_LIABILITY_TYPES.includes(a.accountType) &&
+      !isRouLiability(a) &&
+      !isIntercompanyElim(a)
   );
   // Line-of-credit / short-term debt: credit-normal current liabilities whose
   // borrowings and repayments are FINANCING activities (ASC 230-10-45-14/15).
@@ -2677,6 +2721,7 @@ function buildCashFlowStatement(
   const financingEquity = accounts.filter(
     (a) =>
       FINANCING_EQUITY_TYPES.includes(a.accountType) &&
+      !isIntercompanyElim(a) &&
       !EXCLUDED_FINANCING_EQUITY.some((excl) =>
         a.name.toLowerCase().includes(excl)
       )
