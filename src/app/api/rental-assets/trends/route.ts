@@ -128,6 +128,7 @@ export async function GET(request: NextRequest) {
     standard_rate: number | null;
     orphan_veh_number: string | null;
     subrental_flag: string | null;
+    sale_date: string | null;
   }> = [];
   {
     const batch = 1000;
@@ -136,7 +137,7 @@ export async function GET(request: NextRequest) {
       let q = admin
         .from("rental_asset_kpis")
         .select(
-          "period_year, period_month, grain, fixed_asset_id, reporting_group, rental_dbr_days, rental_act_days, fleet_days, total_revenue, standard_rate, orphan_veh_number, subrental_flag"
+          "period_year, period_month, grain, fixed_asset_id, reporting_group, rental_dbr_days, rental_act_days, fleet_days, total_revenue, standard_rate, orphan_veh_number, subrental_flag, sale_date"
         )
         .eq("organization_id", organizationId)
         .range(offset, offset + batch - 1);
@@ -221,8 +222,12 @@ export async function GET(request: NextRequest) {
     acquisitionCost: number;
     assetIdsCounted: Set<string>;
     // Distinct vehicle keys (matched asset_id OR orphan veh_number) that had
-    // fleet_days > 0 during the bucket. Drives the Vehicle Count metric.
+    // fleet_days > 0 during the bucket — the "active" set.
     vehicleKeys: Set<string>;
+    // Vehicles whose sale_date falls inside the bucket — disposed during the
+    // period, so not owned at period-end. Subtracted from the active set to
+    // give the end-of-period Vehicle Count.
+    soldKeys: Set<string>;
   };
   const makeBucket = (): Bucket => ({
     revenue: 0,
@@ -233,6 +238,7 @@ export async function GET(request: NextRequest) {
     acquisitionCost: 0,
     assetIdsCounted: new Set<string>(),
     vehicleKeys: new Set<string>(),
+    soldKeys: new Set<string>(),
   });
   // Bucket key / label / sort-index computed from the chosen granularity.
   // Monthly: "2025-04" (sort key 202504)
@@ -342,13 +348,21 @@ export async function GET(request: NextRequest) {
     // active vehicle for this bucket. Key matched rows by fixed_asset_id
     // and orphans by their Veh_number so the same vehicle is only counted
     // once per bucket even across multi-row quarterly/yearly aggregations.
-    if (fd > 0) {
-      const vKey = k.fixed_asset_id
-        ? `a:${k.fixed_asset_id}`
-        : `o:${k.orphan_veh_number ?? ""}`;
-      if (vKey !== "o:") {
+    // A vehicle whose sale_date lands in one of the bucket's months was sold
+    // during the period — record it in soldKeys (independent of fleet_days,
+    // since a sale-month row may show zero fleet days) so it can be removed
+    // from the end-of-period count even though it was active earlier.
+    const vKey = k.fixed_asset_id
+      ? `a:${k.fixed_asset_id}`
+      : `o:${k.orphan_veh_number ?? ""}`;
+    if (vKey !== "o:") {
+      if (fd > 0) {
         g.vehicleKeys.add(vKey);
         p.total.vehicleKeys.add(vKey);
+      }
+      if (soldInMonth(k.sale_date, k.period_year, k.period_month)) {
+        g.soldKeys.add(vKey);
+        p.total.soldKeys.add(vKey);
       }
     }
     // Financial utilization denominator — only matched assets carry an
@@ -422,13 +436,17 @@ export async function GET(request: NextRequest) {
           finUtilPct: number;
           avgDailyRate: number;
           vehicleCount: number;
+          activeVehicleCount: number;
           revenuePerActiveAsset: number;
           avgAssetsOnRent: number;
           avgFleetSize: number;
         }
       > = {};
       for (const [g, b] of p.byGroup) {
-        const vc = b.vehicleKeys.size;
+        // Active = anything in fleet during the period; EOP = active minus
+        // vehicles sold within the period (no longer owned at period-end).
+        const activeVc = b.vehicleKeys.size;
+        const vc = countOwnedAtEop(b.vehicleKeys, b.soldKeys);
         byGroup[g] = {
           revenue: round2(b.revenue),
           rentalDays: round2(b.rentalDays),
@@ -446,14 +464,19 @@ export async function GET(request: NextRequest) {
               ? round2(b.revenue / b.actualRentalDays)
               : 0,
           vehicleCount: vc,
-          revenuePerActiveAsset: vc > 0 ? round2(b.revenue / vc) : 0,
+          activeVehicleCount: activeVc,
+          // Per-asset revenue divides by the assets that were actually in
+          // fleet during the period (they earned the revenue), not the EOP
+          // count, so a mid-period sale doesn't inflate the per-asset figure.
+          revenuePerActiveAsset: activeVc > 0 ? round2(b.revenue / activeVc) : 0,
           avgAssetsOnRent:
             daysInPeriod > 0 ? round2(b.rentalDays / daysInPeriod) : 0,
           avgFleetSize:
             daysInPeriod > 0 ? round2(b.fleetDays / daysInPeriod) : 0,
         };
       }
-      const totalVc = total.vehicleKeys.size;
+      const totalActiveVc = total.vehicleKeys.size;
+      const totalVc = countOwnedAtEop(total.vehicleKeys, total.soldKeys);
       return {
         period: p.key,
         label: p.label,
@@ -474,8 +497,9 @@ export async function GET(request: NextRequest) {
               ? round2(total.revenue / total.actualRentalDays)
               : 0,
           vehicleCount: totalVc,
+          activeVehicleCount: totalActiveVc,
           revenuePerActiveAsset:
-            totalVc > 0 ? round2(total.revenue / totalVc) : 0,
+            totalActiveVc > 0 ? round2(total.revenue / totalActiveVc) : 0,
           avgAssetsOnRent:
             daysInPeriod > 0 ? round2(total.rentalDays / daysInPeriod) : 0,
           avgFleetSize:
@@ -501,4 +525,27 @@ function daysInMonth(key: string): number {
   const [y, m] = key.split("-").map(Number);
   if (!y || !m) return 0;
   return new Date(y, m, 0).getDate();
+}
+
+// True when a sale_date ("YYYY-MM-DD") lands in the given period month — i.e.
+// the vehicle was disposed that month. Across a multi-month bucket this fires
+// on the sale-month row, flagging the vehicle even if it was active earlier in
+// the bucket. sale_date is a date-only string, so compare in UTC.
+function soldInMonth(
+  saleDate: string | null,
+  year: number,
+  month: number
+): boolean {
+  if (!saleDate) return false;
+  const d = new Date(saleDate);
+  if (Number.isNaN(d.getTime())) return false;
+  return d.getUTCFullYear() === year && d.getUTCMonth() + 1 === month;
+}
+
+// End-of-period owned count: active vehicles minus those sold during the
+// period.
+function countOwnedAtEop(active: Set<string>, sold: Set<string>): number {
+  let n = 0;
+  for (const k of active) if (!sold.has(k)) n++;
+  return n;
 }
