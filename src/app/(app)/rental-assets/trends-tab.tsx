@@ -68,6 +68,7 @@ interface PeriodPoint {
     finUtilPct: number;
     avgDailyRate: number;
     vehicleCount: number;
+    activeVehicleCount: number;
     revenuePerActiveAsset: number;
     avgAssetsOnRent: number;
     avgFleetSize: number;
@@ -85,6 +86,7 @@ interface PeriodPoint {
       finUtilPct: number;
       avgDailyRate: number;
       vehicleCount: number;
+      activeVehicleCount: number;
       revenuePerActiveAsset: number;
       avgAssetsOnRent: number;
       avgFleetSize: number;
@@ -267,7 +269,7 @@ const METRICS: {
     yFormat: (v) => Math.round(v).toLocaleString(),
     defaultStyle: "bar",
     description:
-      "Distinct vehicles that appeared in the fleet (fleet_days > 0) during the period. Matched assets + orphans, de-duplicated across months when viewing quarterly/yearly.",
+      "Vehicles owned at the end of the period — distinct units in the fleet (fleet_days > 0), excluding any sold during the period. Matched assets + orphans, de-duplicated across months when viewing quarterly/yearly.",
   },
   {
     key: "avgAssetsOnRent",
@@ -635,6 +637,7 @@ export function TrendsTab({
           maintenance: number;
           acquisitionCost: number;
           vehicleCount: number;
+          activeVehicleCount: number;
           avgAssetsOnRent: number;
           avgFleetSize: number;
         }
@@ -651,6 +654,7 @@ export function TrendsTab({
             maintenance: 0,
             acquisitionCost: 0,
             vehicleCount: 0,
+            activeVehicleCount: 0,
             avgAssetsOnRent: 0,
             avgFleetSize: 0,
           };
@@ -663,7 +667,9 @@ export function TrendsTab({
         // Reporting groups are disjoint at the vehicle level — a vehicle
         // can only be in one reporting group at a time — so summing the
         // per-group vehicle counts gives the correct master-type count.
+        // Both the end-of-period and during-period active counts add up.
         accum[m].vehicleCount += v.vehicleCount ?? 0;
+        accum[m].activeVehicleCount += v.activeVehicleCount ?? 0;
         // Average daily counts share the same days-in-period denominator
         // across groups, so summing the per-group averages of disjoint
         // groups yields the correct master-type average.
@@ -687,8 +693,9 @@ export function TrendsTab({
           avgDailyRate:
             a.actualRentalDays > 0 ? a.revenue / a.actualRentalDays : 0,
           vehicleCount: a.vehicleCount,
+          activeVehicleCount: a.activeVehicleCount,
           revenuePerActiveAsset:
-            a.vehicleCount > 0 ? a.revenue / a.vehicleCount : 0,
+            a.activeVehicleCount > 0 ? a.revenue / a.activeVehicleCount : 0,
           avgAssetsOnRent: a.avgAssetsOnRent,
           avgFleetSize: a.avgFleetSize,
         };
