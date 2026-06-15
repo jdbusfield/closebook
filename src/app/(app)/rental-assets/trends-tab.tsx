@@ -69,6 +69,8 @@ interface PeriodPoint {
     avgDailyRate: number;
     vehicleCount: number;
     revenuePerActiveAsset: number;
+    avgAssetsOnRent: number;
+    avgFleetSize: number;
   };
   byGroup: Record<
     string,
@@ -84,6 +86,8 @@ interface PeriodPoint {
       avgDailyRate: number;
       vehicleCount: number;
       revenuePerActiveAsset: number;
+      avgAssetsOnRent: number;
+      avgFleetSize: number;
     }
   >;
 }
@@ -161,7 +165,9 @@ type Metric =
   | "finUtilPct"
   | "avgDailyRate"
   | "vehicleCount"
-  | "revenuePerActiveAsset";
+  | "revenuePerActiveAsset"
+  | "avgAssetsOnRent"
+  | "avgFleetSize";
 type ViewMode = "aggregate" | "by_group";
 type ChartStyle = "line" | "area" | "bar";
 type GroupBy = "reporting_group" | "master_type";
@@ -184,6 +190,8 @@ const STACKABLE_METRICS: Metric[] = [
   "fleetDays",
   "maintenance",
   "vehicleCount",
+  "avgAssetsOnRent",
+  "avgFleetSize",
 ];
 
 // Reporting-group → master-type mapping (mirrors VEHICLE_CLASSIFICATIONS)
@@ -259,6 +267,22 @@ const METRICS: {
     defaultStyle: "bar",
     description:
       "Distinct vehicles that appeared in the fleet (fleet_days > 0) during the period. Matched assets + orphans, de-duplicated across months when viewing quarterly/yearly.",
+  },
+  {
+    key: "avgAssetsOnRent",
+    label: "Average Assets on Rent",
+    yFormat: (v) => v.toLocaleString("en-US", { maximumFractionDigits: 1 }),
+    defaultStyle: "area",
+    description:
+      "Rental (DBR) days ÷ days in the period — the average number of assets actually generating rent on any given day. Unlike utilization %, this is an absolute count, so it isn't skewed by how many assets were owned but idle.",
+  },
+  {
+    key: "avgFleetSize",
+    label: "Average Fleet Size",
+    yFormat: (v) => v.toLocaleString("en-US", { maximumFractionDigits: 1 }),
+    defaultStyle: "area",
+    description:
+      "Fleet days ÷ days in the period — the average number of assets in service each day. Pair with Average Assets on Rent to see how much of the owned fleet was earning.",
   },
   {
     key: "revenuePerActiveAsset",
@@ -607,6 +631,8 @@ export function TrendsTab({
           maintenance: number;
           acquisitionCost: number;
           vehicleCount: number;
+          avgAssetsOnRent: number;
+          avgFleetSize: number;
         }
       > = {};
       for (const [g, v] of Object.entries(p.byGroup)) {
@@ -621,6 +647,8 @@ export function TrendsTab({
             maintenance: 0,
             acquisitionCost: 0,
             vehicleCount: 0,
+            avgAssetsOnRent: 0,
+            avgFleetSize: 0,
           };
         accum[m].revenue += v.revenue;
         accum[m].rentalDays += v.rentalDays;
@@ -632,6 +660,11 @@ export function TrendsTab({
         // can only be in one reporting group at a time — so summing the
         // per-group vehicle counts gives the correct master-type count.
         accum[m].vehicleCount += v.vehicleCount ?? 0;
+        // Average daily counts share the same days-in-period denominator
+        // across groups, so summing the per-group averages of disjoint
+        // groups yields the correct master-type average.
+        accum[m].avgAssetsOnRent += v.avgAssetsOnRent ?? 0;
+        accum[m].avgFleetSize += v.avgFleetSize ?? 0;
       }
       for (const [m, a] of Object.entries(accum)) {
         byGroup[m] = {
@@ -652,6 +685,8 @@ export function TrendsTab({
           vehicleCount: a.vehicleCount,
           revenuePerActiveAsset:
             a.vehicleCount > 0 ? a.revenue / a.vehicleCount : 0,
+          avgAssetsOnRent: a.avgAssetsOnRent,
+          avgFleetSize: a.avgFleetSize,
         };
       }
       return { ...p, byGroup };
