@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { isSubrental } from "@/lib/utils/subrental";
 import {
   getReportingGroup,
   customRowsToClassifications,
@@ -68,6 +69,7 @@ export interface KpiRow {
   standard_rate: number | null;
   dbr_util_pct: number | null;
   rev_util_pct: number | null;
+  subrental_flag: string | null;
 }
 
 export interface MaintenanceRow {
@@ -99,6 +101,7 @@ export interface UseRentalAssetDataParams {
   periodYear: number;
   periodMonth: number;
   includeService: boolean;
+  excludeSubrental: boolean;
   scope: { type: "organization" } | { type: "entity"; entityId: string };
   reportingGroupFilter: string[] | null;
 }
@@ -185,7 +188,7 @@ export function useRentalAssetData(params: UseRentalAssetDataParams) {
         sb
           .from("rental_asset_kpis")
           .select(
-            "id, period_year, period_month, grain, fixed_asset_id, reporting_group, entity_id, equipment_pool_key, orphan_bridge_vin, orphan_veh_number, dbr_status, sale_date, fleet_days, rental_dbr_days, rental_act_days, total_revenue, avg_revenue_per_day, standard_rate, dbr_util_pct, rev_util_pct"
+            "id, period_year, period_month, grain, fixed_asset_id, reporting_group, entity_id, equipment_pool_key, orphan_bridge_vin, orphan_veh_number, dbr_status, sale_date, fleet_days, rental_dbr_days, rental_act_days, total_revenue, avg_revenue_per_day, standard_rate, dbr_util_pct, rev_util_pct, subrental_flag"
           )
           .eq("organization_id", params.organizationId)
           .eq("period_year", params.periodYear)
@@ -193,7 +196,7 @@ export function useRentalAssetData(params: UseRentalAssetDataParams) {
         sb
           .from("rental_asset_kpis")
           .select(
-            "id, period_year, period_month, grain, fixed_asset_id, reporting_group, entity_id, equipment_pool_key, orphan_bridge_vin, orphan_veh_number, dbr_status, sale_date, fleet_days, rental_dbr_days, rental_act_days, total_revenue, avg_revenue_per_day, standard_rate, dbr_util_pct, rev_util_pct"
+            "id, period_year, period_month, grain, fixed_asset_id, reporting_group, entity_id, equipment_pool_key, orphan_bridge_vin, orphan_veh_number, dbr_status, sale_date, fleet_days, rental_dbr_days, rental_act_days, total_revenue, avg_revenue_per_day, standard_rate, dbr_util_pct, rev_util_pct, subrental_flag"
           )
           .eq("organization_id", params.organizationId)
           .eq("period_year", priorYear)
@@ -347,6 +350,11 @@ export function useRentalAssetData(params: UseRentalAssetDataParams) {
     };
     const kpiInGroupFilter = (k: KpiRow) =>
       !groupFilterSet || groupFilterSet.has(groupOfKpi(k));
+    // Sub-rented units (third-party vehicles HDR re-rents) are dropped when
+    // the "Owned fleet only" toggle is on, so they don't inflate fleet size,
+    // days, revenue, or utilization on any tile or group breakdown.
+    const subrentalAllowed = (k: KpiRow) =>
+      !params.excludeSubrental || !isSubrental(k.subrental_flag);
     const kpiInEntityScope = (k: KpiRow): boolean => {
       if (params.scope.type !== "entity") return true;
       // Matched row: asset must be in the scoped entity (assetById already
@@ -360,7 +368,8 @@ export function useRentalAssetData(params: UseRentalAssetDataParams) {
         k.grain === "asset" &&
         k.fixed_asset_id &&
         assetById.has(k.fixed_asset_id) &&
-        kpiInGroupFilter(k)
+        kpiInGroupFilter(k) &&
+        subrentalAllowed(k)
     );
     const orphanKpisFiltered = kpis.filter(
       (k) =>
@@ -368,7 +377,8 @@ export function useRentalAssetData(params: UseRentalAssetDataParams) {
         !k.fixed_asset_id &&
         (k.orphan_bridge_vin || k.orphan_veh_number) &&
         kpiInEntityScope(k) &&
-        kpiInGroupFilter(k)
+        kpiInGroupFilter(k) &&
+        subrentalAllowed(k)
     );
     const equipmentKpis = kpis.filter((k) => k.grain === "equipment_pool");
 
@@ -400,7 +410,8 @@ export function useRentalAssetData(params: UseRentalAssetDataParams) {
               (k.orphan_bridge_vin || k.orphan_veh_number) &&
               kpiInEntityScope(k)))
       )
-      .filter(kpiInGroupFilter);
+      .filter(kpiInGroupFilter)
+      .filter(subrentalAllowed);
     const activePriorKeys = new Set(activePrior.map(stableKey));
 
     const additionsKeys = [...activeCurrentKeys].filter(
@@ -591,6 +602,7 @@ export function useRentalAssetData(params: UseRentalAssetDataParams) {
     maintenance,
     customClasses,
     params.includeService,
+    params.excludeSubrental,
     params.scope,
     params.reportingGroupFilter,
     params.periodYear,

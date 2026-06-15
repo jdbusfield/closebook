@@ -100,6 +100,7 @@ interface TrendsResponse {
 interface TrendsTabProps {
   organizationId: string;
   includeService: boolean;
+  excludeSubrental: boolean;
   availablePeriods: { year: number; month: number }[];
   entityId?: string | null;
   entityName?: string | null;
@@ -324,6 +325,7 @@ function formatCurrencyPrecise(v: number): string {
 export function TrendsTab({
   organizationId,
   includeService,
+  excludeSubrental,
   availablePeriods,
   entityId = null,
   entityName = null,
@@ -579,6 +581,7 @@ export function TrendsTab({
       end_year: String(endYear),
       end_month: String(endMonth),
       include_service: String(includeService),
+      exclude_subrental: String(excludeSubrental),
       granularity: effectiveGranularity,
     });
     if (selectedClasses && selectedClasses.size > 0) {
@@ -604,6 +607,7 @@ export function TrendsTab({
     endYear,
     endMonth,
     includeService,
+    excludeSubrental,
     effectiveGranularity,
     selectedClasses,
   ]);

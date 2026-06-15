@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isSubrental } from "@/lib/utils/subrental";
 
 /**
  * GET /api/rental-assets/trends
@@ -59,6 +60,9 @@ export async function GET(request: NextRequest) {
   }
 
   const includeService = sp.get("include_service") === "true";
+  // When true, drop KPI rows flagged as sub-rentals (third-party units HDR
+  // re-rents) so the dashboard reflects owned fleet only.
+  const excludeSubrental = sp.get("exclude_subrental") === "true";
   const startYear = sp.get("start_year") ? Number(sp.get("start_year")) : null;
   const startMonth = sp.get("start_month")
     ? Number(sp.get("start_month"))
@@ -123,6 +127,7 @@ export async function GET(request: NextRequest) {
     total_revenue: number | null;
     standard_rate: number | null;
     orphan_veh_number: string | null;
+    subrental_flag: string | null;
   }> = [];
   {
     const batch = 1000;
@@ -131,7 +136,7 @@ export async function GET(request: NextRequest) {
       let q = admin
         .from("rental_asset_kpis")
         .select(
-          "period_year, period_month, grain, fixed_asset_id, reporting_group, rental_dbr_days, rental_act_days, fleet_days, total_revenue, standard_rate, orphan_veh_number"
+          "period_year, period_month, grain, fixed_asset_id, reporting_group, rental_dbr_days, rental_act_days, fleet_days, total_revenue, standard_rate, orphan_veh_number, subrental_flag"
         )
         .eq("organization_id", organizationId)
         .range(offset, offset + batch - 1);
@@ -298,6 +303,8 @@ export async function GET(request: NextRequest) {
 
   for (const k of kpis) {
     if (k.grain === "equipment_pool") continue;
+    // Drop sub-rented units when the dashboard asks for owned fleet only.
+    if (excludeSubrental && isSubrental(k.subrental_flag)) continue;
     // For asset-grain rows linked to a fixed_asset, enforce category filter
     if (k.fixed_asset_id && !allowedAssetIds.has(k.fixed_asset_id)) continue;
     // Class filter — skip rows whose linked asset isn't in the selected
