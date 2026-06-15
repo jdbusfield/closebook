@@ -256,6 +256,12 @@ export async function GET(request: NextRequest) {
       sort: number;
       total: Bucket;
       byGroup: Map<string, Bucket>;
+      // Calendar months (y-m) that contributed data to this bucket. Summing
+      // their day counts gives the denominator for the "average assets on
+      // rent" metric — rental-days ÷ days-in-period = avg assets earning per
+      // day. Tracking only months with data keeps partial periods (e.g. the
+      // first quarter in the dataset) from being diluted by empty months.
+      months: Set<string>;
     }
   >();
   const groupSet = new Set<string>();
@@ -270,9 +276,11 @@ export async function GET(request: NextRequest) {
         sort: b.sort,
         total: makeBucket(),
         byGroup: new Map(),
+        months: new Set<string>(),
       };
       periods.set(b.key, p);
     }
+    p.months.add(`${y}-${m}`);
     return p;
   }
   function ensureGroup(
@@ -387,6 +395,13 @@ export async function GET(request: NextRequest) {
       const total = p.total;
       const totalUtil =
         total.fleetDays > 0 ? (total.rentalDays / total.fleetDays) * 100 : 0;
+      // Days spanned by the months that carried data in this bucket. Used as
+      // the denominator for average-assets-on-rent (and average fleet size),
+      // converting a sum of asset-days into an average daily count.
+      const daysInPeriod = [...p.months].reduce(
+        (s, key) => s + daysInMonth(key),
+        0
+      );
       const byGroup: Record<
         string,
         {
@@ -401,6 +416,8 @@ export async function GET(request: NextRequest) {
           avgDailyRate: number;
           vehicleCount: number;
           revenuePerActiveAsset: number;
+          avgAssetsOnRent: number;
+          avgFleetSize: number;
         }
       > = {};
       for (const [g, b] of p.byGroup) {
@@ -423,6 +440,10 @@ export async function GET(request: NextRequest) {
               : 0,
           vehicleCount: vc,
           revenuePerActiveAsset: vc > 0 ? round2(b.revenue / vc) : 0,
+          avgAssetsOnRent:
+            daysInPeriod > 0 ? round2(b.rentalDays / daysInPeriod) : 0,
+          avgFleetSize:
+            daysInPeriod > 0 ? round2(b.fleetDays / daysInPeriod) : 0,
         };
       }
       const totalVc = total.vehicleKeys.size;
@@ -448,6 +469,10 @@ export async function GET(request: NextRequest) {
           vehicleCount: totalVc,
           revenuePerActiveAsset:
             totalVc > 0 ? round2(total.revenue / totalVc) : 0,
+          avgAssetsOnRent:
+            daysInPeriod > 0 ? round2(total.rentalDays / daysInPeriod) : 0,
+          avgFleetSize:
+            daysInPeriod > 0 ? round2(total.fleetDays / daysInPeriod) : 0,
         },
         byGroup,
       };
@@ -460,4 +485,13 @@ export async function GET(request: NextRequest) {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+// Calendar days in the given "YYYY-M" month (month is 1-based). Day 0 of the
+// next month rolls back to the last day of this one, so this is leap-year and
+// month-length correct.
+function daysInMonth(key: string): number {
+  const [y, m] = key.split("-").map(Number);
+  if (!y || !m) return 0;
+  return new Date(y, m, 0).getDate();
 }
