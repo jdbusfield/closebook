@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isSubrental } from "@/lib/utils/subrental";
 
 /**
  * GET /api/rental-assets/trailing-12
@@ -58,6 +59,8 @@ export async function GET(request: NextRequest) {
   const endYear = Number(periodYearStr);
   const endMonth = Number(periodMonthStr);
   const includeService = sp.get("include_service") === "true";
+  // Drop sub-rented (third-party re-rented) units when true.
+  const excludeSubrental = sp.get("exclude_subrental") === "true";
   const entityId = sp.get("entity_id");
   const groupsParam = sp.get("reporting_groups");
   const groupFilter = groupsParam
@@ -152,6 +155,7 @@ export async function GET(request: NextRequest) {
     total_revenue: number | null;
     orphan_veh_number: string | null;
     orphan_bridge_vin: string | null;
+    subrental_flag: string | null;
   };
   const kpis: KpiRow[] = [];
   {
@@ -161,7 +165,7 @@ export async function GET(request: NextRequest) {
       const q = admin
         .from("rental_asset_kpis")
         .select(
-          "period_year, period_month, grain, fixed_asset_id, reporting_group, rental_dbr_days, fleet_days, total_revenue, orphan_veh_number, orphan_bridge_vin"
+          "period_year, period_month, grain, fixed_asset_id, reporting_group, rental_dbr_days, fleet_days, total_revenue, orphan_veh_number, orphan_bridge_vin, subrental_flag"
         )
         .eq("organization_id", organizationId)
         .eq("grain", "asset")
@@ -257,6 +261,8 @@ export async function GET(request: NextRequest) {
     return g ?? "Unclassified";
   }
   function kpiInScope(k: KpiRow): boolean {
+    // Drop sub-rentals when the dashboard wants owned fleet only.
+    if (excludeSubrental && isSubrental(k.subrental_flag)) return false;
     // Asset-grain only (we enforce that in the query too).
     if (k.fixed_asset_id) {
       // Matched row — asset must be allowed (category + optional entity).

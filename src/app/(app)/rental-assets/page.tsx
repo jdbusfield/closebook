@@ -100,6 +100,7 @@ export default function RentalAssetsPage() {
     return { year: now.year, month: now.month };
   });
   const [includeService, setIncludeService] = useState(false);
+  const [excludeSubrental, setExcludeSubrental] = useState(false);
   const [scopeEntityId, setScopeEntityId] = useState<string | "all">("all");
   const [groupFilter, setGroupFilter] = useState<string[] | null>(null);
   const [syncing, setSyncing] = useState<null | "vehicles" | "maintenance">(
@@ -146,6 +147,7 @@ export default function RentalAssetsPage() {
     periodYear: period.year,
     periodMonth: period.month,
     includeService,
+    excludeSubrental,
     scope:
       scopeEntityId === "all"
         ? { type: "organization" }
@@ -211,6 +213,7 @@ export default function RentalAssetsPage() {
       period_year: String(period.year),
       period_month: String(period.month),
       include_service: String(includeService),
+      exclude_subrental: String(excludeSubrental),
     });
     if (scopeEntityId !== "all") params.set("entity_id", scopeEntityId);
     if (groupFilter && groupFilter.length > 0) {
@@ -246,6 +249,7 @@ export default function RentalAssetsPage() {
     period.year,
     period.month,
     includeService,
+    excludeSubrental,
     scopeEntityId,
     groupFilter,
   ]);
@@ -389,6 +393,7 @@ export default function RentalAssetsPage() {
               : entities.find((e) => e.id === scopeEntityId)?.name ?? "Entity"}
             {" · "}
             {includeService ? "Rental + Service" : "Rental only"}
+            {excludeSubrental ? " · Owned fleet only" : ""}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -428,6 +433,20 @@ export default function RentalAssetsPage() {
               id="include-service"
               checked={includeService}
               onCheckedChange={setIncludeService}
+            />
+          </div>
+
+          <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-1.5">
+            <Label
+              htmlFor="exclude-subrental"
+              className="text-xs font-medium text-muted-foreground"
+            >
+              Exclude sub-rentals
+            </Label>
+            <Switch
+              id="exclude-subrental"
+              checked={excludeSubrental}
+              onCheckedChange={setExcludeSubrental}
             />
           </div>
 
@@ -718,6 +737,7 @@ export default function RentalAssetsPage() {
           <TrendsTab
             organizationId={organizationId}
             includeService={includeService}
+            excludeSubrental={excludeSubrental}
             availablePeriods={availablePeriods}
             entityId={scopeEntityId === "all" ? null : scopeEntityId}
             entityName={
