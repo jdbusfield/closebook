@@ -23,7 +23,6 @@ import {
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -724,9 +723,6 @@ export function TrendsTab({
     label: isAnnualized(metric)
       ? `${currentMetricBase.label} (annualized)`
       : currentMetricBase.label,
-    description: isAnnualized(metric)
-      ? `${currentMetricBase.description} Shown as annualized rate — the ${granularity === "monthly" ? "monthly" : "quarterly"} value × ${annualFactor}.`
-      : currentMetricBase.description,
   };
   const secondaryMetricDef =
     secondaryMetricBase && secondaryMetric
@@ -1465,10 +1461,8 @@ export function TrendsTab({
           </ControlRow>
 
           <p className="text-xs text-muted-foreground pt-1 border-t">
-            {currentMetric.description}
             {yoyMode ? (
               <>
-                {" · "}
                 Year-over-year comparison: showing{" "}
                 <strong>
                   {yoySlotType === "quarter"
@@ -1479,7 +1473,6 @@ export function TrendsTab({
               </>
             ) : (
               <>
-                {" · "}
                 Showing{" "}
                 {startYear
                   ? `${MONTH_NAMES[startMonth!]} ${startYear} → ${MONTH_NAMES[endMonth!]} ${endYear}`
@@ -1526,7 +1519,6 @@ export function TrendsTab({
           <div className="flex items-start justify-between gap-3">
             <div>
               <CardTitle className="text-base">{currentMetric.label}</CardTitle>
-              <CardDescription>{currentMetric.description}</CardDescription>
             </div>
             {loading && (
               <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
@@ -1598,10 +1590,6 @@ export function TrendsTab({
             <CardTitle className="text-base">
               Per-group small multiples
             </CardTitle>
-            <CardDescription>
-              Same metric ({currentMetric.label}) on its own scale per group —
-              useful for comparing trend shape rather than magnitude.
-            </CardDescription>
           </CardHeader>
           <CardContent
             className={`transition-opacity ${loading ? "opacity-60" : ""}`}

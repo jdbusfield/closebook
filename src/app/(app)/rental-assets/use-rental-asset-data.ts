@@ -3,6 +3,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { isSubrental } from "@/lib/utils/subrental";
+
+// True when a sale_date ("YYYY-MM-DD") lands in the given period month — i.e.
+// the vehicle was disposed that month, so it isn't owned at period-end. Date-
+// only strings parse as UTC midnight, so compare in UTC.
+function soldInMonth(
+  saleDate: string | null,
+  year: number,
+  month: number
+): boolean {
+  if (!saleDate) return false;
+  const d = new Date(saleDate);
+  if (Number.isNaN(d.getTime())) return false;
+  return d.getUTCFullYear() === year && d.getUTCMonth() + 1 === month;
+}
 import {
   getReportingGroup,
   customRowsToClassifications,
@@ -399,6 +413,19 @@ export function useRentalAssetData(params: UseRentalAssetDataParams) {
 
     const activeCurrentKeys = new Set(activeCurrent.map(stableKey));
 
+    // End-of-period fleet: active vehicles minus any sold during the period.
+    // A unit sold mid-month was in the fleet part of the month (so it keeps
+    // contributing revenue / days to the totals above) but is no longer owned
+    // at period-end, so it must drop out of the fleet-size count.
+    const ownedAtEop = activeCurrent.filter(
+      (k) => !soldInMonth(k.sale_date, params.periodYear, params.periodMonth)
+    );
+
+    // Prior period bounds, for an end-of-prior-month BOP count.
+    const priorMonth = params.periodMonth === 1 ? 12 : params.periodMonth - 1;
+    const priorYear =
+      params.periodMonth === 1 ? params.periodYear - 1 : params.periodYear;
+
     // Same filters applied to prior-period KPIs for BOP / MoM deltas.
     const activePrior = priorKpis
       .filter(
@@ -503,8 +530,9 @@ export function useRentalAssetData(params: UseRentalAssetDataParams) {
       }
       return row;
     };
-    // Fleet size per group — one row per active KPI row (matched + orphan)
-    for (const k of activeCurrent) {
+    // Fleet size per group — one row per owned-at-period-end KPI row
+    // (matched + orphan), excluding units sold during the period.
+    for (const k of ownedAtEop) {
       const g = groupOfKpi(k);
       ensureGroup(g).fleetSize++;
     }
@@ -554,14 +582,19 @@ export function useRentalAssetData(params: UseRentalAssetDataParams) {
 
     const totalMaintenance = sum(maintenance.map((m) => m.total_amount));
 
-    // Fleet size = count of active KPI rows from the spreadsheet.
-    const fleetSize = activeCurrent.length;
-    const bopFleet = activePrior.length;
+    // Fleet size = vehicles owned at period-end (active minus sold-in-period).
+    const fleetSize = ownedAtEop.length;
+    // BOP = vehicles owned at the end of the prior month (active minus those
+    // sold in the prior month), so it's comparable to the EOP count.
+    const bopFleet = activePrior.filter(
+      (k) => !soldInMonth(k.sale_date, priorYear, priorMonth)
+    ).length;
 
-    // Fleetio coverage = how many of our ACTIVE matched KPI rows have a
-    // linked Fleetio vehicle (so the Maintenance tab can show data).
+    // Fleetio coverage = how many of our owned-at-EOP matched KPI rows have a
+    // linked Fleetio vehicle (so the Maintenance tab can show data). Counted
+    // over the same EOP set the denominator (fleetSize) uses.
     let fleetLinked = 0;
-    for (const k of activeCurrent) {
+    for (const k of ownedAtEop) {
       if (!k.fixed_asset_id) continue; // orphans can't link
       const a = assetById.get(k.fixed_asset_id);
       if (a?.fleetio_vehicle_id != null) fleetLinked++;
