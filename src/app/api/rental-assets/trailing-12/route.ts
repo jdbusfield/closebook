@@ -156,6 +156,7 @@ export async function GET(request: NextRequest) {
     orphan_veh_number: string | null;
     orphan_bridge_vin: string | null;
     subrental_flag: string | null;
+    sale_date: string | null;
   };
   const kpis: KpiRow[] = [];
   {
@@ -165,7 +166,7 @@ export async function GET(request: NextRequest) {
       const q = admin
         .from("rental_asset_kpis")
         .select(
-          "period_year, period_month, grain, fixed_asset_id, reporting_group, rental_dbr_days, fleet_days, total_revenue, orphan_veh_number, orphan_bridge_vin, subrental_flag"
+          "period_year, period_month, grain, fixed_asset_id, reporting_group, rental_dbr_days, fleet_days, total_revenue, orphan_veh_number, orphan_bridge_vin, subrental_flag, sale_date"
         )
         .eq("organization_id", organizationId)
         .eq("grain", "asset")
@@ -303,11 +304,15 @@ export async function GET(request: NextRequest) {
       const key = stableKey(k);
       if (!key) continue;
       const g = resolveGroup(k);
-      if (isEop) {
+      // Count a vehicle in the EOP/BOP fleet only if it wasn't sold that
+      // month — a unit disposed in the month isn't owned at month-end, so it
+      // shouldn't inflate the fleet size (it shows up as a disposition via
+      // the eop/bop diff instead).
+      if (isEop && !soldInMonth(k.sale_date, endYear, endMonth)) {
         eopKeys.add(key);
         eopKeyToGroup.set(key, g);
       }
-      if (isBop) {
+      if (isBop && !soldInMonth(k.sale_date, bopYear, bopMonth)) {
         bopKeys.add(key);
         bopKeyToGroup.set(key, g);
       }
@@ -399,4 +404,17 @@ export async function GET(request: NextRequest) {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+// True when a sale_date ("YYYY-MM-DD") lands in the given month — the vehicle
+// was disposed that month. Date-only strings parse as UTC midnight.
+function soldInMonth(
+  saleDate: string | null,
+  year: number,
+  month: number
+): boolean {
+  if (!saleDate) return false;
+  const d = new Date(saleDate);
+  if (Number.isNaN(d.getTime())) return false;
+  return d.getUTCFullYear() === year && d.getUTCMonth() + 1 === month;
 }
