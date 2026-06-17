@@ -1,0 +1,32 @@
+{\rtf1\ansi\ansicpg1252\deff0{\fonttbl{\f0 Calibri;}}
+\f0\fs28\b Closebook \endash  Rental Conversion Uploader\b0\fs22\par
+\b Google Ads API \endash  Design Document\b0\par
+\par
+\b 1. Overview\b0\par
+Closebook is an internal back-office application used by Avon Rents / Hollywood Depot Rentals (HDR) employees. This tool uploads offline conversions (completed equipment-rental bookings) from our internal CRM to Google Ads, so that ad bidding can optimize toward booked-rental revenue rather than only website form fills. It is used solely to manage our own Google Ads accounts; it is not offered to third parties or the public.\par
+\par
+\b 2. Who uses it\b0\par
+Internal employees only. There is no public or client-facing interface. The tool runs server-side as a scheduled job; staff interact only with the internal CRM.\par
+\par
+\b 3. Google Ads API services used\b0\par
+\bullet  ConversionUploadService.UploadClickConversions \endash  to upload offline lead conversions enhanced with hashed user-provided data (Enhanced Conversions for Leads).\par
+No other services are called. The tool does not read campaign data, does not create or manage accounts, campaigns, ad groups, ads, or budgets.\par
+\par
+\b 4. Data flow\b0\par
+(1) A rental inquiry is captured in the CRM from the website. (2) When a sales rep marks the inquiry as a booked rental (status "Confirmed" or "Out"), the CRM queues a conversion with the booking value. (3) A scheduled daily job reads queued bookings and calls UploadClickConversions, sending: the conversion action resource name, conversion date-time, conversion value (USD), an order ID for de-duplication, and SHA-256 hashed customer email and phone number as user identifiers. (4) Google Ads matches the conversion to the originating ad click via the hashed identifiers.\par
+\par
+\b 5. Authentication\b0\par
+OAuth 2.0 with a refresh token for an internal employee account. Requests are made with our developer token and a manager (MCC) login-customer-id. Customer data terms have been accepted and Enhanced Conversions for Leads is enabled on the account.\par
+\par
+\b 6. Volume\b0\par
+Low. Approximately a few conversion uploads per day (one per booked rental). No bulk or high-frequency operations.\par
+\par
+\b 7. Campaign types supported\b0\par
+Search, Performance Max.\par
+\par
+\b 8. Capabilities provided\b0\par
+Conversion tracking / offline conversion upload (reporting of business outcomes back to Google Ads). The tool does not provide account creation or account management.\par
+\par
+\b Company:\b0  MT Studio Services / Avon Rents \endash  http://avonrents.com\par
+\b Contact:\b0  jd@avonrents.com\par
+}
