@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HDR → Google Ads Conversion Wiring</title>
+<style>
+  :root{
+    --bg:#0b0f17; --panel:#121826; --panel2:#0e1420; --line:#23304a;
+    --ink:#e8edf6; --muted:#93a1b8; --accent:#0f7b6c; --accent2:#2845F0;
+    --warn:#d97706; --ok:#16a34a; --code:#0a0e16; --chip:#1b2436;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  a{color:#7aa2ff}
+  .wrap{max-width:880px;margin:0 auto;padding:40px 24px 80px}
+  header{border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:30px}
+  .kicker{color:var(--accent);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px}
+  h1{font-size:30px;margin:8px 0 6px;letter-spacing:-.02em}
+  .sub{color:var(--muted);font-size:15px;max-width:62ch}
+  .flow{background:var(--panel2);border:1px solid var(--line);border-radius:12px;
+    padding:16px 18px;margin:22px 0;color:var(--muted);
+    font:13px/1.7 "SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;white-space:pre-wrap}
+  .flow b{color:var(--ink)}
+  h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+    margin:38px 0 4px;border-top:1px solid var(--line);padding-top:26px}
+  .step{display:flex;gap:16px;padding:18px 0;border-bottom:1px solid var(--line)}
+  .num{flex:0 0 32px;height:32px;width:32px;border-radius:50%;background:var(--accent2);
+    color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px}
+  .step.opt .num{background:var(--chip);color:var(--muted)}
+  .body{flex:1;min-width:0}
+  .body h3{margin:3px 0 6px;font-size:17px}
+  .body p{margin:6px 0;color:#cdd6e6}
+  .path{color:var(--ink);background:var(--chip);border:1px solid var(--line);
+    padding:1px 7px;border-radius:6px;font:13px/1.5 "SFMono-Regular",Consolas,monospace}
+  .tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;
+    text-transform:uppercase;padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:middle}
+  .tag.console{background:rgba(40,69,240,.16);color:#9db2ff;border:1px solid rgba(40,69,240,.4)}
+  .tag.vercel{background:rgba(255,255,255,.08);color:#cdd6e6;border:1px solid var(--line)}
+  .tag.opt{background:rgba(217,119,6,.14);color:#f0b860;border:1px solid rgba(217,119,6,.4)}
+  ul{margin:8px 0;padding-left:20px;color:#cdd6e6}
+  li{margin:4px 0}
+  .note{background:rgba(15,123,108,.1);border:1px solid rgba(15,123,108,.45);
+    border-radius:10px;padding:12px 14px;margin:14px 0;color:#bfe3dc;font-size:14px}
+  .warnbox{background:rgba(217,119,6,.1);border:1px solid rgba(217,119,6,.45);
+    border-radius:10px;padding:12px 14px;margin:14px 0;color:#f0cfa0;font-size:14px}
+  /* env table */
+  .env{margin:10px 0;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .env .row{display:grid;grid-template-columns:1fr 1.3fr auto;gap:0;border-top:1px solid var(--line)}
+  .env .row:first-child{border-top:none}
+  .env .row.head{background:var(--panel);color:var(--muted);font-size:12px;
+    letter-spacing:.04em;text-transform:uppercase}
+  .env .c{padding:10px 12px;min-width:0;overflow-wrap:anywhere}
+  .env .k{font:13px/1.5 "SFMono-Regular",Consolas,monospace;color:#9db2ff;background:var(--code)}
+  .env .d{color:#cdd6e6;font-size:13px}
+  .env .req{display:grid;place-items:center}
+  .dot{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+  .dot.r{background:rgba(220,38,38,.16);color:#ff9b9b;border:1px solid rgba(220,38,38,.4)}
+  .dot.o{background:rgba(255,255,255,.07);color:var(--muted);border:1px solid var(--line)}
+  button.copy{cursor:pointer;background:var(--chip);border:1px solid var(--line);color:var(--ink);
+    border-radius:6px;padding:2px 9px;font-size:12px;margin-left:8px}
+  button.copy:hover{border-color:#3a4d72}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:10px;
+    padding:14px 16px;overflow:auto;font:13px/1.6 "SFMono-Regular",Consolas,monospace;color:#d7e0f0}
+  .pill{display:inline-flex;align-items:center;gap:7px;background:var(--panel);
+    border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:13px;color:var(--muted);margin-top:10px}
+  .pill .g{height:8px;width:8px;border-radius:50%;background:var(--warn)}
+  footer{margin-top:40px;color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding-top:18px}
+  code{background:var(--chip);border:1px solid var(--line);padding:1px 6px;border-radius:5px;
+    font:13px/1.4 "SFMono-Regular",Consolas,monospace;color:#e8edf6}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="kicker">Hollywood Depot Rentals · Closebook</div>
+    <h1>Wiring won rentals into Google Ads</h1>
+    <p class="sub">Once a rep moves an inquiry to <b>Confirmed</b> or <b>Out</b>, Closebook
+    auto-reports it to Google Ads as a conversion carrying the booking value — matched to the
+    ad click by the customer's hashed email/phone. Follow these steps to turn it on.</p>
+    <div class="pill"><span class="g"></span> Migration applied · code pending deploy · Google Ads not yet configured</div>
+  </header>
+
+  <div class="flow"><b>Rep moves inquiry → Confirmed / Out</b>  (in the CRM, any path)
+        │  DB trigger flags it <b>pending</b> + snapshots the value
+        ▼
+<b>Daily cron</b>  /api/sync/google-ads-conversions  · 11:00 UTC
+        │  Enhanced Conversions for Leads — match by hashed email/phone
+        │  value = booking amount · orderId = HDR-XXXXX (dedupe)
+        ▼
+<b>Google Ads</b> records the conversion → status <b>uploaded</b></div>
+
+  <h2>In Google Ads</h2>
+
+  <div class="step">
+    <div class="num">1</div>
+    <div class="body">
+      <h3>Accept the customer data terms <span class="tag console">Google Ads console</span></h3>
+      <p>Go to <span class="path">Tools &amp; Settings → Goals → Settings → Customer data terms</span>
+      and accept them. This unlocks enhanced conversions for the account.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">2</div>
+    <div class="body">
+      <h3>Turn on Enhanced Conversions for Leads <span class="tag console">Google Ads console</span></h3>
+      <p>On that same <b>Settings</b> page, expand <b>Enhanced conversions for leads</b>, toggle it
+      <b>on</b>, and choose the <b>Google Ads API</b> upload method.</p>
+      <div class="warnbox"><b>Important:</b> pick <b>Google Ads API</b>, <u>not</u> Google Tag /
+      gtag.js. Closebook uploads server-side from the cron — the tag method would expect the
+      browser to send the data and won't match our offline uploads.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">3</div>
+    <div class="body">
+      <h3>Create the conversion action <span class="tag console">Google Ads console</span></h3>
+      <p><span class="path">Goals → Conversions → + New conversion action → Import →
+      "Other data sources or CRMs" → "Track conversions from clicks"</span>.</p>
+      <ul>
+        <li><b>Category:</b> <code>Purchase</code> (or <code>Qualified lead</code> if you want to keep it separate from web purchases)</li>
+        <li><b>Value:</b> "Use different values for each conversion" — we send the real booking amount</li>
+        <li><b>Count:</b> One</li>
+      </ul>
+      <p>After saving, open the action and copy its numeric <b>Conversion action ID</b> (the long
+      number in the URL / details) → you'll paste it as <code>GOOGLE_ADS_CONVERSION_ACTION_ID</code>.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">4</div>
+    <div class="body">
+      <h3>Get API access <span class="tag console">Google Ads + Cloud</span></h3>
+      <ul>
+        <li><b>Developer token</b> — in the manager (MCC) account: <span class="path">API Center</span>. → <code>GOOGLE_ADS_DEVELOPER_TOKEN</code></li>
+        <li><b>OAuth client</b> — Google Cloud console → create an OAuth 2.0 client → <code>GOOGLE_ADS_CLIENT_ID</code> / <code>GOOGLE_ADS_CLIENT_SECRET</code></li>
+        <li><b>Refresh token</b> — generate one for a user with access to the account (e.g. via the OAuth Playground using the <code>https://www.googleapis.com/auth/adwords</code> scope) → <code>GOOGLE_ADS_REFRESH_TOKEN</code></li>
+        <li><b>Customer ID</b> — the account that owns the conversion action, digits only, no dashes → <code>GOOGLE_ADS_CUSTOMER_ID</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>On Vercel — Closebook project env vars</h2>
+  <p style="color:#cdd6e6">Add these in <span class="path">Vercel → Closebook → Settings → Environment Variables</span> (Production), then redeploy.</p>
+
+  <div class="env">
+    <div class="row head"><div class="c">Variable</div><div class="c">What it is</div><div class="c req">Req</div></div>
+    <div class="row"><div class="c k">GOOGLE_ADS_DEVELOPER_TOKEN <button class="copy" data-v="GOOGLE_ADS_DEVELOPER_TOKEN">copy</button></div><div class="c d">API Center developer token (manager account)</div><div class="c req"><span class="dot r">required</span></div></div>
+    <div class="row"><div class="c k">GOOGLE_ADS_CLIENT_ID <button class="copy" data-v="GOOGLE_ADS_CLIENT_ID">copy</button></div><div class="c d">OAuth 2.0 client ID</div><div class="c req"><span class="dot r">required</span></div></div>
+    <div class="row"><div class="c k">GOOGLE_ADS_CLIENT_SECRET <button class="copy" data-v="GOOGLE_ADS_CLIENT_SECRET">copy</button></div><div class="c d">OAuth 2.0 client secret</div><div class="c req"><span class="dot r">required</span></div></div>
+    <div class="row"><div class="c k">GOOGLE_ADS_REFRESH_TOKEN <button class="copy" data-v="GOOGLE_ADS_REFRESH_TOKEN">copy</button></div><div class="c d">Long-lived refresh token (adwords scope)</div><div class="c req"><span class="dot r">required</span></div></div>
+    <div class="row"><div class="c k">GOOGLE_ADS_CUSTOMER_ID <button class="copy" data-v="GOOGLE_ADS_CUSTOMER_ID">copy</button></div><div class="c d">Conversion-action account, digits only</div><div class="c req"><span class="dot r">required</span></div></div>
+    <div class="row"><div class="c k">GOOGLE_ADS_CONVERSION_ACTION_ID <button class="copy" data-v="GOOGLE_ADS_CONVERSION_ACTION_ID">copy</button></div><div class="c d">Numeric ID from step 3</div><div class="c req"><span class="dot r">required</span></div></div>
+    <div class="row"><div class="c k">GOOGLE_ADS_LOGIN_CUSTOMER_ID <button class="copy" data-v="GOOGLE_ADS_LOGIN_CUSTOMER_ID">copy</button></div><div class="c d">Manager (MCC) ID — only if access is via a manager</div><div class="c req"><span class="dot o">optional</span></div></div>
+    <div class="row"><div class="c k">GOOGLE_ADS_API_VERSION <button class="copy" data-v="GOOGLE_ADS_API_VERSION">copy</button></div><div class="c d">Override API version (defaults to <code>v18</code>)</div><div class="c req"><span class="dot o">optional</span></div></div>
+  </div>
+
+  <div class="note">Until all six required vars are set, the cron is a safe no-op: it logs
+  <code>skipped: Google Ads not configured</code> and leaves won inquiries queued. The moment the
+  credentials land, the next run uploads everything that's been waiting — nothing is lost.</div>
+
+  <h2>Verify</h2>
+
+  <div class="step">
+    <div class="num">5</div>
+    <div class="body">
+      <h3>Flush the queue manually</h3>
+      <p>You don't have to wait for 11:00 UTC. Hit the cron endpoint with the cron secret to push
+      whatever's queued right now:</p>
+      <pre>curl -H "Authorization: Bearer $CRON_SECRET" \
+  https://closebook.vercel.app/api/sync/google-ads-conversions</pre>
+      <p>It returns <code>{ uploaded, failed, errors }</code>. A clean run shows your won deals as
+      <code>uploaded</code>.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">6</div>
+    <div class="body">
+      <h3>Confirm in Google Ads</h3>
+      <p>Offline imports aren't instant — conversions appear under the action within ~24–48h. Open
+      the conversion action's <b>Diagnostics</b> tab to watch upload health and the email/phone
+      match rate.</p>
+    </div>
+  </div>
+
+  <div class="step opt">
+    <div class="num">+</div>
+    <div class="body">
+      <h3>Later: click-level matching <span class="tag opt">optional upgrade</span></h3>
+      <p>Today matching is by hashed email/phone. For stronger, click-level attribution, capture the
+      <code>gclid</code> on the <span class="path">/reserve</span> form and pass it through the
+      inquiry ingest — the column already exists and the uploader sends it automatically when present.
+      No schema change needed.</p>
+    </div>
+  </div>
+
+  <footer>
+    Reference: <span class="path">docs/google-ads-conversion-runbook.md</span> ·
+    Code: <span class="path">src/lib/google-ads/conversions.ts</span>,
+    <span class="path">src/app/api/sync/google-ads-conversions/route.ts</span> ·
+    Trigger: migration <span class="path">20260616_inquiry_ads_conversions.sql</span>
+  </footer>
+</div>
+
+<script>
+  document.querySelectorAll('button.copy').forEach(function(b){
+    b.addEventListener('click', function(){
+      navigator.clipboard.writeText(b.getAttribute('data-v')).then(function(){
+        var t = b.textContent; b.textContent = 'copied'; b.style.color = '#7ee2c8';
+        setTimeout(function(){ b.textContent = t; b.style.color=''; }, 1100);
+      });
+    });
+  });
+</script>
+</body>
+</html>

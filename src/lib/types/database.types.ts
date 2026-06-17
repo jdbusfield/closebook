@@ -96,6 +96,12 @@ export type Database = {
           created_by: string | null
           created_at: string
           updated_at: string
+          gclid: string | null
+          conversion_status: string
+          conversion_value: number | null
+          conversion_currency: string
+          conversion_uploaded_at: string | null
+          conversion_error: string | null
         }
         Insert: {
           id?: string
@@ -126,6 +132,12 @@ export type Database = {
           created_by?: string | null
           created_at?: string
           updated_at?: string
+          gclid?: string | null
+          conversion_status?: string
+          conversion_value?: number | null
+          conversion_currency?: string
+          conversion_uploaded_at?: string | null
+          conversion_error?: string | null
         }
         Update: {
           id?: string
@@ -156,6 +168,12 @@ export type Database = {
           created_by?: string | null
           created_at?: string
           updated_at?: string
+          gclid?: string | null
+          conversion_status?: string
+          conversion_value?: number | null
+          conversion_currency?: string
+          conversion_uploaded_at?: string | null
+          conversion_error?: string | null
         }
         Relationships: []
       }
