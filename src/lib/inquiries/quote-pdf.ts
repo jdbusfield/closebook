@@ -311,9 +311,9 @@ export async function buildQuoteDoc(
   bar(cols[2].x, cols[2].w, "Rental Dates");
 
   const cy = by + 28;
-  // Issued To — bill-to name, then any address lines, then contact email/phone.
-  // Each address line shifts the email/phone (and the line-item heading) down by
-  // one row so nothing collides.
+  // Issued To — bill-to name then any address lines. Email/phone are NOT repeated
+  // here; they already appear in the info grid above. Each address line shifts the
+  // line-item heading down by one row (addrOffset) so nothing collides.
   const addrOffset = billAddrLines.length * 10;
   d.setFont("helvetica", "bold");
   d.setFontSize(9);
@@ -325,8 +325,6 @@ export async function buildQuoteDoc(
   billAddrLines.forEach((ln, i) => {
     d.text(d.splitTextToSize(ln, cols[0].w)[0], cols[0].x, cy + 11 + i * 10);
   });
-  if (inquiry.email) d.text(inquiry.email, cols[0].x, cy + 11 + addrOffset);
-  if (inquiry.phone) d.text(inquiry.phone, cols[0].x, cy + 21 + addrOffset);
   // Event Location
   d.setFont("helvetica", "normal");
   d.setFontSize(9);
