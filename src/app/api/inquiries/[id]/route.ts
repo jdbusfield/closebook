@@ -24,6 +24,9 @@ const UpdateSchema = z.object({
   rw_order_number: z.string().max(64).optional().nullable(),
   unit_id: z.string().max(64).optional().nullable(),
   estimated_value: z.number().nonnegative().max(100_000_000).optional().nullable(),
+  // Bill-to override for the quote/invoice document.
+  billing_name: z.string().max(256).optional().nullable(),
+  billing_address: z.string().max(1_000).optional().nullable(),
 });
 
 export async function PATCH(
@@ -67,7 +70,7 @@ export async function PATCH(
   if (isEmbed) query = query.eq("entity_id", HDR_ENTITY_ID);
   const { data, error } = await query
     .select(
-      "id, status, internal_notes, rw_quote_number, rw_order_number, unit_id, estimated_value"
+      "id, status, internal_notes, rw_quote_number, rw_order_number, unit_id, estimated_value, billing_name, billing_address"
     )
     .maybeSingle();
 

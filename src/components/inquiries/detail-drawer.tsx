@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Phone,
   Mail,
@@ -26,6 +27,7 @@ import {
   Trash2,
   XCircle,
   RotateCcw,
+  Pencil,
 } from "lucide-react";
 import {
   InquiryAvatar,
@@ -64,6 +66,13 @@ import {
 export interface DrawerCallbacks {
   onMove: (id: string, status: InquiryStatus) => void;
   onSetValue: (id: string, value: number | null) => void;
+  /** Save the bill-to override shown on the quote/invoice. Optional — when
+   * omitted the Bill-to section renders read-only (no editing). */
+  onSaveBilling?: (
+    id: string,
+    billingName: string | null,
+    billingAddress: string | null
+  ) => void;
   onAddTask: (id: string, title: string, kind?: InquiryTask["kind"]) => void;
   onToggleTask: (taskId: string, done: boolean) => void;
   onAddActivity: (id: string, type: InquiryActivity["type"], body: string) => void;
@@ -351,6 +360,130 @@ export function ContactGrid({
           <KV k="RW order" v={inquiry.rw_order_number} mono />
         </>
       )}
+    </div>
+  );
+}
+
+// --- Bill-to override (what prints on the quote / invoice) -----------------
+// By default the quote/invoice is issued in the inquiry's own name. When a
+// rental is booked by one party but billed to another (e.g. a fundraiser
+// booking on behalf of the organization), a rep sets a bill-to name + address
+// here; it overrides only the "Customer / Issued To" block on the generated PDF
+// — the working contact (name/email/phone) is untouched.
+export function BillingBlock({
+  inquiry,
+  onSaveBilling,
+}: {
+  inquiry: Inquiry;
+  onSaveBilling: NonNullable<DrawerCallbacks["onSaveBilling"]>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState(inquiry.billing_name ?? "");
+  const [addrDraft, setAddrDraft] = useState(inquiry.billing_address ?? "");
+
+  // Re-seed the drafts whenever a different inquiry is shown (the drawer reuses
+  // one mounted instance across selections).
+  useEffect(() => {
+    setNameDraft(inquiry.billing_name ?? "");
+    setAddrDraft(inquiry.billing_address ?? "");
+    setEditing(false);
+  }, [inquiry.id, inquiry.billing_name, inquiry.billing_address]);
+
+  const hasOverride = !!(inquiry.billing_name || inquiry.billing_address);
+
+  const save = () => {
+    const name = nameDraft.trim();
+    const addr = addrDraft.trim();
+    onSaveBilling(inquiry.id, name || null, addr || null);
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <div className="space-y-2.5">
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">Bill-to name</label>
+          <Input
+            autoFocus
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            placeholder={inquiry.name || "Customer name on the invoice"}
+            className="h-8"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">Billing address</label>
+          <Textarea
+            value={addrDraft}
+            onChange={(e) => setAddrDraft(e.target.value)}
+            placeholder={"Street\nCity, ST ZIP"}
+            rows={3}
+            className="text-sm"
+          />
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" className="h-8" onClick={save}>
+            Save
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8"
+            onClick={() => {
+              setNameDraft(inquiry.billing_name ?? "");
+              setAddrDraft(inquiry.billing_address ?? "");
+              setEditing(false);
+            }}
+          >
+            Cancel
+          </Button>
+          {hasOverride && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="ml-auto h-8 text-muted-foreground hover:text-destructive"
+              onClick={() => {
+                setNameDraft("");
+                setAddrDraft("");
+                onSaveBilling(inquiry.id, null, null);
+                setEditing(false);
+              }}
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0 text-sm">
+        {hasOverride ? (
+          <>
+            <div className="font-medium">{inquiry.billing_name || inquiry.name || "—"}</div>
+            {inquiry.billing_address && (
+              <div className="mt-0.5 whitespace-pre-wrap text-muted-foreground">
+                {inquiry.billing_address}
+              </div>
+            )}
+          </>
+        ) : (
+          <span className="text-muted-foreground">
+            Invoice issued to <span className="font-medium text-foreground">{inquiry.name || "the contact"}</span>.
+            Set a different name/address if needed.
+          </span>
+        )}
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-8 shrink-0"
+        onClick={() => setEditing(true)}
+      >
+        <Pencil className="size-3.5" /> {hasOverride ? "Edit" : "Set bill-to"}
+      </Button>
     </div>
   );
 }
@@ -716,6 +849,15 @@ export function InquiryDrawer({
               <Section title="Event & contact">
                 <ContactGrid inquiry={inquiry} onSetValue={callbacks.onSetValue} />
               </Section>
+
+              {callbacks.onSaveBilling && (
+                <Section title="Bill-to (invoice / quote)">
+                  <BillingBlock
+                    inquiry={inquiry}
+                    onSaveBilling={callbacks.onSaveBilling}
+                  />
+                </Section>
+              )}
 
               <Section title="Quotes">
                 <QuotesList

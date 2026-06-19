@@ -48,6 +48,12 @@ export default function InquiriesDashboardPage() {
   const callbacks: DrawerCallbacks = {
     onMove: data.moveStage,
     onSetValue: data.setEstimatedValue,
+    onSaveBilling: (id, billingName, billingAddress) =>
+      data.updateTriage(
+        id,
+        { billing_name: billingName, billing_address: billingAddress },
+        "Bill-to saved"
+      ),
     onAddTask: data.addTask,
     onToggleTask: data.toggleTask,
     onAddActivity: data.addActivity,

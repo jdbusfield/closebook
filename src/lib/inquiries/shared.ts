@@ -410,6 +410,11 @@ export interface Inquiry {
   request_type: string | null;
   // Estimated booking deposit (USD) — set only on reservation requests.
   deposit: number | null;
+  // Bill-to override for the quote/invoice doc — when set, the generated PDF is
+  // issued in this name/address instead of `name`. Both null → fall back to the
+  // working contact name and omit the address.
+  billing_name: string | null;
+  billing_address: string | null;
   internal_notes: string | null;
   rw_quote_number: string | null;
   rw_order_number: string | null;

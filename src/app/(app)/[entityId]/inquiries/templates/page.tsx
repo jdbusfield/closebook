@@ -70,6 +70,8 @@ const SAMPLE_INQUIRY: Inquiry = {
   notes: null,
   request_type: "inquiry",
   deposit: null,
+  billing_name: null,
+  billing_address: null,
   internal_notes: null,
   rw_quote_number: null,
   rw_order_number: null,

@@ -112,6 +112,14 @@ export async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
   // send back to the customer — green ACCEPTED stamp, acceptance date in place
   // of the validity window, and confirmation terms.
   const accepted = quote.status === "accepted";
+  // Bill-to override: the quote/invoice is issued in billing_name + billing_address
+  // when set, otherwise the inquiry's own contact name. Address is free-form,
+  // split into trimmed non-empty lines for the Issued To block.
+  const billTo = inquiry.billing_name || inquiry.name || "Customer";
+  const billAddrLines = (inquiry.billing_address || "")
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
   const acceptedDate = quote.accepted_at
     ? fmtDate(quote.accepted_at, { month: "short", day: "numeric", year: "numeric" })
     : todayLong();
@@ -228,7 +236,7 @@ export async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
   const agent = quote.created_by && quote.created_by !== "You" ? quote.created_by : "HDR Team";
   // Column 1
   field(cols[0].x, gy, "Quote", quote.quote_number);
-  field(cols[0].x, gy + 15, "Customer", inquiry.name || "Customer");
+  field(cols[0].x, gy + 15, "Customer", billTo);
   field(cols[0].x, gy + 30, "Reference", inquiry.reference || "-");
   // Column 2
   field(cols[1].x, gy, "Agent", agent);
@@ -261,16 +269,22 @@ export async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
   bar(cols[2].x, cols[2].w, "Rental Dates");
 
   const cy = by + 28;
-  // Issued To
+  // Issued To — bill-to name, then any address lines, then contact email/phone.
+  // Each address line shifts the email/phone (and the line-item heading) down by
+  // one row so nothing collides.
+  const addrOffset = billAddrLines.length * 10;
   d.setFont("helvetica", "bold");
   d.setFontSize(9);
   setText(d, INK);
-  d.text(inquiry.name || "Customer", cols[0].x, cy);
+  d.text(billTo, cols[0].x, cy);
   d.setFont("helvetica", "normal");
   d.setFontSize(8);
   setText(d, MUTED);
-  if (inquiry.email) d.text(inquiry.email, cols[0].x, cy + 11);
-  if (inquiry.phone) d.text(inquiry.phone, cols[0].x, cy + 21);
+  billAddrLines.forEach((ln, i) => {
+    d.text(d.splitTextToSize(ln, cols[0].w)[0], cols[0].x, cy + 11 + i * 10);
+  });
+  if (inquiry.email) d.text(inquiry.email, cols[0].x, cy + 11 + addrOffset);
+  if (inquiry.phone) d.text(inquiry.phone, cols[0].x, cy + 21 + addrOffset);
   // Event Location
   d.setFont("helvetica", "normal");
   d.setFontSize(9);
@@ -298,7 +312,7 @@ export async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
   }
 
   // ─── Line-item section heading (boxed, dashed cobalt / solid green) ───────
-  const headBoxY = cy + 30;
+  const headBoxY = cy + 30 + addrOffset;
   setDraw(d, accepted ? GREEN : COBALT);
   d.setLineWidth(0.8);
   if (!accepted) d.setLineDashPattern([2, 2], 0);
