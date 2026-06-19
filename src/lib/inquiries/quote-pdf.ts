@@ -244,7 +244,18 @@ export async function buildQuoteDoc(
     { x: margin + 366, w: usable - 366 },
   ];
   const labelW = 60;
-  const field = (colX: number, y: number, label: string, value: string) => {
+  // A label/value row. By default the value is a single clipped line; pass
+  // `wrapColW` (the column's full width) to let a long value wrap onto a second
+  // line within the column instead of overrunning into the next one. Only use
+  // wrapping on a column's BOTTOM row — the second line drops into the gap above
+  // the section bars, so wrapping a middle row would collide with the row below.
+  const field = (
+    colX: number,
+    y: number,
+    label: string,
+    value: string,
+    wrapColW?: number
+  ) => {
     setFill(d, TINT_SOFT);
     d.rect(colX, y - 9.5, labelW, 13, "F");
     d.setFont("helvetica", "bold");
@@ -254,20 +265,22 @@ export async function buildQuoteDoc(
     d.setFont("helvetica", "normal");
     d.setFontSize(8.5);
     setText(d, INK);
-    const v = d.splitTextToSize(value || "-", 999)[0];
-    d.text(v, colX + labelW + 5, y);
+    const valX = colX + labelW + 5;
+    const maxW = wrapColW ? wrapColW - labelW - 8 : 999;
+    const lines = d.splitTextToSize(value || "-", maxW).slice(0, 2);
+    lines.forEach((ln: string, i: number) => d.text(ln, valX, y + i * 9));
   };
 
   const gy = 162;
   const agent = quote.created_by && quote.created_by !== "You" ? quote.created_by : "HDR Team";
-  // Column 1
+  // Column 1 — Customer last so a long bill-to name can wrap.
   field(cols[0].x, gy, isInvoice ? "Invoice" : "Quote", docNumber);
-  field(cols[0].x, gy + 15, "Customer", billTo);
-  field(cols[0].x, gy + 30, "Reference", inquiry.reference || "-");
-  // Column 2
+  field(cols[0].x, gy + 15, "Reference", inquiry.reference || "-");
+  field(cols[0].x, gy + 30, "Customer", billTo, cols[0].w);
+  // Column 2 — Email last so a long address can wrap.
   field(cols[1].x, gy, "Agent", agent);
-  field(cols[1].x, gy + 15, "Email", inquiry.email || "-");
-  field(cols[1].x, gy + 30, "Phone", inquiry.phone || "-");
+  field(cols[1].x, gy + 15, "Phone", inquiry.phone || "-");
+  field(cols[1].x, gy + 30, "Email", inquiry.email || "-", cols[1].w);
   // Column 3
   field(cols[2].x, gy, "Date", todayLong());
   if (isInvoice) {
