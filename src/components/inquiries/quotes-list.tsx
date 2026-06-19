@@ -15,8 +15,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CheckCircle2, Download, Trash2 } from "lucide-react";
-import { downloadQuotePdf } from "@/lib/inquiries/quote-pdf";
+import { CheckCircle2, Download, FileText, Trash2 } from "lucide-react";
+import { downloadQuotePdf, downloadInvoicePdf } from "@/lib/inquiries/quote-pdf";
 import {
   type Inquiry,
   type InquiryQuote,
@@ -91,21 +91,37 @@ export function QuotesList({
               {` · ${fmtDateTime(q.created_at)}`}
             </div>
 
-            <div className="mt-2 flex items-center gap-2">
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               {isAccepted ? (
-                <Button
-                  size="sm"
-                  className="h-8 gap-1.5 bg-emerald-600 text-xs text-white hover:bg-emerald-700"
-                  onClick={async () => {
-                    try {
-                      await downloadQuotePdf(q, inquiry);
-                    } catch {
-                      toast.error("Couldn't generate the PDF");
-                    }
-                  }}
-                >
-                  <Download className="size-3.5" /> Download accepted quote
-                </Button>
+                <>
+                  <Button
+                    size="sm"
+                    className="h-8 gap-1.5 bg-emerald-600 text-xs text-white hover:bg-emerald-700"
+                    onClick={async () => {
+                      try {
+                        await downloadQuotePdf(q, inquiry);
+                      } catch {
+                        toast.error("Couldn't generate the PDF");
+                      }
+                    }}
+                  >
+                    <Download className="size-3.5" /> Download accepted quote
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 border-emerald-300 text-xs text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+                    onClick={async () => {
+                      try {
+                        await downloadInvoicePdf(q, inquiry);
+                      } catch {
+                        toast.error("Couldn't generate the invoice");
+                      }
+                    }}
+                  >
+                    <FileText className="size-3.5" /> Download invoice
+                  </Button>
+                </>
               ) : (
                 <>
                   <Button

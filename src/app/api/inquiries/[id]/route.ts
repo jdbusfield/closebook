@@ -27,6 +27,20 @@ const UpdateSchema = z.object({
   // Bill-to override for the quote/invoice document.
   billing_name: z.string().max(256).optional().nullable(),
   billing_address: z.string().max(1_000).optional().nullable(),
+  // Event & contact fields — editable from the inquiry drawer.
+  name: z.string().max(256).optional().nullable(),
+  email: z.string().max(256).optional().nullable(),
+  phone: z.string().max(64).optional().nullable(),
+  use_case: z.string().max(256).optional().nullable(),
+  start_date: z.string().max(64).optional().nullable(),
+  end_date: z.string().max(64).optional().nullable(),
+  duration: z.string().max(128).optional().nullable(),
+  units: z.number().int().nonnegative().max(1000).optional().nullable(),
+  guests: z.string().max(64).optional().nullable(),
+  location: z.string().max(512).optional().nullable(),
+  attendant: z.string().max(128).optional().nullable(),
+  // source is NOT NULL in the schema — string only.
+  source: z.string().max(128).optional(),
 });
 
 export async function PATCH(
@@ -70,7 +84,7 @@ export async function PATCH(
   if (isEmbed) query = query.eq("entity_id", HDR_ENTITY_ID);
   const { data, error } = await query
     .select(
-      "id, status, internal_notes, rw_quote_number, rw_order_number, unit_id, estimated_value, billing_name, billing_address"
+      "id, status, internal_notes, rw_quote_number, rw_order_number, unit_id, estimated_value, billing_name, billing_address, name, email, phone, use_case, start_date, end_date, duration, units, guests, location, attendant, source"
     )
     .maybeSingle();
 

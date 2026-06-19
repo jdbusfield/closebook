@@ -48,6 +48,7 @@ export default function InquiriesCalendarPage() {
         { billing_name: billingName, billing_address: billingAddress },
         "Bill-to saved"
       ),
+    onSaveDetails: (id, patch) => data.updateTriage(id, patch, "Details saved"),
     onAddTask: data.addTask,
     onToggleTask: data.toggleTask,
     onAddActivity: data.addActivity,

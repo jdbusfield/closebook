@@ -73,6 +73,9 @@ export interface DrawerCallbacks {
     billingName: string | null,
     billingAddress: string | null
   ) => void;
+  /** Save edits to the Event & contact fields (only the changed keys are sent).
+   * Optional — when omitted the grid renders read-only. */
+  onSaveDetails?: (id: string, patch: Record<string, unknown>) => void;
   onAddTask: (id: string, title: string, kind?: InquiryTask["kind"]) => void;
   onToggleTask: (taskId: string, done: boolean) => void;
   onAddActivity: (id: string, type: InquiryActivity["type"], body: string) => void;
@@ -283,82 +286,258 @@ function KV({ k, v, mono }: { k: string; v: React.ReactNode; mono?: boolean }) {
   );
 }
 
+// Seed a <input type="date"> from a stored date string — only when it's a real
+// yyyy-mm-dd (the website form can store free text, which the picker can't hold;
+// we leave those blank and avoid clobbering them on save unless the rep edits).
+function toDateInput(s: string | null | undefined): string {
+  if (!s) return "";
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : "";
+}
+
+// The Event & contact draft — strings for every field (numbers held as text so
+// the inputs stay controlled), seeded from the inquiry.
+function detailsDraft(inq: Inquiry) {
+  return {
+    use_case: inq.use_case ?? "",
+    start_date: toDateInput(inq.start_date),
+    end_date: toDateInput(inq.end_date),
+    duration: inq.duration ?? "",
+    location: inq.location ?? "",
+    units: inq.units != null ? String(inq.units) : "",
+    guests: inq.guests ?? "",
+    attendant: inq.attendant ?? "",
+    phone: inq.phone ?? "",
+    email: inq.email ?? "",
+    source: inq.source ?? "",
+    estimated_value: inq.estimated_value != null ? String(inq.estimated_value) : "",
+  };
+}
+type DetailsDraft = ReturnType<typeof detailsDraft>;
+
+// A labeled input for the Event & contact edit form. Defined at module scope (not
+// inside ContactGrid's render) so it keeps its identity across keystrokes —
+// otherwise each edit would remount the input and drop focus.
+function DetailField({
+  label,
+  value,
+  onChange,
+  type = "text",
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
+  placeholder?: string;
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <Input
+        type={type}
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-8"
+      />
+    </label>
+  );
+}
+
 // --- Event & contact + editable value -------------------------------------
 export function ContactGrid({
   inquiry,
   onSetValue,
+  onSaveDetails,
 }: {
   inquiry: Inquiry;
   onSetValue: DrawerCallbacks["onSetValue"];
+  onSaveDetails?: DrawerCallbacks["onSaveDetails"];
 }) {
   const [editingValue, setEditingValue] = useState(false);
   const [valueDraft, setValueDraft] = useState(
     inquiry.estimated_value != null ? String(inquiry.estimated_value) : ""
   );
+  const [editingAll, setEditingAll] = useState(false);
+  const [draft, setDraft] = useState<DetailsDraft>(() => detailsDraft(inquiry));
+
+  // Re-seed drafts whenever a different inquiry (or its fields) is shown — the
+  // drawer reuses one mounted instance across selections.
+  useEffect(() => {
+    setDraft(detailsDraft(inquiry));
+    setValueDraft(inquiry.estimated_value != null ? String(inquiry.estimated_value) : "");
+    setEditingAll(false);
+    setEditingValue(false);
+  }, [inquiry]);
+
   const booked = isBookedStatus(inquiry.status);
   const dates = fmtRange(inquiry.start_date, inquiry.end_date, {
     weekday: "short",
     month: "short",
     day: "numeric",
   });
-  return (
-    <div className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2.5">
-      <KV k="Event type" v={inquiry.use_case} />
-      <KV k="Dates" v={dates} mono />
-      <KV k="Duration" v={inquiry.duration} />
-      <KV k="Location" v={inquiry.location} />
-      <KV
-        k="Units"
-        v={inquiry.units != null ? `${inquiry.units} (${inquiry.units * 4} stalls)` : null}
-      />
-      <KV k="Guests" v={inquiry.guests} />
-      <KV k="Attendant" v={inquiry.attendant} />
-      <KV k="Phone" v={inquiry.phone} mono />
-      <KV k="Email" v={inquiry.email} />
-      <KV k="Source" v={inquiry.source} />
 
-      <span className="text-xs text-muted-foreground">Est. value</span>
-      <span className="text-sm">
-        {editingValue ? (
-          <span className="flex items-center gap-1.5">
-            <Input
-              autoFocus
-              type="number"
-              value={valueDraft}
-              onChange={(e) => setValueDraft(e.target.value)}
-              className="h-7 w-28"
-            />
-            <Button
-              size="sm"
-              className="h-7"
-              onClick={() => {
-                onSetValue(
-                  inquiry.id,
-                  valueDraft.trim() === "" ? null : Number(valueDraft)
-                );
-                setEditingValue(false);
-              }}
-            >
-              Save
-            </Button>
-          </span>
-        ) : (
-          <button
-            className="font-mono font-semibold hover:underline"
-            onClick={() => setEditingValue(true)}
+  const set = (k: keyof DetailsDraft, v: string) =>
+    setDraft((d) => ({ ...d, [k]: v }));
+
+  // Build a patch of ONLY the changed fields, normalizing "" → null and the
+  // numeric fields to numbers. Dates compare against the picker-normalized
+  // original so untouched free-text values are never overwritten.
+  const saveAll = () => {
+    if (!onSaveDetails) return;
+    const patch: Record<string, unknown> = {};
+    const textFields: (keyof DetailsDraft)[] = [
+      "use_case", "duration", "location", "guests", "attendant", "phone", "email",
+    ];
+    for (const f of textFields) {
+      const next = draft[f].trim() === "" ? null : draft[f].trim();
+      if ((inquiry[f as keyof Inquiry] ?? null) !== next) patch[f] = next;
+    }
+    // source is NOT NULL — send a string (possibly empty), never null.
+    const sourceNext = draft.source.trim();
+    if (sourceNext !== (inquiry.source ?? "")) patch.source = sourceNext;
+    // Dates
+    if (draft.start_date !== toDateInput(inquiry.start_date)) {
+      patch.start_date = draft.start_date || null;
+    }
+    if (draft.end_date !== toDateInput(inquiry.end_date)) {
+      patch.end_date = draft.end_date || null;
+    }
+    // Units (int)
+    const unitsNext = draft.units.trim() === "" ? null : Math.trunc(Number(draft.units));
+    if (
+      unitsNext !== (inquiry.units ?? null) &&
+      !(unitsNext != null && Number.isNaN(unitsNext))
+    ) {
+      patch.units = unitsNext;
+    }
+    // Estimated value
+    const valNext = draft.estimated_value.trim() === "" ? null : Number(draft.estimated_value);
+    if (
+      valNext !== (inquiry.estimated_value ?? null) &&
+      !(valNext != null && Number.isNaN(valNext))
+    ) {
+      patch.estimated_value = valNext;
+    }
+
+    if (Object.keys(patch).length > 0) onSaveDetails(inquiry.id, patch);
+    setEditingAll(false);
+  };
+
+  // --- Edit-all form -------------------------------------------------------
+  if (editingAll) {
+    return (
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+          <DetailField label="Event type" value={draft.use_case} onChange={(v) => set("use_case", v)} />
+          <DetailField label="Source" value={draft.source} onChange={(v) => set("source", v)} />
+          <DetailField label="Start date" type="date" value={draft.start_date} onChange={(v) => set("start_date", v)} />
+          <DetailField label="End date" type="date" value={draft.end_date} onChange={(v) => set("end_date", v)} />
+          <DetailField label="Duration" placeholder="e.g. 3 days" value={draft.duration} onChange={(v) => set("duration", v)} />
+          <DetailField label="Location" value={draft.location} onChange={(v) => set("location", v)} />
+          <DetailField label="Units" type="number" value={draft.units} onChange={(v) => set("units", v)} />
+          <DetailField label="Guests" value={draft.guests} onChange={(v) => set("guests", v)} />
+          <DetailField label="Attendant" value={draft.attendant} onChange={(v) => set("attendant", v)} />
+          <DetailField label="Est. value ($)" type="number" value={draft.estimated_value} onChange={(v) => set("estimated_value", v)} />
+          <DetailField label="Phone" type="tel" value={draft.phone} onChange={(v) => set("phone", v)} />
+          <DetailField label="Email" type="email" value={draft.email} onChange={(v) => set("email", v)} />
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" className="h-8" onClick={saveAll}>
+            Save
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8"
+            onClick={() => {
+              setDraft(detailsDraft(inquiry));
+              setEditingAll(false);
+            }}
           >
-            {inquiry.estimated_value != null
-              ? fmtMoney(inquiry.estimated_value)
-              : "Set value"}
-          </button>
-        )}
-      </span>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
-      {booked && (
-        <>
-          <KV k="RW quote" v={inquiry.rw_quote_number} mono />
-          <KV k="RW order" v={inquiry.rw_order_number} mono />
-        </>
+  // --- Read view -----------------------------------------------------------
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2.5">
+        <KV k="Event type" v={inquiry.use_case} />
+        <KV k="Dates" v={dates} mono />
+        <KV k="Duration" v={inquiry.duration} />
+        <KV k="Location" v={inquiry.location} />
+        <KV
+          k="Units"
+          v={inquiry.units != null ? `${inquiry.units} (${inquiry.units * 4} stalls)` : null}
+        />
+        <KV k="Guests" v={inquiry.guests} />
+        <KV k="Attendant" v={inquiry.attendant} />
+        <KV k="Phone" v={inquiry.phone} mono />
+        <KV k="Email" v={inquiry.email} />
+        <KV k="Source" v={inquiry.source} />
+
+        <span className="text-xs text-muted-foreground">Est. value</span>
+        <span className="text-sm">
+          {editingValue ? (
+            <span className="flex items-center gap-1.5">
+              <Input
+                autoFocus
+                type="number"
+                value={valueDraft}
+                onChange={(e) => setValueDraft(e.target.value)}
+                className="h-7 w-28"
+              />
+              <Button
+                size="sm"
+                className="h-7"
+                onClick={() => {
+                  onSetValue(
+                    inquiry.id,
+                    valueDraft.trim() === "" ? null : Number(valueDraft)
+                  );
+                  setEditingValue(false);
+                }}
+              >
+                Save
+              </Button>
+            </span>
+          ) : (
+            <button
+              className="font-mono font-semibold hover:underline"
+              onClick={() => setEditingValue(true)}
+            >
+              {inquiry.estimated_value != null
+                ? fmtMoney(inquiry.estimated_value)
+                : "Set value"}
+            </button>
+          )}
+        </span>
+
+        {booked && (
+          <>
+            <KV k="RW quote" v={inquiry.rw_quote_number} mono />
+            <KV k="RW order" v={inquiry.rw_order_number} mono />
+          </>
+        )}
+      </div>
+
+      {onSaveDetails && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8"
+          onClick={() => {
+            setDraft(detailsDraft(inquiry));
+            setEditingAll(true);
+          }}
+        >
+          <Pencil className="size-3.5" /> Edit details
+        </Button>
       )}
     </div>
   );
@@ -847,7 +1026,11 @@ export function InquiryDrawer({
               </Section>
 
               <Section title="Event & contact">
-                <ContactGrid inquiry={inquiry} onSetValue={callbacks.onSetValue} />
+                <ContactGrid
+                  inquiry={inquiry}
+                  onSetValue={callbacks.onSetValue}
+                  onSaveDetails={callbacks.onSaveDetails}
+                />
               </Section>
 
               {callbacks.onSaveBilling && (

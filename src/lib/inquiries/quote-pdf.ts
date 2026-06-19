@@ -91,7 +91,20 @@ function setDraw(d: Doc, c: RGB) {
   d.setDrawColor(c[0], c[1], c[2]);
 }
 
-export async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
+export type QuoteDocVariant = "quote" | "invoice";
+
+// Derive an invoice number from the quote number so the two docs are visibly
+// related (HDR-Q1010 → HDR-INV1010); falls back to an INV- prefix.
+function invoiceNumberFor(quoteNumber: string): string {
+  if (/-Q\d/i.test(quoteNumber)) return quoteNumber.replace(/-Q/i, "-INV");
+  return `INV-${quoteNumber}`;
+}
+
+export async function buildQuoteDoc(
+  quote: QuotePdfDoc,
+  inquiry: Inquiry,
+  variant: QuoteDocVariant = "quote"
+) {
   const { default: jsPDF } = await import("jspdf");
   const autoTableMod = await import("jspdf-autotable");
   const autoTable = (autoTableMod.default ?? autoTableMod) as unknown as (
@@ -111,7 +124,13 @@ export async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
   // Accepted variant: same document, re-chromed as a confirmation the rep can
   // send back to the customer — green ACCEPTED stamp, acceptance date in place
   // of the validity window, and confirmation terms.
-  const accepted = quote.status === "accepted";
+  // Invoice variant: the same branded layout, re-titled INVOICE with an invoice
+  // number, an "Amount Due" total, and payment terms. Generated from an accepted
+  // quote so the figures match exactly. The accepted-quote (green confirmation)
+  // treatment only applies to the quote variant.
+  const isInvoice = variant === "invoice";
+  const accepted = !isInvoice && quote.status === "accepted";
+  const docNumber = isInvoice ? invoiceNumberFor(quote.quote_number) : quote.quote_number;
   // Bill-to override: the quote/invoice is issued in billing_name + billing_address
   // when set, otherwise the inquiry's own contact name. Address is free-form,
   // split into trimmed non-empty lines for the Issued To block.
@@ -131,14 +150,14 @@ export async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
     /* decorative — skip if the embed fails */
   }
 
-  // Centered RENTAL / QUOTE.
+  // Centered RENTAL / QUOTE | INVOICE.
   d.setFont("helvetica", "bold");
   d.setFontSize(10);
   setText(d, INK);
   d.text("RENTAL", center, 50, { align: "center", charSpace: 1 });
   d.setFontSize(23);
   setText(d, COBALT);
-  d.text("QUOTE", center, 76, { align: "center", charSpace: 1 });
+  d.text(isInvoice ? "INVOICE" : "QUOTE", center, 76, { align: "center", charSpace: 1 });
 
   // Green ACCEPTED stamp under the title.
   if (accepted) {
@@ -169,7 +188,7 @@ export async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
   d.setFont("helvetica", "bold");
   d.setFontSize(12);
   setText(d, COBALT);
-  d.text(quote.quote_number, right - 6, 47.5, { align: "right" });
+  d.text(docNumber, right - 6, 47.5, { align: "right" });
 
   d.setFont("helvetica", "bold");
   d.setFontSize(9);
@@ -178,7 +197,14 @@ export async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
   d.setFont("helvetica", "normal");
   setText(d, MUTED);
   d.text(todayLong(), labelRX + 10, 68);
-  if (accepted) {
+  if (isInvoice) {
+    d.setFont("helvetica", "bold");
+    setText(d, INK);
+    d.text("Due:", labelRX, 82, { align: "right" });
+    d.setFont("helvetica", "normal");
+    setText(d, MUTED);
+    d.text("On receipt", labelRX + 10, 82);
+  } else if (accepted) {
     d.setFont("helvetica", "bold");
     setText(d, GREEN);
     d.text("Accepted:", labelRX, 82, { align: "right" });
@@ -235,7 +261,7 @@ export async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
   const gy = 162;
   const agent = quote.created_by && quote.created_by !== "You" ? quote.created_by : "HDR Team";
   // Column 1
-  field(cols[0].x, gy, "Quote", quote.quote_number);
+  field(cols[0].x, gy, isInvoice ? "Invoice" : "Quote", docNumber);
   field(cols[0].x, gy + 15, "Customer", billTo);
   field(cols[0].x, gy + 30, "Reference", inquiry.reference || "-");
   // Column 2
@@ -244,7 +270,10 @@ export async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
   field(cols[1].x, gy + 30, "Phone", inquiry.phone || "-");
   // Column 3
   field(cols[2].x, gy, "Date", todayLong());
-  if (accepted) {
+  if (isInvoice) {
+    field(cols[2].x, gy + 15, "Due", "On receipt");
+    field(cols[2].x, gy + 30, "Status", "Invoiced");
+  } else if (accepted) {
     field(cols[2].x, gy + 15, "Accepted", acceptedDate);
     field(cols[2].x, gy + 30, "Status", "Confirmed");
   } else {
@@ -311,24 +340,27 @@ export async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
     d.text(String(inquiry.duration), cols[2].x, cy + 11);
   }
 
-  // ─── Line-item section heading (boxed, dashed cobalt / solid green) ───────
+  // ─── Line-item section heading (boxed; solid cobalt invoice / solid green
+  //     accepted / dashed cobalt draft) ───────────────────────────────────────
   const headBoxY = cy + 30 + addrOffset;
   setDraw(d, accepted ? GREEN : COBALT);
   d.setLineWidth(0.8);
-  if (!accepted) d.setLineDashPattern([2, 2], 0);
+  if (!accepted && !isInvoice) d.setLineDashPattern([2, 2], 0);
   d.rect(margin, headBoxY, usable, 22);
   d.setLineDashPattern([], 0);
   d.setFont("helvetica", "bold");
   d.setFontSize(14);
   setText(d, accepted ? GREEN : COBALT);
-  d.text(accepted ? "ACCEPTED QUOTE" : "QUOTE", margin + 8, headBoxY + 16);
+  d.text(isInvoice ? "INVOICE" : accepted ? "ACCEPTED QUOTE" : "QUOTE", margin + 8, headBoxY + 16);
   d.setFont("helvetica", "bold");
   d.setFontSize(7.5);
   setText(d, SUBTLE);
-  d.text(accepted ? "CONFIRMED RENTAL" : "ITEMIZED RENTAL", right - 12, headBoxY + 14.5, {
-    align: "right",
-    charSpace: 0.5,
-  });
+  d.text(
+    isInvoice ? "AMOUNT DUE" : accepted ? "CONFIRMED RENTAL" : "ITEMIZED RENTAL",
+    right - 12,
+    headBoxY + 14.5,
+    { align: "right", charSpace: 0.5 }
+  );
 
   // ─── Line items table ─────────────────────────────────────────────────────
   const activeLines = quote.lines.filter(
@@ -404,7 +436,7 @@ export async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
     totalBar(`Tax (${Number(quote.tax_rate) || 0}%)`, money(quote.tax));
   }
   ty += 2;
-  totalBar(accepted ? "Accepted Total" : "Quote Total", money(quote.total), {
+  totalBar(isInvoice ? "Amount Due" : accepted ? "Accepted Total" : "Quote Total", money(quote.total), {
     strong: true,
     hl: true,
   });
@@ -416,14 +448,19 @@ export async function buildQuoteDoc(quote: QuotePdfDoc, inquiry: Inquiry) {
   setText(d, INK);
   d.text("TERMS", margin, ty, { charSpace: 0.8 });
   ty += 13;
-  const termsText =
-    (quote.terms && quote.terms.trim()) ||
-    (accepted
-      ? `This quote was accepted on ${acceptedDate} and your rental is confirmed. ` +
-        "Pricing includes delivery, setup, and servicing. We will reach out ahead of " +
-        "your start date to coordinate delivery access, power, and water."
-      : "Quote includes delivery, setup, and servicing. Pricing is held for 14 days. " +
-        "Reply to confirm and we will hold your date.");
+  const termsText = isInvoice
+    ? // Invoices carry payment terms, not the quote's validity language — so we
+      // ignore any saved quote terms here.
+      "Payment is due on receipt. Amount includes delivery, setup, and servicing. " +
+      `Please reference invoice ${docNumber} with your payment. ` +
+      "Make checks payable to Hollywood Depot Rentals."
+    : (quote.terms && quote.terms.trim()) ||
+      (accepted
+        ? `This quote was accepted on ${acceptedDate} and your rental is confirmed. ` +
+          "Pricing includes delivery, setup, and servicing. We will reach out ahead of " +
+          "your start date to coordinate delivery access, power, and water."
+        : "Quote includes delivery, setup, and servicing. Pricing is held for 14 days. " +
+          "Reply to confirm and we will hold your date.");
   d.setFont("helvetica", "normal");
   d.setFontSize(9);
   setText(d, MUTED);
@@ -450,4 +487,11 @@ export async function downloadQuotePdf(quote: QuotePdfDoc, inquiry: Inquiry): Pr
   const doc = await buildQuoteDoc(quote, inquiry);
   const suffix = quote.status === "accepted" ? "-ACCEPTED" : "";
   doc.save(`${quote.quote_number}${suffix}.pdf`);
+}
+
+// Trigger a browser download of the INVOICE PDF generated from a quote. The
+// figures match the quote exactly; the doc is re-titled with an invoice number.
+export async function downloadInvoicePdf(quote: QuotePdfDoc, inquiry: Inquiry): Promise<void> {
+  const doc = await buildQuoteDoc(quote, inquiry, "invoice");
+  doc.save(`${invoiceNumberFor(quote.quote_number)}.pdf`);
 }
