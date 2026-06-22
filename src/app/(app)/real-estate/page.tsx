@@ -38,7 +38,7 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
-import { formatCurrency, getCurrentPeriod } from "@/lib/utils/dates";
+import { formatCurrency, getCurrentPeriod, formatIsoDateLocal } from "@/lib/utils/dates";
 import { cn } from "@/lib/utils";
 import {
   calculateLeaseLiability,
@@ -181,8 +181,8 @@ function getSubleaseIncomeForPeriod(
   const periodDate = new Date(year, month - 1, 15);
   const activeSubs = subleases.filter((s) => {
     if (s.lease_id !== leaseId || s.status !== "active") return false;
-    const start = new Date(s.commencement_date);
-    const end = new Date(s.expiration_date);
+    const start = parseLocalDate(s.commencement_date);
+    const end = parseLocalDate(s.expiration_date);
     return periodDate >= start && periodDate <= end;
   });
   let income = 0;
@@ -252,6 +252,35 @@ function getMonthLabel(year: number, month: number): string {
 
 function leaseDisplayName(lease: LeaseRow): string {
   return lease.nickname || lease.lease_name;
+}
+
+// Parse a bare "YYYY-MM-DD" value as LOCAL midnight. Using `new Date(iso)`
+// directly parses as UTC midnight, which renders/compares as the prior day in
+// negative-offset timezones (PST/PDT) — the source of the off-by-one dates.
+function parseLocalDate(iso: string): Date {
+  const [y, m, d] = iso.split("T")[0].split("-").map(Number);
+  return new Date(y || 1970, (m || 1) - 1, d || 1);
+}
+
+// Today at local midnight, for date-only comparisons.
+function startOfToday(): Date {
+  const t = new Date();
+  t.setHours(0, 0, 0, 0);
+  return t;
+}
+
+// Whole days from today (local) until the given date; negative if already past.
+function daysUntil(iso: string): number {
+  return Math.ceil(
+    (parseLocalDate(iso).getTime() - startOfToday().getTime()) / 86_400_000
+  );
+}
+
+// A lease counts as active only if it is flagged active AND has not passed its
+// expiration date. A lease left flagged "active" after expiring (e.g. Pico)
+// should drop out of the consolidated view.
+function isLeaseActive(lease: { status: LeaseStatus; expiration_date: string }): boolean {
+  return lease.status === "active" && parseLocalDate(lease.expiration_date) >= startOfToday();
 }
 
 // --- Page ---
@@ -359,7 +388,7 @@ export default function OrgRealEstatePage() {
   // --- Active leases ---
 
   const activeLeases = useMemo(
-    () => leases.filter((l) => l.status === "active"),
+    () => leases.filter(isLeaseActive),
     [leases]
   );
 
@@ -416,7 +445,13 @@ export default function OrgRealEstatePage() {
 
   const filteredLeases = useMemo(() => {
     return leases.filter((l) => {
-      if (statusFilter !== "all" && l.status !== statusFilter) return false;
+      // "Active" is date-aware: a lease still flagged active but past its
+      // expiration date is treated as inactive and excluded.
+      if (statusFilter === "active") {
+        if (!isLeaseActive(l)) return false;
+      } else if (statusFilter !== "all" && l.status !== statusFilter) {
+        return false;
+      }
       if (search) {
         const q = search.toLowerCase();
         const match =
@@ -497,8 +532,8 @@ export default function OrgRealEstatePage() {
       const leaseNetForPeriod = new Map<string, number>();
 
       for (const l of activeLeases) {
-        const start = new Date(l.commencement_date);
-        const end = new Date(l.expiration_date);
+        const start = parseLocalDate(l.commencement_date);
+        const end = parseLocalDate(l.expiration_date);
         const periodDate = new Date(m.year, m.month - 1, 15);
         if (periodDate < start || periodDate > end) continue;
 
@@ -615,7 +650,7 @@ export default function OrgRealEstatePage() {
     const { year } = getCurrentPeriod();
     const buckets: Record<string, number> = {};
     for (const l of activeLeases) {
-      const expYear = new Date(l.expiration_date).getFullYear();
+      const expYear = parseLocalDate(l.expiration_date).getFullYear();
       const label =
         expYear <= year ? `${year}` : expYear > year + 5 ? `${year + 6}+` : `${expYear}`;
       buckets[label] = (buckets[label] ?? 0) + 1;
@@ -665,14 +700,18 @@ export default function OrgRealEstatePage() {
   // --- Upcoming expirations (within 12 months) ---
 
   const upcomingExpirations = useMemo(() => {
-    const now = new Date();
-    const in12Months = new Date(now.getFullYear(), now.getMonth() + 12, now.getDate());
+    const today = startOfToday();
+    const in12Months = new Date(today.getFullYear(), today.getMonth() + 12, today.getDate());
     return activeLeases
       .filter((l) => {
-        const exp = new Date(l.expiration_date);
-        return exp <= in12Months && exp >= now;
+        const exp = parseLocalDate(l.expiration_date);
+        return exp <= in12Months && exp >= today;
       })
-      .sort((a, b) => new Date(a.expiration_date).getTime() - new Date(b.expiration_date).getTime());
+      .sort(
+        (a, b) =>
+          parseLocalDate(a.expiration_date).getTime() -
+          parseLocalDate(b.expiration_date).getTime()
+      );
   }, [activeLeases]);
 
   // --- Entity toggle ---
@@ -1032,7 +1071,7 @@ export default function OrgRealEstatePage() {
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {upcomingExpirations.map((l) => {
                 const entity = entities.find((e) => e.id === l.entity_id);
-                const daysLeft = Math.ceil((new Date(l.expiration_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                const daysLeft = daysUntil(l.expiration_date);
                 return (
                   <Link
                     key={l.id}
@@ -1042,7 +1081,7 @@ export default function OrgRealEstatePage() {
                     <div className="min-w-0">
                       <p className="text-sm font-medium truncate">{leaseDisplayName(l)}</p>
                       <p className="text-xs text-muted-foreground">
-                        {entity?.code} &middot; {new Date(l.expiration_date).toLocaleDateString()}
+                        {entity?.code} &middot; {formatIsoDateLocal(l.expiration_date)}
                       </p>
                     </div>
                     <Badge variant={daysLeft <= 90 ? "destructive" : "secondary"} className="ml-2 shrink-0">
@@ -1155,9 +1194,7 @@ export default function OrgRealEstatePage() {
                               const hasSubleases = subleases.some(
                                 (s) => s.lease_id === lease.id && s.status === "active"
                               );
-                              const daysToExpiry = Math.ceil(
-                                (new Date(lease.expiration_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-                              );
+                              const daysToExpiry = daysUntil(lease.expiration_date);
                               const isExpiringSoon =
                                 lease.status === "active" && daysToExpiry <= 180 && daysToExpiry > 0;
 
@@ -1204,7 +1241,7 @@ export default function OrgRealEstatePage() {
                                   </TableCell>
                                   <TableCell>
                                     <div className={cn("text-sm", isExpiringSoon && "text-amber-600 font-medium")}>
-                                      {new Date(lease.expiration_date).toLocaleDateString()}
+                                      {formatIsoDateLocal(lease.expiration_date)}
                                     </div>
                                     {isExpiringSoon && (
                                       <div className="text-xs text-amber-600">{daysToExpiry}d remaining</div>
