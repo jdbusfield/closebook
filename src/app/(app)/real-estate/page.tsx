@@ -1227,17 +1227,17 @@ export default function OrgRealEstatePage() {
 
                     {isExpanded && entityLeases.length > 0 && (
                       <div className="border-t">
-                        <Table>
+                        <Table className="table-fixed w-full">
                           <TableHeader>
                             <TableRow>
-                              <TableHead className="pl-11">Nickname</TableHead>
-                              <TableHead>Property</TableHead>
-                              <TableHead>Type</TableHead>
-                              <TableHead>Status</TableHead>
-                              <TableHead className="text-right">Current Monthly (Net)</TableHead>
-                              <TableHead className="text-right">Annual (Net)</TableHead>
-                              <TableHead>Expiration</TableHead>
-                              <TableHead className="w-8" />
+                              <TableHead className="pl-11 w-[20%]">Nickname</TableHead>
+                              <TableHead className="w-[18%]">Property</TableHead>
+                              <TableHead className="w-[9%]">Type</TableHead>
+                              <TableHead className="w-[9%]">Status</TableHead>
+                              <TableHead className="text-right w-[14%]">Current Monthly (Net)</TableHead>
+                              <TableHead className="text-right w-[12%]">Annual (Net)</TableHead>
+                              <TableHead className="w-[12%]">Expiration</TableHead>
+                              <TableHead className="w-[6%]" />
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -1258,20 +1258,20 @@ export default function OrgRealEstatePage() {
                                       href={`/${lease.entity_id}/real-estate/${lease.id}`}
                                       className="hover:underline"
                                     >
-                                      <div className="font-medium">
+                                      <div className="font-medium truncate">
                                         {leaseDisplayName(lease)}
                                       </div>
                                       {lease.nickname && (
-                                        <div className="text-xs text-muted-foreground">
+                                        <div className="text-xs text-muted-foreground truncate">
                                           {lease.lease_name}
                                         </div>
                                       )}
                                     </Link>
                                   </TableCell>
                                   <TableCell>
-                                    <div className="text-sm">{lease.properties?.property_name ?? "—"}</div>
+                                    <div className="text-sm truncate">{lease.properties?.property_name ?? "—"}</div>
                                     {lease.properties?.city && (
-                                      <div className="text-xs text-muted-foreground">
+                                      <div className="text-xs text-muted-foreground truncate">
                                         {lease.properties.city}
                                         {lease.properties.state ? `, ${lease.properties.state}` : ""}
                                       </div>
