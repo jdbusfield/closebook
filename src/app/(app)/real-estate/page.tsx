@@ -1319,7 +1319,16 @@ export default function OrgRealEstatePage() {
                                     <Badge variant="outline" className="text-xs capitalize">{lease.lease_type}</Badge>
                                   </TableCell>
                                   <TableCell>
-                                    <Badge variant={STATUS_VARIANT[lease.status]} className="text-xs capitalize">{lease.status}</Badge>
+                                    {hasSubleases ? (
+                                      <Badge
+                                        variant="secondary"
+                                        className="text-xs bg-green-100 text-green-800 hover:bg-green-100 dark:bg-green-900/40 dark:text-green-300"
+                                      >
+                                        Subleased
+                                      </Badge>
+                                    ) : (
+                                      <Badge variant={STATUS_VARIANT[lease.status]} className="text-xs capitalize">{lease.status}</Badge>
+                                    )}
                                   </TableCell>
                                   <TableCell className="text-right font-mono text-sm">
                                     <div>{formatCurrency(netMonthly)}</div>
