@@ -457,6 +457,40 @@ export default function OrgRealEstatePage() {
     return map;
   }, [activeLeases, escalationsByLease, subleases, subleaseEscMap]);
 
+  // --- Next-12-months net cost per lease (from the generated payment schedule) ---
+  // Sums the scheduled lease payments (net of sublease recoveries) over the
+  // current month plus the next 11 — so it reflects escalations, abatements,
+  // and leases that end partway through the window, instead of a flat
+  // currentMonthly × 12.
+
+  const next12MonthKeys = useMemo(() => {
+    const { year, month } = getCurrentPeriod();
+    const set = new Set<string>();
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(year, month - 1 + i, 1);
+      set.add(`${d.getFullYear()}-${d.getMonth() + 1}`);
+    }
+    return set;
+  }, []);
+
+  const leasesWithSchedule = useMemo(
+    () => new Set(leasePayments.map((p) => p.lease_id)),
+    [leasePayments]
+  );
+
+  const leaseNext12Net = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const p of leasePayments) {
+      if (!next12MonthKeys.has(`${p.period_year}-${p.period_month}`)) continue;
+      map.set(p.lease_id, (map.get(p.lease_id) ?? 0) + p.scheduled_amount);
+    }
+    for (const p of subleasePayments) {
+      if (!next12MonthKeys.has(`${p.period_year}-${p.period_month}`)) continue;
+      map.set(p.lease_id, (map.get(p.lease_id) ?? 0) - p.scheduled_amount);
+    }
+    return map;
+  }, [leasePayments, subleasePayments, next12MonthKeys]);
+
   // --- Cost by entity including allocations ---
 
   const entityNetCosts = useMemo(() => {
@@ -1235,7 +1269,7 @@ export default function OrgRealEstatePage() {
                               <TableHead className="w-[9%]">Type</TableHead>
                               <TableHead className="w-[9%]">Status</TableHead>
                               <TableHead className="text-right w-[14%]">Current Monthly (Net)</TableHead>
-                              <TableHead className="text-right w-[12%]">Annual (Net)</TableHead>
+                              <TableHead className="text-right w-[12%]">Next 12 Mo (Net)</TableHead>
                               <TableHead className="w-[12%]">Expiration</TableHead>
                               <TableHead className="w-[6%]" />
                             </TableRow>
@@ -1243,7 +1277,11 @@ export default function OrgRealEstatePage() {
                           <TableBody>
                             {entityLeases.map((lease) => {
                               const netMonthly = leaseNetMonthlyCost.get(lease.id) ?? 0;
-                              const netAnnual = netMonthly * 12;
+                              // Scheduled net over the next 12 months; fall back to
+                              // annualized run-rate only if no schedule exists yet.
+                              const next12Net = leasesWithSchedule.has(lease.id)
+                                ? (leaseNext12Net.get(lease.id) ?? 0)
+                                : netMonthly * 12;
                               const hasSubleases = subleases.some(
                                 (s) => s.lease_id === lease.id && s.status === "active"
                               );
@@ -1290,7 +1328,7 @@ export default function OrgRealEstatePage() {
                                     )}
                                   </TableCell>
                                   <TableCell className="text-right font-mono text-sm">
-                                    {formatCurrency(netAnnual)}
+                                    {formatCurrency(next12Net)}
                                   </TableCell>
                                   <TableCell>
                                     <div className={cn("text-sm", isExpiringSoon && "text-amber-600 font-medium")}>
