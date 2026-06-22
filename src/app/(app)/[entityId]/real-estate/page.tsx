@@ -51,6 +51,7 @@ import {
 import { getCurrentRent, generateLeasePaymentSchedule } from "@/lib/utils/lease-payments";
 import type { EscalationRule, LeaseForPayments } from "@/lib/utils/lease-payments";
 import type { LeaseStatus, LeaseType, CriticalDateType, SubleaseStatus, SplitType } from "@/lib/types/database";
+import { isActiveLeaseStatus } from "@/lib/types/database";
 import {
   Tooltip,
   TooltipContent,
@@ -166,6 +167,7 @@ interface EntityOption {
 const STATUS_LABELS: Record<LeaseStatus, string> = {
   draft: "Draft",
   active: "Active",
+  active_non_operational: "Active (Non-Operational)",
   expired: "Expired",
   terminated: "Terminated",
 };
@@ -176,6 +178,7 @@ const STATUS_VARIANTS: Record<
 > = {
   draft: "outline",
   active: "default",
+  active_non_operational: "secondary",
   expired: "secondary",
   terminated: "destructive",
 };
@@ -571,8 +574,14 @@ export default function RealEstatePage() {
 
   // Filtered leases
   const filteredLeases = leases.filter((l) => {
-    if (statusFilter && statusFilter !== "all" && l.status !== statusFilter)
-      return false;
+    if (statusFilter && statusFilter !== "all") {
+      // "Active" includes non-operational; other statuses match exactly.
+      if (statusFilter === "active") {
+        if (!isActiveLeaseStatus(l.status)) return false;
+      } else if (l.status !== statusFilter) {
+        return false;
+      }
+    }
     if (typeFilter && typeFilter !== "all" && l.lease_type !== typeFilter)
       return false;
     if (!searchQuery) return true;
@@ -665,7 +674,7 @@ export default function RealEstatePage() {
     return leaseNetCost(lease) - leaseAllocatedOut(lease);
   }
 
-  const activeLeases = leases.filter((l) => l.status === "active");
+  const activeLeases = leases.filter((l) => isActiveLeaseStatus(l.status));
   const totalMonthly = activeLeases.reduce((s, l) => s + totalMonthlyCost(l, leaseCurrentRent(l)), 0);
   const totalAnnual = totalMonthly * 12;
   const totalSF = activeLeases.reduce(
@@ -1028,6 +1037,7 @@ export default function RealEstatePage() {
                 <SelectItem value="all">All Statuses</SelectItem>
                 <SelectItem value="draft">Draft</SelectItem>
                 <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="active_non_operational">Active (Non-Operational)</SelectItem>
                 <SelectItem value="expired">Expired</SelectItem>
                 <SelectItem value="terminated">Terminated</SelectItem>
               </SelectContent>

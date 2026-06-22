@@ -64,6 +64,7 @@ import {
   Bar,
 } from "recharts";
 import type { LeaseStatus, LeaseType, MaintenanceType, PropertyType, SplitType } from "@/lib/types/database";
+import { isActiveLeaseStatus } from "@/lib/types/database";
 
 // --- Types ---
 
@@ -140,9 +141,18 @@ const ENTITY_COLORS = [
 
 const STATUS_VARIANT: Record<LeaseStatus, "default" | "secondary" | "outline" | "destructive"> = {
   active: "default",
+  active_non_operational: "secondary",
   draft: "secondary",
   expired: "outline",
   terminated: "destructive",
+};
+
+const STATUS_LABEL: Record<LeaseStatus, string> = {
+  active: "Active",
+  active_non_operational: "Active (Non-Operational)",
+  draft: "Draft",
+  expired: "Expired",
+  terminated: "Terminated",
 };
 
 // --- Helpers ---
@@ -282,7 +292,7 @@ function daysUntil(iso: string): number {
 // expiration date. A lease left flagged "active" after expiring (e.g. Pico)
 // should drop out of the consolidated view.
 function isLeaseActive(lease: { status: LeaseStatus; expiration_date: string }): boolean {
-  return lease.status === "active" && parseLocalDate(lease.expiration_date) >= startOfToday();
+  return isActiveLeaseStatus(lease.status) && parseLocalDate(lease.expiration_date) >= startOfToday();
 }
 
 // --- Page ---
@@ -1209,6 +1219,7 @@ export default function OrgRealEstatePage() {
                 <SelectContent>
                   <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="active_non_operational">Active (Non-Operational)</SelectItem>
                   <SelectItem value="draft">Draft</SelectItem>
                   <SelectItem value="expired">Expired</SelectItem>
                   <SelectItem value="terminated">Terminated</SelectItem>
@@ -1264,14 +1275,13 @@ export default function OrgRealEstatePage() {
                         <Table className="table-fixed w-full">
                           <TableHeader>
                             <TableRow>
-                              <TableHead className="pl-11 w-[20%]">Nickname</TableHead>
-                              <TableHead className="w-[18%]">Property</TableHead>
-                              <TableHead className="w-[9%]">Type</TableHead>
-                              <TableHead className="w-[9%]">Status</TableHead>
-                              <TableHead className="text-right w-[14%]">Current Monthly (Net)</TableHead>
-                              <TableHead className="text-right w-[12%]">Next 12 Mo (Net)</TableHead>
-                              <TableHead className="w-[12%]">Expiration</TableHead>
-                              <TableHead className="w-[6%]" />
+                              <TableHead className="pl-11 w-[22%]">Nickname</TableHead>
+                              <TableHead className="w-[20%]">Property</TableHead>
+                              <TableHead className="w-[10%]">Status</TableHead>
+                              <TableHead className="text-right w-[15%]">Current Monthly (Net)</TableHead>
+                              <TableHead className="text-right w-[13%]">Next 12 Mo (Net)</TableHead>
+                              <TableHead className="w-[13%]">Expiration</TableHead>
+                              <TableHead className="w-[7%]" />
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -1287,7 +1297,7 @@ export default function OrgRealEstatePage() {
                               );
                               const daysToExpiry = daysUntil(lease.expiration_date);
                               const isExpiringSoon =
-                                lease.status === "active" && daysToExpiry <= 180 && daysToExpiry > 0;
+                                isActiveLeaseStatus(lease.status) && daysToExpiry <= 180 && daysToExpiry > 0;
 
                               return (
                                 <TableRow key={lease.id} className="cursor-pointer hover:bg-accent/50">
@@ -1316,9 +1326,6 @@ export default function OrgRealEstatePage() {
                                     )}
                                   </TableCell>
                                   <TableCell>
-                                    <Badge variant="outline" className="text-xs capitalize">{lease.lease_type}</Badge>
-                                  </TableCell>
-                                  <TableCell>
                                     {hasSubleases ? (
                                       <Badge
                                         variant="secondary"
@@ -1327,7 +1334,7 @@ export default function OrgRealEstatePage() {
                                         Subleased
                                       </Badge>
                                     ) : (
-                                      <Badge variant={STATUS_VARIANT[lease.status]} className="text-xs capitalize">{lease.status}</Badge>
+                                      <Badge variant={STATUS_VARIANT[lease.status]} className="text-xs">{STATUS_LABEL[lease.status]}</Badge>
                                     )}
                                   </TableCell>
                                   <TableCell className="text-right font-mono text-sm">

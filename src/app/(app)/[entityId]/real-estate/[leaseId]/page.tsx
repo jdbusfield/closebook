@@ -312,6 +312,7 @@ interface Account {
 const STATUS_LABELS: Record<LeaseStatus, string> = {
   draft: "Draft",
   active: "Active",
+  active_non_operational: "Active (Non-Operational)",
   expired: "Expired",
   terminated: "Terminated",
 };
@@ -322,6 +323,7 @@ const STATUS_VARIANTS: Record<
 > = {
   draft: "outline",
   active: "default",
+  active_non_operational: "secondary",
   expired: "secondary",
   terminated: "destructive",
 };
@@ -2100,6 +2102,7 @@ export default function LeaseDetailPage() {
                           <SelectContent>
                             <SelectItem value="draft">Draft</SelectItem>
                             <SelectItem value="active">Active</SelectItem>
+                            <SelectItem value="active_non_operational">Active (Non-Operational)</SelectItem>
                             <SelectItem value="expired">Expired</SelectItem>
                             <SelectItem value="terminated">Terminated</SelectItem>
                           </SelectContent>

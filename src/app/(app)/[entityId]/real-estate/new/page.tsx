@@ -621,6 +621,7 @@ export default function NewLeasePage() {
                       <SelectContent>
                         <SelectItem value="draft">Draft</SelectItem>
                         <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="active_non_operational">Active (Non-Operational)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

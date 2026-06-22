@@ -150,7 +150,19 @@ export type PropertyType =
 
 export type LeaseType = "operating" | "finance";
 
-export type LeaseStatus = "draft" | "active" | "expired" | "terminated";
+export type LeaseStatus =
+  | "draft"
+  | "active"
+  | "active_non_operational"
+  | "expired"
+  | "terminated";
+
+// A lease counts as financially active (rent still owed, schedules generated,
+// counted in cost rollups) whether it is fully operational or marked
+// non-operational. The distinction is for operational reporting only.
+export function isActiveLeaseStatus(status: LeaseStatus | string): boolean {
+  return status === "active" || status === "active_non_operational";
+}
 
 export type MaintenanceType = "triple_net" | "gross" | "modified_gross";
 
