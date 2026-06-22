@@ -39,6 +39,8 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { formatCurrency, getCurrentPeriod, formatIsoDateLocal } from "@/lib/utils/dates";
+import { fetchAllRows } from "@/lib/utils/paginated-fetch";
+import { PaymentScheduleGrids } from "@/components/real-estate/payment-schedule-grids";
 import { cn } from "@/lib/utils";
 import {
   calculateLeaseLiability,
@@ -296,6 +298,12 @@ export default function OrgRealEstatePage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("active");
   const [expandedEntities, setExpandedEntities] = useState<Set<string>>(new Set());
+  const [leasePayments, setLeasePayments] = useState<
+    Array<{ lease_id: string; period_year: number; period_month: number; scheduled_amount: number }>
+  >([]);
+  const [subleasePayments, setSubleasePayments] = useState<
+    Array<{ sublease_id: string; lease_id: string; period_year: number; period_month: number; scheduled_amount: number }>
+  >([]);
 
   // --- Data Fetching ---
 
@@ -379,6 +387,51 @@ export default function OrgRealEstatePage() {
         .select("id, lease_id, source_entity_id, destination_entity_id, split_type, split_percentage, split_fixed_amount, is_active")
         .eq("is_active", true);
       setCostSplits((splitsResult.data as unknown as CostSplitRow[]) ?? []);
+
+      // Payment schedules for the active portfolio, driving the year × month
+      // cost grids. Scoped to currently-active leases/subleases (date-aware),
+      // and paginated so we don't hit the 1000-row PostgREST cap across all
+      // entities.
+      const activeLeaseIds = allLeases.filter(isLeaseActive).map((l) => l.id);
+      if (activeLeaseIds.length > 0) {
+        const lp = await fetchAllRows<{
+          lease_id: string;
+          period_year: number;
+          period_month: number;
+          scheduled_amount: number;
+        }>(supabase, {
+          table: "lease_payments",
+          select: "lease_id, period_year, period_month, scheduled_amount",
+          filters: [{ type: "in", column: "lease_id", value: activeLeaseIds }],
+          order: [{ column: "period_year" }, { column: "period_month" }],
+        });
+        setLeasePayments(lp);
+      } else {
+        setLeasePayments([]);
+      }
+
+      const allSubs = (subleasesResult.data as unknown as SubleaseRow[]) ?? [];
+      const activeSubIds = allSubs.filter((s) => s.status === "active").map((s) => s.id);
+      if (activeSubIds.length > 0) {
+        const subToLease: Record<string, string> = {};
+        for (const s of allSubs) subToLease[s.id] = s.lease_id;
+        const sp = await fetchAllRows<{
+          sublease_id: string;
+          period_year: number;
+          period_month: number;
+          scheduled_amount: number;
+        }>(supabase, {
+          table: "sublease_payments",
+          select: "sublease_id, period_year, period_month, scheduled_amount",
+          filters: [{ type: "in", column: "sublease_id", value: activeSubIds }],
+          order: [{ column: "period_year" }, { column: "period_month" }],
+        });
+        setSubleasePayments(
+          sp.map((p) => ({ ...p, lease_id: subToLease[p.sublease_id] ?? "" }))
+        );
+      } else {
+        setSubleasePayments([]);
+      }
 
       setLoading(false);
     }
@@ -1272,6 +1325,14 @@ export default function OrgRealEstatePage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Total cost grids — per month and per year, across the active portfolio */}
+      {leasePayments.length > 0 && (
+        <PaymentScheduleGrids
+          leasePayments={leasePayments}
+          subleasePayments={subleasePayments}
+        />
+      )}
     </div>
   );
 }
