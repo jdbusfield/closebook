@@ -218,15 +218,16 @@ export async function exportMonthlySummaryPdf(
     columnStyles[i] = { cellWidth: numW, halign: "right" };
   }
 
+  // Year-to-Date block is shown first (left), Month block second (right).
   const subHead = [
     "",
-    input.monthShort,
-    input.pyShort,
+    input.ytdShort,
+    input.ytdPyShort,
     "A v PY",
     "Budget",
     "A v B",
-    input.ytdShort,
-    input.ytdPyShort,
+    input.monthShort,
+    input.pyShort,
     "A v PY",
     "Budget",
     "A v B",
@@ -282,8 +283,8 @@ export async function exportMonthlySummaryPdf(
       }
       return [
         { content: row.label, styles: labelStyles },
-        ...blockCells(row, row.month, section.showBudget),
         ...blockCells(row, row.ytd, section.showBudget),
+        ...blockCells(row, row.month, section.showBudget),
       ];
     });
   }
@@ -302,8 +303,8 @@ export async function exportMonthlySummaryPdf(
     // Month / Year-to-Date block markers on the bar.
     doc.setFontSize(8);
     doc.setTextColor(200, 200, 200);
-    doc.text("MONTH", margin + LABEL_W + numW * 2.5, cursorY + 11, { align: "center" });
-    doc.text("YEAR-TO-DATE", margin + LABEL_W + numW * 7.5, cursorY + 11, { align: "center" });
+    doc.text("YEAR-TO-DATE", margin + LABEL_W + numW * 2.5, cursorY + 11, { align: "center" });
+    doc.text("MONTH", margin + LABEL_W + numW * 7.5, cursorY + 11, { align: "center" });
 
     cursorY += barH;
 
