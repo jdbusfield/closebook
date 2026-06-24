@@ -73,15 +73,21 @@ export async function exportMonthlySummaryPdf(
   doc.text(scopeBits, margin, 60);
 
   // ─── Column geometry ─────────────────────────────────────────────────────
-  // Label column, then two equal halves: Year-to-Date (left) and Month (right).
-  // Each half splits into 5 columns when the section carries budget data, else
-  // 3 — so the YTD↔Month divide stays aligned across every section while
-  // non-budget sections drop the empty Budget / A v B columns entirely.
+  // Label column, then two equal halves (Year-to-Date, then Month), each split
+  // into 5 fixed-width columns. Every section uses the SAME grid; sections
+  // without budget data simply leave their Budget / A v B columns blank, so
+  // all columns line up identically down the page.
   const LABEL_W = 150;
   const halfW = (usableWidth - LABEL_W) / 2;
+  const numW = halfW / 5;
+  const columnStyles: Record<number, { cellWidth: number; halign: "left" | "right" }> = {
+    0: { cellWidth: LABEL_W, halign: "left" },
+  };
+  for (let i = 1; i <= 10; i++) columnStyles[i] = { cellWidth: numW, halign: "right" };
 
+  // Non-budget sections keep the two trailing slots but with blank headers.
   const blockHeads = (showBudget: boolean, first: string, second: string): string[] =>
-    showBudget ? [first, second, "A v PY", "Budget", "A v B"] : [first, second, "A v PY"];
+    showBudget ? [first, second, "A v PY", "Budget", "A v B"] : [first, second, "A v PY", "", ""];
 
   function headFor(section: SummarySection): string[] {
     return [
@@ -89,18 +95,6 @@ export async function exportMonthlySummaryPdf(
       ...blockHeads(section.showBudget, input.ytdShort, input.ytdPyShort),
       ...blockHeads(section.showBudget, input.monthShort, input.pyShort),
     ];
-  }
-
-  function columnStylesFor(
-    section: SummarySection
-  ): Record<number, { cellWidth: number; halign: "left" | "right" }> {
-    const n = section.showBudget ? 5 : 3;
-    const colW = halfW / n;
-    const cs: Record<number, { cellWidth: number; halign: "left" | "right" }> = {
-      0: { cellWidth: LABEL_W, halign: "left" },
-    };
-    for (let i = 1; i <= 2 * n; i++) cs[i] = { cellWidth: colW, halign: "right" };
-    return cs;
   }
 
   type CellDef = { content: string; styles?: Record<string, unknown> };
@@ -135,19 +129,22 @@ export async function exportMonthlySummaryPdf(
       { content: fmtValue(row.kind, vals.py), styles: baseStyles },
       varCell(vals.py, true),
     ];
-    // Budget + A v B columns only when the section has budget data.
+    // Budget + A v B columns: real values when the section has budget data,
+    // otherwise left blank (same width, no content).
     if (showBudget) {
       cells.push({ content: fmtValue(row.kind, vals.budget), styles: baseStyles });
       cells.push(varCell(vals.budget, true));
+    } else {
+      cells.push({ content: "" });
+      cells.push({ content: "" });
     }
     return cells;
   }
 
   function bodyForSection(section: SummarySection): CellDef[][] {
-    const colCount = 1 + 2 * (section.showBudget ? 5 : 3);
     return section.rows.map((row) => {
       if (row.spacer) {
-        return Array.from({ length: colCount }, () => ({ content: "", styles: { minCellHeight: 4 } }));
+        return Array.from({ length: 11 }, () => ({ content: "", styles: { minCellHeight: 4 } }));
       }
       const labelStyles: Record<string, unknown> = { halign: "left" };
       if (row.bold) labelStyles.fontStyle = "bold";
@@ -207,7 +204,7 @@ export async function exportMonthlySummaryPdf(
         lineColor: [210, 210, 210],
         lineWidth: 0.5,
       },
-      columnStyles: columnStylesFor(section),
+      columnStyles,
       didParseCell: (data: Record<string, unknown>) => {
         const section2 = data.section as string;
         const columnIndex = (data.column as { index: number }).index;
