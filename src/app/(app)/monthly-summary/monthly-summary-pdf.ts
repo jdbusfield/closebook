@@ -25,6 +25,7 @@ import {
   variance,
   type CellValues,
   type MonthlySummaryInput,
+  type SummaryPanel,
   type SummaryRow,
   type SummarySection,
 } from "./monthly-summary-model";
@@ -212,6 +213,113 @@ export async function exportMonthlySummaryPdf(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const finalY = (doc as any).lastAutoTable?.finalY ?? cursorY + 40;
     cursorY = finalY + 10;
+  }
+
+  // ─── Bottom panels (compact, side-by-side) ─────────────────────────────────
+  function renderPanel(
+    panel: SummaryPanel,
+    x: number,
+    w: number,
+    top: number
+  ): number {
+    const barH = 15;
+    doc.setFillColor(...BAR_FILL);
+    doc.rect(x, top, w, barH, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text(panel.title.toUpperCase(), x + 5, top + 10);
+
+    const body = panel.rows.map((r) => {
+      const cells: { content: string; styles: Record<string, unknown> }[] = [
+        { content: r.label, styles: { halign: "left", fontStyle: r.bold ? "bold" : "normal" } },
+        {
+          content: fmtValue(panel.kind, r.current),
+          styles: { halign: "right", fontStyle: r.bold ? "bold" : "normal" },
+        },
+      ];
+      if (panel.showPy) {
+        cells.push({ content: fmtValue(panel.kind, r.py), styles: { halign: "right" } });
+        const v = variance(panel.kind, r.current, r.py, !!panel.invert);
+        const st: Record<string, unknown> = { halign: "right" };
+        if (panel.colorVariance && v.favorable === true) {
+          st.fillColor = FAV_FILL;
+          st.textColor = FAV_TEXT;
+        } else if (panel.colorVariance && v.favorable === false) {
+          st.fillColor = UNFAV_FILL;
+          st.textColor = UNFAV_TEXT;
+        } else {
+          st.textColor = MUTED_TEXT;
+        }
+        cells.push({ content: v.text, styles: st });
+      }
+      return cells;
+    });
+
+    const head = panel.showPy
+      ? [["", panel.currentLabel, panel.pyLabel, "A v PY"]]
+      : [["", panel.currentLabel]];
+    const cw: Record<number, { cellWidth: number; halign: "left" | "right" }> = panel.showPy
+      ? {
+          0: { cellWidth: w * 0.4, halign: "left" },
+          1: { cellWidth: w * 0.2, halign: "right" },
+          2: { cellWidth: w * 0.2, halign: "right" },
+          3: { cellWidth: w * 0.2, halign: "right" },
+        }
+      : {
+          0: { cellWidth: w * 0.55, halign: "left" },
+          1: { cellWidth: w * 0.45, halign: "right" },
+        };
+
+    autoTable(doc, {
+      startY: top + barH,
+      margin: { left: x, right: pageWidth - (x + w) },
+      tableWidth: w,
+      head,
+      body,
+      theme: "grid",
+      styles: {
+        font: "helvetica",
+        fontSize: 7,
+        cellPadding: { top: 2, right: 4, bottom: 2, left: 4 },
+        lineColor: [225, 225, 225],
+        lineWidth: 0.5,
+        overflow: "linebreak",
+      },
+      headStyles: {
+        fillColor: SUBHEAD_FILL,
+        textColor: [40, 40, 40],
+        fontStyle: "bold",
+        fontSize: 6.5,
+        halign: "right",
+        lineColor: [210, 210, 210],
+        lineWidth: 0.5,
+      },
+      columnStyles: cw,
+      didParseCell: (data: Record<string, unknown>) => {
+        const sect = data.section as string;
+        const ci = (data.column as { index: number }).index;
+        const cell = data.cell as { styles: Record<string, unknown> };
+        if (sect === "head") cell.styles.halign = ci === 0 ? "left" : "right";
+      },
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (doc as any).lastAutoTable?.finalY ?? top + barH + 40;
+  }
+
+  if (input.panels && input.panels.length > 0) {
+    const n = input.panels.length;
+    const gap = 12;
+    const panelW = (usableWidth - gap * (n - 1)) / n;
+    const top = cursorY;
+    let maxY = top;
+    input.panels.forEach((panel, i) => {
+      const x = margin + i * (panelW + gap);
+      const fy = renderPanel(panel, x, panelW, top);
+      if (fy > maxY) maxY = fy;
+    });
+    cursorY = maxY + 10;
   }
 
   // ─── Footer ──────────────────────────────────────────────────────────────

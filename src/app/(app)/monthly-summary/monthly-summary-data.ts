@@ -4,6 +4,10 @@
  * Fetches the consolidated P&L (via /api/financial-statements) and fleet KPIs
  * (via /api/rental-assets/monthly-summary) and maps them into the shared
  * MonthlySummaryInput model consumed by both the on-page preview and the PDF.
+ *
+ * The heavy network fetch (fetchSummaryBase) is separate from the cheap
+ * assembly of manually-entered panels (buildManualPanels) so editing the
+ * manual data points re-renders the preview without re-fetching.
  */
 
 import type {
@@ -13,6 +17,8 @@ import type {
 import type {
   CellValues,
   MonthlySummaryInput,
+  PanelRow,
+  SummaryPanel,
   SummaryRow,
   SummarySection,
 } from "./monthly-summary-model";
@@ -47,6 +53,47 @@ interface KpiResponse {
   segments: { vehicle: KpiSegment; trailer: KpiSegment; total: KpiSegment };
 }
 
+// ── Manually-entered data points (persisted in localStorage per period) ──
+export interface ManualInputs {
+  /** keyed by entity id → { current, prior-year } headcount */
+  headcount: Record<string, { current: number | null; py: number | null }>;
+  caShows: { current: number | null; py: number | null };
+}
+
+export function emptyManualInputs(): ManualInputs {
+  return { headcount: {}, caShows: { current: null, py: null } };
+}
+
+const manualKey = (orgId: string, year: number, month: number) =>
+  `closebook:monthly-summary-manual:${orgId}:${year}-${month}`;
+
+export function loadManualInputs(
+  orgId: string,
+  year: number,
+  month: number
+): ManualInputs {
+  try {
+    const raw = localStorage.getItem(manualKey(orgId, year, month));
+    if (raw) return { ...emptyManualInputs(), ...JSON.parse(raw) };
+  } catch {
+    /* ignore */
+  }
+  return emptyManualInputs();
+}
+
+export function saveManualInputs(
+  orgId: string,
+  year: number,
+  month: number,
+  inputs: ManualInputs
+): void {
+  try {
+    localStorage.setItem(manualKey(orgId, year, month), JSON.stringify(inputs));
+  } catch {
+    /* ignore */
+  }
+}
+
 export interface BuildParams {
   organizationId: string;
   organizationName: string;
@@ -55,7 +102,12 @@ export interface BuildParams {
   includeService: boolean;
 }
 
-export async function buildMonthlySummary(
+/**
+ * Fetches and maps the data-driven part of the report: the P&L / KPI sections
+ * plus the (data-driven) End of Month Fleet Size panel. The manual panels are
+ * appended later by buildManualPanels.
+ */
+export async function fetchSummaryBase(
   p: BuildParams
 ): Promise<MonthlySummaryInput> {
   const { organizationId, organizationName, year, month, includeService } = p;
@@ -80,6 +132,9 @@ export async function buildMonthlySummary(
   }
   const fin = await finRes.json();
   const kpi: KpiResponse = await kpiRes.json();
+
+  const monthShort = `${MONTH_SHORT[month]}-${String(year).slice(2)}`;
+  const pyShort = `${MONTH_SHORT[month]}-${String(year - 1).slice(2)}`;
 
   // ── P&L extraction ──
   const sections = (fin.incomeStatement?.sections ?? []) as StatementSection[];
@@ -106,7 +161,6 @@ export async function buildMonthlySummary(
     return { month: pick(mKey), ytd: pick(ytdKey) };
   }
 
-  // Combine the two operating-cost sections (direct + fixed) into a single line.
   function combineVals(
     a: { month: CellValues; ytd: CellValues },
     b: { month: CellValues; ytd: CellValues }
@@ -158,11 +212,6 @@ export async function buildMonthlySummary(
       month: { actual: s.rate.month, py: s.rate.pyMonth, budget: null },
       ytd: { actual: s.rate.ytd, py: s.rate.pyYtd, budget: null },
     });
-  const fleetRow = (label: string, s: KpiSegment): SummaryRow =>
-    mkRow(label, "count", {
-      month: { actual: s.fleet.month, py: s.fleet.pyMonth, budget: null },
-      ytd: emptyVals(),
-    });
   const onRentRow = (label: string, s: KpiSegment): SummaryRow =>
     mkRow(label, "avg", {
       month: { actual: s.onRent.month, py: s.onRent.pyMonth, budget: null },
@@ -196,25 +245,85 @@ export async function buildMonthlySummary(
       rateRow("Total", seg.total),
     ],
   };
-  const fleet: SummarySection = {
+
+  // ── Fleet size as a compact bottom panel (was a full-width section) ──
+  const fleetPanel: SummaryPanel = {
     title: "End of Month Fleet Size",
-    showBudget: false,
+    kind: "count",
+    showPy: true,
+    colorVariance: true,
+    currentLabel: monthShort,
+    pyLabel: pyShort,
     rows: [
-      fleetRow("Total Vehicle", seg.vehicle),
-      fleetRow("Total Trailer", seg.trailer),
-      fleetRow("Total", seg.total),
+      { label: "Vehicle", current: seg.vehicle.fleet.month, py: seg.vehicle.fleet.pyMonth },
+      { label: "Trailer", current: seg.trailer.fleet.month, py: seg.trailer.fleet.pyMonth },
+      { label: "Total", current: seg.total.fleet.month, py: seg.total.fleet.pyMonth, bold: true },
     ],
   };
 
   return {
     organizationName,
     monthLabel: `${MONTH_NAMES[month]} ${year}`,
-    monthShort: `${MONTH_SHORT[month]}-${String(year).slice(2)}`,
-    pyShort: `${MONTH_SHORT[month]}-${String(year - 1).slice(2)}`,
+    monthShort,
+    pyShort,
     ytdShort: `YTD-${String(year).slice(2)}`,
     ytdPyShort: `YTD-${String(year - 1).slice(2)}`,
     generatedAtIso: new Date().toISOString(),
     scopeNote: "Consolidated",
-    sections: [performance, utilization, avgOnRent, rates, fleet],
+    sections: [performance, utilization, avgOnRent, rates],
+    panels: [fleetPanel],
   };
+}
+
+/** Sum a list of nullable numbers; returns null only when every value is null. */
+function sumOrNull(vals: Array<number | null>): number | null {
+  if (vals.every((v) => v == null)) return null;
+  return vals.reduce<number>((acc, v) => acc + (v ?? 0), 0);
+}
+
+/**
+ * Builds the manually-entered panels (Headcount by Entity, California Shows)
+ * from the user's inputs. Cheap and pure so it can run on every edit.
+ */
+export function buildManualPanels(
+  entities: Array<{ id: string; name: string; code: string }>,
+  manual: ManualInputs,
+  currentLabel: string,
+  pyLabel: string
+): SummaryPanel[] {
+  const headRows: PanelRow[] = entities.map((e) => ({
+    label: e.code || e.name,
+    current: manual.headcount[e.id]?.current ?? null,
+    py: manual.headcount[e.id]?.py ?? null,
+  }));
+  headRows.push({
+    label: "Total",
+    current: sumOrNull(headRows.map((r) => r.current)),
+    py: sumOrNull(headRows.map((r) => r.py)),
+    bold: true,
+  });
+
+  const headcount: SummaryPanel = {
+    title: "Headcount by Entity",
+    kind: "count",
+    showPy: true,
+    colorVariance: false, // headcount up/down isn't inherently good/bad
+    currentLabel,
+    pyLabel,
+    rows: headRows,
+  };
+
+  const caShows: SummaryPanel = {
+    title: "California Shows",
+    kind: "count",
+    showPy: true,
+    colorVariance: true, // more shows = favorable
+    currentLabel,
+    pyLabel,
+    rows: [
+      { label: "Shows", current: manual.caShows.current, py: manual.caShows.py, bold: true },
+    ],
+  };
+
+  return [headcount, caShows];
 }

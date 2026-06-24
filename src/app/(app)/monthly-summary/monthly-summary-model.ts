@@ -38,6 +38,33 @@ export interface SummarySection {
   showBudget: boolean;
 }
 
+/** One row of a compact bottom panel (current vs prior). */
+export interface PanelRow {
+  label: string;
+  current: number | null;
+  py: number | null;
+  bold?: boolean;
+}
+
+/**
+ * A compact panel rendered in a row beneath the main sections — used for the
+ * fleet size and the manually-entered data points (headcount, CA shows) that
+ * don't warrant the full 11-column section layout.
+ */
+export interface SummaryPanel {
+  title: string;
+  rows: PanelRow[];
+  kind: RowKind;
+  /** show the prior-year column + delta. */
+  showPy: boolean;
+  /** shade the delta by favorability; when false the delta stays neutral. */
+  colorVariance: boolean;
+  /** true when lower is better (flips favorable color). */
+  invert?: boolean;
+  currentLabel: string; // column header for current (e.g. "May-26")
+  pyLabel: string; // column header for prior (e.g. "May-25")
+}
+
 export interface MonthlySummaryInput {
   organizationName: string;
   monthLabel: string; // "May 2026"
@@ -48,6 +75,8 @@ export interface MonthlySummaryInput {
   generatedAtIso: string;
   scopeNote?: string; // e.g. "Consolidated"
   sections: SummarySection[];
+  /** compact panels rendered side-by-side at the bottom of the report. */
+  panels?: SummaryPanel[];
 }
 
 // ─── Formatters (ASCII-only so the PDF's WinAnsi Helvetica renders cleanly) ──

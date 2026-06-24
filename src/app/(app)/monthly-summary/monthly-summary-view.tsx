@@ -12,6 +12,7 @@ import {
   variance,
   type CellValues,
   type MonthlySummaryInput,
+  type SummaryPanel,
   type SummaryRow,
   type SummarySection,
 } from "./monthly-summary-model";
@@ -206,6 +207,90 @@ function SectionTable({
   );
 }
 
+function PanelTable({ panel }: { panel: SummaryPanel }) {
+  const barCell: React.CSSProperties = {
+    background: "#111",
+    color: "#fff",
+    fontWeight: 700,
+    fontSize: 10,
+    padding: "5px 6px",
+    textAlign: "left",
+    letterSpacing: "0.03em",
+  };
+  const subHeadCell: React.CSSProperties = {
+    background: "#eee",
+    color: "#282828",
+    fontWeight: 700,
+    fontSize: 9.5,
+    padding: "3px 6px",
+    textAlign: "right",
+    borderBottom: "1px solid #d2d2d2",
+    whiteSpace: "nowrap",
+  };
+  const heads = panel.showPy
+    ? ["", panel.currentLabel, panel.pyLabel, "A v PY"]
+    : ["", panel.currentLabel];
+
+  return (
+    <table
+      style={{
+        flex: "1 1 220px",
+        minWidth: 220,
+        borderCollapse: "collapse",
+        tableLayout: "fixed",
+        fontSize: 12,
+        alignSelf: "flex-start",
+      }}
+    >
+      <colgroup>
+        <col style={{ width: panel.showPy ? "40%" : "55%" }} />
+        <col style={{ width: panel.showPy ? "20%" : "45%" }} />
+        {panel.showPy && <col style={{ width: "20%" }} />}
+        {panel.showPy && <col style={{ width: "20%" }} />}
+      </colgroup>
+      <thead>
+        <tr>
+          <th style={barCell} colSpan={panel.showPy ? 4 : 2}>
+            {panel.title.toUpperCase()}
+          </th>
+        </tr>
+        <tr>
+          {heads.map((h, i) => (
+            <th key={i} style={{ ...subHeadCell, textAlign: i === 0 ? "left" : "right" }}>
+              {h}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {panel.rows.map((r, ri) => {
+          const v = variance(panel.kind, r.current, r.py, !!panel.invert);
+          const deltaStyle: React.CSSProperties = { ...NUM_BASE };
+          if (panel.colorVariance && v.favorable === true) Object.assign(deltaStyle, FAV);
+          else if (panel.colorVariance && v.favorable === false) Object.assign(deltaStyle, UNFAV);
+          else deltaStyle.color = MUTED;
+          const labelStyle: React.CSSProperties = {
+            textAlign: "left",
+            padding: "3px 6px",
+            borderBottom: "1px solid #e9e9e9",
+            whiteSpace: "nowrap",
+            fontWeight: r.bold ? 700 : 400,
+          };
+          const curStyle: React.CSSProperties = { ...NUM_BASE, fontWeight: r.bold ? 700 : 400 };
+          return (
+            <tr key={ri}>
+              <td style={labelStyle}>{r.label}</td>
+              <td style={curStyle}>{fmtValue(panel.kind, r.current)}</td>
+              {panel.showPy && <td style={NUM_BASE}>{fmtValue(panel.kind, r.py)}</td>}
+              {panel.showPy && <td style={deltaStyle}>{v.text}</td>}
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
 export function MonthlySummaryView({ data }: { data: MonthlySummaryInput }) {
   return (
     <div className="overflow-x-auto rounded-lg border bg-white p-6 text-black shadow-sm">
@@ -228,6 +313,22 @@ export function MonthlySummaryView({ data }: { data: MonthlySummaryInput }) {
             pyShort={data.pyShort}
           />
         ))}
+
+        {data.panels && data.panels.length > 0 && (
+          <div
+            style={{
+              display: "flex",
+              gap: 16,
+              marginTop: 16,
+              alignItems: "flex-start",
+              flexWrap: "wrap",
+            }}
+          >
+            {data.panels.map((panel) => (
+              <PanelTable key={panel.title} panel={panel} />
+            ))}
+          </div>
+        )}
 
         <div style={{ fontSize: 10.5, color: MUTED, marginTop: 14 }}>
           Operating-cost variances are shaded by favorability (green = favorable).
