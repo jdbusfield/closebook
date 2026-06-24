@@ -304,7 +304,7 @@ export function buildManualPanels(
   });
 
   const headcount: SummaryPanel = {
-    title: "Headcount by Entity",
+    title: "Headcount",
     kind: "count",
     showPy: true,
     colorVariance: false, // headcount up/down isn't inherently good/bad

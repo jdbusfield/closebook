@@ -96,13 +96,20 @@ export default function MonthlySummaryPage() {
         const name = Array.isArray(orgRel) ? orgRel[0]?.name : orgRel?.name;
         setOrgName(name ?? "Organization");
 
-        const { data: ents } = await supabase
-          .from("entities")
+        // Headcount is entered against the three top-level reporting entities
+        // (Avon, HDR, VS) — not every legal entity. Pull them in that order.
+        // reporting_entities isn't in the generated types, so use a loose client.
+        const HEADCOUNT_CODES = ["Avon", "HDR", "VS"];
+        const order = new Map(HEADCOUNT_CODES.map((c, i) => [c, i]));
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const reRes = await (supabase as any)
+          .from("reporting_entities")
           .select("id, name, code")
-          .eq("organization_id", orgId)
-          .eq("is_active", true)
-          .order("name");
-        setEntities((ents ?? []) as Entity[]);
+          .eq("organization_id", orgId);
+        const groups = ((reRes.data ?? []) as Entity[])
+          .filter((r) => order.has(r.code))
+          .sort((a, b) => (order.get(a.code) ?? 0) - (order.get(b.code) ?? 0));
+        setEntities(groups);
       }
       setChecked(true);
     })();
@@ -309,12 +316,12 @@ export default function MonthlySummaryPage() {
         </CardHeader>
         <CardContent className="space-y-5">
           <div>
-            <div className="mb-2 text-sm font-medium">Headcount by Entity</div>
+            <div className="mb-2 text-sm font-medium">Headcount</div>
             <div className="overflow-x-auto">
               <table className="text-sm">
                 <thead>
                   <tr className="text-muted-foreground">
-                    <th className="px-2 py-1 text-left font-medium">Entity</th>
+                    <th className="px-2 py-1 text-left font-medium">Reporting Entity</th>
                     <th className="px-2 py-1 text-right font-medium">{monthShort}</th>
                     <th className="px-2 py-1 text-right font-medium">{pyShort}</th>
                   </tr>
@@ -346,7 +353,7 @@ export default function MonthlySummaryPage() {
                   {entities.length === 0 && (
                     <tr>
                       <td colSpan={3} className="px-2 py-2 text-muted-foreground">
-                        No entities found.
+                        No reporting entities found.
                       </td>
                     </tr>
                   )}
