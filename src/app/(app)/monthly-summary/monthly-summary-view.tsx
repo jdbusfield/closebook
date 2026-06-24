@@ -89,19 +89,19 @@ function blockCells(
   showBudget: boolean,
   prefix: string
 ) {
-  return [
+  const cells = [
     <ValueCell key={`${prefix}-a`} keyId={`${prefix}-a`} row={row} n={vals.actual} isBase={false} />,
     <ValueCell key={`${prefix}-py`} keyId={`${prefix}-py`} row={row} n={vals.py} isBase />,
     <VarCell key={`${prefix}-vpy`} keyId={`${prefix}-vpy`} row={row} actual={vals.actual} base={vals.py} show />,
-    showBudget ? (
-      <ValueCell key={`${prefix}-b`} keyId={`${prefix}-b`} row={row} n={vals.budget} isBase />
-    ) : (
-      <td key={`${prefix}-b`} style={{ ...NUM_BASE, color: FAINT }}>
-        {DASH}
-      </td>
-    ),
-    <VarCell key={`${prefix}-vb`} keyId={`${prefix}-vb`} row={row} actual={vals.actual} base={vals.budget} show={showBudget} />,
   ];
+  // Budget + A v B columns only when the section has budget data.
+  if (showBudget) {
+    cells.push(
+      <ValueCell key={`${prefix}-b`} keyId={`${prefix}-b`} row={row} n={vals.budget} isBase />,
+      <VarCell key={`${prefix}-vb`} keyId={`${prefix}-vb`} row={row} actual={vals.actual} base={vals.budget} show />
+    );
+  }
+  return cells;
 }
 
 function SectionTable({
@@ -136,7 +136,14 @@ function SectionTable({
     borderBottom: "1px solid #d2d2d2",
     whiteSpace: "nowrap",
   };
-  const subHeads = [ytdShort, ytdPyShort, "A v PY", "Budget", "A v B", monthShort, pyShort, "A v PY", "Budget", "A v B"];
+  // 5 numeric columns per block with budget data, else 3. Each block keeps a
+  // fixed 41.5% half-width so the YTD↔Month divide aligns across all sections.
+  const cols = section.showBudget ? 5 : 3;
+  const numWidth = `${(41.5 / cols).toFixed(3)}%`;
+  const totalCols = 1 + 2 * cols;
+  const subHeads = section.showBudget
+    ? [ytdShort, ytdPyShort, "A v PY", "Budget", "A v B", monthShort, pyShort, "A v PY", "Budget", "A v B"]
+    : [ytdShort, ytdPyShort, "A v PY", monthShort, pyShort, "A v PY"];
 
   return (
     <table
@@ -150,17 +157,17 @@ function SectionTable({
     >
       <colgroup>
         <col style={{ width: "17%" }} />
-        {Array.from({ length: 10 }, (_, i) => (
-          <col key={i} style={{ width: "8.3%" }} />
+        {Array.from({ length: 2 * cols }, (_, i) => (
+          <col key={i} style={{ width: numWidth }} />
         ))}
       </colgroup>
       <thead>
         <tr>
           <th style={{ ...barCell, textAlign: "left" }}>{section.title.toUpperCase()}</th>
-          <th style={barCell} colSpan={5}>
+          <th style={barCell} colSpan={cols}>
             YEAR-TO-DATE
           </th>
-          <th style={barCell} colSpan={5}>
+          <th style={barCell} colSpan={cols}>
             MONTH
           </th>
         </tr>
@@ -178,7 +185,7 @@ function SectionTable({
           if (row.spacer) {
             return (
               <tr key={ri}>
-                <td colSpan={11} style={{ height: 6 }} />
+                <td colSpan={totalCols} style={{ height: 6 }} />
               </tr>
             );
           }
