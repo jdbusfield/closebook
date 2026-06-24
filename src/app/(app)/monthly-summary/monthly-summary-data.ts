@@ -189,7 +189,7 @@ export async function fetchSummaryBase(
   const emptyVals = (): CellValues => ({ actual: null, py: null, budget: null });
 
   const performance: SummarySection = {
-    title: "Month Performance",
+    title: "Financial performance",
     showBudget: true,
     rows: [
       mkRow("Total Revenue", "money", moneyVals("revenue")),
@@ -219,7 +219,7 @@ export async function fetchSummaryBase(
     });
 
   const utilization: SummarySection = {
-    title: "Month Utilization",
+    title: "Vehicle utilization",
     showBudget: false,
     rows: [
       utilRow("Total Vehicle", seg.vehicle),
@@ -237,7 +237,7 @@ export async function fetchSummaryBase(
     ],
   };
   const rates: SummarySection = {
-    title: "Month Rates",
+    title: "Average daily rate",
     showBudget: false,
     rows: [
       rateRow("Total Vehicle", seg.vehicle),
@@ -248,7 +248,7 @@ export async function fetchSummaryBase(
 
   // ── Fleet size as a compact bottom panel (was a full-width section) ──
   const fleetPanel: SummaryPanel = {
-    title: "End of Month Fleet Size",
+    title: "End of period fleet size",
     kind: "count",
     showPy: true,
     colorVariance: true,
@@ -304,7 +304,7 @@ export function buildManualPanels(
   });
 
   const headcount: SummaryPanel = {
-    title: "Headcount",
+    title: "End of period head count",
     // One decimal so employees allocated across two entities can show as 0.5.
     kind: "avg",
     showPy: true,
