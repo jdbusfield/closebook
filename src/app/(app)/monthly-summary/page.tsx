@@ -333,7 +333,8 @@ export default function MonthlySummaryPage() {
                       <td className="px-2 py-1">
                         <Input
                           type="number"
-                          inputMode="numeric"
+                          inputMode="decimal"
+                          step="0.1"
                           className="h-8 w-24 text-right"
                           value={manual.headcount[e.id]?.current ?? ""}
                           onChange={(ev) => setHeadcount(e.id, "current", ev.target.value)}
@@ -342,7 +343,8 @@ export default function MonthlySummaryPage() {
                       <td className="px-2 py-1">
                         <Input
                           type="number"
-                          inputMode="numeric"
+                          inputMode="decimal"
+                          step="0.1"
                           className="h-8 w-24 text-right"
                           value={manual.headcount[e.id]?.py ?? ""}
                           onChange={(ev) => setHeadcount(e.id, "py", ev.target.value)}

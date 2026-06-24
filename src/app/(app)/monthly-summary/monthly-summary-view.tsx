@@ -329,11 +329,6 @@ export function MonthlySummaryView({ data }: { data: MonthlySummaryInput }) {
             ))}
           </div>
         )}
-
-        <div style={{ fontSize: 10.5, color: MUTED, marginTop: 14 }}>
-          Operating-cost variances are shaded by favorability (green = favorable).
-          Utilization, rate, and fleet figures show actual vs prior year only.
-        </div>
       </div>
     </div>
   );
