@@ -219,6 +219,21 @@ export async function GET(request: NextRequest) {
   const util = (a: Accum) => (a.fleetDays > 0 ? (a.dbrDays / a.fleetDays) * 100 : 0);
   const rate = (a: Accum) => (a.actDays > 0 ? a.revenue / a.actDays : 0);
 
+  // Average units on rent over a period = rented unit-days / calendar days in
+  // the period. Uses rental_dbr_days (the same numerator as utilization) so
+  // avg-on-rent reconciles with the utilization %: util ~= avgOnRent / avgFleet.
+  const daysInMonth = (y: number, m: number) => new Date(y, m, 0).getDate();
+  const daysYtd = (y: number, upToMonth: number) => {
+    let d = 0;
+    for (let m = 1; m <= upToMonth; m++) d += daysInMonth(y, m);
+    return d;
+  };
+  const monthDays = daysInMonth(year, month);
+  const ytdDays = daysYtd(year, month);
+  const pyMonthDays = daysInMonth(pyYear, month);
+  const pyYtdDays = daysYtd(pyYear, month);
+  const avgOnRent = (days: number, dbrDays: number) => (days > 0 ? dbrDays / days : 0);
+
   const serializeSegment = (s: Segment) => ({
     util: {
       month: util(s.month),
@@ -231,6 +246,12 @@ export async function GET(request: NextRequest) {
       ytd: rate(s.ytd),
       pyMonth: rate(s.pyMonth),
       pyYtd: rate(s.pyYtd),
+    },
+    onRent: {
+      month: avgOnRent(monthDays, s.month.dbrDays),
+      ytd: avgOnRent(ytdDays, s.ytd.dbrDays),
+      pyMonth: avgOnRent(pyMonthDays, s.pyMonth.dbrDays),
+      pyYtd: avgOnRent(pyYtdDays, s.pyYtd.dbrDays),
     },
     fleet: {
       month: s.fleetMonth.size,

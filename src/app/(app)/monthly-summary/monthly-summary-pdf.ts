@@ -19,7 +19,7 @@
  * (e.g. 82.3, not 0.823). Rates are dollars-per-day (not thousands).
  */
 
-export type RowKind = "money" | "pct" | "rate" | "count";
+export type RowKind = "money" | "pct" | "rate" | "count" | "avg";
 
 export interface CellValues {
   actual: number | null;
@@ -98,6 +98,14 @@ function fmtCount(n: number | null): string {
   return Math.round(n).toLocaleString("en-US");
 }
 
+function fmtAvg(n: number | null): string {
+  if (n == null || !Number.isFinite(n)) return DASH;
+  return n.toLocaleString("en-US", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
+}
+
 function fmtValue(kind: RowKind, n: number | null): string {
   switch (kind) {
     case "money":
@@ -108,6 +116,8 @@ function fmtValue(kind: RowKind, n: number | null): string {
       return fmtPct(n);
     case "count":
       return fmtCount(n);
+    case "avg":
+      return fmtAvg(n);
   }
 }
 
@@ -136,8 +146,8 @@ function variance(
   let delta: number; // signed magnitude used to decide favorable direction
   let text: string;
 
-  if (kind === "pct") {
-    // percentage-point delta
+  if (kind === "pct" || kind === "avg") {
+    // percentage-point / unit delta, one decimal
     delta = actual - base;
     const abs = Math.abs(delta).toFixed(1);
     text = delta < 0 ? `(${abs})` : abs;

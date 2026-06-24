@@ -53,6 +53,7 @@ interface KpiTriple {
 interface KpiSegment {
   util: KpiTriple;
   rate: KpiTriple;
+  onRent: KpiTriple;
   fleet: { month: number; pyMonth: number };
 }
 interface KpiResponse {
@@ -158,6 +159,26 @@ export default function MonthlySummaryPage() {
         return { month: pick(mKey), ytd: pick(ytdKey) };
       }
 
+      // Combine the two operating-cost sections (direct + fixed) into a single
+      // "Total Operating Costs" line, cell by cell across actual/PY/budget.
+      function combineVals(
+        a: { month: CellValues; ytd: CellValues },
+        b: { month: CellValues; ytd: CellValues }
+      ): { month: CellValues; ytd: CellValues } {
+        const add = (x: number | null, y: number | null) =>
+          x == null && y == null ? null : (x ?? 0) + (y ?? 0);
+        const cv = (p: CellValues, q: CellValues): CellValues => ({
+          actual: add(p.actual, q.actual),
+          py: add(p.py, q.py),
+          budget: add(p.budget, q.budget),
+        });
+        return { month: cv(a.month, b.month), ytd: cv(a.ytd, b.ytd) };
+      }
+      const totalOperatingCosts = combineVals(
+        moneyVals("direct_operating_costs"),
+        moneyVals("other_operating_costs")
+      );
+
       const mkRow = (
         label: string,
         kind: SummaryRow["kind"],
@@ -170,11 +191,8 @@ export default function MonthlySummaryPage() {
         showBudget: true,
         rows: [
           mkRow("Total Revenue", "money", moneyVals("revenue")),
-          mkRow("Total Direct Operating Costs", "money", moneyVals("direct_operating_costs"), { invert: true }),
-          mkRow("Gross Margin", "money", moneyVals("gross_margin"), { bold: true }),
-          mkRow("Gross Margin %", "pct", pctVals("gross_margin_pct"), { sub: true }),
+          mkRow("Total Operating Costs", "money", totalOperatingCosts, { invert: true }),
           { label: "", kind: "money", spacer: true, month: emptyVals(), ytd: emptyVals() },
-          mkRow("Total Fixed Operating Costs", "money", moneyVals("other_operating_costs"), { invert: true }),
           mkRow("EBITDA", "money", moneyVals("operating_margin"), { bold: true }),
           mkRow("EBITDA %", "pct", pctVals("operating_margin_pct"), { sub: true }),
         ],
@@ -197,6 +215,11 @@ export default function MonthlySummaryPage() {
           month: { actual: s.fleet.month, py: s.fleet.pyMonth, budget: null },
           ytd: emptyVals(),
         });
+      const onRentRow = (label: string, s: KpiSegment): SummaryRow =>
+        mkRow(label, "avg", {
+          month: { actual: s.onRent.month, py: s.onRent.pyMonth, budget: null },
+          ytd: { actual: s.onRent.ytd, py: s.onRent.pyYtd, budget: null },
+        });
 
       const utilization: SummarySection = {
         title: "Month Utilization",
@@ -205,6 +228,15 @@ export default function MonthlySummaryPage() {
           utilRow("Total Vehicle", seg.vehicle),
           utilRow("Total Trailer", seg.trailer),
           fleetUtilTotal(seg.total),
+        ],
+      };
+      const avgOnRent: SummarySection = {
+        title: "Average Vehicles on Rent",
+        showBudget: false,
+        rows: [
+          onRentRow("Total Vehicle", seg.vehicle),
+          onRentRow("Total Trailer", seg.trailer),
+          { ...onRentRow("Total", seg.total), bold: true },
         ],
       };
       const rates: SummarySection = {
@@ -235,7 +267,7 @@ export default function MonthlySummaryPage() {
         ytdPyShort: `YTD-${String(year - 1).slice(2)}`,
         generatedAtIso: new Date().toISOString(),
         scopeNote: "Consolidated",
-        sections: [performance, utilization, rates, fleet],
+        sections: [performance, utilization, avgOnRent, rates, fleet],
       });
       toast.success("Monthly summary PDF generated");
     } catch (e) {
