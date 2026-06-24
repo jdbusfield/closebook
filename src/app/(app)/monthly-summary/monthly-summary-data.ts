@@ -305,7 +305,8 @@ export function buildManualPanels(
 
   const headcount: SummaryPanel = {
     title: "Headcount",
-    kind: "count",
+    // One decimal so employees allocated across two entities can show as 0.5.
+    kind: "avg",
     showPy: true,
     colorVariance: false, // headcount up/down isn't inherently good/bad
     currentLabel,

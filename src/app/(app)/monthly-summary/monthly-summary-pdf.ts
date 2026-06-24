@@ -51,7 +51,6 @@ export async function exportMonthlySummaryPdf(
 
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "letter" });
   const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 36;
   const usableWidth = pageWidth - margin * 2;
 
@@ -321,22 +320,6 @@ export async function exportMonthlySummaryPdf(
     });
     cursorY = maxY + 10;
   }
-
-  // ─── Footer ──────────────────────────────────────────────────────────────
-  doc.setTextColor(...MUTED_TEXT);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
-  doc.text(
-    "Operating-cost variances are shaded by favorability (green = favorable). Utilization, rate, and fleet figures show actual vs prior year only.",
-    margin,
-    pageHeight - 20
-  );
-  doc.text(
-    `Generated ${input.generatedAtIso.slice(0, 10)}`,
-    pageWidth - margin,
-    pageHeight - 20,
-    { align: "right" }
-  );
 
   const safeMonth = input.monthShort.replace(/[^a-zA-Z0-9_-]/g, "_");
   doc.save(`monthly-summary-${safeMonth}.pdf`);
