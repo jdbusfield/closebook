@@ -78,6 +78,7 @@ const SAMPLE_INQUIRY: Inquiry = {
   source: "Google Ads",
   unit_id: null,
   estimated_value: 4200,
+  gclid: null,
   last_activity_at: null,
   created_at: "2026-06-01T17:00:00.000Z",
 };

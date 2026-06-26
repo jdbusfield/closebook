@@ -36,6 +36,9 @@ const PayloadSchema = z.object({
   guests: z.string().optional().nullable(),
   location: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  // Google Ads click id, when the visit originated from an ad click. Stored on
+  // the inquiry so the won-rental conversion can be matched to the click.
+  gclid: z.string().optional().nullable(),
   // --- Reservation-only fields (priced /reserve submissions) ----------------
   days: z.number().int().optional().nullable(),
   zip: z.string().optional().nullable(),
@@ -136,6 +139,9 @@ export async function POST(request: Request) {
         guests: parsed.guests ?? null,
         location,
         notes: parsed.notes ?? null,
+        // Only write gclid when present so a later re-ingest without one can't
+        // wipe a click id captured on the first submission.
+        ...(parsed.gclid ? { gclid: parsed.gclid } : {}),
         ...(isReservation
           ? { deposit: parsed.deposit ?? null, estimated_value: estimatedValue }
           : {}),
