@@ -5,19 +5,15 @@ import {
   messageSide,
   isStaffAddress,
   messageSnippet,
-  HDR_ENTITY_ID,
+  VERSATILE_ENTITY_ID,
 } from "@/lib/inquiries/shared";
+import { resolveEmbedEntity } from "@/lib/inquiries/embed-auth";
 
 export const runtime = "nodejs";
 
-function validEmbedKey(request: Request): boolean {
-  const k = request.headers.get("x-embed-key");
-  return !!k && !!process.env.EMBED_API_KEY && k === process.env.EMBED_API_KEY;
-}
-
 // Create a brand-new inquiry from an unmatched inbox message (e.g. mail that
-// came in without an HDR-XXXXX reference, so it never auto-matched), and link
-// the message to it.
+// came in without a reference, so it never auto-matched), and link the message
+// to it.
 //
 // App users have no INSERT policy on rental_inquiries (inserts normally come
 // from the website ingest via the service role). We authorize by reading the
@@ -25,14 +21,16 @@ function validEmbedKey(request: Request): boolean {
 // see messages in their own entities — then create the inquiry in that same
 // entity with the admin client.
 
-// Reference like "HDR-AB12C". Ambiguous characters (0/O, 1/I) are excluded.
+// Reference like "HDR-AB12C" / "VS-AB12C". Ambiguous characters (0/O, 1/I) excluded.
+// Prefix follows the entity the inquiry belongs to.
 const REF_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-function genReference(): string {
+function genReference(entityId: string): string {
   let s = "";
   for (let i = 0; i < 5; i++) {
     s += REF_ALPHABET[Math.floor(Math.random() * REF_ALPHABET.length)];
   }
-  return `HDR-${s}`;
+  const prefix = entityId === VERSATILE_ENTITY_ID ? "VS" : "HDR";
+  return `${prefix}-${s}`;
 }
 
 export async function POST(
@@ -40,7 +38,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const isEmbed = validEmbedKey(request);
+  const embedEntity = resolveEmbedEntity(request);
+  const isEmbed = embedEntity !== null;
   const supabase = isEmbed ? createAdminClient() : await createClient();
 
   if (!isEmbed) {
@@ -60,7 +59,7 @@ export async function POST(
       "id, entity_id, inquiry_id, direction, from_addr, to_addrs, cc_addrs, subject, body_text, body_html"
     )
     .eq("id", id);
-  if (isEmbed) msgQuery = msgQuery.eq("entity_id", HDR_ENTITY_ID);
+  if (embedEntity) msgQuery = msgQuery.eq("entity_id", embedEntity);
   const { data: msg } = await msgQuery.maybeSingle();
 
   if (!msg) {
@@ -102,7 +101,7 @@ export async function POST(
   // collision.
   let inquiry: { id: string; reference: string } | null = null;
   for (let attempt = 0; attempt < 6 && !inquiry; attempt++) {
-    const reference = genReference();
+    const reference = genReference(msg.entity_id);
     const { data, error } = await admin
       .from("rental_inquiries")
       .insert({

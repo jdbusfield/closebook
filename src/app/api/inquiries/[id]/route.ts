@@ -2,20 +2,16 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { INQUIRY_STATUSES, HDR_ENTITY_ID } from "@/lib/inquiries/shared";
+import { INQUIRY_STATUSES } from "@/lib/inquiries/shared";
+import { resolveEmbedEntity } from "@/lib/inquiries/embed-auth";
 
 export const runtime = "nodejs";
 
 // In-app status / triage updates from the Inquiries dashboard. Normally uses the
-// user's session client so RLS enforces that only members of the HDR entity can
-// edit. The embedded HDR CRM (no session) authenticates with the EMBED_API_KEY
-// via an `x-embed-key` header; when valid we use the admin client but HARD-SCOPE
-// every query to HDR_ENTITY_ID, which replaces the RLS guard.
-
-function validEmbedKey(request: Request): boolean {
-  const k = request.headers.get("x-embed-key");
-  return !!k && !!process.env.EMBED_API_KEY && k === process.env.EMBED_API_KEY;
-}
+// user's session client so RLS enforces that only members of the entity can edit.
+// An embedded CRM (no session) authenticates with a per-brand embed key via an
+// `x-embed-key` header; when valid we use the admin client but HARD-SCOPE every
+// query to the entity that key resolves to, which replaces the RLS guard.
 
 const UpdateSchema = z.object({
   status: z.enum(INQUIRY_STATUSES).optional(),
@@ -48,7 +44,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const isEmbed = validEmbedKey(request);
+  const embedEntity = resolveEmbedEntity(request);
+  const isEmbed = embedEntity !== null;
   const supabase = isEmbed ? createAdminClient() : await createClient();
 
   if (!isEmbed) {
@@ -81,7 +78,7 @@ export async function PATCH(
     .from("rental_inquiries")
     .update({ ...patch, last_activity_at: new Date().toISOString() })
     .eq("id", id);
-  if (isEmbed) query = query.eq("entity_id", HDR_ENTITY_ID);
+  if (embedEntity) query = query.eq("entity_id", embedEntity);
   const { data, error } = await query
     .select(
       "id, status, internal_notes, rw_quote_number, rw_order_number, unit_id, estimated_value, billing_name, billing_address, name, email, phone, use_case, start_date, end_date, duration, units, guests, location, attendant, source"
@@ -106,7 +103,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const isEmbed = validEmbedKey(request);
+  const embedEntity = resolveEmbedEntity(request);
+  const isEmbed = embedEntity !== null;
   const supabase = isEmbed ? createAdminClient() : await createClient();
 
   if (!isEmbed) {
@@ -122,7 +120,7 @@ export async function DELETE(
   // HDR. A disallowed row simply matches nothing. We .select() the deleted row so
   // we can tell the difference between "deleted" and "not found / not permitted".
   let query = supabase.from("rental_inquiries").delete().eq("id", id);
-  if (isEmbed) query = query.eq("entity_id", HDR_ENTITY_ID);
+  if (embedEntity) query = query.eq("entity_id", embedEntity);
   const { data, error } = await query.select("id").maybeSingle();
 
   if (error) {

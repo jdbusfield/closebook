@@ -1,22 +1,27 @@
 ﻿import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { HDR_ENTITY_ID } from "@/lib/inquiries/shared";
+import { resolveEmbedEntity } from "@/lib/inquiries/embed-auth";
 import type { Database } from "@/lib/types/database.types";
 
 export const runtime = "nodejs";
 
 type TemplateInsert = Database["public"]["Tables"]["rental_inquiry_templates"]["Insert"];
 
-// Key-authenticated data endpoint for the embedded HDR inquiries CRM. The embed
-// runs with NO Supabase session (it's iframed into an external site), so the
-// inquiries data hooks can't read/write Supabase directly. Instead they POST
-// here with the static EMBED_API_KEY in an `x-embed-key` header; we serve every
-// read/write with the service-role (admin) client, HARD-SCOPED to the HDR entity.
+// Key-authenticated data endpoint for the embedded inquiries CRM (HDR + Versatile).
+// The embed runs with NO Supabase session (it's iframed into an external site), so
+// the inquiries data hooks can't read/write Supabase directly. Instead they POST
+// here with a static per-brand embed key in an `x-embed-key` header; we serve every
+// read/write with the service-role (admin) client, HARD-SCOPED to the entity the
+// key unlocks.
 //
-// SECURITY: the admin client bypasses RLS, so the entity id is ALWAYS forced to
-// HDR_ENTITY_ID server-side and never taken from the request body. Every mutation
-// also verifies the target row belongs to HDR before touching it. The valid key
-// can therefore only ever read/write HDR inquiry data, nothing else.
+// SECURITY: the admin client bypasses RLS, so the entity id is ALWAYS derived
+// server-side from WHICH key was presented (EMBED_API_KEY => HDR,
+// EMBED_API_KEY_VERSATILE => Versatile) and never taken from the request body.
+// Each key maps to exactly one entity, so a given key can only ever read/write
+// that brand's inquiry data — there is no cross-tenant path. Every mutation is
+// additionally filtered by entity_id (and id-bearing mutations verify the target
+// row belongs to the resolved entity first).
 
 const INQUIRY_COLUMNS =
   "id, reference, status, name, email, phone, use_case, start_date, end_date, duration, units, attendant, guests, location, notes, request_type, deposit, billing_name, billing_address, internal_notes, rw_quote_number, rw_order_number, source, unit_id, estimated_value, last_activity_at, created_at";
@@ -27,32 +32,28 @@ const TEMPLATE_COLUMNS =
 const QUOTE_COLUMNS =
   "id, inquiry_id, quote_number, status, lines, subtotal, tax_rate, tax, total, valid_until, terms, accepted_at, created_by, created_at, updated_at";
 
-function validKey(request: Request): boolean {
-  const k = request.headers.get("x-embed-key");
-  return !!k && !!process.env.EMBED_API_KEY && k === process.env.EMBED_API_KEY;
-}
-
 type Admin = ReturnType<typeof createAdminClient>;
 
-// Confirm an inquiry belongs to HDR before we mutate it or anything hanging off
-// it. Guards against a valid embed key reaching across entities via a foreign id.
-async function inquiryIsHDR(admin: Admin, id: string): Promise<boolean> {
+// Confirm an inquiry belongs to the resolved entity before we mutate it or
+// anything hanging off it. Guards against a valid embed key reaching across
+// entities via a foreign id.
+async function inquiryBelongsTo(admin: Admin, id: string, entityId: string): Promise<boolean> {
   if (!id) return false;
   const { data } = await admin
     .from("rental_inquiries")
     .select("entity_id")
     .eq("id", id)
     .maybeSingle();
-  return !!data && data.entity_id === HDR_ENTITY_ID;
+  return !!data && data.entity_id === entityId;
 }
 
 export async function POST(request: Request) {
-  if (!validKey(request)) {
+  const entityId = resolveEmbedEntity(request); // derived from the key — never from the body
+  if (!entityId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const admin = createAdminClient();
-  const entityId = HDR_ENTITY_ID; // forced â€” never from the request
   const body = await request.json().catch(() => ({}));
   const { action } = body as { action?: string };
 
@@ -181,7 +182,7 @@ export async function POST(request: Request) {
     // --- Writes (each forced/verified to HDR) -------------------------------
     case "bump_activity_clock": {
       const { id } = body as { id: string };
-      if (!(await inquiryIsHDR(admin, id))) {
+      if (!(await inquiryBelongsTo(admin, id, entityId))) {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
       }
       await admin
@@ -200,7 +201,7 @@ export async function POST(request: Request) {
         activityBody: string;
         actor: string | null;
       };
-      if (!(await inquiryIsHDR(admin, id))) {
+      if (!(await inquiryBelongsTo(admin, id, entityId))) {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
       }
       const { error } = await admin.from("rental_inquiry_activity").insert({
@@ -232,7 +233,7 @@ export async function POST(request: Request) {
         kind: string;
         due_date: string;
       };
-      if (!(await inquiryIsHDR(admin, id))) {
+      if (!(await inquiryBelongsTo(admin, id, entityId))) {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
       }
       const { error } = await admin.from("rental_inquiry_tasks").insert({
@@ -294,7 +295,7 @@ export async function POST(request: Request) {
           terms?: string | null;
         };
       };
-      if (!(await inquiryIsHDR(admin, id))) {
+      if (!(await inquiryBelongsTo(admin, id, entityId))) {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
       }
       const { data, error } = await admin
@@ -309,7 +310,7 @@ export async function POST(request: Request) {
           total: draft.total,
           valid_until: draft.valid_until ?? null,
           terms: draft.terms ?? null,
-          created_by: "HDR Team",
+          created_by: entityId === HDR_ENTITY_ID ? "HDR Team" : "Versatile Team",
         })
         .select(QUOTE_COLUMNS)
         .single();

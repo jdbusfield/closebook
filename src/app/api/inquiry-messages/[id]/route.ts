@@ -2,19 +2,14 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { HDR_ENTITY_ID } from "@/lib/inquiries/shared";
+import { resolveEmbedEntity } from "@/lib/inquiries/embed-auth";
 
 export const runtime = "nodejs";
 
 // Assign an inbox message to an inquiry (or detach it). Normally uses the user's
 // session client so RLS enforces that only members of the message's entity can
-// edit. The embedded HDR CRM authenticates with the EMBED_API_KEY; when valid we
-// use the admin client but hard-scope every query to HDR_ENTITY_ID.
-
-function validEmbedKey(request: Request): boolean {
-  const k = request.headers.get("x-embed-key");
-  return !!k && !!process.env.EMBED_API_KEY && k === process.env.EMBED_API_KEY;
-}
+// edit. An embedded CRM authenticates with a per-brand embed key; when valid we
+// use the admin client but hard-scope every query to the entity that key resolves to.
 
 const UpdateSchema = z.object({
   inquiry_id: z.string().uuid().nullable(),
@@ -25,7 +20,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const isEmbed = validEmbedKey(request);
+  const embedEntity = resolveEmbedEntity(request);
+  const isEmbed = embedEntity !== null;
   const supabase = isEmbed ? createAdminClient() : await createClient();
 
   if (!isEmbed) {
@@ -55,7 +51,7 @@ export async function PATCH(
       .from("rental_inquiries")
       .select("id")
       .eq("id", patch.inquiry_id);
-    if (isEmbed) inqQuery = inqQuery.eq("entity_id", HDR_ENTITY_ID);
+    if (embedEntity) inqQuery = inqQuery.eq("entity_id", embedEntity);
     const { data: inq } = await inqQuery.maybeSingle();
     if (!inq) {
       return NextResponse.json({ error: "Inquiry not found or not permitted" }, { status: 404 });
@@ -66,7 +62,7 @@ export async function PATCH(
     .from("rental_inquiry_messages")
     .update({ inquiry_id: patch.inquiry_id })
     .eq("id", id);
-  if (isEmbed) updateQuery = updateQuery.eq("entity_id", HDR_ENTITY_ID);
+  if (embedEntity) updateQuery = updateQuery.eq("entity_id", embedEntity);
   const { data, error } = await updateQuery
     .select("id, inquiry_id")
     .maybeSingle();
