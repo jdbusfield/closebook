@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { HDR_ENTITY_ID } from "@/lib/inquiries/shared";
+import { resolveBrand } from "@/lib/inquiries/shared";
 import type { Database } from "@/lib/types/database.types";
 
 type MessageInsert = Database["public"]["Tables"]["rental_inquiry_messages"]["Insert"];
@@ -14,6 +14,9 @@ export const runtime = "nodejs";
 
 const PayloadSchema = z.object({
   reference: z.string().min(1).max(32),
+  // Which marketing site sent this — routes the inquiry to the right entity.
+  // Absent/unknown => HDR (preserves existing HDR behavior). See resolveBrand().
+  brand: z.string().optional().nullable(),
   // 'inquiry' (default — the contact form) or 'reservation' (the priced
   // self-serve /reserve flow). Unknown/absent values fall back to 'inquiry'.
   type: z.enum(["inquiry", "reservation"]).optional().nullable(),
@@ -80,6 +83,9 @@ export async function POST(request: Request) {
   const reference = parsed.reference.toUpperCase();
   const nowIso = new Date().toISOString();
 
+  // Route to the entity that owns this brand's inquiries (HDR | Versatile | …).
+  const { entityId, source } = resolveBrand(parsed.brand);
+
   const isReservation = parsed.type === "reservation";
 
   // Normalize the two payload shapes (contact-form inquiry vs. priced
@@ -114,9 +120,9 @@ export async function POST(request: Request) {
     .from("rental_inquiries")
     .upsert(
       {
-        entity_id: HDR_ENTITY_ID,
+        entity_id: entityId,
         reference,
-        source: "website",
+        source,
         request_type: isReservation ? "reservation" : "inquiry",
         name: parsed.name ?? null,
         email: parsed.email ?? null,
@@ -152,7 +158,7 @@ export async function POST(request: Request) {
     parsed.internalEmailId || parsed.internalSubject
       ? {
           inquiry_id: inquiry.id,
-          entity_id: HDR_ENTITY_ID,
+          entity_id: entityId,
           direction: "outbound",
           channel: "email",
           kind: "internal_notification",
@@ -167,7 +173,7 @@ export async function POST(request: Request) {
     parsed.customerEmailId || parsed.customerSubject
       ? {
           inquiry_id: inquiry.id,
-          entity_id: HDR_ENTITY_ID,
+          entity_id: entityId,
           direction: "outbound",
           channel: "email",
           kind: "customer_autoreply",

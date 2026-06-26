@@ -7,6 +7,24 @@
 export const HDR_ENTITY_ID =
   process.env.HDR_ENTITY_ID || "7529580d-3b44-4a9b-91f4-bc2db25f5211";
 
+// Versatile Studios entity id. Mirrors ENTITY_IDS.VS in cost-center-config.ts.
+export const VERSATILE_ENTITY_ID =
+  process.env.VERSATILE_ENTITY_ID || "2fdafa28-8ba2-4caa-aa9f-5d8f39f57081";
+
+// Multi-tenant routing for the inquiry ingest webhook. Each marketing site POSTs
+// a `brand`; we map it to the entity its inquiries belong to and the `source`
+// tag stored on the row. Absent/unknown brands fall back to HDR so existing
+// HDR submissions (which send no brand) keep their current behavior exactly.
+export const BRAND_ENTITY: Record<string, { entityId: string; source: string }> = {
+  hdr: { entityId: HDR_ENTITY_ID, source: "website" },
+  versatile: { entityId: VERSATILE_ENTITY_ID, source: "versatile" },
+};
+
+export function resolveBrand(brand?: string | null): { entityId: string; source: string } {
+  const key = (brand ?? "hdr").toLowerCase();
+  return BRAND_ENTITY[key] ?? BRAND_ENTITY.hdr;
+}
+
 // ---------------------------------------------------------------------------
 // Pipeline stages
 // ---------------------------------------------------------------------------
