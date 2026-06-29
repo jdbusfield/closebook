@@ -33,6 +33,7 @@ import {
   InquiryAvatar,
   DueBadge,
   ActivityIcon,
+  GoogleAdBadge,
   hexA,
 } from "@/components/inquiries/atoms";
 import { TemplatePicker } from "@/components/inquiries/template-picker";
@@ -479,7 +480,15 @@ export function ContactGrid({
         <KV k="Attendant" v={inquiry.attendant} />
         <KV k="Phone" v={inquiry.phone} mono />
         <KV k="Email" v={inquiry.email} />
-        <KV k="Source" v={inquiry.source} />
+        <KV
+          k="Source"
+          v={
+            <span className="inline-flex items-center gap-1.5">
+              {inquiry.source || "—"}
+              <GoogleAdBadge gclid={inquiry.gclid} />
+            </span>
+          }
+        />
 
         <span className="text-xs text-muted-foreground">Est. value</span>
         <span className="text-sm">

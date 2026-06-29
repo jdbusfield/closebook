@@ -13,6 +13,7 @@ import {
   Clock,
   ArrowUpRight,
   ArrowDownLeft,
+  MousePointerClick,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -68,6 +69,27 @@ export function StagePill({ status }: { status: string }) {
     >
       <span className="size-1.5 rounded-full" style={{ background: s.color }} />
       {s.label}
+    </span>
+  );
+}
+
+// Marks a lead that arrived via a Google ad click (we captured a gclid on the
+// site). Drives Google Ads conversion attribution for won rentals; surfacing it
+// here lets a rep see at a glance which leads are paid-search sourced.
+export function GoogleAdBadge({
+  gclid,
+  className = "",
+}: {
+  gclid: string | null | undefined;
+  className?: string;
+}) {
+  if (!gclid) return null;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:bg-blue-950 dark:text-blue-300 ${className}`}
+      title="This lead arrived from a Google ad click — won bookings are attributed back to Google Ads."
+    >
+      <MousePointerClick className="size-3" /> Google Ad
     </span>
   );
 }

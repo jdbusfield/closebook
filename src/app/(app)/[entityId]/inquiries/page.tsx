@@ -13,6 +13,7 @@ import {
   InquiryAvatar,
   LastTouched,
   CorrespondenceBadge,
+  GoogleAdBadge,
 } from "@/components/inquiries/atoms";
 import {
   type Inquiry,
@@ -118,6 +119,11 @@ function DealCard({
           <span className="font-mono text-xs font-semibold">
             {fmtMoney(inq.estimated_value)}
           </span>
+        </div>
+      )}
+      {inq.gclid && (
+        <div className="mt-1.5">
+          <GoogleAdBadge gclid={inq.gclid} />
         </div>
       )}
       <div className="mt-1.5 flex items-center justify-between gap-2">

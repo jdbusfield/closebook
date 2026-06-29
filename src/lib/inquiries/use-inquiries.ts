@@ -22,7 +22,7 @@ import {
 } from "@/lib/inquiries/shared";
 
 const INQUIRY_COLUMNS =
-  "id, reference, status, name, email, phone, use_case, start_date, end_date, duration, units, attendant, guests, location, notes, request_type, deposit, billing_name, billing_address, internal_notes, rw_quote_number, rw_order_number, source, unit_id, estimated_value, last_activity_at, created_at";
+  "id, reference, status, name, email, phone, use_case, start_date, end_date, duration, units, attendant, guests, location, notes, request_type, deposit, billing_name, billing_address, internal_notes, rw_quote_number, rw_order_number, source, unit_id, estimated_value, gclid, last_activity_at, created_at";
 
 const QUOTE_COLUMNS =
   "id, inquiry_id, quote_number, status, lines, subtotal, tax_rate, tax, total, valid_until, terms, accepted_at, created_by, created_at, updated_at";
