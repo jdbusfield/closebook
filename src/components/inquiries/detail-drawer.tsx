@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Phone,
   Mail,
@@ -676,6 +677,152 @@ export function BillingBlock({
   );
 }
 
+// --- Document note (prints on the quote / invoice) -------------------------
+// A free-form note the rep wants on the customer-facing document — e.g.
+// "Includes after-hours delivery" or "PO# required on invoice". Distinct from
+// the private internal notes and from a quote's per-draft terms. The two toggles
+// pick which generated PDF(s) it appears on (quote, invoice, or both).
+export function DocumentNoteBlock({
+  inquiry,
+  onSave,
+}: {
+  inquiry: Inquiry;
+  onSave: (
+    id: string,
+    note: string | null,
+    onQuote: boolean,
+    onInvoice: boolean
+  ) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [noteDraft, setNoteDraft] = useState(inquiry.document_note ?? "");
+  const [onQuote, setOnQuote] = useState(inquiry.note_on_quote);
+  const [onInvoice, setOnInvoice] = useState(inquiry.note_on_invoice);
+
+  // Re-seed whenever a different inquiry is shown (the drawer reuses one mounted
+  // instance across selections).
+  useEffect(() => {
+    setNoteDraft(inquiry.document_note ?? "");
+    setOnQuote(inquiry.note_on_quote);
+    setOnInvoice(inquiry.note_on_invoice);
+    setEditing(false);
+  }, [
+    inquiry.id,
+    inquiry.document_note,
+    inquiry.note_on_quote,
+    inquiry.note_on_invoice,
+  ]);
+
+  const hasNote = !!(inquiry.document_note && inquiry.document_note.trim());
+
+  const save = () => {
+    const note = noteDraft.trim();
+    onSave(inquiry.id, note || null, onQuote, onInvoice);
+    setEditing(false);
+  };
+
+  const reset = () => {
+    setNoteDraft(inquiry.document_note ?? "");
+    setOnQuote(inquiry.note_on_quote);
+    setOnInvoice(inquiry.note_on_invoice);
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <div className="space-y-2.5">
+        <Textarea
+          autoFocus
+          value={noteDraft}
+          onChange={(e) => setNoteDraft(e.target.value)}
+          placeholder={"e.g. Includes after-hours delivery.\nRates held through the end of the month."}
+          rows={3}
+          className="text-sm"
+        />
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox
+              checked={onQuote}
+              onCheckedChange={(v) => setOnQuote(v === true)}
+            />
+            Show on quote
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox
+              checked={onInvoice}
+              onCheckedChange={(v) => setOnInvoice(v === true)}
+            />
+            Show on invoice
+          </label>
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" className="h-8" onClick={save}>
+            Save
+          </Button>
+          <Button size="sm" variant="ghost" className="h-8" onClick={reset}>
+            Cancel
+          </Button>
+          {hasNote && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="ml-auto h-8 text-muted-foreground hover:text-destructive"
+              onClick={() => {
+                setNoteDraft("");
+                onSave(inquiry.id, null, onQuote, onInvoice);
+                setEditing(false);
+              }}
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0 text-sm">
+        {hasNote ? (
+          <>
+            <div className="whitespace-pre-wrap">{inquiry.document_note}</div>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {inquiry.note_on_quote && (
+                <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  On quote
+                </span>
+              )}
+              {inquiry.note_on_invoice && (
+                <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  On invoice
+                </span>
+              )}
+              {!inquiry.note_on_quote && !inquiry.note_on_invoice && (
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                  Hidden — not on either document
+                </span>
+              )}
+            </div>
+          </>
+        ) : (
+          <span className="text-muted-foreground">
+            No note. Add one to print on the quote or invoice.
+          </span>
+        )}
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-8 shrink-0"
+        onClick={() => setEditing(true)}
+      >
+        <Pencil className="size-3.5" /> {hasNote ? "Edit" : "Add note"}
+      </Button>
+    </div>
+  );
+}
+
 // --- Tasks & reminders -----------------------------------------------------
 export function TasksBlock({
   inquiry,
@@ -1047,6 +1194,21 @@ export function InquiryDrawer({
                   <BillingBlock
                     inquiry={inquiry}
                     onSaveBilling={callbacks.onSaveBilling}
+                  />
+                </Section>
+              )}
+
+              {callbacks.onSaveDetails && (
+                <Section title="Note on quote / invoice">
+                  <DocumentNoteBlock
+                    inquiry={inquiry}
+                    onSave={(id, note, onQuote, onInvoice) =>
+                      callbacks.onSaveDetails!(id, {
+                        document_note: note,
+                        note_on_quote: onQuote,
+                        note_on_invoice: onInvoice,
+                      })
+                    }
                   />
                 </Section>
               )}

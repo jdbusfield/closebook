@@ -452,13 +452,44 @@ export async function buildQuoteDoc(
     hl: true,
   });
 
+  // The note/terms below are absolute-positioned free text with no auto-paging,
+  // and the footer is pinned at the page bottom. A long or multi-line note would
+  // otherwise run into the footer, so keep each block together: if it wouldn't
+  // fit above the footer zone, start a fresh page first. (The footer is drawn
+  // once at the end, landing on whatever the last page turns out to be.)
+  const maxContentY = pageHeight - 72;
+  const ensureSpace = (blockHeight: number) => {
+    if (ty + blockHeight > maxContentY) {
+      doc.addPage();
+      ty = margin;
+    }
+  };
+
+  // ─── Custom note (inquiry-level; printed only when the rep has enabled it for
+  //     THIS document via note_on_quote / note_on_invoice) ────────────────────
+  const showNote = isInvoice ? inquiry.note_on_invoice : inquiry.note_on_quote;
+  const noteText = (inquiry.document_note || "").trim();
+  if (showNote && noteText) {
+    d.setFont("helvetica", "normal");
+    d.setFontSize(9);
+    const wrappedNote = d.splitTextToSize(noteText, usable);
+    // gap(26) + heading(13) + one line per wrapped row (~11pt) — kept on one page.
+    ensureSpace(26 + 13 + wrappedNote.length * 11);
+    ty += 26;
+    d.setFont("helvetica", "bold");
+    d.setFontSize(8);
+    setText(d, INK);
+    d.text("NOTE", margin, ty, { charSpace: 0.8 });
+    ty += 13;
+    d.setFont("helvetica", "normal");
+    d.setFontSize(9);
+    setText(d, MUTED);
+    d.text(wrappedNote, margin, ty);
+    // Advance to the last note line so the TERMS block below clears it.
+    ty += (wrappedNote.length - 1) * 11;
+  }
+
   // ─── Terms ────────────────────────────────────────────────────────────────
-  ty += 26;
-  d.setFont("helvetica", "bold");
-  d.setFontSize(8);
-  setText(d, INK);
-  d.text("TERMS", margin, ty, { charSpace: 0.8 });
-  ty += 13;
   const termsText = isInvoice
     ? // Invoices carry payment terms, not the quote's validity language — so we
       // ignore any saved quote terms here.
@@ -474,8 +505,17 @@ export async function buildQuoteDoc(
           "Reply to confirm and we will hold your date.");
   d.setFont("helvetica", "normal");
   d.setFontSize(9);
-  setText(d, MUTED);
   const wrapped = d.splitTextToSize(termsText, usable);
+  ensureSpace(26 + 13 + wrapped.length * 11);
+  ty += 26;
+  d.setFont("helvetica", "bold");
+  d.setFontSize(8);
+  setText(d, INK);
+  d.text("TERMS", margin, ty, { charSpace: 0.8 });
+  ty += 13;
+  d.setFont("helvetica", "normal");
+  d.setFontSize(9);
+  setText(d, MUTED);
   d.text(wrapped, margin, ty);
 
   // ─── Footer (pinned near the bottom) ──────────────────────────────────────

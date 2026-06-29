@@ -89,6 +89,9 @@ export type Database = {
           deposit: number | null
           billing_name: string | null
           billing_address: string | null
+          document_note: string | null
+          note_on_quote: boolean
+          note_on_invoice: boolean
           rw_quote_number: string | null
           rw_order_number: string | null
           unit_id: string | null
@@ -127,6 +130,9 @@ export type Database = {
           deposit?: number | null
           billing_name?: string | null
           billing_address?: string | null
+          document_note?: string | null
+          note_on_quote?: boolean
+          note_on_invoice?: boolean
           rw_quote_number?: string | null
           rw_order_number?: string | null
           unit_id?: string | null
@@ -165,6 +171,9 @@ export type Database = {
           deposit?: number | null
           billing_name?: string | null
           billing_address?: string | null
+          document_note?: string | null
+          note_on_quote?: boolean
+          note_on_invoice?: boolean
           rw_quote_number?: string | null
           rw_order_number?: string | null
           unit_id?: string | null

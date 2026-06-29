@@ -24,7 +24,7 @@ type TemplateInsert = Database["public"]["Tables"]["rental_inquiry_templates"]["
 // row belongs to the resolved entity first).
 
 const INQUIRY_COLUMNS =
-  "id, reference, status, name, email, phone, use_case, start_date, end_date, duration, units, attendant, guests, location, notes, request_type, deposit, billing_name, billing_address, internal_notes, rw_quote_number, rw_order_number, source, unit_id, estimated_value, last_activity_at, created_at";
+  "id, reference, status, name, email, phone, use_case, start_date, end_date, duration, units, attendant, guests, location, notes, request_type, deposit, billing_name, billing_address, document_note, note_on_quote, note_on_invoice, internal_notes, rw_quote_number, rw_order_number, source, unit_id, estimated_value, last_activity_at, created_at";
 
 const TEMPLATE_COLUMNS =
   "id, template_key, label, channel, track, stages, cadence, subject, body, sort_order, archived";

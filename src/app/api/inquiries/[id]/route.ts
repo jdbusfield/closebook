@@ -23,6 +23,10 @@ const UpdateSchema = z.object({
   // Bill-to override for the quote/invoice document.
   billing_name: z.string().max(256).optional().nullable(),
   billing_address: z.string().max(1_000).optional().nullable(),
+  // Free-form note printed on the quote / invoice PDF, per the two toggles.
+  document_note: z.string().max(2_000).optional().nullable(),
+  note_on_quote: z.boolean().optional(),
+  note_on_invoice: z.boolean().optional(),
   // Event & contact fields — editable from the inquiry drawer.
   name: z.string().max(256).optional().nullable(),
   email: z.string().max(256).optional().nullable(),
@@ -81,7 +85,7 @@ export async function PATCH(
   if (embedEntity) query = query.eq("entity_id", embedEntity);
   const { data, error } = await query
     .select(
-      "id, status, internal_notes, rw_quote_number, rw_order_number, unit_id, estimated_value, billing_name, billing_address, name, email, phone, use_case, start_date, end_date, duration, units, guests, location, attendant, source"
+      "id, status, internal_notes, rw_quote_number, rw_order_number, unit_id, estimated_value, billing_name, billing_address, document_note, note_on_quote, note_on_invoice, name, email, phone, use_case, start_date, end_date, duration, units, guests, location, attendant, source"
     )
     .maybeSingle();
 

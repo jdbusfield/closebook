@@ -434,6 +434,12 @@ export interface Inquiry {
   billing_name: string | null;
   billing_address: string | null;
   internal_notes: string | null;
+  // Free-form note printed on the customer-facing quote / invoice PDF, shown on
+  // each document per the two toggles. Distinct from `internal_notes` (private)
+  // and a quote's per-draft `terms`. Null/empty → nothing prints.
+  document_note: string | null;
+  note_on_quote: boolean;
+  note_on_invoice: boolean;
   rw_quote_number: string | null;
   rw_order_number: string | null;
   source: string | null;
