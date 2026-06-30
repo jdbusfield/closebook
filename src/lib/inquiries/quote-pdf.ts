@@ -574,6 +574,51 @@ export async function buildQuoteDoc(
   d.setFontSize(9);
   setText(d, MUTED);
   d.text(wrapped, margin, ty);
+  ty += (wrapped.length - 1) * 11; // advance past wrapped terms to the last line
+
+  // ─── Acceptance / signature block (invoices only) ─────────────────────────
+  // Gives the customer a place to sign + print their name so a returned invoice
+  // serves as written confirmation that the order was accepted.
+  if (isInvoice) {
+    ensureSpace(140);
+    ty += 30;
+    d.setFont("helvetica", "bold");
+    d.setFontSize(8);
+    setText(d, INK);
+    d.text("ACCEPTANCE", margin, ty, { charSpace: 0.8 });
+    ty += 12;
+    d.setFont("helvetica", "normal");
+    d.setFontSize(8.5);
+    setText(d, MUTED);
+    d.text(
+      "By signing below, you confirm the items and amount above and accept this invoice.",
+      margin,
+      ty
+    );
+
+    const sigW = 250;
+    const dateX = right - 150;
+    // Signature line (left) + Date line (right).
+    ty += 40;
+    setDraw(d, BORDER);
+    d.setLineWidth(0.8);
+    d.line(margin, ty, margin + sigW, ty);
+    d.line(dateX, ty, right, ty);
+    ty += 11;
+    d.setFont("helvetica", "bold");
+    d.setFontSize(7.5);
+    setText(d, SUBTLE);
+    d.text("Signature", margin, ty);
+    d.text("Date", dateX, ty);
+
+    // Print name line.
+    ty += 32;
+    setDraw(d, BORDER);
+    d.line(margin, ty, margin + sigW, ty);
+    ty += 11;
+    setText(d, SUBTLE);
+    d.text("Print name", margin, ty);
+  }
 
   // ─── Footer (pinned near the bottom) ──────────────────────────────────────
   const fy = pageHeight - 40;
