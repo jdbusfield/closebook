@@ -24,8 +24,48 @@ function lineId(): string {
   return `ql-${_seq}`;
 }
 
-// Pre-fill the builder with sensible rows from the inquiry; rates start blank.
+// Parse the itemized order out of an inquiry's notes. Production-supplies orders
+// (Versatile /api/order) write the lines in a fixed format we control:
+//
+//   ORDER (4 items):
+//   TABLES & CHAIRS
+//     3 × 6' Table
+//   ...
+//
+// We scope to the "ORDER (...)" section so header/special-request lines can't be
+// mistaken for items, then pull every "<qty> × <name>" row. Returns [] for any
+// inquiry without an itemized order (HDR leads, trailer quotes, etc.).
+function parseOrderLines(notes: string | null | undefined): { description: string; qty: number }[] {
+  if (!notes) return [];
+  const lines = notes.split(/\r?\n/);
+  const start = lines.findIndex((l) => /^\s*ORDER \(\d+ items?\):/i.test(l));
+  if (start === -1) return [];
+  const out: { description: string; qty: number }[] = [];
+  for (const raw of lines.slice(start + 1)) {
+    const m = raw.match(/^\s*(\d+)\s*[×x]\s*(.+?)\s*$/i);
+    if (!m) continue; // category headers / blank lines
+    const qty = parseInt(m[1], 10);
+    const description = m[2].trim();
+    if (qty > 0 && description) out.push({ description, qty });
+  }
+  return out;
+}
+
+// Pre-fill the builder with rows from the inquiry; rates start blank (0). When
+// the customer submitted an itemized order, seed one line per ordered item
+// (name + qty) so the quote mirrors exactly what they asked for. Otherwise fall
+// back to the generic rental rows.
 export function seedQuoteLines(inq: Inquiry): QuoteLine[] {
+  const ordered = parseOrderLines(inq.notes);
+  if (ordered.length > 0) {
+    return ordered.map((o) => ({
+      id: lineId(),
+      description: o.description,
+      qty: o.qty,
+      rate: 0,
+    }));
+  }
+
   const unitLabel =
     inq.units != null ? ` (${inq.units} unit${inq.units === 1 ? "" : "s"})` : "";
   const dur = inq.duration ? ` — ${inq.duration}` : "";
