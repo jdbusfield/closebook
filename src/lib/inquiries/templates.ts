@@ -17,6 +17,33 @@ import {
   fmtMoney,
 } from "./shared";
 
+// Brand identity for the {company}/{company_email} merge tokens + the rep
+// fallback, chosen the same way the quote PDF picks its theme: Versatile by
+// source "versatile" or a "VS-" reference, else HDR (default). This keeps a
+// Versatile lead's follow-ups signed as Versatile while HDR copy is unchanged.
+function brandOf(inq: Inquiry): {
+  company: string;
+  email: string;
+  phone: string;
+  team: string;
+} {
+  const isVersatile =
+    (inq.source || "").toLowerCase() === "versatile" || /^VS-/i.test(inq.reference || "");
+  return isVersatile
+    ? {
+        company: "Versatile Studios",
+        email: "rentals@versatilestudios.com",
+        phone: "(213) 935-8124",
+        team: "the Versatile team",
+      }
+    : {
+        company: "Hollywood Depot Rentals",
+        email: "sales@hdrsiteservices.com",
+        phone: "(818) 845-8077",
+        team: "the HDR team",
+      };
+}
+
 // Kept as a union for the persisted column, but every template is an email.
 export type TemplateChannel = "email" | "sms" | "call";
 export type TemplateTrack =
@@ -72,9 +99,9 @@ export const DEFAULT_TEMPLATES: MessageTemplate[] = [
     track: "general",
     stages: ["new", "quoted"],
     cadence: "First response — recap their request and price it",
-    subject: "Your Hollywood Depot Rentals quote ({reference})",
+    subject: "Your {company} quote ({reference})",
     body:
-      "Hi {first},\n\nThanks for reaching out to Hollywood Depot Rentals! Here's a recap of what you sent over:\n\n{details}\n\nBased on that, here's your quote:\n\n{quote}\n\nThis includes delivery, setup, and servicing. The quote is good for 14 days and I'm glad to hold your date while you decide. Want me to lock it in?\n\n— {rep}\nHollywood Depot Rentals · sales@hdrsiteservices.com",
+      "Hi {first},\n\nThanks for reaching out to {company}! Here's a recap of what you sent over:\n\n{details}\n\nBased on that, here's your quote:\n\n{quote}\n\nThis includes delivery, setup, and servicing. The quote is good for 14 days and I'm glad to hold your date while you decide. Want me to lock it in?\n\n— {rep}\n{company} · {company_email}",
   },
   {
     id: "gen-email-intro",
@@ -85,7 +112,7 @@ export const DEFAULT_TEMPLATES: MessageTemplate[] = [
     cadence: "Same day, if no live connect",
     subject: "Your restroom trailer request",
     body:
-      "Hi {first},\n\nThanks for reaching out to Hollywood Depot Rentals. We rent restroom and shower trailers across Southern California and deliver, set up, and service them for you.\n\nTo get you an accurate quote, just reply with: your dates, the location, and roughly how many people. I can usually turn a number around the same day — and hold a unit while you decide.\n\n— {rep}\nHollywood Depot Rentals · sales@hdrsiteservices.com",
+      "Hi {first},\n\nThanks for reaching out to {company}. We rent restroom and shower trailers across Southern California and deliver, set up, and service them for you.\n\nTo get you an accurate quote, just reply with: your dates, the location, and roughly how many people. I can usually turn a number around the same day — and hold a unit while you decide.\n\n— {rep}\n{company} · {company_email}",
   },
 
   // --- Track: Production (film / TV) ---------------------------------------
@@ -98,7 +125,7 @@ export const DEFAULT_TEMPLATES: MessageTemplate[] = [
     cadence: "Same day, if no live connect",
     subject: "Restroom trailers for your {location} shoot",
     body:
-      "Hi {first},\n\nThanks for reaching out. We run restroom & shower trailers for productions all over LA — ADA options, attendant service, and we deliver and service on your schedule so it's one less thing on the call sheet.\n\nFor a shoot your size you're likely in the right range delivered. Want me to hold a unit for {date} while you confirm? I just need the location and your run-of-show.\n\n— {rep}\nHollywood Depot Rentals · sales@hdrsiteservices.com",
+      "Hi {first},\n\nThanks for reaching out. We run restroom & shower trailers for productions all over LA — ADA options, attendant service, and we deliver and service on your schedule so it's one less thing on the call sheet.\n\nFor a shoot your size you're likely in the right range delivered. Want me to hold a unit for {date} while you confirm? I just need the location and your run-of-show.\n\n— {rep}\n{company} · {company_email}",
   },
 
   // --- Track: Construction / job site --------------------------------------
@@ -111,7 +138,7 @@ export const DEFAULT_TEMPLATES: MessageTemplate[] = [
     cadence: "Day 2 value email",
     subject: "Keeping {location} OSHA-compliant",
     body:
-      "Hi {first},\n\nQuick follow-up — we handle restroom and shower trailers for job sites across SoCal with scheduled servicing so you stay compliant without thinking about it. Longer jobs get better monthly rates.\n\nHow many units and what's the duration? I'll size it and send a firm number the same day.\n\n— {rep}\nHollywood Depot Rentals",
+      "Hi {first},\n\nQuick follow-up — we handle restroom and shower trailers for job sites across SoCal with scheduled servicing so you stay compliant without thinking about it. Longer jobs get better monthly rates.\n\nHow many units and what's the duration? I'll size it and send a firm number the same day.\n\n— {rep}\n{company}",
   },
 
   // --- Track: Events / weddings --------------------------------------------
@@ -124,7 +151,7 @@ export const DEFAULT_TEMPLATES: MessageTemplate[] = [
     cadence: "Same day, if no live connect",
     subject: "Your {date} restroom trailer",
     body:
-      "Hi {first},\n\nOur luxury restroom trailers are a guest favorite — climate control, real sinks, and nice finishes (a long way from a porta-potty). For {date} I'd recommend reserving soon, since weekend dates book out.\n\nHappy to send photos and a quote — roughly how many guests are you expecting?\n\n— {rep}\nHollywood Depot Rentals",
+      "Hi {first},\n\nOur luxury restroom trailers are a guest favorite — climate control, real sinks, and nice finishes (a long way from a porta-potty). For {date} I'd recommend reserving soon, since weekend dates book out.\n\nHappy to send photos and a quote — roughly how many guests are you expecting?\n\n— {rep}\n{company}",
   },
 
   // --- General: stage-gated follow-ups -------------------------------------
@@ -137,7 +164,7 @@ export const DEFAULT_TEMPLATES: MessageTemplate[] = [
     cadence: "Day +3 after the quote",
     subject: "Still want me to hold {date}?",
     body:
-      "Hi {first},\n\nJust checking before I release the unit I set aside for you on {date}. If the number's the hangup, tell me your budget and I'll see what I can do. If timing changed, no problem — just let me know so I'm not chasing you.\n\n— {rep}\nHollywood Depot Rentals",
+      "Hi {first},\n\nJust checking before I release the unit I set aside for you on {date}. If the number's the hangup, tell me your budget and I'll see what I can do. If timing changed, no problem — just let me know so I'm not chasing you.\n\n— {rep}\n{company}",
   },
   {
     id: "followup-email-checkin",
@@ -148,7 +175,7 @@ export const DEFAULT_TEMPLATES: MessageTemplate[] = [
     cadence: "~Day 7",
     subject: "Quick check-in on your restroom trailer",
     body:
-      "Hi {first},\n\nWanted to check back in — are you still planning on the restroom trailer for {date}? If you've got questions on sizing, service, or delivery I'm glad to help, and I can still lock in your date.\n\n— {rep}\nHollywood Depot Rentals",
+      "Hi {first},\n\nWanted to check back in — are you still planning on the restroom trailer for {date}? If you've got questions on sizing, service, or delivery I'm glad to help, and I can still lock in your date.\n\n— {rep}\n{company}",
   },
   {
     id: "breakup-email",
@@ -159,7 +186,7 @@ export const DEFAULT_TEMPLATES: MessageTemplate[] = [
     cadence: "~Day 10, unanswered",
     subject: "Closing out your file for now",
     body:
-      "Hi {first},\n\nI've reached out a few times and don't want to clutter your inbox, so I'll close out your file for now. If your plans firm up, just reply and I'll pick right back up — we're here whenever you need us.\n\n— {rep}\nHollywood Depot Rentals",
+      "Hi {first},\n\nI've reached out a few times and don't want to clutter your inbox, so I'll close out your file for now. If your plans firm up, just reply and I'll pick right back up — we're here whenever you need us.\n\n— {rep}\n{company}",
   },
   {
     id: "confirmed-email-logistics",
@@ -170,7 +197,7 @@ export const DEFAULT_TEMPLATES: MessageTemplate[] = [
     cadence: "After they book",
     subject: "You're booked — delivery details for {date}",
     body:
-      "Hi {first},\n\nYou're all set for {date} — thank you! To make delivery smooth, can you confirm:\n\n• Exact delivery address / gate or access notes ({location})\n• Where we should place the trailer (level ground, ~clearance)\n• Power and water hookups on site, or do you need us to provide them?\n• An on-site contact and phone for the delivery day\n\nWe'll handle the rest. Reply here with anything and I'll get it scheduled.\n\n— {rep}\nHollywood Depot Rentals",
+      "Hi {first},\n\nYou're all set for {date} — thank you! To make delivery smooth, can you confirm:\n\n• Exact delivery address / gate or access notes ({location})\n• Where we should place the trailer (level ground, ~clearance)\n• Power and water hookups on site, or do you need us to provide them?\n• An on-site contact and phone for the delivery day\n\nWe'll handle the rest. Reply here with anything and I'll get it scheduled.\n\n— {rep}\n{company}",
   },
   {
     id: "winback-email",
@@ -181,7 +208,7 @@ export const DEFAULT_TEMPLATES: MessageTemplate[] = [
     cadence: "Quarterly nurture",
     subject: "Another shot at your restroom trailer needs?",
     body:
-      "Hi {first},\n\nIt's {rep} at Hollywood Depot Rentals. We've added units and improved our turn times since we last talked. If you've got anything coming up that needs restroom or shower trailers, I'd love another shot at it.\n\n— {rep}\nHollywood Depot Rentals",
+      "Hi {first},\n\nIt's {rep} at {company}. We've added units and improved our turn times since we last talked. If you've got anything coming up that needs restroom or shower trailers, I'd love another shot at it.\n\n— {rep}\n{company}",
   },
 ];
 
@@ -266,8 +293,12 @@ export function renderTemplate(
   rep: string,
   extra?: { quote?: string; quote_number?: string }
 ): { subject?: string; body: string } {
+  const brand = brandOf(inq);
   const map: Record<string, string> = {
     first: firstName(inq.name),
+    company: brand.company,
+    company_email: brand.email,
+    company_phone: brand.phone,
     name: inq.name?.trim() || "there",
     use_case: inq.use_case || "your rental",
     date: inq.start_date
@@ -285,7 +316,7 @@ export function renderTemplate(
     email: inq.email || "—",
     value: inq.estimated_value != null ? fmtMoney(inq.estimated_value) : "your quote",
     reference: inq.reference || "",
-    rep: rep && rep !== "You" ? rep : "the HDR team",
+    rep: rep && rep !== "You" ? rep : brand.team,
     details: buildDetailsBlock(inq),
     quote: extra?.quote ?? "— your itemized quote will appear here —",
     quote_number: extra?.quote_number ?? "",
@@ -316,6 +347,9 @@ export const MERGE_FIELDS: { token: string; label: string }[] = [
   { token: "value", label: "Estimated value" },
   { token: "reference", label: "Inquiry reference" },
   { token: "rep", label: "Your name" },
+  { token: "company", label: "Brand name (auto by entity)" },
+  { token: "company_email", label: "Brand email (auto by entity)" },
+  { token: "company_phone", label: "Brand phone (auto by entity)" },
 ];
 
 // ---------------------------------------------------------------------------

@@ -14,6 +14,7 @@
 
 import { type Inquiry, fmtDate } from "@/lib/inquiries/shared";
 import { HDR_LOGO_DATA_URL } from "@/lib/inquiries/hdr-logo";
+import { VERSATILE_LOGO_DATA_URL } from "@/lib/inquiries/versatile-logo";
 
 // The minimal shape this renderer needs — satisfied by a saved InquiryQuote or a
 // freshly-computed draft before it is persisted.
@@ -33,21 +34,68 @@ export interface QuotePdfDoc {
   created_at?: string | null;
 }
 
-const BRAND = {
-  name: "Hollywood Depot Rentals",
-  phone: "(818) 845-8077",
-  email: "sales@hdrsiteservices.com",
-  site: "hdrsiteservices.com",
-  addr1: "12580 Saticoy St",
-  addr2: "North Hollywood, CA 91605",
+// Per-brand identity + accent palette. The renderer picks one per document by
+// the inquiry's brand (Versatile vs HDR) so a Versatile lead prints a Versatile-
+// branded quote/invoice and an HDR lead prints HDR's. HDR is the default, so
+// existing HDR output is byte-for-byte unchanged.
+interface BrandTheme {
+  name: string;
+  phone: string;
+  email: string;
+  site: string;
+  addr1: string;
+  addr2: string;
+  team: string;
+  logo: string;
+  cobalt: readonly [number, number, number]; // accent: headings, number, rules
+  tint: readonly [number, number, number]; // section bars
+  tintSoft: readonly [number, number, number]; // label cells
+}
+
+const THEMES: Record<"hdr" | "versatile", BrandTheme> = {
+  // HDR cobalt re-skin of the RentalWorks order's blue chrome.
+  hdr: {
+    name: "Hollywood Depot Rentals",
+    phone: "(818) 845-8077",
+    email: "sales@hdrsiteservices.com",
+    site: "hdrsiteservices.com",
+    addr1: "12580 Saticoy St",
+    addr2: "North Hollywood, CA 91605",
+    team: "HDR Team",
+    logo: HDR_LOGO_DATA_URL,
+    cobalt: [40, 69, 240], // --hdr-500
+    tint: [221, 228, 252], // light cobalt
+    tintSoft: [241, 243, 255], // --hdr-050
+  },
+  // Versatile Studios brand red (#d2232a), Cahuenga Blvd address.
+  versatile: {
+    name: "Versatile Studios",
+    phone: "(213) 935-8124",
+    email: "rentals@versatilestudios.com",
+    site: "versatilestudios.com",
+    addr1: "1000 N Cahuenga Blvd",
+    addr2: "Los Angeles, CA 90038",
+    team: "Versatile Team",
+    logo: VERSATILE_LOGO_DATA_URL,
+    cobalt: [210, 35, 42], // #d2232a
+    tint: [248, 220, 221], // light red
+    tintSoft: [253, 242, 242], // very light red
+  },
 };
 
-// Palette — HDR cobalt re-skin of the RentalWorks order's blue chrome.
-const COBALT = [40, 69, 240] as const; // --hdr-500, headings + number + rule
+// Pick the brand by the inquiry: website/ads leads carry source "versatile", and
+// every Versatile inquiry (incl. rep-created) gets a "VS-" reference — either
+// signal selects Versatile; anything else stays HDR (the default).
+function pickTheme(inquiry: Inquiry): BrandTheme {
+  const isVersatile =
+    (inquiry.source || "").toLowerCase() === "versatile" ||
+    /^VS-/i.test(inquiry.reference || "");
+  return isVersatile ? THEMES.versatile : THEMES.hdr;
+}
+
+// Palette — brand-neutral chrome shared by both themes.
 const GREEN = [21, 128, 61] as const; // accepted treatment (emerald-700)
 const GREEN_TINT = [220, 252, 231] as const; // pale green fill for accepted bars
-const TINT = [221, 228, 252] as const; // section bars (light cobalt)
-const TINT_SOFT = [241, 243, 255] as const; // --hdr-050, label cells
 const AMOUNT_HL = [255, 250, 209] as const; // pale gold grand-total highlight (echoes the source)
 const INK = [11, 19, 32] as const; // --ink-900, body text
 const MUTED = [68, 80, 122] as const; // --ink-500
@@ -121,6 +169,15 @@ export async function buildQuoteDoc(
   const usable = right - margin;
   const center = pageWidth / 2;
 
+  // Brand the document by the inquiry (Versatile vs HDR). These shadow the old
+  // module-level constants, so every reference below uses the selected brand.
+  const BRAND = pickTheme(inquiry);
+  const COBALT = BRAND.cobalt;
+  const TINT = BRAND.tint;
+  const TINT_SOFT = BRAND.tintSoft;
+  const LOGO = BRAND.logo;
+  const TEAM = BRAND.team;
+
   // Accepted variant: same document, re-chromed as a confirmation the rep can
   // send back to the customer — green ACCEPTED stamp, acceptance date in place
   // of the validity window, and confirmation terms.
@@ -145,7 +202,7 @@ export async function buildQuoteDoc(
 
   // ─── Masthead ─────────────────────────────────────────────────────────────
   try {
-    d.addImage(HDR_LOGO_DATA_URL, "JPEG", margin, 28, 52, 52);
+    d.addImage(LOGO, "JPEG", margin, 28, 52, 52);
   } catch {
     /* decorative — skip if the embed fails */
   }
@@ -272,7 +329,7 @@ export async function buildQuoteDoc(
   };
 
   const gy = 162;
-  const agent = quote.created_by && quote.created_by !== "You" ? quote.created_by : "HDR Team";
+  const agent = quote.created_by && quote.created_by !== "You" ? quote.created_by : TEAM;
   // Column 1 — Customer last so a long bill-to name can wrap.
   field(cols[0].x, gy, isInvoice ? "Invoice" : "Quote", docNumber);
   field(cols[0].x, gy + 15, "Reference", inquiry.reference || "-");
@@ -495,7 +552,7 @@ export async function buildQuoteDoc(
       // ignore any saved quote terms here.
       "Payment is due on receipt. Amount includes delivery, setup, and servicing. " +
       `Please reference invoice ${docNumber} with your payment. ` +
-      "Make checks payable to Hollywood Depot Rentals."
+      `Make checks payable to ${BRAND.name}.`
     : (quote.terms && quote.terms.trim()) ||
       (accepted
         ? `This quote was accepted on ${acceptedDate} and your rental is confirmed. ` +
