@@ -16,6 +16,8 @@ export const runtime = "nodejs";
 const UpdateSchema = z.object({
   status: z.enum(INQUIRY_STATUSES).optional(),
   internal_notes: z.string().max(10_000).optional().nullable(),
+  // Reason a quote was marked lost (preset or free-text "Other").
+  lost_reason: z.string().max(500).optional().nullable(),
   rw_quote_number: z.string().max(64).optional().nullable(),
   rw_order_number: z.string().max(64).optional().nullable(),
   unit_id: z.string().max(64).optional().nullable(),

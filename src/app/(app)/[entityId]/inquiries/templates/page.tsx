@@ -76,6 +76,7 @@ const SAMPLE_INQUIRY: Inquiry = {
   note_on_quote: true,
   note_on_invoice: true,
   internal_notes: null,
+  lost_reason: null,
   rw_quote_number: null,
   rw_order_number: null,
   source: "Google Ads",

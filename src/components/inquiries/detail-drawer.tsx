@@ -52,6 +52,7 @@ import {
   type InquiryQuote,
   STAGES,
   LOST_STAGE,
+  LOST_REASONS,
   fmtMoney,
   fmtDateTime,
   fmtRange,
@@ -91,18 +92,24 @@ export interface DrawerCallbacks {
 export function StageBar({
   inquiry,
   onMove,
+  onMarkLost,
 }: {
   inquiry: Inquiry;
   onMove: DrawerCallbacks["onMove"];
+  onMarkLost?: (id: string, reason: string) => void;
 }) {
-  // A lost deal lives off the board — show a terminal banner with a one-click
-  // reopen (back to the first stage) instead of the progress bar.
+  const [picking, setPicking] = useState(false);
+  const [reason, setReason] = useState("");
+  const [other, setOther] = useState("");
+
+  // A lost deal lives off the board — show a terminal banner with its reason and
+  // a one-click reopen (back to the first stage) instead of the progress bar.
   if (inquiry.status === LOST_STAGE.key) {
     return (
       <div className="flex items-center gap-2 rounded-md border border-dashed bg-muted/40 px-3 py-2">
         <XCircle className="size-4 shrink-0 text-muted-foreground" />
         <span className="flex-1 text-sm font-medium text-muted-foreground">
-          Marked as lost — off the pipeline
+          Marked as lost{inquiry.lost_reason ? ` — ${inquiry.lost_reason}` : ""}
         </span>
         <Button
           variant="outline"
@@ -147,16 +154,71 @@ export function StageBar({
           );
         })}
       </div>
-      {/* Off-board terminal state: drop a lead that won't convert. Reversible
-          from the lost banner above, so no confirm needed. */}
-      <button
-        type="button"
-        title="Mark this rental as lost"
-        onClick={() => onMove(inquiry.id, LOST_STAGE.key)}
-        className="flex w-full items-center justify-center gap-1.5 rounded px-1 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-      >
-        <XCircle className="size-3.5" /> Mark as lost
-      </button>
+      {/* Off-board terminal state: drop a lead that won't convert, capturing why
+          (preset reason or free-text "Other"). Reversible from the lost banner. */}
+      {picking ? (
+        <div className="space-y-2 rounded-md border bg-muted/30 p-2">
+          <select
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+          >
+            <option value="">Why was it lost?</option>
+            {LOST_REASONS.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+            <option value="__other">Other…</option>
+          </select>
+          {reason === "__other" && (
+            <input
+              value={other}
+              onChange={(e) => setOther(e.target.value)}
+              placeholder="Reason…"
+              className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+            />
+          )}
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={!reason || (reason === "__other" && !other.trim())}
+              onClick={() => {
+                const final = reason === "__other" ? other.trim() : reason;
+                if (!final) return;
+                if (onMarkLost) onMarkLost(inquiry.id, final);
+                else onMove(inquiry.id, LOST_STAGE.key);
+                setPicking(false);
+                setReason("");
+                setOther("");
+              }}
+            >
+              <XCircle className="size-3.5" /> Mark as lost
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setPicking(false);
+                setReason("");
+                setOther("");
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          title="Mark this rental as lost"
+          onClick={() => setPicking(true)}
+          className="flex w-full items-center justify-center gap-1.5 rounded px-1 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+        >
+          <XCircle className="size-3.5" /> Mark as lost
+        </button>
+      )}
     </div>
   );
 }
@@ -1178,7 +1240,16 @@ export function InquiryDrawer({
                     onAddQuote={callbacks.onAddQuote}
                   />
                 </div>
-                <StageBar inquiry={inquiry} onMove={callbacks.onMove} />
+                <StageBar
+                  inquiry={inquiry}
+                  onMove={callbacks.onMove}
+                  onMarkLost={
+                    callbacks.onSaveDetails
+                      ? (id, lost_reason) =>
+                          callbacks.onSaveDetails!(id, { status: "lost", lost_reason })
+                      : undefined
+                  }
+                />
               </Section>
 
               <Section title="Event & contact">

@@ -97,6 +97,7 @@ export type Database = {
           unit_id: string | null
           estimated_value: number | null
           internal_notes: string | null
+          lost_reason: string | null
           last_activity_at: string | null
           created_by: string | null
           created_at: string
@@ -138,6 +139,7 @@ export type Database = {
           unit_id?: string | null
           estimated_value?: number | null
           internal_notes?: string | null
+          lost_reason?: string | null
           last_activity_at?: string | null
           created_by?: string | null
           created_at?: string
@@ -179,6 +181,7 @@ export type Database = {
           unit_id?: string | null
           estimated_value?: number | null
           internal_notes?: string | null
+          lost_reason?: string | null
           last_activity_at?: string | null
           created_by?: string | null
           created_at?: string

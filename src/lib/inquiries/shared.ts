@@ -80,6 +80,16 @@ export const STATUS_LABELS: Record<InquiryStatus, string> = Object.fromEntries(
   [...STAGES, LOST_STAGE].map((s) => [s.key, s.label])
 ) as Record<InquiryStatus, string>;
 
+// Preset reasons offered when marking a quote lost. "Other" is handled in the UI
+// as a free-text entry, so it's not in this list. Stored verbatim in
+// rental_inquiries.lost_reason for the Lost view + win/loss reporting.
+export const LOST_REASONS = [
+  "Too expensive",
+  "Did not respond",
+  "Went with a different vendor",
+  "Not available for the dates requested",
+] as const;
+
 // Open stages where inbound correspondence should still attach to the inquiry
 // (used by the inbound-email webhook's fallback matcher) and that count as
 // "open" on the dashboard.
@@ -434,6 +444,9 @@ export interface Inquiry {
   billing_name: string | null;
   billing_address: string | null;
   internal_notes: string | null;
+  // Why a quote was marked lost — one of LOST_REASONS or a free-text "Other"
+  // note. Null until the inquiry is marked lost (or for legacy lost rows).
+  lost_reason: string | null;
   // Free-form note printed on the customer-facing quote / invoice PDF, shown on
   // each document per the two toggles. Distinct from `internal_notes` (private)
   // and a quote's per-draft `terms`. Null/empty → nothing prints.
