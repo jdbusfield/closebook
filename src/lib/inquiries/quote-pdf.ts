@@ -550,9 +550,10 @@ export async function buildQuoteDoc(
   const termsText = isInvoice
     ? // Invoices carry payment terms, not the quote's validity language — so we
       // ignore any saved quote terms here.
-      "Payment is due on receipt. Amount includes delivery, setup, and servicing. " +
-      `Please reference invoice ${docNumber} with your payment. ` +
-      `Make checks payable to ${BRAND.name}.`
+      `By accepting this invoice, you authorize ${BRAND.name} to charge the credit card on file for the full amount of this invoice. ` +
+      "The card on file will be charged within seven (7) days of the start date of your rental. " +
+      "This amount includes delivery, setup, and servicing. " +
+      `Please reference invoice ${docNumber} on any payment-related correspondence.`
     : (quote.terms && quote.terms.trim()) ||
       (accepted
         ? `This quote was accepted on ${acceptedDate} and your rental is confirmed. ` +
