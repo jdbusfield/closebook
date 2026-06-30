@@ -187,16 +187,23 @@ export default function InboxFeedPage() {
     }
   }
 
-  async function createInquiry(messageId: string) {
+  async function createInquiry(messageId: string, force = false) {
     setCreating(messageId);
     try {
       const res = await fetch(
         `/api/inquiry-messages/${messageId}/create-inquiry`,
-        { method: "POST", headers: embedKey ? { "x-embed-key": embedKey } : undefined }
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(embedKey ? { "x-embed-key": embedKey } : {}),
+          },
+          body: JSON.stringify({ force }),
+        }
       );
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        // If it was already linked, just go to that inquiry.
+        // If it was already linked (and we didn't force a new one), just go there.
         if (res.status === 409 && json.inquiryId) {
           router.push(`${base}/${json.inquiryId}`);
           return;
@@ -350,14 +357,55 @@ export default function InboxFeedPage() {
 
                     <div className="mt-3">
                       {linked ? (
-                        <Link
-                          href={`${base}/${linked.id}`}
-                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                        >
-                          <Link2 className="size-3" />
-                          {linked.reference}
-                          {linked.name ? ` · ${linked.name}` : ""}
-                        </Link>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Link
+                            href={`${base}/${linked.id}`}
+                            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                          >
+                            <Link2 className="size-3" />
+                            {linked.reference}
+                            {linked.name ? ` · ${linked.name}` : ""}
+                          </Link>
+                          <span className="text-xs text-muted-foreground">·</span>
+                          {/* Repeat booking on the same thread: spin a NEW reservation
+                              off this email (moves just this message to the new card). */}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7"
+                            disabled={creating === m.id || assigning === m.id}
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  `Start a new reservation from this email? It will be moved off ${linked.reference} onto the new reservation — the original keeps its other emails.`
+                                )
+                              ) {
+                                createInquiry(m.id, true);
+                              }
+                            }}
+                          >
+                            <Plus className="size-3.5" />
+                            {creating === m.id ? "Creating…" : "New reservation from this"}
+                          </Button>
+                          <select
+                            className="rounded-md border bg-background px-2 py-1 text-xs"
+                            defaultValue=""
+                            disabled={assigning === m.id || creating === m.id}
+                            onChange={(e) => assign(m.id, e.target.value)}
+                          >
+                            <option value="">
+                              {assigning === m.id ? "Moving…" : "Move to…"}
+                            </option>
+                            {inquiries
+                              .filter((i) => i.id !== linked.id)
+                              .map((i) => (
+                                <option key={i.id} value={i.id}>
+                                  {i.reference}
+                                  {i.name ? ` · ${i.name}` : ""}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
                       ) : (
                         <div className="flex flex-wrap items-center gap-2">
                           <Button

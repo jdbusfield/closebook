@@ -38,6 +38,12 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  // `force` lets the caller spin a NEW reservation off an email that's already
+  // linked to another one (repeat bookings on the same email thread). The
+  // message is re-pointed to the new inquiry below; the old one keeps its other
+  // messages/history.
+  const reqBody = (await request.json().catch(() => ({}))) as { force?: boolean };
+  const force = reqBody.force === true;
   const embedEntity = resolveEmbedEntity(request);
   const isEmbed = embedEntity !== null;
   const supabase = isEmbed ? createAdminClient() : await createClient();
@@ -65,7 +71,7 @@ export async function POST(
   if (!msg) {
     return NextResponse.json({ error: "Not found or not permitted" }, { status: 404 });
   }
-  if (msg.inquiry_id) {
+  if (msg.inquiry_id && !force) {
     return NextResponse.json(
       { error: "This email is already linked to an inquiry", inquiryId: msg.inquiry_id },
       { status: 409 }
