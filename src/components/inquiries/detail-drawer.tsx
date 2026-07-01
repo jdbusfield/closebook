@@ -86,6 +86,9 @@ export interface DrawerCallbacks {
   onAddQuote: (id: string, draft: QuoteDraft) => Promise<InquiryQuote | null>;
   onUpdateQuoteStatus: (quoteId: string, status: InquiryQuote["status"]) => void;
   onDeleteQuote: (quoteId: string) => void;
+  /** Permanently delete the whole inquiry (e.g. a test/junk card). Optional —
+   * when omitted the "delete instead" shortcut in the lost picker is hidden. */
+  onDelete?: (id: string) => void;
 }
 
 // --- Stage progress bar ----------------------------------------------------
@@ -93,14 +96,17 @@ export function StageBar({
   inquiry,
   onMove,
   onMarkLost,
+  onDelete,
 }: {
   inquiry: Inquiry;
   onMove: DrawerCallbacks["onMove"];
   onMarkLost?: (id: string, reason: string) => void;
+  onDelete?: DrawerCallbacks["onDelete"];
 }) {
   const [picking, setPicking] = useState(false);
   const [reason, setReason] = useState("");
   const [other, setOther] = useState("");
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   // A lost deal lives off the board — show a terminal banner with its reason and
   // a one-click reopen (back to the first stage) instead of the progress bar.
@@ -203,11 +209,55 @@ export function StageBar({
                 setPicking(false);
                 setReason("");
                 setOther("");
+                setConfirmingDelete(false);
               }}
             >
               Cancel
             </Button>
           </div>
+
+          {/* Not actually lost — just a test/junk card? Delete it outright
+              instead of parking it in the Lost list. Two-step to avoid a
+              mis-click; only shown when a delete handler is wired. */}
+          {onDelete && (
+            <div className="border-t pt-2">
+              {confirmingDelete ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    Delete this inquiry permanently?
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => {
+                      onDelete(inquiry.id);
+                      setPicking(false);
+                      setConfirmingDelete(false);
+                      setReason("");
+                      setOther("");
+                    }}
+                  >
+                    <Trash2 className="size-3.5" /> Delete
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setConfirmingDelete(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDelete(true)}
+                  className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-destructive"
+                >
+                  <Trash2 className="size-3.5" /> Just a test? Delete this inquiry instead
+                </button>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <button
@@ -1249,6 +1299,7 @@ export function InquiryDrawer({
                           callbacks.onSaveDetails!(id, { status: "lost", lost_reason })
                       : undefined
                   }
+                  onDelete={callbacks.onDelete}
                 />
               </Section>
 

@@ -175,6 +175,10 @@ export default function InquiriesPipelinePage() {
     onAddQuote: data.addQuote,
     onUpdateQuoteStatus: data.updateQuoteStatus,
     onDeleteQuote: data.deleteQuote,
+    onDelete: (id) => {
+      setSelectedId(null);
+      data.deleteInquiry(id);
+    },
   };
 
   const selected = data.inquiries.find((i) => i.id === selectedId) ?? null;
