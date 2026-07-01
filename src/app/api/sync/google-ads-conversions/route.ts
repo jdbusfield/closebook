@@ -41,7 +41,7 @@ export async function GET(request: Request) {
   const { data: rows, error } = await supabase
     .from("rental_inquiries")
     .select(
-      "id, reference, email, phone, gclid, conversion_value, conversion_currency, last_activity_at, updated_at"
+      "id, reference, email, phone, gclid, estimated_value, conversion_value, conversion_currency, last_activity_at, updated_at"
     )
     .eq("entity_id", HDR_ENTITY_ID)
     .in("conversion_status", ["pending", "failed"])
@@ -55,6 +55,39 @@ export async function GET(request: Request) {
     return NextResponse.json({ uploaded: 0, failed: 0, message: "Nothing queued" });
   }
 
+  // Resolve the true booked value at UPLOAD time, not when the deal was first
+  // marked won. A rep often sets the estimate (or accepts the quote) AFTER moving
+  // the stage, so a value frozen at confirm-time is stale or null. Priority:
+  //   accepted quote total  →  estimated_value  →  whatever was seeded.
+  // The DEPOSIT is deliberately never used — it's a partial auth hold, not the
+  // sale value, and using it undervalues the conversion in Google Ads.
+  const acceptedQuoteTotal = new Map<string, number>();
+  const inquiryIds = rows.map((r) => r.id);
+  const { data: quotes } = await supabase
+    .from("rental_inquiry_quotes")
+    .select("inquiry_id, total, accepted_at")
+    .in("inquiry_id", inquiryIds)
+    .eq("status", "accepted")
+    .order("accepted_at", { ascending: false });
+  for (const q of quotes ?? []) {
+    // Rows are newest-first, so the first total we see per inquiry is the latest
+    // accepted quote — keep it and skip older ones.
+    if (q.total != null && !acceptedQuoteTotal.has(q.inquiry_id)) {
+      acceptedQuoteTotal.set(q.inquiry_id, Number(q.total));
+    }
+  }
+  const resolveValue = (row: (typeof rows)[number]): number | null => {
+    const quote = acceptedQuoteTotal.get(row.id);
+    if (quote != null && quote > 0) return quote;
+    if (row.estimated_value != null && Number(row.estimated_value) > 0) {
+      return Number(row.estimated_value);
+    }
+    if (row.conversion_value != null && Number(row.conversion_value) > 0) {
+      return Number(row.conversion_value);
+    }
+    return null;
+  };
+
   let uploaded = 0;
   let failed = 0;
   const errors: { reference: string; error: string }[] = [];
@@ -64,11 +97,13 @@ export async function GET(request: Request) {
       ? new Date(row.last_activity_at)
       : new Date();
 
+    const value = resolveValue(row);
+
     const result = await uploadLeadConversion(cfg, {
       email: row.email,
       phone: row.phone,
       gclid: row.gclid,
-      value: row.conversion_value,
+      value,
       currency: row.conversion_currency,
       orderId: row.reference,
       occurredAt: isNaN(occurredAt.getTime()) ? new Date() : occurredAt,
@@ -79,6 +114,8 @@ export async function GET(request: Request) {
       await supabase
         .from("rental_inquiries")
         .update({
+          // Persist the value we actually sent so the record matches Google Ads.
+          conversion_value: value,
           conversion_status: "uploaded",
           conversion_uploaded_at: new Date().toISOString(),
           conversion_error: null,
