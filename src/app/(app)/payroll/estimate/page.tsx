@@ -105,6 +105,7 @@ interface OrgEstimate {
     headcount: number;
   };
   entities: EntityBridge[];
+  payingEntities: EntityBridge[];
   exceptions: Exception[];
   reconciliation: {
     orgEqualsEntities: boolean;
@@ -263,6 +264,7 @@ export default function OrgMonthlyEstimatePage() {
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedEmp, setSelectedEmp] = useState<EmployeeBridge | null>(null);
+  const [groupMode, setGroupMode] = useState<"allocated" | "paying">("allocated");
 
   const years = Array.from({ length: 3 }, (_, i) => now.getFullYear() - 2 + i);
 
@@ -302,6 +304,7 @@ export default function OrgMonthlyEstimatePage() {
   };
 
   const headline = data ? total(data.org.earnedInMonth) : 0;
+  const groups = data ? (groupMode === "paying" ? data.payingEntities : data.entities) : [];
 
   return (
     <div className="space-y-6 p-6">
@@ -410,8 +413,25 @@ export default function OrgMonthlyEstimatePage() {
           {/* Per-entity */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">By Reporting Entity</CardTitle>
-              <CardDescription>Click a row to see employee-level detail.</CardDescription>
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                  <CardTitle className="text-base">
+                    {groupMode === "paying" ? "By Paying Entity (payroll company)" : "By Reporting Entity (allocation)"}
+                  </CardTitle>
+                  <CardDescription>
+                    {groupMode === "paying"
+                      ? "Grouped by the entity whose payroll company actually paid each employee — how it comes out of the payroll system. Same total, for reconciliation."
+                      : "Grouped by how each employee's cost is allocated. Click a row's employees to see detail."}
+                  </CardDescription>
+                </div>
+                <Select value={groupMode} onValueChange={(v) => setGroupMode(v as "allocated" | "paying")}>
+                  <SelectTrigger className="w-[230px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="allocated">Group by allocation</SelectItem>
+                    <SelectItem value="paying">Group by paying entity</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto rounded-md border">
@@ -427,7 +447,7 @@ export default function OrgMonthlyEstimatePage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.entities.map((e) => (
+                    {groups.map((e) => (
                       <TableRow
                         key={e.entityId}
                         className="cursor-pointer hover:bg-muted/40"
@@ -444,7 +464,7 @@ export default function OrgMonthlyEstimatePage() {
                       </TableRow>
                     ))}
                     <TableRow className="border-t-2 bg-muted/50 font-semibold">
-                      <TableCell>Total ({data.entities.length} entities)</TableCell>
+                      <TableCell>Total ({groups.length} entities)</TableCell>
                       <TableCell className="text-right">{data.org.headcount}</TableCell>
                       <TableCell className="text-right font-mono">{fmt(total(data.org.cash))}</TableCell>
                       <TableCell className="text-right font-mono">{fmt(-total(data.org.beginningAccrued))}</TableCell>
@@ -457,7 +477,7 @@ export default function OrgMonthlyEstimatePage() {
 
               {/* Employee rows grouped under each entity, expandable via drawer */}
               <div className="mt-6 space-y-6">
-                {data.entities.map((e) => (
+                {groups.map((e) => (
                   <div key={e.entityId}>
                     <h4 className="text-sm font-semibold mb-2">{e.entityName} <span className="text-muted-foreground font-normal">· {e.headcount} employees</span></h4>
                     <div className="rounded-md border divide-y">

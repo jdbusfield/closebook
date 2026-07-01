@@ -34,9 +34,10 @@ import {
 } from "./payroll-calculations";
 import {
   getOperatingEntityForCostCenter,
+  COMPANY_EMPLOYING_ENTITY,
 } from "@/lib/paylocity/cost-center-config";
 import type { AllocationResolver } from "@/lib/paylocity/allocation-resolver";
-import { getEntityMeta } from "@/lib/paylocity/entities";
+import { getEntityMeta, ENTITY_ORDER } from "@/lib/paylocity/entities";
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -79,6 +80,11 @@ export interface EmployeeBridge {
   effectiveEntityId: string;
   effectiveEntityCode: string;
   effectiveEntityName: string;
+  /** The entity whose payroll company actually paid this employee (by companyId),
+   *  independent of allocation — used for the "paying entity" reconciliation view. */
+  employingEntityId: string;
+  employingEntityCode: string;
+  employingEntityName: string;
   department: string;
   costCenterCode: string;
   usedCostCenterFallback: boolean;
@@ -151,7 +157,11 @@ export interface OrgMonthlyEstimate {
     earnedInMonth: AmountTriple;
     headcount: number;
   };
+  /** Grouped by allocated reporting entity (how costs are assigned). */
   entities: EntityBridge[];
+  /** Grouped by paying entity / payroll company (how it comes out of payroll).
+   *  Same org total as `entities`, partitioned differently for reconciliation. */
+  payingEntities: EntityBridge[];
   exceptions: Exception[];
   reconciliation: {
     orgEqualsEntities: boolean;
@@ -449,6 +459,11 @@ export function computeEmployeeBridge(
   const bridge = addTriple(subTriple(rCash, rBal), rEnding);
   const residual = Math.abs(tripleTotal(rEarned) - tripleTotal(bridge));
 
+  // Paying/employing entity: derived purely from the payroll company id.
+  const employingEntityId =
+    COMPANY_EMPLOYING_ENTITY[meta.companyId] ?? entity.effectiveEntityId;
+  const employingMeta = getEntityMeta(employingEntityId);
+
   return {
     employeeId: meta.employeeId,
     companyId: meta.companyId,
@@ -456,6 +471,9 @@ export function computeEmployeeBridge(
     effectiveEntityId: entity.effectiveEntityId,
     effectiveEntityCode: entity.effectiveEntityCode,
     effectiveEntityName: entity.effectiveEntityName,
+    employingEntityId,
+    employingEntityCode: employingMeta.code,
+    employingEntityName: employingMeta.name,
     department: entity.department,
     costCenterCode: meta.costCenterCode ?? "UNKNOWN",
     usedCostCenterFallback: entity.usedCostCenterFallback,
@@ -507,46 +525,68 @@ export function buildOrgEstimate(input: BuildInput): OrgMonthlyEstimate {
     employees.push(computeEmployeeBridge(checks, meta, entity, { year, month, isClosedMonth }));
   }
 
-  // Group into entities (skip employees with zero activity from totals).
+  // Skip employees with zero activity from totals.
   const active = employees.filter((e) => !e.hasZeroChecks);
-  const entityMap = new Map<string, EntityBridge>();
-  for (const emp of active) {
-    let ent = entityMap.get(emp.effectiveEntityId);
-    if (!ent) {
-      const m = getEntityMeta(emp.effectiveEntityId);
-      ent = {
-        entityId: emp.effectiveEntityId,
-        entityCode: m.code,
-        entityName: m.name,
-        headcount: 0,
-        cash: { ...ZERO },
-        beginningAccrued: { ...ZERO },
-        endingAccrued: { ...ZERO },
-        estimatedTail: { ...ZERO },
-        earnedInMonth: { ...ZERO },
-        employees: [],
-      };
-      entityMap.set(emp.effectiveEntityId, ent);
+
+  // Group the active employees by an arbitrary entity key (allocated vs paying).
+  function groupBy(
+    keyFn: (e: EmployeeBridge) => { id: string; code: string; name: string }
+  ): EntityBridge[] {
+    const map = new Map<string, EntityBridge>();
+    for (const emp of active) {
+      const k = keyFn(emp);
+      let ent = map.get(k.id);
+      if (!ent) {
+        ent = {
+          entityId: k.id,
+          entityCode: k.code,
+          entityName: k.name,
+          headcount: 0,
+          cash: { ...ZERO },
+          beginningAccrued: { ...ZERO },
+          endingAccrued: { ...ZERO },
+          estimatedTail: { ...ZERO },
+          earnedInMonth: { ...ZERO },
+          employees: [],
+        };
+        map.set(k.id, ent);
+      }
+      ent.headcount++;
+      ent.cash = addTriple(ent.cash, emp.cash);
+      ent.beginningAccrued = addTriple(ent.beginningAccrued, emp.beginningAccrued);
+      ent.endingAccrued = addTriple(ent.endingAccrued, emp.endingAccrued);
+      ent.estimatedTail = addTriple(ent.estimatedTail, emp.estimatedTail);
+      ent.earnedInMonth = addTriple(ent.earnedInMonth, emp.earnedInMonth);
+      ent.employees.push(emp);
     }
-    ent.headcount++;
-    ent.cash = addTriple(ent.cash, emp.cash);
-    ent.beginningAccrued = addTriple(ent.beginningAccrued, emp.beginningAccrued);
-    ent.endingAccrued = addTriple(ent.endingAccrued, emp.endingAccrued);
-    ent.estimatedTail = addTriple(ent.estimatedTail, emp.estimatedTail);
-    ent.earnedInMonth = addTriple(ent.earnedInMonth, emp.earnedInMonth);
-    ent.employees.push(emp);
+    return [...map.values()]
+      .map((e) => ({
+        ...e,
+        cash: roundTriple(e.cash),
+        beginningAccrued: roundTriple(e.beginningAccrued),
+        endingAccrued: roundTriple(e.endingAccrued),
+        estimatedTail: roundTriple(e.estimatedTail),
+        earnedInMonth: roundTriple(e.earnedInMonth),
+        employees: e.employees.sort(
+          (a, b) => tripleTotal(b.earnedInMonth) - tripleTotal(a.earnedInMonth)
+        ),
+      }))
+      .sort((a, b) => {
+        const ia = ENTITY_ORDER.indexOf(a.entityId);
+        const ib = ENTITY_ORDER.indexOf(b.entityId);
+        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+      });
   }
 
-  const entities = [...entityMap.values()].map((e) => ({
-    ...e,
-    cash: roundTriple(e.cash),
-    beginningAccrued: roundTriple(e.beginningAccrued),
-    endingAccrued: roundTriple(e.endingAccrued),
-    estimatedTail: roundTriple(e.estimatedTail),
-    earnedInMonth: roundTriple(e.earnedInMonth),
-    employees: e.employees.sort((a, b) =>
-      tripleTotal(b.earnedInMonth) - tripleTotal(a.earnedInMonth)
-    ),
+  const entities = groupBy((e) => ({
+    id: e.effectiveEntityId,
+    code: e.effectiveEntityCode,
+    name: e.effectiveEntityName,
+  }));
+  const payingEntities = groupBy((e) => ({
+    id: e.employingEntityId,
+    code: e.employingEntityCode,
+    name: e.employingEntityName,
   }));
 
   // Org totals
@@ -647,6 +687,7 @@ export function buildOrgEstimate(input: BuildInput): OrgMonthlyEstimate {
     isClosedMonth,
     org,
     entities,
+    payingEntities,
     exceptions,
     reconciliation: {
       orgEqualsEntities,
