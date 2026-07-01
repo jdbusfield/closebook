@@ -34,6 +34,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { PaycheckDetailBody } from "@/app/(app)/[entityId]/employees/monthly/paycheck-detail-sheet";
 import {
   ArrowLeft,
   Loader2,
@@ -559,7 +560,12 @@ export default function OrgMonthlyEstimatePage() {
                 </SheetDescription>
               </SheetHeader>
               <div className="mt-4 space-y-4">
-                <BridgeTable {...selectedEmp} dense />
+                <div>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                    Cash → Accrual Bridge
+                  </h3>
+                  <BridgeTable {...selectedEmp} dense />
+                </div>
                 {selectedEmp.uncoveredTailDays > 0 && total(selectedEmp.estimatedTail) > 0 && (
                   <p className="text-xs text-muted-foreground">
                     {selectedEmp.uncoveredTailDays} day(s) at month end were estimated
@@ -577,6 +583,16 @@ export default function OrgMonthlyEstimatePage() {
                   {selectedEmp.usedCostCenterFallback && " (unmapped — entity assigned by fallback)"}
                   {selectedEmp.allocationChangedInMonth && " · allocation changed mid-month"}
                 </div>
+
+                <Separator />
+
+                {/* Per-paycheck breakdown (same view as the entity-level drill-down) */}
+                <PaycheckDetailBody
+                  employeeId={selectedEmp.employeeId}
+                  companyId={selectedEmp.companyId}
+                  year={year}
+                  month={month}
+                />
               </div>
             </>
           )}
