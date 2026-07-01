@@ -130,7 +130,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
       <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold">
         {label}
       </div>
-      <div className="text-sm">{value || "â€”"}</div>
+      <div className="text-sm">{value || "—"}</div>
     </div>
   );
 }
@@ -386,14 +386,14 @@ export default function InquiryDetailPage() {
   );
 
   if (loading) {
-    return <div className="p-6 text-muted-foreground">Loadingâ€¦</div>;
+    return <div className="p-6 text-muted-foreground">Loading…</div>;
   }
   if (!inquiry) {
     return (
       <div className="p-6 space-y-4">
         <p className="text-muted-foreground">Inquiry not found.</p>
         <Link href={base} className="text-primary hover:underline">
-          â† Back to inquiries
+          ← Back to inquiries
         </Link>
       </div>
     );
@@ -446,7 +446,7 @@ export default function InquiryDetailPage() {
               label="Dates"
               value={
                 inquiry.start_date
-                  ? `${inquiry.start_date}${inquiry.end_date ? ` â†’ ${inquiry.end_date}` : ""}`
+                  ? `${inquiry.start_date}${inquiry.end_date ? ` → ${inquiry.end_date}` : ""}`
                   : null
               }
             />
@@ -540,7 +540,7 @@ export default function InquiryDetailPage() {
                 value={internalNotes}
                 onChange={(e) => setInternalNotes(e.target.value)}
                 rows={4}
-                placeholder="Private notes for the teamâ€¦"
+                placeholder="Private notes for the team…"
               />
               <Button
                 variant="outline"
@@ -565,7 +565,7 @@ export default function InquiryDetailPage() {
                     className="w-full border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
                   >
                     <Trash2 className="size-4" />
-                    {deleting ? "Deletingâ€¦" : "Delete inquiry"}
+                    {deleting ? "Deleting…" : "Delete inquiry"}
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
@@ -585,7 +585,7 @@ export default function InquiryDetailPage() {
                       disabled={deleting}
                       className="bg-destructive text-white hover:bg-destructive/90"
                     >
-                      {deleting ? "Deletingâ€¦" : "Delete"}
+                      {deleting ? "Deleting…" : "Delete"}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -636,7 +636,7 @@ export default function InquiryDetailPage() {
               m.cc_addrs?.length ? `Cc ${m.cc_addrs.join(", ")}` : "",
             ]
               .filter(Boolean)
-              .join(" Â· ");
+              .join(" · ");
             return (
               <div
                 key={m.id}
@@ -664,7 +664,7 @@ export default function InquiryDetailPage() {
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
                   {m.from_addr ? `From ${m.from_addr}` : ""}
-                  {recipients ? ` Â· ${recipients}` : ""}
+                  {recipients ? ` · ${recipients}` : ""}
                 </div>
                 {m.subject && <div className="mt-1 font-medium">{m.subject}</div>}
                 <MessageBody
@@ -689,7 +689,7 @@ export default function InquiryDetailPage() {
                         ))
                     ) : (
                       <span className="text-xs text-muted-foreground">
-                        {m.resend_email_id ? "Awaiting delivery eventsâ€¦" : "No tracking"}
+                        {m.resend_email_id ? "Awaiting delivery events…" : "No tracking"}
                       </span>
                     )}
                   </div>
