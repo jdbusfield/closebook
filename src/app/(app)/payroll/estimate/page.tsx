@@ -68,6 +68,8 @@ interface EmployeeBridge {
   estimatedTail: AmountTriple;
   earnedInMonth: AmountTriple;
   uncoveredTailDays: number;
+  tailStartDate: string | null;
+  tailEndDate: string | null;
   tailSuppressed: boolean;
   tailBasis: string;
   checkCount: number;
@@ -148,6 +150,12 @@ function fmtCents(n: number): string {
     style: "currency", currency: "USD",
     minimumFractionDigits: 2, maximumFractionDigits: 2,
   }).format(n);
+}
+
+function fmtMD(iso: string | null): string {
+  if (!iso) return "";
+  const [, m, d] = iso.split("-");
+  return `${Number(m)}/${Number(d)}`;
 }
 
 // ── Bridge table (reused for org, entity, employee) ──
@@ -566,18 +574,51 @@ export default function OrgMonthlyEstimatePage() {
                   </h3>
                   <BridgeTable {...selectedEmp} dense />
                 </div>
-                {selectedEmp.uncoveredTailDays > 0 && total(selectedEmp.estimatedTail) > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    {selectedEmp.uncoveredTailDays} day(s) at month end were estimated
-                    ({selectedEmp.tailBasis} basis). Verify this employee was not terminated.
-                  </p>
+                {/* Month-end accrual (uncovered days after the last paycheck's period) */}
+                {selectedEmp.uncoveredTailDays > 0 && (
+                  <div>
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                      Accrued Payroll — month end
+                    </h3>
+                    <div className={`rounded-lg border border-dashed p-4 space-y-3 ${selectedEmp.tailSuppressed ? "border-amber-500/50" : ""}`}>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline" className="text-xs">
+                          {fmtMD(selectedEmp.tailStartDate)}–{fmtMD(selectedEmp.tailEndDate)} · {selectedEmp.uncoveredTailDays} day(s)
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          not covered by any paycheck period
+                        </span>
+                      </div>
+                      {selectedEmp.tailSuppressed ? (
+                        <p className="text-xs text-amber-600">
+                          Exceeds one pay cycle — <strong>not accrued</strong>. Verify termination
+                          or re-sync Paylocity.
+                        </p>
+                      ) : (
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="rounded-md bg-muted/40 p-2.5 text-center">
+                            <p className="text-xs text-muted-foreground mb-0.5">Gross</p>
+                            <p className="font-mono font-semibold text-sm">{fmtCents(selectedEmp.estimatedTail.wages)}</p>
+                          </div>
+                          <div className="rounded-md bg-muted/40 p-2.5 text-center">
+                            <p className="text-xs text-muted-foreground mb-0.5">ER Taxes</p>
+                            <p className="font-mono font-semibold text-sm">{fmtCents(selectedEmp.estimatedTail.erTaxes)}</p>
+                          </div>
+                          <div className="rounded-md bg-muted/40 p-2.5 text-center">
+                            <p className="text-xs text-muted-foreground mb-0.5">ER Benefits</p>
+                            <p className="font-mono font-semibold text-sm">{fmtCents(selectedEmp.estimatedTail.erBenefits)}</p>
+                          </div>
+                        </div>
+                      )}
+                      {!selectedEmp.tailSuppressed && (
+                        <p className="text-[11px] text-muted-foreground">
+                          {selectedEmp.tailBasis === "trailing" ? "Rate from this month's earned pay" : "Rate from annual comp ÷ 365"}. Included in Ending accrued above.
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 )}
-                {selectedEmp.tailSuppressed && (
-                  <p className="text-xs text-amber-600">
-                    {selectedEmp.uncoveredTailDays} uncovered day(s) at month end exceed one pay
-                    cycle — no accrual was booked. Verify termination or re-sync Paylocity.
-                  </p>
-                )}
+
                 <div className="text-xs text-muted-foreground">
                   Cost center {selectedEmp.costCenterCode}
                   {selectedEmp.usedCostCenterFallback && " (unmapped — entity assigned by fallback)"}
@@ -592,6 +633,7 @@ export default function OrgMonthlyEstimatePage() {
                   companyId={selectedEmp.companyId}
                   year={year}
                   month={month}
+                  hideAccrual
                 />
               </div>
             </>

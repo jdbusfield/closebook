@@ -153,6 +153,7 @@ export function PaycheckDetailBody({
   year,
   month,
   onLoaded,
+  hideAccrual,
 }: {
   employeeId: string;
   companyId: string;
@@ -160,6 +161,9 @@ export function PaycheckDetailBody({
   month: number;
   /** Notified when data loads (e.g. so a parent header can show payType/annual). */
   onLoaded?: (info: { payType: string; annualComp: number } | null) => void;
+  /** Suppress the endpoint's own accrual section (the estimate view renders its
+   *  own bridge-consistent month-end accrual instead). */
+  hideAccrual?: boolean;
 }) {
   const [data, setData] = useState<DetailResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -404,7 +408,7 @@ export function PaycheckDetailBody({
       </div>
 
       {/* Accrual section */}
-      {data.accrual && (
+      {!hideAccrual && data.accrual && (
         <div>
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
             <Clock className="h-3.5 w-3.5" />

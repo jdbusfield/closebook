@@ -101,6 +101,10 @@ export interface EmployeeBridge {
   hasZeroChecks: boolean;
   coveredDays: number;
   uncoveredTailDays: number;
+  /** ISO date range of the uncovered trailing month-end span (e.g. 6/29–6/30),
+   *  or null when the month is fully covered. */
+  tailStartDate: string | null;
+  tailEndDate: string | null;
   /** True when the uncovered month-end gap exceeds one pay cycle, so no tail was
    *  accrued (the employee likely terminated or their late checks aren't synced). */
   tailSuppressed: boolean;
@@ -407,9 +411,20 @@ export function computeEmployeeBridge(
   }
 
   // ── Estimated month-end tail (closed months only) ──
-  const { coveredDays, uncoveredTailDays } = coverageInMonth(checks, year, month);
+  const { coveredDays, lastCoveredDay, uncoveredTailDays } = coverageInMonth(checks, year, month);
+  const daysInMonth = mEnd.getDate();
   let estimatedTail = { ...ZERO };
   let tailBasis: EmployeeBridge["tailBasis"] = "none";
+
+  // ISO range of the uncovered trailing span (for display), regardless of whether
+  // we book or suppress the accrual.
+  let tailStartDate: string | null = null;
+  let tailEndDate: string | null = null;
+  if (isClosedMonth && checkCount > 0 && uncoveredTailDays > 0) {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    tailStartDate = `${year}-${pad(month)}-${pad(lastCoveredDay + 1)}`;
+    tailEndDate = `${year}-${pad(month)}-${pad(daysInMonth)}`;
+  }
 
   // Suppress the tail when the uncovered span exceeds one pay cycle — that
   // signals a mid-month termination or un-synced late checks, not a real accrual.
@@ -488,6 +503,8 @@ export function computeEmployeeBridge(
     hasZeroChecks: checkCount === 0,
     coveredDays,
     uncoveredTailDays: isClosedMonth ? uncoveredTailDays : 0,
+    tailStartDate,
+    tailEndDate,
     tailSuppressed,
     tailBasis,
     reconciliationResidual: round(residual),
