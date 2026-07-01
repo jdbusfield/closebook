@@ -142,7 +142,8 @@ function setDraw(d: Doc, c: RGB) {
 export type QuoteDocVariant = "quote" | "invoice";
 
 // Derive an invoice number from the quote number so the two docs are visibly
-// related (HDR-Q1010 → HDR-INV1010); falls back to an INV- prefix.
+// related, preserving the brand prefix (HDR-Q1010 → HDR-INV1010, VS-Q1010 →
+// VS-INV1010); falls back to an INV- prefix.
 function invoiceNumberFor(quoteNumber: string): string {
   if (/-Q\d/i.test(quoteNumber)) return quoteNumber.replace(/-Q/i, "-INV");
   return `INV-${quoteNumber}`;
