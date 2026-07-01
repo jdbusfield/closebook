@@ -321,12 +321,20 @@ export default function OrgPayrollPage() {
             Organization-wide headcount, compensation, and cost allocation across all entities.
           </p>
         </div>
-        <Link href="/payroll/monthly">
-          <Button variant="outline" size="sm">
-            <Calendar className="mr-2 h-4 w-4" />
-            Monthly Cost
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/payroll/estimate">
+            <Button variant="default" size="sm">
+              <Calendar className="mr-2 h-4 w-4" />
+              Monthly Estimate
+            </Button>
+          </Link>
+          <Link href="/payroll/monthly">
+            <Button variant="outline" size="sm">
+              <Calendar className="mr-2 h-4 w-4" />
+              Monthly Cost
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* KPI Cards */}

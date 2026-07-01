@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { calculateEmployerTaxes } from "@/lib/utils/payroll-calculations";
 
 function getSupabase() {
   return createClient(
@@ -43,15 +44,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Also fetch the monthly cost row for context
-    const { data: monthlyCost } = await supabase
+    // Fetch all monthly cost rows for the employee/year: the target-month row
+    // for context, and prior months to derive YTD gross for tax-cap accuracy.
+    const { data: monthlyRows } = await supabase
       .from("employee_monthly_costs")
       .select("*")
       .eq("employee_id", employeeId)
       .eq("paylocity_company_id", companyId)
-      .eq("year", year)
-      .eq("month", month)
-      .single();
+      .eq("year", year);
+
+    const monthlyCost = (monthlyRows ?? []).find((r) => Number(r.month) === month) ?? null;
+    const ytdGrossPrior = (monthlyRows ?? [])
+      .filter((r) => Number(r.month) < month)
+      .reduce((s, r) => s + Number(r.gross_pay ?? 0), 0);
 
     // Filter to paychecks whose pay period overlaps the target month
     const monthStart = new Date(year, month - 1, 1);
@@ -145,7 +150,8 @@ export async function GET(request: NextRequest) {
           daysInMonth,
           dailyRate: round(dailyRate),
           estimatedGross: accrualGross,
-          estimatedErTaxes: round(accrualGross * 0.0765), // rough FICA estimate
+          // Canonical capped employer-tax engine (respects YTD wage-base caps)
+          estimatedErTaxes: round(calculateEmployerTaxes(accrualGross, ytdGrossPrior).total),
           estimatedErBenefits: round(avgDailyBenefit * daysUncovered),
         };
       }

@@ -6,7 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getAllCompanyClients } from "@/lib/paylocity";
 import {
   getAnnualComp,
-  estimateAnnualERTaxes,
+  calculateEmployerTaxes,
 } from "@/lib/utils/payroll-calculations";
 import { getOperatingEntityForCostCenter } from "@/lib/paylocity/cost-center-config";
 import { AllocationResolver } from "@/lib/paylocity/allocation-resolver";
@@ -290,6 +290,20 @@ export async function POST(request: NextRequest) {
               }
             }
 
+            // Running YTD gross before each check (for the capped ER-tax
+            // estimate fallback when Paylocity -R codes are absent).
+            const ytdBeforeCheck: Record<string, number> = {};
+            {
+              const sortedByDate = [...summaries].sort((a, b) =>
+                stripTime(a.checkDate).localeCompare(stripTime(b.checkDate))
+              );
+              let ytdRunning = 0;
+              for (const ps of sortedByDate) {
+                if (!(ps.checkDate in ytdBeforeCheck)) ytdBeforeCheck[ps.checkDate] = ytdRunning;
+                ytdRunning += ps.grossPay || 0;
+              }
+            }
+
             // Build per-paycheck detail rows
             for (const ps of summaries) {
               const ck = stripTime(ps.checkDate);
@@ -337,7 +351,9 @@ export async function POST(request: NextRequest) {
               const erBenefitsCheck = benefitsByCheck[ps.checkDate] ?? 0;
               const erTaxes = erTaxesActual > 0
                 ? round(erTaxesActual)
-                : round(estimateAnnualERTaxes((ps.grossPay || 0) * 26).total / 26);
+                : round(
+                    calculateEmployerTaxes(ps.grossPay || 0, ytdBeforeCheck[ps.checkDate] ?? 0).total
+                  );
 
               // Store for monthly bucket pro-rating
               erTaxesByCheck[ps.checkDate] = erTaxes;
@@ -439,6 +455,10 @@ export async function POST(request: NextRequest) {
             const isCurrentYearMonth = (m: number) =>
               year === currentYear && m === currentMonth;
 
+            // Running YTD actual gross (for the capped ER-tax estimate on the
+            // current-month accrual gap).
+            let ytdActualGross = 0;
+
             for (let m = 1; m <= lastMonth; m++) {
               const b = buckets[m];
 
@@ -451,9 +471,9 @@ export async function POST(request: NextRequest) {
 
               // Actual portion (from pro-rated pay periods)
               let grossPay = b.actualGross;
-              let hours = b.actualHours;
-              let regHours = b.actualRegHours;
-              let otHours = b.actualOtHours;
+              const hours = b.actualHours;
+              const regHours = b.actualRegHours;
+              const otHours = b.actualOtHours;
               let benefits = b.actualBenefits;
               let erTaxes = b.actualErTaxes;
               let isAccrual = false;
@@ -463,12 +483,16 @@ export async function POST(request: NextRequest) {
                 const accrualGross = dailyRate * daysUncovered;
                 grossPay += accrualGross;
                 isAccrual = daysCovered === 0;
-                // Estimate ER taxes only on the accrued portion
-                erTaxes += accrualGross * 0.0765; // FICA employer rate
+                // Canonical capped employer-tax engine on the accrued portion,
+                // respecting YTD wage-base caps (not a flat FICA rate).
+                erTaxes += calculateEmployerTaxes(accrualGross, ytdActualGross + b.actualGross).total;
                 if (avgMonthlyBenefit > 0) {
                   benefits += avgMonthlyBenefit * (daysUncovered / daysInCalendarMonth);
                 }
               }
+
+              // Advance YTD actual gross for the next month's cap calculation.
+              ytdActualGross += b.actualGross;
 
               grossPay = round(grossPay);
               benefits = round(benefits);
