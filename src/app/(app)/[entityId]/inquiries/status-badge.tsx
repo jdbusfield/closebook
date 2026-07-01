@@ -8,6 +8,7 @@ const STATUS_STYLES: Record<InquiryStatus, string> = {
   confirmed: "bg-emerald-100 text-emerald-800 hover:bg-emerald-100",
   out: "bg-sky-100 text-sky-800 hover:bg-sky-100",
   returned: "bg-slate-100 text-slate-700 hover:bg-slate-100",
+  completed: "bg-green-100 text-green-800 hover:bg-green-100",
   lost: "bg-gray-200 text-gray-700 hover:bg-gray-200",
 };
 

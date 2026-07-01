@@ -39,12 +39,13 @@ export const INQUIRY_STATUSES = [
   "confirmed",
   "out",
   "returned",
+  "completed",
   "lost",
 ] as const;
 
 export type InquiryStatus = (typeof INQUIRY_STATUSES)[number];
 
-export type StageKind = "open" | "booked" | "lost";
+export type StageKind = "open" | "booked" | "lost" | "completed";
 
 export interface Stage {
   key: InquiryStatus;
@@ -71,13 +72,23 @@ export const LOST_STAGE: Stage = {
   color: "#94a3b8",
 };
 
-// Lookup including lost, so a StagePill can render any status.
+// Terminal "done" archive — a booked order that's been fully closed out. Like
+// lost it lives off the board and is reviewed in its own view, but it's a
+// positive outcome (revenue realized), so it's kept separate from lost.
+export const COMPLETED_STAGE: Stage = {
+  key: "completed",
+  label: "Completed",
+  kind: "completed",
+  color: "#16a34a",
+};
+
+// Lookup including the off-board terminal states, so a StagePill can render any status.
 export const STAGE_BY_KEY: Record<InquiryStatus, Stage> = Object.fromEntries(
-  [...STAGES, LOST_STAGE].map((s) => [s.key, s])
+  [...STAGES, LOST_STAGE, COMPLETED_STAGE].map((s) => [s.key, s])
 ) as Record<InquiryStatus, Stage>;
 
 export const STATUS_LABELS: Record<InquiryStatus, string> = Object.fromEntries(
-  [...STAGES, LOST_STAGE].map((s) => [s.key, s.label])
+  [...STAGES, LOST_STAGE, COMPLETED_STAGE].map((s) => [s.key, s.label])
 ) as Record<InquiryStatus, string>;
 
 // Preset reasons offered when marking a quote lost. "Other" is handled in the UI

@@ -13,6 +13,7 @@ import {
   Phone,
   Mail,
   FileText,
+  CheckCircle2,
 } from "lucide-react";
 import { useInquiries } from "@/lib/inquiries/use-inquiries";
 import { SectionTabs } from "@/components/inquiries/section-tabs";
@@ -38,6 +39,19 @@ import {
 } from "@/lib/inquiries/shared";
 
 const KIND_ICON = { call: Phone, quote: FileText, email: Mail, logistics: Truck };
+
+// One stage's revenue in the "Booked revenue" breakdown card.
+function RevCell({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div className="px-4 py-3">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="size-2 rounded-full" style={{ background: color }} />
+        {label}
+      </div>
+      <div className="mt-1 font-mono text-lg font-semibold">{fmtMoney(value)}</div>
+    </div>
+  );
+}
 
 export default function InquiriesDashboardPage() {
   const params = useParams();
@@ -94,6 +108,23 @@ export default function InquiriesDashboardPage() {
     }).length;
 
     const pipelineVal = open.reduce((s, i) => s + (i.estimated_value || 0), 0);
+
+    // Booked revenue by stage — money earned on committed orders. "Out" = orders
+    // currently out/open for rental.
+    const sumVal = (arr: Inquiry[]) => arr.reduce((s, i) => s + (i.estimated_value || 0), 0);
+    const confirmedRev = sumVal(inquiries.filter((i) => i.status === "confirmed"));
+    const outRev = sumVal(inquiries.filter((i) => i.status === "out"));
+    const returnedRev = sumVal(inquiries.filter((i) => i.status === "returned"));
+    const bookedRev = confirmedRev + outRev + returnedRev;
+
+    // Completed (closed-out) orders — reviewed off the board.
+    const completed = inquiries
+      .filter((i) => i.status === "completed")
+      .sort((a, b) =>
+        (b.last_activity_at || "").localeCompare(a.last_activity_at || "")
+      );
+    const completedRev = sumVal(completed);
+
     const outNow = inquiries.filter((i) => i.status === "out");
     const dueBack = outNow.filter((i) => {
       const d = parseDate(i.end_date);
@@ -136,6 +167,12 @@ export default function InquiriesDashboardPage() {
       overdue,
       dueToday,
       pipelineVal,
+      confirmedRev,
+      outRev,
+      returnedRev,
+      bookedRev,
+      completed,
+      completedRev,
       outNow: outNow.length,
       dueBack,
       confirmedSoon,
@@ -194,6 +231,23 @@ export default function InquiriesDashboardPage() {
               foot={`${m.confirmedSoon} confirmed delivering ≤7 days`}
               footTone="ok"
             />
+          </div>
+
+          {/* Booked revenue — money earned across the committed order stages. */}
+          <div className="rounded-lg border bg-card shadow-sm">
+            <div className="flex items-center gap-2 border-b px-4 py-3">
+              <DollarSign className="size-4 text-emerald-600" />
+              <h3 className="text-sm font-semibold">Booked revenue</h3>
+              <span className="ml-auto flex items-baseline gap-1.5">
+                <span className="text-xs text-muted-foreground">total</span>
+                <span className="font-mono text-sm font-semibold">{fmtMoney(m.bookedRev)}</span>
+              </span>
+            </div>
+            <div className="grid grid-cols-3 divide-x">
+              <RevCell label="Confirmed" value={m.confirmedRev} color="#0f7b6c" />
+              <RevCell label="Out" value={m.outRev} color="#0369a1" />
+              <RevCell label="Returned" value={m.returnedRev} color="#64748b" />
+            </div>
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
@@ -295,6 +349,62 @@ export default function InquiriesDashboardPage() {
                   </div>
                 </div>
               )}
+
+              {/* Completed orders — closed-out revenue, reviewable off the board
+                  (full list lives in the Completed tab). */}
+              <div className="rounded-lg border bg-card shadow-sm">
+                <div className="flex items-center gap-2 border-b px-4 py-3">
+                  <CheckCircle2 className="size-4 text-green-600" />
+                  <h3 className="text-sm font-semibold">Completed orders</h3>
+                  <span className="ml-auto flex items-baseline gap-1.5">
+                    <span className="font-mono text-sm font-semibold text-emerald-600">
+                      {fmtMoney(m.completedRev)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">earned</span>
+                  </span>
+                </div>
+                {m.completed.length === 0 ? (
+                  <p className="px-4 py-8 text-center text-sm text-muted-foreground">
+                    No completed orders yet. Mark a booked order completed to archive it here.
+                  </p>
+                ) : (
+                  <>
+                    <div className="divide-y">
+                      {m.completed.slice(0, 6).map((inq) => (
+                        <div
+                          key={inq.id}
+                          onClick={() => setSelectedId(inq.id)}
+                          className="flex cursor-pointer items-center gap-3 px-4 py-2.5 hover:bg-muted/40"
+                        >
+                          <InquiryAvatar name={inq.name} size={32} />
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium">
+                              {inq.name}{" "}
+                              <span className="text-xs font-normal text-muted-foreground">
+                                · {inq.use_case}
+                              </span>
+                            </div>
+                            <div className="mt-0.5 text-xs text-muted-foreground">
+                              {inq.start_date ? fmtDate(inq.start_date) : "—"}
+                              {inq.last_activity_at
+                                ? ` · completed ${fmtDate(inq.last_activity_at)}`
+                                : ""}
+                            </div>
+                          </div>
+                          <span className="shrink-0 font-mono text-sm font-semibold">
+                            {fmtMoney(inq.estimated_value)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    {m.completed.length > 6 && (
+                      <div className="border-t px-4 py-2 text-center text-xs text-muted-foreground">
+                        +{m.completed.length - 6} more in the Completed tab
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
 
             {/* Delivery & pickup schedule */}

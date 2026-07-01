@@ -24,6 +24,7 @@ import {
   FileText,
   Plus,
   Check,
+  CheckCircle2,
   ExternalLink,
   Trash2,
   XCircle,
@@ -52,6 +53,7 @@ import {
   type InquiryQuote,
   STAGES,
   LOST_STAGE,
+  COMPLETED_STAGE,
   LOST_REASONS,
   fmtMoney,
   fmtDateTime,
@@ -121,6 +123,26 @@ export function StageBar({
           variant="outline"
           size="sm"
           onClick={() => onMove(inquiry.id, STAGES[0].key)}
+        >
+          <RotateCcw className="size-4" /> Reopen
+        </Button>
+      </div>
+    );
+  }
+
+  // A completed order is archived off the board too — show a terminal "done"
+  // banner (positive) with a one-click reopen back to the last active stage.
+  if (inquiry.status === COMPLETED_STAGE.key) {
+    return (
+      <div className="flex items-center gap-2 rounded-md border border-dashed border-green-300 bg-green-50/60 px-3 py-2 dark:border-green-900/60 dark:bg-green-950/30">
+        <CheckCircle2 className="size-4 shrink-0 text-green-600" />
+        <span className="flex-1 text-sm font-medium text-green-800 dark:text-green-300">
+          Completed order
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onMove(inquiry.id, "returned")}
         >
           <RotateCcw className="size-4" /> Reopen
         </Button>
@@ -260,14 +282,28 @@ export function StageBar({
           )}
         </div>
       ) : (
-        <button
-          type="button"
-          title="Mark this rental as lost"
-          onClick={() => setPicking(true)}
-          className="flex w-full items-center justify-center gap-1.5 rounded px-1 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-        >
-          <XCircle className="size-3.5" /> Mark as lost
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Close out a booked order → the Completed archive (positive terminal
+              state). Only offered once the deal is booked. Reversible. */}
+          {isBookedStatus(inquiry.status) && (
+            <button
+              type="button"
+              title="Mark this order as completed"
+              onClick={() => onMove(inquiry.id, COMPLETED_STAGE.key)}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded px-1 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-green-600/10 hover:text-green-700"
+            >
+              <CheckCircle2 className="size-3.5" /> Mark as completed
+            </button>
+          )}
+          <button
+            type="button"
+            title="Mark this rental as lost"
+            onClick={() => setPicking(true)}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded px-1 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+          >
+            <XCircle className="size-3.5" /> Mark as lost
+          </button>
+        </div>
       )}
     </div>
   );
