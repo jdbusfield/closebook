@@ -20,19 +20,13 @@ ALTER TABLE rental_inquiries ADD CONSTRAINT rental_inquiries_status_check
 create or replace function mark_inquiry_conversion_pending()
 returns trigger as $$
 begin
-  if NEW.status in ('confirmed', 'out')
-     and (OLD.status is distinct from NEW.status)
-     and NEW.conversion_status = 'none'
-     and (NEW.email is not null or NEW.phone is not null) then
+  if NEW.status in ('confirmed', 'out') and (OLD.status is distinct from NEW.status) and NEW.conversion_status = 'none' and (NEW.email is not null or NEW.phone is not null) then
     NEW.conversion_status := 'pending';
-    NEW.conversion_value  := coalesce(NEW.estimated_value, NEW.deposit, NEW.conversion_value);
+    NEW.conversion_value := coalesce(NEW.estimated_value, NEW.deposit, NEW.conversion_value);
   end if;
-
-  if NEW.status not in ('confirmed', 'out', 'returned', 'completed')
-     and NEW.conversion_status = 'pending' then
+  if NEW.status not in ('confirmed', 'out', 'returned', 'completed') and NEW.conversion_status = 'pending' then
     NEW.conversion_status := 'skipped';
   end if;
-
   return NEW;
 end;
 $$ language plpgsql;
