@@ -95,6 +95,9 @@ export interface EmployeeBridge {
   hasZeroChecks: boolean;
   coveredDays: number;
   uncoveredTailDays: number;
+  /** True when the uncovered month-end gap exceeds one pay cycle, so no tail was
+   *  accrued (the employee likely terminated or their late checks aren't synced). */
+  tailSuppressed: boolean;
   tailBasis: "trailing" | "annual_comp" | "none";
   reconciliationResidual: number;  // |earned − (cash − BAL + EAL)|, should be ~0
 }
@@ -115,8 +118,17 @@ export interface EntityBridge {
 export type ExceptionKind =
   | "unmapped_cost_center"
   | "estimated_tail"
+  | "long_uncovered_gap"
   | "zero_checks"
   | "allocation_changed_mid_month";
+
+/**
+ * Maximum trailing month-end days we will estimate an accrual for. A genuine
+ * month-end tail is at most one pay cycle (weekly 7 / biweekly 14); a larger
+ * uncovered span means the employee terminated or their late checks aren't
+ * synced yet, so we accrue nothing and flag it instead of over-accruing weeks.
+ */
+export const MAX_TAIL_DAYS = 16;
 
 export interface Exception {
   kind: ExceptionKind;
@@ -389,7 +401,12 @@ export function computeEmployeeBridge(
   let estimatedTail = { ...ZERO };
   let tailBasis: EmployeeBridge["tailBasis"] = "none";
 
-  if (isClosedMonth && uncoveredTailDays > 0 && checkCount > 0) {
+  // Suppress the tail when the uncovered span exceeds one pay cycle — that
+  // signals a mid-month termination or un-synced late checks, not a real accrual.
+  const tailSuppressed =
+    isClosedMonth && checkCount > 0 && uncoveredTailDays > MAX_TAIL_DAYS;
+
+  if (isClosedMonth && uncoveredTailDays > 0 && uncoveredTailDays <= MAX_TAIL_DAYS && checkCount > 0) {
     // Trailing earned daily wage rate from this employee's own in-month checks;
     // fall back to annual_comp / 365 when we can't derive it.
     let dailyWage = 0;
@@ -453,6 +470,7 @@ export function computeEmployeeBridge(
     hasZeroChecks: checkCount === 0,
     coveredDays,
     uncoveredTailDays: isClosedMonth ? uncoveredTailDays : 0,
+    tailSuppressed,
     tailBasis,
     reconciliationResidual: round(residual),
   };
@@ -581,6 +599,13 @@ export function buildOrgEstimate(input: BuildInput): OrgMonthlyEstimate {
         detail: `${emp.uncoveredTailDays} day(s) at month end estimated (${emp.tailBasis}) — verify no termination.`,
       });
     }
+    if (emp.tailSuppressed) {
+      exceptions.push({
+        ...base,
+        kind: "long_uncovered_gap",
+        detail: `${emp.uncoveredTailDays} uncovered day(s) at month end exceed one pay cycle — NOT accrued. Verify termination or re-sync Paylocity.`,
+      });
+    }
     if (emp.allocationChangedInMonth) {
       exceptions.push({
         ...base,
@@ -612,7 +637,9 @@ export function buildOrgEstimate(input: BuildInput): OrgMonthlyEstimate {
     tripleTotal(org.cash) - tripleTotal(org.beginningAccrued) + tripleTotal(org.endingAccrued);
   const orgResidual = Math.abs(tripleTotal(org.earnedInMonth) - orgBridge);
   maxResidual = Math.max(maxResidual, orgResidual);
-  const bridgeBalances = maxResidual < 0.02;
+  // Tolerance scales with headcount: penny-rounding accumulates across employees,
+  // so a few cents of drift is not a real imbalance (a genuine bug is dollars+).
+  const bridgeBalances = maxResidual < Math.max(1, org.headcount * 0.02);
 
   return {
     year,

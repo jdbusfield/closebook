@@ -67,6 +67,7 @@ interface EmployeeBridge {
   estimatedTail: AmountTriple;
   earnedInMonth: AmountTriple;
   uncoveredTailDays: number;
+  tailSuppressed: boolean;
   tailBasis: string;
   checkCount: number;
 }
@@ -122,6 +123,7 @@ const MONTHS = [
 const EXCEPTION_LABELS: Record<string, string> = {
   unmapped_cost_center: "Unmapped cost center",
   estimated_tail: "Estimated month-end tail",
+  long_uncovered_gap: "Long gap — not accrued",
   zero_checks: "No checks in month",
   allocation_changed_mid_month: "Allocation changed mid-month",
 };
@@ -474,6 +476,11 @@ export default function OrgMonthlyEstimatePage() {
                             {emp.uncoveredTailDays > 0 && total(emp.estimatedTail) > 0 && (
                               <Badge variant="outline" className="text-[10px]">est. tail</Badge>
                             )}
+                            {emp.tailSuppressed && (
+                              <Badge variant="outline" className="text-[10px] border-amber-500/50 text-amber-600">
+                                {emp.uncoveredTailDays}d gap · not accrued
+                              </Badge>
+                            )}
                           </div>
                           <span className="font-mono text-sm shrink-0 ml-2">{fmt(total(emp.earnedInMonth))}</span>
                         </button>
@@ -537,6 +544,12 @@ export default function OrgMonthlyEstimatePage() {
                   <p className="text-xs text-muted-foreground">
                     {selectedEmp.uncoveredTailDays} day(s) at month end were estimated
                     ({selectedEmp.tailBasis} basis). Verify this employee was not terminated.
+                  </p>
+                )}
+                {selectedEmp.tailSuppressed && (
+                  <p className="text-xs text-amber-600">
+                    {selectedEmp.uncoveredTailDays} uncovered day(s) at month end exceed one pay
+                    cycle — no accrual was booked. Verify termination or re-sync Paylocity.
                   </p>
                 )}
                 <div className="text-xs text-muted-foreground">
