@@ -53,6 +53,14 @@ export interface PaycheckRow {
   gross_pay: number;
   er_taxes_estimated: number;
   er_benefits: number;
+  // Premium pay detail (for the by-employee OT/DT/meal breakdown)
+  overtime_hours: number;
+  overtime_dollars: number;
+  doubletime_hours: number;
+  doubletime_dollars: number;
+  meal_dollars: number;
+  /** Count of meal premiums (each = 1 hr on a MEAL detail line). */
+  meal_count: number;
 }
 
 /** Per-employee context the engine needs beyond the raw checks. */
@@ -96,6 +104,12 @@ export interface EmployeeBridge {
   estimatedTail: AmountTriple;     // 0 for the current in-progress month
   endingAccrued: AmountTriple;     // endingAccruedActual + estimatedTail
   earnedInMonth: AmountTriple;     // headline = cash − beginningAccrued + endingAccrued
+  // Premium pay incurred in the month (earned-in-month allocated)
+  overtimeHours: number;
+  doubletimeHours: number;
+  mealPremiums: number;
+  /** Lump-sum cost of OT + DT + meal premiums (dollars). */
+  premiumPayCost: number;
   // Coverage / data quality
   checkCount: number;
   hasZeroChecks: boolean;
@@ -122,6 +136,10 @@ export interface EntityBridge {
   endingAccrued: AmountTriple;
   estimatedTail: AmountTriple;
   earnedInMonth: AmountTriple;
+  overtimeHours: number;
+  doubletimeHours: number;
+  mealPremiums: number;
+  premiumPayCost: number;
   employees: EmployeeBridge[];
 }
 
@@ -159,6 +177,10 @@ export interface OrgMonthlyEstimate {
     endingAccrued: AmountTriple;
     estimatedTail: AmountTriple;
     earnedInMonth: AmountTriple;
+    overtimeHours: number;
+    doubletimeHours: number;
+    mealPremiums: number;
+    premiumPayCost: number;
     headcount: number;
   };
   /** Grouped by allocated reporting entity (how costs are assigned). */
@@ -379,11 +401,18 @@ export function computeEmployeeBridge(
   let eal = { ...ZERO };  // ending accrued liability (actual) = AccruedLiab(M_end)
   let earned = { ...ZERO }; // E_M = Σ amount * wIn
   let checkCount = 0;
+  // Premium pay incurred in the month (allocated by earned-in-month fraction)
+  let otHours = 0, dtHours = 0, mealCount = 0, premiumCost = 0;
 
   for (const c of checks) {
     const { wBefore, wIn, periodDays } = splitCheckAcrossMonth(c.begin_date, c.end_date, year, month);
     if (periodDays <= 0) continue;
     checkCount++;
+
+    otHours += (c.overtime_hours ?? 0) * wIn;
+    dtHours += (c.doubletime_hours ?? 0) * wIn;
+    mealCount += (c.meal_count ?? 0) * wIn;
+    premiumCost += ((c.overtime_dollars ?? 0) + (c.doubletime_dollars ?? 0) + (c.meal_dollars ?? 0)) * wIn;
 
     const amt: AmountTriple = {
       wages: c.gross_pay ?? 0,
@@ -499,6 +528,10 @@ export function computeEmployeeBridge(
     estimatedTail: rTail,
     endingAccrued: rEnding,
     earnedInMonth: rEarned,
+    overtimeHours: Math.round(otHours * 100) / 100,
+    doubletimeHours: Math.round(dtHours * 100) / 100,
+    mealPremiums: Math.round(mealCount * 10) / 10,
+    premiumPayCost: round(premiumCost),
     checkCount,
     hasZeroChecks: checkCount === 0,
     coveredDays,
@@ -564,6 +597,10 @@ export function buildOrgEstimate(input: BuildInput): OrgMonthlyEstimate {
           endingAccrued: { ...ZERO },
           estimatedTail: { ...ZERO },
           earnedInMonth: { ...ZERO },
+          overtimeHours: 0,
+          doubletimeHours: 0,
+          mealPremiums: 0,
+          premiumPayCost: 0,
           employees: [],
         };
         map.set(k.id, ent);
@@ -574,6 +611,10 @@ export function buildOrgEstimate(input: BuildInput): OrgMonthlyEstimate {
       ent.endingAccrued = addTriple(ent.endingAccrued, emp.endingAccrued);
       ent.estimatedTail = addTriple(ent.estimatedTail, emp.estimatedTail);
       ent.earnedInMonth = addTriple(ent.earnedInMonth, emp.earnedInMonth);
+      ent.overtimeHours += emp.overtimeHours;
+      ent.doubletimeHours += emp.doubletimeHours;
+      ent.mealPremiums += emp.mealPremiums;
+      ent.premiumPayCost += emp.premiumPayCost;
       ent.employees.push(emp);
     }
     return [...map.values()]
@@ -584,6 +625,10 @@ export function buildOrgEstimate(input: BuildInput): OrgMonthlyEstimate {
         endingAccrued: roundTriple(e.endingAccrued),
         estimatedTail: roundTriple(e.estimatedTail),
         earnedInMonth: roundTriple(e.earnedInMonth),
+        overtimeHours: Math.round(e.overtimeHours * 100) / 100,
+        doubletimeHours: Math.round(e.doubletimeHours * 100) / 100,
+        mealPremiums: Math.round(e.mealPremiums * 10) / 10,
+        premiumPayCost: round(e.premiumPayCost),
         employees: e.employees.sort(
           (a, b) => tripleTotal(b.earnedInMonth) - tripleTotal(a.earnedInMonth)
         ),
@@ -613,6 +658,10 @@ export function buildOrgEstimate(input: BuildInput): OrgMonthlyEstimate {
     endingAccrued: { ...ZERO },
     estimatedTail: { ...ZERO },
     earnedInMonth: { ...ZERO },
+    overtimeHours: 0,
+    doubletimeHours: 0,
+    mealPremiums: 0,
+    premiumPayCost: 0,
     headcount: 0,
   };
   for (const e of entities) {
@@ -621,6 +670,10 @@ export function buildOrgEstimate(input: BuildInput): OrgMonthlyEstimate {
     org.endingAccrued = addTriple(org.endingAccrued, e.endingAccrued);
     org.estimatedTail = addTriple(org.estimatedTail, e.estimatedTail);
     org.earnedInMonth = addTriple(org.earnedInMonth, e.earnedInMonth);
+    org.overtimeHours += e.overtimeHours;
+    org.doubletimeHours += e.doubletimeHours;
+    org.mealPremiums += e.mealPremiums;
+    org.premiumPayCost += e.premiumPayCost;
     org.headcount += e.headcount;
   }
   org.cash = roundTriple(org.cash);
@@ -628,6 +681,10 @@ export function buildOrgEstimate(input: BuildInput): OrgMonthlyEstimate {
   org.endingAccrued = roundTriple(org.endingAccrued);
   org.estimatedTail = roundTriple(org.estimatedTail);
   org.earnedInMonth = roundTriple(org.earnedInMonth);
+  org.overtimeHours = Math.round(org.overtimeHours * 100) / 100;
+  org.doubletimeHours = Math.round(org.doubletimeHours * 100) / 100;
+  org.mealPremiums = Math.round(org.mealPremiums * 10) / 10;
+  org.premiumPayCost = round(org.premiumPayCost);
 
   // ── Exceptions ──
   const exceptions: Exception[] = [];

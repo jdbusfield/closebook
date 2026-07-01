@@ -114,6 +114,15 @@ export async function GET(request: NextRequest) {
 
       if (!maxEndDate || endD > maxEndDate) maxEndDate = endD;
 
+      // Meal premium count = sum of hours on MEAL-coded detail lines (each = 1 premium).
+      const lines = Array.isArray(row.detail_lines)
+        ? (row.detail_lines as Array<{ detCode?: string; hours?: number }>)
+        : [];
+      const mealCount = lines.reduce(
+        (s, l) => s + (/meal/i.test(l?.detCode ?? "") ? Number(l?.hours ?? 0) : 0),
+        0
+      );
+
       const key = `${empId}:${companyId}`;
       const check: PaycheckRow = {
         employee_id: empId,
@@ -126,6 +135,12 @@ export async function GET(request: NextRequest) {
         gross_pay: Number(row.gross_pay ?? 0),
         er_taxes_estimated: Number(row.er_taxes_estimated ?? 0),
         er_benefits: Number(row.er_benefits ?? 0),
+        overtime_hours: Number(row.overtime_hours ?? 0),
+        overtime_dollars: Number(row.overtime_dollars ?? 0),
+        doubletime_hours: Number(row.doubletime_hours ?? 0),
+        doubletime_dollars: Number(row.doubletime_dollars ?? 0),
+        meal_dollars: Number(row.meal_dollars ?? 0),
+        meal_count: mealCount,
       };
       const arr = checksByEmployee.get(key);
       if (arr) arr.push(check);

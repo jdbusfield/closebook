@@ -67,6 +67,10 @@ interface EmployeeBridge {
   endingAccrued: AmountTriple;
   estimatedTail: AmountTriple;
   earnedInMonth: AmountTriple;
+  overtimeHours: number;
+  doubletimeHours: number;
+  mealPremiums: number;
+  premiumPayCost: number;
   uncoveredTailDays: number;
   tailStartDate: string | null;
   tailEndDate: string | null;
@@ -85,6 +89,10 @@ interface EntityBridge {
   endingAccrued: AmountTriple;
   estimatedTail: AmountTriple;
   earnedInMonth: AmountTriple;
+  overtimeHours: number;
+  doubletimeHours: number;
+  mealPremiums: number;
+  premiumPayCost: number;
   employees: EmployeeBridge[];
 }
 
@@ -105,6 +113,10 @@ interface OrgEstimate {
     endingAccrued: AmountTriple;
     estimatedTail: AmountTriple;
     earnedInMonth: AmountTriple;
+    overtimeHours: number;
+    doubletimeHours: number;
+    mealPremiums: number;
+    premiumPayCost: number;
     headcount: number;
   };
   entities: EntityBridge[];
@@ -156,6 +168,10 @@ function fmtMD(iso: string | null): string {
   if (!iso) return "";
   const [, m, d] = iso.split("-");
   return `${Number(m)}/${Number(d)}`;
+}
+
+function fmtNum(n: number, dp = 1): string {
+  return n ? n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: dp }) : "—";
 }
 
 // ── Bridge table (reused for org, entity, employee) ──
@@ -379,6 +395,9 @@ export default function OrgMonthlyEstimatePage() {
                   <p className="text-xs text-muted-foreground mt-1">
                     {data.org.headcount} employees · wages {fmt(total(data.org.earnedInMonth) - data.org.earnedInMonth.erTaxes - data.org.earnedInMonth.erBenefits)} + ER taxes {fmt(data.org.earnedInMonth.erTaxes)} + ER benefits {fmt(data.org.earnedInMonth.erBenefits)}
                   </p>
+                  <p className="text-xs text-muted-foreground">
+                    Premium pay: OT {fmtNum(data.org.overtimeHours)} hrs · DT {fmtNum(data.org.doubletimeHours)} hrs · {fmtNum(data.org.mealPremiums)} meal premiums · OT+DT+meal cost {fmt(data.org.premiumPayCost)}
+                  </p>
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   {data.isClosedMonth ? (
@@ -484,36 +503,61 @@ export default function OrgMonthlyEstimatePage() {
                 </Table>
               </div>
 
-              {/* Employee rows grouped under each entity, expandable via drawer */}
+              {/* By-employee breakdown: OT / DT hours, meal premiums, premium cost */}
               <div className="mt-6 space-y-6">
                 {groups.map((e) => (
                   <div key={e.entityId}>
                     <h4 className="text-sm font-semibold mb-2">{e.entityName} <span className="text-muted-foreground font-normal">· {e.headcount} employees</span></h4>
-                    <div className="rounded-md border divide-y">
-                      {e.employees.map((emp) => (
-                        <button
-                          key={`${emp.employeeId}:${emp.companyId}`}
-                          onClick={() => setSelectedEmp(emp)}
-                          className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-muted/40"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-sm truncate">{emp.employeeName}</span>
-                            <span className="text-xs text-muted-foreground truncate">{emp.department}</span>
-                            {emp.usedCostCenterFallback && (
-                              <Badge variant="outline" className="text-[10px]">unmapped CC</Badge>
-                            )}
-                            {emp.uncoveredTailDays > 0 && total(emp.estimatedTail) > 0 && (
-                              <Badge variant="outline" className="text-[10px]">est. tail</Badge>
-                            )}
-                            {emp.tailSuppressed && (
-                              <Badge variant="outline" className="text-[10px] border-amber-500/50 text-amber-600">
-                                {emp.uncoveredTailDays}d gap · not accrued
-                              </Badge>
-                            )}
-                          </div>
-                          <span className="font-mono text-sm shrink-0 ml-2">{fmt(total(emp.earnedInMonth))}</span>
-                        </button>
-                      ))}
+                    <div className="overflow-x-auto rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="min-w-[180px]">Employee</TableHead>
+                            <TableHead className="text-right">OT hrs</TableHead>
+                            <TableHead className="text-right">DT hrs</TableHead>
+                            <TableHead className="text-right">Meal prem.</TableHead>
+                            <TableHead className="text-right">OT+DT+Meal cost</TableHead>
+                            <TableHead className="text-right font-semibold">Accrual expense</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {e.employees.map((emp) => (
+                            <TableRow
+                              key={`${emp.employeeId}:${emp.companyId}`}
+                              onClick={() => setSelectedEmp(emp)}
+                              className="cursor-pointer hover:bg-muted/40"
+                            >
+                              <TableCell>
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="text-sm truncate">{emp.employeeName}</span>
+                                  <span className="text-xs text-muted-foreground truncate hidden sm:inline">{emp.department}</span>
+                                  {emp.usedCostCenterFallback && (
+                                    <Badge variant="outline" className="text-[10px]">unmapped CC</Badge>
+                                  )}
+                                  {emp.tailSuppressed && (
+                                    <Badge variant="outline" className="text-[10px] border-amber-500/50 text-amber-600">
+                                      {emp.uncoveredTailDays}d gap
+                                    </Badge>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right font-mono text-sm">{fmtNum(emp.overtimeHours)}</TableCell>
+                              <TableCell className="text-right font-mono text-sm">{fmtNum(emp.doubletimeHours)}</TableCell>
+                              <TableCell className="text-right font-mono text-sm">{fmtNum(emp.mealPremiums)}</TableCell>
+                              <TableCell className="text-right font-mono text-sm">{emp.premiumPayCost ? fmt(emp.premiumPayCost) : "—"}</TableCell>
+                              <TableCell className="text-right font-mono font-medium">{fmt(total(emp.earnedInMonth))}</TableCell>
+                            </TableRow>
+                          ))}
+                          <TableRow className="border-t-2 bg-muted/40 font-semibold">
+                            <TableCell>{e.entityCode} subtotal</TableCell>
+                            <TableCell className="text-right font-mono">{fmtNum(e.overtimeHours)}</TableCell>
+                            <TableCell className="text-right font-mono">{fmtNum(e.doubletimeHours)}</TableCell>
+                            <TableCell className="text-right font-mono">{fmtNum(e.mealPremiums)}</TableCell>
+                            <TableCell className="text-right font-mono">{e.premiumPayCost ? fmt(e.premiumPayCost) : "—"}</TableCell>
+                            <TableCell className="text-right font-mono">{fmt(total(e.earnedInMonth))}</TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
                     </div>
                   </div>
                 ))}
@@ -573,6 +617,26 @@ export default function OrgMonthlyEstimatePage() {
                     Cash → Accrual Bridge
                   </h3>
                   <BridgeTable {...selectedEmp} dense />
+                </div>
+
+                {/* Premium pay incurred (OT / DT / meal premiums) */}
+                <div className="grid grid-cols-4 gap-2 rounded-lg border p-3">
+                  <div className="text-center">
+                    <p className="text-[11px] text-muted-foreground">OT hrs</p>
+                    <p className="font-mono text-sm font-semibold">{fmtNum(selectedEmp.overtimeHours)}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[11px] text-muted-foreground">DT hrs</p>
+                    <p className="font-mono text-sm font-semibold">{fmtNum(selectedEmp.doubletimeHours)}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[11px] text-muted-foreground">Meal prem.</p>
+                    <p className="font-mono text-sm font-semibold">{fmtNum(selectedEmp.mealPremiums)}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[11px] text-muted-foreground">OT+DT+Meal $</p>
+                    <p className="font-mono text-sm font-semibold">{selectedEmp.premiumPayCost ? fmtCents(selectedEmp.premiumPayCost) : "—"}</p>
+                  </div>
                 </div>
                 {/* Month-end accrual (uncovered days after the last paycheck's period) */}
                 {selectedEmp.uncoveredTailDays > 0 && (
