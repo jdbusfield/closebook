@@ -53,6 +53,27 @@ interface AmountTriple {
   erBenefits: number;
 }
 
+interface ClassSplit {
+  className: string;
+  pct: number;
+}
+
+interface ClassBridge {
+  className: string;
+  headcount: number;
+  cash: AmountTriple;
+  beginningAccrued: AmountTriple;
+  endingAccrued: AmountTriple;
+  estimatedTail: AmountTriple;
+  earnedInMonth: AmountTriple;
+  entities: {
+    entityId: string;
+    entityCode: string;
+    entityName: string;
+    earnedInMonth: AmountTriple;
+  }[];
+}
+
 interface EmployeeBridge {
   employeeId: string;
   companyId: string;
@@ -77,6 +98,10 @@ interface EmployeeBridge {
   tailSuppressed: boolean;
   tailBasis: string;
   checkCount: number;
+  /** On entity-grouped rows: this row's day-weighted share of the employee's month. */
+  allocationWeight?: number;
+  /** On entity-grouped rows: class % splits in effect for this row's slice. */
+  classSplits?: ClassSplit[];
 }
 
 interface EntityBridge {
@@ -121,10 +146,12 @@ interface OrgEstimate {
   };
   entities: EntityBridge[];
   payingEntities: EntityBridge[];
+  classes: ClassBridge[];
   exceptions: Exception[];
   reconciliation: {
     orgEqualsEntities: boolean;
     entitiesEqualEmployees: boolean;
+    classesEqualOrg: boolean;
     bridgeBalances: boolean;
     maxResidual: number;
   };
@@ -419,6 +446,9 @@ export default function OrgMonthlyEstimatePage() {
           <div className="flex items-center gap-2 flex-wrap">
             <ReconChip ok={data.reconciliation.orgEqualsEntities} label="Org = Σ entities" />
             <ReconChip ok={data.reconciliation.entitiesEqualEmployees} label="Σ entities = Σ employees" />
+            {data.reconciliation.classesEqualOrg !== undefined && (
+              <ReconChip ok={data.reconciliation.classesEqualOrg} label="Σ classes = org" />
+            )}
             <ReconChip ok={data.reconciliation.bridgeBalances} label={`Bridge balances (max residual ${fmtCents(data.reconciliation.maxResidual)})`} />
             {data.isClosedMonth && (
               <ReconChip ok={data.meta.monthEndCovered} label={data.meta.monthEndCovered ? "Month-end paychecks synced" : "Month-end tail not yet paid (estimated)"} />
@@ -534,6 +564,20 @@ export default function OrgMonthlyEstimatePage() {
                                   {emp.usedCostCenterFallback && (
                                     <Badge variant="outline" className="text-[10px]">unmapped CC</Badge>
                                   )}
+                                  {(emp.allocationWeight ?? 1) < 0.995 && (
+                                    <Badge variant="outline" className="text-[10px] border-blue-500/50 text-blue-600">
+                                      {Math.round((emp.allocationWeight ?? 1) * 100)}% of month
+                                    </Badge>
+                                  )}
+                                  {(emp.classSplits?.length ?? 0) > 0 && (
+                                    <span className="text-[10px] text-muted-foreground truncate hidden md:inline">
+                                      {emp.classSplits!
+                                        .map((s) =>
+                                          s.pct >= 99.95 ? s.className : `${s.className} ${Math.round(s.pct)}%`
+                                        )
+                                        .join(" / ")}
+                                    </span>
+                                  )}
                                   {emp.tailSuppressed && (
                                     <Badge variant="outline" className="text-[10px] border-amber-500/50 text-amber-600">
                                       {emp.uncoveredTailDays}d gap
@@ -564,6 +608,67 @@ export default function OrgMonthlyEstimatePage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* By class */}
+          {(data.classes?.length ?? 0) > 0 &&
+            !(data.classes.length === 1 && data.classes[0].className === "Unassigned") && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">By Class</CardTitle>
+                <CardDescription>
+                  Accrual-basis expense by class. Multi-class employees are split by their
+                  allocation percentages, date-adjusted within the month. Same org total.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Class</TableHead>
+                        <TableHead className="text-right">HC</TableHead>
+                        <TableHead className="text-right">Wages</TableHead>
+                        <TableHead className="text-right">ER Taxes</TableHead>
+                        <TableHead className="text-right">ER Benefits</TableHead>
+                        <TableHead className="text-right font-semibold">Accrual expense</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {data.classes.map((c) => (
+                        <TableRow key={c.className}>
+                          <TableCell>
+                            <span className={`font-medium ${c.className === "Unassigned" ? "text-muted-foreground italic" : ""}`}>
+                              {c.className}
+                            </span>
+                            {c.entities.length > 0 && (
+                              <span className="block text-xs text-muted-foreground">
+                                {c.entities
+                                  .map((e) => `${e.entityCode} ${fmt(total(e.earnedInMonth))}`)
+                                  .join(" · ")}
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right text-sm text-muted-foreground">{c.headcount}</TableCell>
+                          <TableCell className="text-right font-mono text-sm">{fmt(c.earnedInMonth.wages)}</TableCell>
+                          <TableCell className="text-right font-mono text-sm">{fmt(c.earnedInMonth.erTaxes)}</TableCell>
+                          <TableCell className="text-right font-mono text-sm">{fmt(c.earnedInMonth.erBenefits)}</TableCell>
+                          <TableCell className="text-right font-mono font-semibold">{fmt(total(c.earnedInMonth))}</TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="border-t-2 bg-muted/50 font-semibold">
+                        <TableCell>Total ({data.classes.length} classes)</TableCell>
+                        <TableCell className="text-right">{data.org.headcount}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(data.org.earnedInMonth.wages)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(data.org.earnedInMonth.erTaxes)}</TableCell>
+                        <TableCell className="text-right font-mono">{fmt(data.org.earnedInMonth.erBenefits)}</TableCell>
+                        <TableCell className="text-right font-mono font-bold">{fmt(headline)}</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Exceptions */}
           {data.exceptions.length > 0 && (
@@ -686,7 +791,13 @@ export default function OrgMonthlyEstimatePage() {
                 <div className="text-xs text-muted-foreground">
                   Cost center {selectedEmp.costCenterCode}
                   {selectedEmp.usedCostCenterFallback && " (unmapped — entity assigned by fallback)"}
-                  {selectedEmp.allocationChangedInMonth && " · allocation changed mid-month"}
+                  {selectedEmp.allocationChangedInMonth && " · allocation changed mid-month (split by days)"}
+                  {(selectedEmp.allocationWeight ?? 1) < 0.995 &&
+                    ` · this row is ${Math.round((selectedEmp.allocationWeight ?? 1) * 100)}% of the employee's month — paycheck detail below shows full checks`}
+                  {(selectedEmp.classSplits?.length ?? 0) > 0 &&
+                    ` · class: ${selectedEmp.classSplits!
+                      .map((s) => (s.pct >= 99.95 ? s.className : `${s.className} ${Math.round(s.pct)}%`))
+                      .join(" / ")}`}
                 </div>
 
                 <Separator />

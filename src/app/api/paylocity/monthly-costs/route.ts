@@ -9,7 +9,7 @@ import {
   calculateEmployerTaxes,
 } from "@/lib/utils/payroll-calculations";
 import { getOperatingEntityForCostCenter } from "@/lib/paylocity/cost-center-config";
-import { AllocationResolver } from "@/lib/paylocity/allocation-resolver";
+import { AllocationResolver, getClassSplits } from "@/lib/paylocity/allocation-resolver";
 
 // Use an untyped Supabase client since the table isn't in generated types yet
 function getSupabase() {
@@ -63,34 +63,88 @@ export async function GET(request: NextRequest) {
     // Build date-aware allocation resolver
     const resolver = new AllocationResolver(allocations);
 
-    // Apply allocation overrides to determine effective entity per row.
-    // Uses the first day of each row's month to resolve the active allocation.
-    const enriched = costs.map((row) => {
-      const firstOfMonth = `${row.year}-${String(row.month).padStart(2, "0")}-01`;
-      const override = resolver.getForDate(
-        row.employee_id,
-        row.paylocity_company_id,
-        firstOfMonth
-      );
+    // Attribute each employee-month across entities by calendar-day weight.
+    // A mid-month allocation change pro-rates the month's cost between the
+    // old and new entity instead of snapping the whole month to month start.
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const SCALED_FIELDS = [
+      "gross_pay",
+      "er_taxes",
+      "er_benefits",
+      "total_cost",
+      "hours_worked",
+      "regular_hours",
+      "overtime_hours",
+    ] as const;
+
+    interface EntityShare {
+      weight: number;
+      department: string;
+      departmentDays: number;
+      classWeights: Map<string, number>; // className → Σ(weight × pct)
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const enriched: any[] = [];
+    for (const row of costs) {
       const defaultEntity = getOperatingEntityForCostCenter(
         row.cost_center_code,
         row.paylocity_company_id
       );
+      const segments = resolver.getSegmentsForMonth(
+        row.employee_id,
+        row.paylocity_company_id,
+        Number(row.year),
+        Number(row.month)
+      );
 
-      const effectiveEntityId = override?.allocated_entity_id || defaultEntity.operatingEntityId;
-      const effectiveDepartment = override?.department || defaultEntity.department;
+      // Aggregate the month's segments per effective entity
+      const byEntity = new Map<string, EntityShare>();
+      for (const seg of segments) {
+        const segEntityId = seg.row?.allocated_entity_id || defaultEntity.operatingEntityId;
+        const segDept = seg.row?.department || defaultEntity.department;
+        let share = byEntity.get(segEntityId);
+        if (!share) {
+          share = { weight: 0, department: segDept, departmentDays: 0, classWeights: new Map() };
+          byEntity.set(segEntityId, share);
+        }
+        share.weight += seg.weight;
+        if (seg.days > share.departmentDays) {
+          share.department = segDept;
+          share.departmentDays = seg.days;
+        }
+        for (const split of getClassSplits(seg.row)) {
+          share.classWeights.set(
+            split.className,
+            (share.classWeights.get(split.className) ?? 0) + seg.weight * split.pct
+          );
+        }
+      }
 
-      return {
-        ...row,
-        effective_entity_id: effectiveEntityId,
-        effective_department: effectiveDepartment,
-      };
-    });
+      for (const [effEntityId, share] of byEntity) {
+        if (entityId && effEntityId !== entityId) continue;
+        // Normalized class mix over this entity's share of the month
+        const classTotal = [...share.classWeights.values()].reduce((s, v) => s + v, 0);
+        const classAllocs = [...share.classWeights.entries()]
+          .map(([cls, w]) => ({ class: cls, pct: round2((w / (classTotal || 1)) * 100) }))
+          .sort((a, b) => b.pct - a.pct);
 
-    // Filter by entity if requested
-    const filtered = entityId
-      ? enriched.filter((r) => r.effective_entity_id === entityId)
-      : enriched;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const out: any = {
+          ...row,
+          effective_entity_id: effEntityId,
+          effective_department: share.department,
+          effective_class_allocations: classTotal > 0 ? classAllocs : [],
+          allocation_weight: round2(share.weight),
+        };
+        if (share.weight < 0.9999) {
+          for (const f of SCALED_FIELDS) out[f] = round2(Number(row[f] ?? 0) * share.weight);
+        }
+        enriched.push(out);
+      }
+    }
+
+    const filtered = enriched;
 
     // Get last sync timestamp
     const lastSynced = costs.length > 0

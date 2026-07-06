@@ -26,6 +26,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, Plus, Trash2, Save } from "lucide-react";
+import {
+  ClassSplitsEditor,
+  draftsFromAllocation,
+  draftsToPayload,
+  draftsValid,
+  formatClassSplits,
+  type ClassAllocationEntry,
+  type ClassSplitDraft,
+} from "./class-splits-editor";
 
 // --- Types ---
 
@@ -35,6 +44,7 @@ export interface AllocationPeriod {
   effective_date: string; // "YYYY-MM-DD"
   department: string | null;
   class: string | null;
+  class_allocations?: ClassAllocationEntry[] | null;
   allocated_entity_id: string | null;
   allocated_entity_name: string | null;
 }
@@ -69,7 +79,7 @@ interface DraftRow {
   entityId: string;
   entityName: string;
   department: string;
-  classValue: string;
+  classDrafts: ClassSplitDraft[];
   isNew: boolean;
   saving: boolean;
 }
@@ -96,22 +106,23 @@ export function AllocationHistoryDialog({
   const [drafts, setDrafts] = useState<DraftRow[]>([]);
   const [deleting, setDeleting] = useState<string | null>(null);
 
-  // Initialize a new draft row
+  // Initialize a new draft row, carrying forward the latest period's values
   const addDraft = useCallback(() => {
     const today = new Date().toISOString().slice(0, 10);
+    const latest = periods[periods.length - 1];
     setDrafts((prev) => [
       ...prev,
       {
         effectiveDate: today,
-        entityId: defaultEntityId,
-        entityName: defaultEntityName,
-        department: defaultDepartment,
-        classValue: "",
+        entityId: latest?.allocated_entity_id ?? defaultEntityId,
+        entityName: latest?.allocated_entity_name ?? defaultEntityName,
+        department: latest?.department ?? defaultDepartment,
+        classDrafts: draftsFromAllocation(latest?.class_allocations, latest?.class),
         isNew: true,
         saving: false,
       },
     ]);
-  }, [defaultDepartment, defaultEntityId, defaultEntityName]);
+  }, [periods, defaultDepartment, defaultEntityId, defaultEntityName]);
 
   const updateDraft = useCallback(
     (idx: number, field: keyof DraftRow, value: string) => {
@@ -133,6 +144,14 @@ export function AllocationHistoryDialog({
     [entities]
   );
 
+  const updateDraftClass = useCallback((idx: number, classDrafts: ClassSplitDraft[]) => {
+    setDrafts((prev) => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], classDrafts };
+      return next;
+    });
+  }, []);
+
   const saveDraft = useCallback(
     async (idx: number) => {
       const draft = drafts[idx];
@@ -151,7 +170,8 @@ export function AllocationHistoryDialog({
             paylocityCompanyId: companyId,
             effectiveDate: draft.effectiveDate,
             department: draft.department || null,
-            class: draft.classValue || null,
+            class: null, // derived by the API from classAllocations
+            classAllocations: draftsToPayload(draft.classDrafts),
             allocatedEntityId: draft.entityId,
             allocatedEntityName: draft.entityName,
           }),
@@ -206,7 +226,7 @@ export function AllocationHistoryDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Allocation History</DialogTitle>
           <DialogDescription>{employeeName}</DialogDescription>
@@ -243,7 +263,7 @@ export function AllocationHistoryDialog({
                       {p.department || "—"}
                     </TableCell>
                     <TableCell className="text-sm">
-                      {p.class || "—"}
+                      {formatClassSplits(p.class_allocations, p.class) || "—"}
                     </TableCell>
                     <TableCell>
                       {p.effective_date !== "2000-01-01" && (
@@ -316,15 +336,12 @@ export function AllocationHistoryDialog({
                       disabled={d.saving}
                     />
                   </TableCell>
-                  <TableCell>
-                    <Input
-                      value={d.classValue}
-                      onChange={(e) =>
-                        updateDraft(idx, "classValue", e.target.value)
-                      }
-                      className="h-7 text-xs w-[100px]"
-                      placeholder="Class"
+                  <TableCell className="min-w-[220px]">
+                    <ClassSplitsEditor
+                      drafts={d.classDrafts}
+                      onChange={(next) => updateDraftClass(idx, next)}
                       disabled={d.saving}
+                      compact
                     />
                   </TableCell>
                   <TableCell>
@@ -333,7 +350,7 @@ export function AllocationHistoryDialog({
                       size="icon"
                       className="h-7 w-7"
                       onClick={() => saveDraft(idx)}
-                      disabled={d.saving || !d.effectiveDate}
+                      disabled={d.saving || !d.effectiveDate || !draftsValid(d.classDrafts)}
                     >
                       {d.saving ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />

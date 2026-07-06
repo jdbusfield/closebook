@@ -39,7 +39,12 @@ export async function GET(req: NextRequest) {
  * PUT /api/paylocity/allocations
  *
  * Upsert an employee allocation override.
- * Body: { employeeId, paylocityCompanyId, effectiveDate?, department?, class?, allocatedEntityId?, allocatedEntityName? }
+ * Body: { employeeId, paylocityCompanyId, effectiveDate?, department?, class?,
+ *         classAllocations?, allocatedEntityId?, allocatedEntityName? }
+ *
+ * classAllocations is an array of { class, pct } whose percentages must sum
+ * to 100 (single-class 100% is fine). When present it supersedes `class`;
+ * `class` is kept in sync for single-class splits for backward compatibility.
  *
  * effectiveDate defaults to '2000-01-01' (the base/initial allocation).
  */
@@ -52,6 +57,7 @@ export async function PUT(req: NextRequest) {
       effectiveDate,
       department,
       class: classValue,
+      classAllocations,
       allocatedEntityId,
       allocatedEntityName,
     } = body;
@@ -63,25 +69,81 @@ export async function PUT(req: NextRequest) {
       );
     }
 
+    // Validate + normalize multi-class splits
+    let splits: { class: string; pct: number }[] | null = null;
+    if (Array.isArray(classAllocations) && classAllocations.length > 0) {
+      splits = classAllocations
+        .map((s: { class?: unknown; pct?: unknown }) => ({
+          class: String(s?.class ?? "").trim(),
+          pct: Math.round(Number(s?.pct ?? 0) * 100) / 100,
+        }))
+        .filter((s) => s.class !== "" && s.pct > 0);
+      if (splits.length === 0) {
+        splits = null;
+      } else {
+        const sum = splits.reduce((t, s) => t + s.pct, 0);
+        if (Math.abs(sum - 100) > 0.1) {
+          return NextResponse.json(
+            { error: `Class allocation percentages must sum to 100 (got ${sum.toFixed(2)})` },
+            { status: 400 }
+          );
+        }
+        const dupes = new Set(splits.map((s) => s.class.toLowerCase()));
+        if (dupes.size !== splits.length) {
+          return NextResponse.json(
+            { error: "Each class may appear only once in the allocation" },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
+    // Keep the legacy single-class column in sync: single split → its name,
+    // multi split → null (readers must use class_allocations).
+    const legacyClass =
+      splits !== null
+        ? splits.length === 1
+          ? splits[0].class
+          : null
+        : classValue ?? null;
+
     const supabase = createAdminClient();
 
-    const { data, error } = await supabase
+    const record = {
+      employee_id: String(employeeId),
+      paylocity_company_id: String(paylocityCompanyId),
+      effective_date: (effectiveDate ?? "2000-01-01") as string,
+      department: (department ?? null) as string | null,
+      class: legacyClass as string | null,
+      class_allocations: splits,
+      allocated_entity_id: (allocatedEntityId ?? null) as string | null,
+      allocated_entity_name: (allocatedEntityName ?? null) as string | null,
+      updated_at: new Date().toISOString(),
+    };
+
+    let { data, error } = await supabase
       .from("employee_allocations")
-      .upsert(
-        {
-          employee_id: employeeId,
-          paylocity_company_id: paylocityCompanyId,
-          effective_date: effectiveDate ?? "2000-01-01",
-          department: department ?? null,
-          class: classValue ?? null,
-          allocated_entity_id: allocatedEntityId ?? null,
-          allocated_entity_name: allocatedEntityName ?? null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "employee_id,paylocity_company_id,effective_date" }
-      )
+      .upsert(record, { onConflict: "employee_id,paylocity_company_id,effective_date" })
       .select()
       .single();
+
+    // Graceful degradation: if the class_allocations column doesn't exist yet
+    // (migration 20260706 not applied), retry without it.
+    if (error && /class_allocations/.test(error.message ?? "")) {
+      if (splits && splits.length > 1) {
+        return NextResponse.json(
+          { error: "Multi-class splits require DB migration 20260706_employee_class_allocations.sql — run it in Supabase Studio first." },
+          { status: 400 }
+        );
+      }
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { class_allocations: _omit, ...withoutSplits } = record;
+      ({ data, error } = await supabase
+        .from("employee_allocations")
+        .upsert(withoutSplits, { onConflict: "employee_id,paylocity_company_id,effective_date" })
+        .select()
+        .single());
+    }
 
     if (error) throw error;
 

@@ -4688,6 +4688,7 @@ export type Database = {
           paylocity_company_id: string
           department: string | null
           class: string | null
+          class_allocations: Json | null
           allocated_entity_id: string | null
           allocated_entity_name: string | null
           effective_date: string
@@ -4701,6 +4702,7 @@ export type Database = {
           paylocity_company_id: string
           department?: string | null
           class?: string | null
+          class_allocations?: Json | null
           allocated_entity_id?: string | null
           allocated_entity_name?: string | null
           effective_date?: string
@@ -4714,6 +4716,7 @@ export type Database = {
           paylocity_company_id?: string
           department?: string | null
           class?: string | null
+          class_allocations?: Json | null
           allocated_entity_id?: string | null
           allocated_entity_name?: string | null
           effective_date?: string

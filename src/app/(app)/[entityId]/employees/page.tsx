@@ -51,8 +51,25 @@ import {
   Upload,
   CalendarDays,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ImportAllocationsDialog } from "./import-allocations-dialog";
 import { AllocationHistoryDialog, type AllocationPeriod } from "./allocation-history-dialog";
+import {
+  ClassSplitsEditor,
+  draftsFromAllocation,
+  draftsToPayload,
+  draftsValid,
+  formatClassSplits,
+  type ClassAllocationEntry,
+  type ClassSplitDraft,
+} from "./class-splits-editor";
 
 // --- Constants ---
 
@@ -102,6 +119,7 @@ interface AllocationOverride {
   paylocity_company_id: string;
   department: string | null;
   class: string | null;
+  class_allocations?: ClassAllocationEntry[] | null;
   allocated_entity_id: string | null;
   allocated_entity_name: string | null;
   effective_date?: string;
@@ -111,13 +129,25 @@ interface AllocationOverride {
 interface DisplayEmployee extends MappedEmployee {
   /** Effective department (override or default) */
   effectiveDepartment: string;
-  /** Class (from override only) */
+  /** Class display label (from override only; multi-class shows splits) */
   classValue: string;
+  /** Class % splits currently in effect */
+  classAllocations: ClassAllocationEntry[] | null;
   /** Effective company/entity (override or default) */
   effectiveEntityId: string;
   effectiveEntityName: string;
   /** Whether this employee has any overrides */
   hasOverrides: boolean;
+}
+
+/** An inline edit awaiting an effective-date choice. */
+interface PendingEdit {
+  emp: DisplayEmployee;
+  field: "department" | "company" | "class";
+  /** New department name or entity id (unused for class edits) */
+  value: string;
+  /** New class splits (class edits only) */
+  classDrafts?: ClassSplitDraft[];
 }
 
 // --- Helpers ---
@@ -270,6 +300,7 @@ export default function EmployeeRosterPage() {
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [historyDialogEmp, setHistoryDialogEmp] = useState<DisplayEmployee | null>(null);
+  const [pendingEdit, setPendingEdit] = useState<PendingEdit | null>(null);
   const [activeTab, setActiveTab] = useState<"roster" | "allocations">("roster");
 
   // Determine if this entity is an employing entity (Silverco or HDR)
@@ -323,29 +354,58 @@ export default function EmployeeRosterPage() {
     }
   }, []);
 
-  // Build allocation lookup: "employeeId:companyId" → override
-  const allocationMap = useMemo(() => {
-    const map: Record<string, AllocationOverride> = {};
+  // Group allocation periods per employee, sorted ASC by effective date
+  const periodsByEmp = useMemo(() => {
+    const map: Record<string, AllocationOverride[]> = {};
     for (const a of allocations) {
-      map[`${a.employee_id}:${a.paylocity_company_id}`] = a;
+      const key = `${a.employee_id}:${a.paylocity_company_id}`;
+      (map[key] ??= []).push(a);
+    }
+    for (const arr of Object.values(map)) {
+      arr.sort((x, y) =>
+        (x.effective_date ?? "2000-01-01").localeCompare(y.effective_date ?? "2000-01-01")
+      );
     }
     return map;
   }, [allocations]);
 
+  const todayIso = new Date().toISOString().slice(0, 10);
+
+  // The allocation period active today (most recent effective_date <= today)
+  const activeOverride = useCallback(
+    (employeeId: string, companyId: string): AllocationOverride | undefined => {
+      const arr = periodsByEmp[`${employeeId}:${companyId}`];
+      if (!arr || arr.length === 0) return undefined;
+      let active: AllocationOverride | undefined;
+      for (const a of arr) {
+        if ((a.effective_date ?? "2000-01-01") <= todayIso) active = a;
+      }
+      return active ?? arr[0];
+    },
+    [periodsByEmp, todayIso]
+  );
+
   // Helper: merge a single employee with allocation overrides
   const mergeOverrides = useCallback(
     (emp: MappedEmployee): DisplayEmployee => {
-      const override = allocationMap[`${emp.id}:${emp.companyId}`];
+      const override = activeOverride(emp.id, emp.companyId);
+      const classAllocations =
+        override?.class_allocations && override.class_allocations.length > 0
+          ? override.class_allocations
+          : override?.class
+            ? [{ class: override.class, pct: 100 }]
+            : null;
       return {
         ...emp,
         effectiveDepartment: override?.department || emp.department,
-        classValue: override?.class || "",
+        classValue: formatClassSplits(override?.class_allocations, override?.class),
+        classAllocations,
         effectiveEntityId: override?.allocated_entity_id || emp.operatingEntityId,
         effectiveEntityName: override?.allocated_entity_name || emp.operatingEntityName,
         hasOverrides: !!override,
       };
     },
-    [allocationMap]
+    [activeOverride]
   );
 
   // Roster employees: ALL from the Paylocity company (clerical view)
@@ -360,12 +420,12 @@ export default function EmployeeRosterPage() {
   const allocDisplayEmployees: DisplayEmployee[] = useMemo(() => {
     return employees
       .filter((e) => {
-        const override = allocationMap[`${e.id}:${e.companyId}`];
+        const override = activeOverride(e.id, e.companyId);
         const effectiveEntityId = override?.allocated_entity_id || e.operatingEntityId;
         return effectiveEntityId === entityId;
       })
       .map(mergeOverrides);
-  }, [employees, entityId, allocationMap, mergeOverrides]);
+  }, [employees, entityId, activeOverride, mergeOverrides]);
 
   // Active display employees based on tab selection
   const displayEmployees: DisplayEmployee[] = useMemo(() => {
@@ -422,27 +482,58 @@ export default function EmployeeRosterPage() {
   const silvercoTotalComp = silvercoEmployees.reduce((s, e) => s + e.totalComp, 0);
   const silvercoHeadcount = silvercoEmployees.length;
 
-  // Save allocation override
-  const saveAllocation = useCallback(
-    async (
-      emp: DisplayEmployee,
-      field: "department" | "class" | "company",
-      value: string
-    ) => {
-      // Determine the full allocation to save
-      const existing = allocationMap[`${emp.id}:${emp.companyId}`];
+  // Inline edits don't save directly — they queue a PendingEdit so the user
+  // picks an effective date first (new period vs. rewrite current period).
+  const requestEdit = useCallback(
+    async (emp: DisplayEmployee, field: "department" | "company", value: string) => {
+      setPendingEdit({ emp, field, value });
+    },
+    []
+  );
 
-      let department = existing?.department || emp.department;
-      let classValue = existing?.class || "";
-      let allocatedEntityId = existing?.allocated_entity_id || emp.operatingEntityId;
-      let allocatedEntityName = existing?.allocated_entity_name || emp.operatingEntityName;
+  const openClassEditor = useCallback((emp: DisplayEmployee) => {
+    setPendingEdit({
+      emp,
+      field: "class",
+      value: "",
+      classDrafts: draftsFromAllocation(emp.classAllocations, null),
+    });
+  }, []);
 
-      if (field === "department") department = value;
-      if (field === "class") classValue = value;
+  /**
+   * Persist a pending edit. mode "new" creates a period starting on `date`
+   * (carrying forward the fields in effect on that date); mode "current"
+   * rewrites the period active today without changing its start date.
+   */
+  const commitPendingEdit = useCallback(
+    async (edit: PendingEdit, mode: "new" | "current", date: string, classDrafts: ClassSplitDraft[]) => {
+      const { emp, field } = edit;
+      const periods = periodsByEmp[`${emp.id}:${emp.companyId}`] ?? [];
+      const asOf = mode === "new" ? date : todayIso;
+      let base: AllocationOverride | undefined;
+      for (const p of periods) {
+        if ((p.effective_date ?? "2000-01-01") <= asOf) base = p;
+      }
+      const effectiveDate = mode === "new" ? date : (base?.effective_date ?? "2000-01-01");
+
+      let department = base?.department ?? emp.department;
+      let allocatedEntityId = base?.allocated_entity_id ?? emp.operatingEntityId;
+      let allocatedEntityName = base?.allocated_entity_name ?? emp.operatingEntityName;
+      let classValue = base?.class ?? null;
+      let classAllocations: ClassAllocationEntry[] | null =
+        base?.class_allocations && base.class_allocations.length > 0
+          ? base.class_allocations
+          : null;
+
+      if (field === "department") department = edit.value;
       if (field === "company") {
-        allocatedEntityId = value;
-        const entity = OPERATING_ENTITIES.find((e) => e.id === value);
-        allocatedEntityName = entity?.name ?? value;
+        allocatedEntityId = edit.value;
+        const entity = OPERATING_ENTITIES.find((e) => e.id === edit.value);
+        allocatedEntityName = entity?.name ?? edit.value;
+      }
+      if (field === "class") {
+        classAllocations = draftsToPayload(classDrafts);
+        classValue = null; // API derives the legacy column from classAllocations
       }
 
       const res = await fetch("/api/paylocity/allocations", {
@@ -451,39 +542,22 @@ export default function EmployeeRosterPage() {
         body: JSON.stringify({
           employeeId: emp.id,
           paylocityCompanyId: emp.companyId,
+          effectiveDate,
           department,
           class: classValue,
+          classAllocations,
           allocatedEntityId,
           allocatedEntityName,
         }),
       });
 
-      if (!res.ok) throw new Error("Failed to save");
-      const data = await res.json();
-
-      // Update local allocation state
-      setAllocations((prev) => {
-        const key = `${emp.id}:${emp.companyId}`;
-        const idx = prev.findIndex(
-          (a) => `${a.employee_id}:${a.paylocity_company_id}` === key
-        );
-        const updated: AllocationOverride = {
-          employee_id: emp.id,
-          paylocity_company_id: emp.companyId,
-          department: data.allocation?.department ?? department,
-          class: data.allocation?.class ?? classValue,
-          allocated_entity_id: data.allocation?.allocated_entity_id ?? allocatedEntityId,
-          allocated_entity_name: data.allocation?.allocated_entity_name ?? allocatedEntityName,
-        };
-        if (idx >= 0) {
-          const next = [...prev];
-          next[idx] = updated;
-          return next;
-        }
-        return [...prev, updated];
-      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to save");
+      }
+      await refreshAllocations();
     },
-    [allocationMap]
+    [periodsByEmp, todayIso, refreshAllocations]
   );
 
   // Entity options for Company dropdown
@@ -523,7 +597,7 @@ export default function EmployeeRosterPage() {
             <p className="text-muted-foreground">
               {isEmployingEntity
                 ? activeTab === "roster"
-                  ? "Full payroll roster — click any Department, Class, or Company cell to edit"
+                  ? "Full payroll roster — click any Company, Department, or Class cell to edit as of a chosen date"
                   : `Employees allocated to ${entityName} with compensation costs`
                 : "Employee roster, compensation, and department breakdown"}
             </p>
@@ -774,11 +848,7 @@ export default function EmployeeRosterPage() {
                           >
                             <CalendarDays className="h-3.5 w-3.5" />
                           </button>
-                          {allocations.filter(
-                            (a) =>
-                              a.employee_id === emp.id &&
-                              a.paylocity_company_id === emp.companyId
-                          ).length > 1 && (
+                          {(periodsByEmp[`${emp.id}:${emp.companyId}`]?.length ?? 0) > 1 && (
                             <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 font-normal">
                               multi
                             </Badge>
@@ -791,29 +861,41 @@ export default function EmployeeRosterPage() {
                       <TableCell className="max-w-[180px] truncate">
                         {emp.jobTitle || "---"}
                       </TableCell>
-                      {/* Company — editable select */}
+                      {/* Company — editable select (effective-dated) */}
                       <TableCell>
                         <EditableSelectCell
                           value={emp.effectiveEntityId}
                           options={entityOptions}
-                          onSave={(val) => saveAllocation(emp, "company", val)}
+                          onSave={(val) => requestEdit(emp, "company", val)}
                         />
                       </TableCell>
-                      {/* Department — editable text */}
+                      {/* Department — editable text (effective-dated) */}
                       <TableCell>
                         <EditableTextCell
                           value={emp.effectiveDepartment}
-                          onSave={(val) => saveAllocation(emp, "department", val)}
+                          onSave={(val) => requestEdit(emp, "department", val)}
                           placeholder="Set department"
                         />
                       </TableCell>
-                      {/* Class — editable text */}
+                      {/* Class — multi-class % splits (effective-dated) */}
                       <TableCell>
-                        <EditableTextCell
-                          value={emp.classValue}
-                          onSave={(val) => saveAllocation(emp, "class", val)}
-                          placeholder="Set class"
-                        />
+                        <div
+                          className="flex items-center gap-1 cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 py-0.5"
+                          onClick={() => openClassEditor(emp)}
+                          title="Edit class allocation"
+                        >
+                          <span
+                            className={`whitespace-nowrap ${emp.classValue ? "" : "text-muted-foreground"}`}
+                          >
+                            {emp.classValue || "Set class"}
+                          </span>
+                          {(emp.classAllocations?.length ?? 0) > 1 && (
+                            <Badge variant="secondary" className="text-[9px] px-1 py-0 h-4 font-normal">
+                              split
+                            </Badge>
+                          )}
+                          <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
                       </TableCell>
                       <TableCell>
                         <Badge variant={emp.payType === "Salary" ? "default" : "secondary"}>
@@ -933,6 +1015,7 @@ export default function EmployeeRosterPage() {
                 effective_date: a.effective_date ?? "2000-01-01",
                 department: a.department,
                 class: a.class,
+                class_allocations: a.class_allocations ?? null,
                 allocated_entity_id: a.allocated_entity_id,
                 allocated_entity_name: a.allocated_entity_name,
               })) as AllocationPeriod[]
@@ -944,6 +1027,156 @@ export default function EmployeeRosterPage() {
           onChanged={refreshAllocations}
         />
       )}
+
+      {pendingEdit && (
+        <AllocationEditDialog
+          pendingEdit={pendingEdit}
+          onClose={() => setPendingEdit(null)}
+          onCommit={commitPendingEdit}
+        />
+      )}
     </TooltipProvider>
+  );
+}
+
+// --- Effective-dated allocation edit dialog ---
+
+function AllocationEditDialog({
+  pendingEdit,
+  onClose,
+  onCommit,
+}: {
+  pendingEdit: PendingEdit;
+  onClose: () => void;
+  onCommit: (
+    edit: PendingEdit,
+    mode: "new" | "current",
+    date: string,
+    classDrafts: ClassSplitDraft[]
+  ) => Promise<void>;
+}) {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const [mode, setMode] = useState<"new" | "current">("new");
+  const [date, setDate] = useState(todayIso);
+  const [classDrafts, setClassDrafts] = useState<ClassSplitDraft[]>(
+    pendingEdit.classDrafts ?? []
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const { emp, field } = pendingEdit;
+  const isClassEdit = field === "class";
+  const targetEntity = OPERATING_ENTITIES.find((e) => e.id === pendingEdit.value);
+
+  const changeSummary = isClassEdit
+    ? null
+    : field === "company"
+      ? `Company: ${emp.effectiveEntityName} → ${targetEntity?.name ?? pendingEdit.value}`
+      : `Department: ${emp.effectiveDepartment || "—"} → ${pendingEdit.value || "—"}`;
+
+  const classOk = !isClassEdit || draftsValid(classDrafts);
+  const canSave = classOk && (mode === "current" || !!date) && !saving;
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await onCommit(pendingEdit, mode, date, classDrafts);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open && !saving) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            {isClassEdit ? "Class Allocation" : "Allocation Change"}
+          </DialogTitle>
+          <DialogDescription>{emp.displayName}</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {changeSummary && (
+            <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+              {changeSummary}
+            </div>
+          )}
+
+          {isClassEdit && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">
+                Split this employee&apos;s cost across classes (must total 100%)
+              </p>
+              <ClassSplitsEditor
+                drafts={classDrafts}
+                onChange={setClassDrafts}
+                disabled={saving}
+              />
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">When does this take effect?</p>
+            <label className="flex items-start gap-2 cursor-pointer text-sm">
+              <input
+                type="radio"
+                checked={mode === "new"}
+                onChange={() => setMode("new")}
+                className="mt-0.5"
+                disabled={saving}
+              />
+              <span className="flex-1">
+                <span className="font-medium">As of a specific date</span>
+                <span className="block text-xs text-muted-foreground">
+                  Starts a new allocation period; months before this date keep the prior
+                  allocation, and the change pro-rates by day within the month.
+                </span>
+                {mode === "new" && (
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    className="mt-1.5 h-8 text-sm border rounded px-2 bg-background"
+                    disabled={saving}
+                  />
+                )}
+              </span>
+            </label>
+            <label className="flex items-start gap-2 cursor-pointer text-sm">
+              <input
+                type="radio"
+                checked={mode === "current"}
+                onChange={() => setMode("current")}
+                className="mt-0.5"
+                disabled={saving}
+              />
+              <span className="flex-1">
+                <span className="font-medium">Update the current period</span>
+                <span className="block text-xs text-muted-foreground">
+                  Rewrites the allocation already in effect (applies retroactively to its
+                  whole period).
+                </span>
+              </span>
+            </label>
+          </div>
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={handleSave} disabled={!canSave}>
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
