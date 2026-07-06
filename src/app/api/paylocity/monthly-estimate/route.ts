@@ -200,6 +200,9 @@ export async function GET(request: NextRequest) {
         class_allocations: Array.isArray(a.class_allocations)
           ? (a.class_allocations as { class: string; pct: number }[])
           : null,
+        entity_allocations: Array.isArray(a.entity_allocations)
+          ? (a.entity_allocations as { entity_id: string; entity_name?: string | null; pct: number }[])
+          : null,
         allocated_entity_id: (a.allocated_entity_id as string) ?? null,
         allocated_entity_name: (a.allocated_entity_name as string) ?? null,
         effective_date: String(a.effective_date ?? "2000-01-01"),

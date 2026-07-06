@@ -16,13 +16,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, Plus, Trash2, Save } from "lucide-react";
@@ -32,8 +25,15 @@ import {
   draftsToPayload,
   draftsValid,
   formatClassSplits,
+  EntitySplitsEditor,
+  entityDraftsFromAllocation,
+  entityDraftsToPayload,
+  entityDraftsValid,
+  formatEntitySplits,
   type ClassAllocationEntry,
   type ClassSplitDraft,
+  type EntityAllocationEntry,
+  type EntitySplitDraft,
 } from "./class-splits-editor";
 
 // --- Types ---
@@ -45,6 +45,7 @@ export interface AllocationPeriod {
   department: string | null;
   class: string | null;
   class_allocations?: ClassAllocationEntry[] | null;
+  entity_allocations?: EntityAllocationEntry[] | null;
   allocated_entity_id: string | null;
   allocated_entity_name: string | null;
 }
@@ -76,8 +77,7 @@ interface Props {
 
 interface DraftRow {
   effectiveDate: string;
-  entityId: string;
-  entityName: string;
+  entityDrafts: EntitySplitDraft[];
   department: string;
   classDrafts: ClassSplitDraft[];
   isNew: boolean;
@@ -114,35 +114,36 @@ export function AllocationHistoryDialog({
       ...prev,
       {
         effectiveDate: today,
-        entityId: latest?.allocated_entity_id ?? defaultEntityId,
-        entityName: latest?.allocated_entity_name ?? defaultEntityName,
+        entityDrafts: entityDraftsFromAllocation(
+          latest?.entity_allocations,
+          latest?.allocated_entity_id ?? defaultEntityId
+        ),
         department: latest?.department ?? defaultDepartment,
         classDrafts: draftsFromAllocation(latest?.class_allocations, latest?.class),
         isNew: true,
         saving: false,
       },
     ]);
-  }, [periods, defaultDepartment, defaultEntityId, defaultEntityName]);
+  }, [periods, defaultDepartment, defaultEntityId]);
 
   const updateDraft = useCallback(
-    (idx: number, field: keyof DraftRow, value: string) => {
+    (idx: number, field: "effectiveDate" | "department", value: string) => {
       setDrafts((prev) => {
         const next = [...prev];
-        const row = { ...next[idx] };
-        if (field === "entityId") {
-          row.entityId = value;
-          row.entityName =
-            entities.find((e) => e.id === value)?.name ?? value;
-        } else {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (row as any)[field] = value;
-        }
-        next[idx] = row;
+        next[idx] = { ...next[idx], [field]: value };
         return next;
       });
     },
-    [entities]
+    []
   );
+
+  const updateDraftEntities = useCallback((idx: number, entityDrafts: EntitySplitDraft[]) => {
+    setDrafts((prev) => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], entityDrafts };
+      return next;
+    });
+  }, []);
 
   const updateDraftClass = useCallback((idx: number, classDrafts: ClassSplitDraft[]) => {
     setDrafts((prev) => {
@@ -172,8 +173,8 @@ export function AllocationHistoryDialog({
             department: draft.department || null,
             class: null, // derived by the API from classAllocations
             classAllocations: draftsToPayload(draft.classDrafts),
-            allocatedEntityId: draft.entityId,
-            allocatedEntityName: draft.entityName,
+            // API syncs allocated_entity_id/_name to the largest split
+            entityAllocations: entityDraftsToPayload(draft.entityDrafts, entities),
           }),
         });
         if (!res.ok) throw new Error("Failed to save");
@@ -189,7 +190,7 @@ export function AllocationHistoryDialog({
         });
       }
     },
-    [drafts, employeeId, companyId, onChanged]
+    [drafts, employeeId, companyId, entities, onChanged]
   );
 
   const deletePeriod = useCallback(
@@ -218,12 +219,6 @@ export function AllocationHistoryDialog({
     [employeeId, companyId, onChanged]
   );
 
-  // Merge existing periods + drafts for display
-  const entityOptions = entities.map((e) => ({
-    value: e.id,
-    label: `${e.code} — ${e.name}`,
-  }));
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
@@ -249,16 +244,19 @@ export function AllocationHistoryDialog({
                 const entityMatch = entities.find(
                   (e) => e.id === p.allocated_entity_id
                 );
+                const singleLabel = entityMatch
+                  ? `${entityMatch.code} — ${entityMatch.name}`
+                  : p.allocated_entity_name || "—";
+                const companyLabel =
+                  (p.entity_allocations?.length ?? 0) > 1
+                    ? formatEntitySplits(p.entity_allocations, null, entities)
+                    : singleLabel;
                 return (
                   <TableRow key={p.effective_date}>
                     <TableCell className="font-mono text-sm">
                       {formatDate(p.effective_date)}
                     </TableCell>
-                    <TableCell className="text-sm">
-                      {entityMatch
-                        ? `${entityMatch.code} — ${entityMatch.name}`
-                        : p.allocated_entity_name || "—"}
-                    </TableCell>
+                    <TableCell className="text-sm">{companyLabel}</TableCell>
                     <TableCell className="text-sm">
                       {p.department || "—"}
                     </TableCell>
@@ -303,27 +301,14 @@ export function AllocationHistoryDialog({
                       disabled={d.saving}
                     />
                   </TableCell>
-                  <TableCell>
-                    <Select
-                      value={d.entityId}
-                      onValueChange={(v) => updateDraft(idx, "entityId", v)}
+                  <TableCell className="min-w-[240px]">
+                    <EntitySplitsEditor
+                      drafts={d.entityDrafts}
+                      onChange={(next) => updateDraftEntities(idx, next)}
+                      entities={entities}
                       disabled={d.saving}
-                    >
-                      <SelectTrigger className="h-7 text-xs w-[180px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {entityOptions.map((opt) => (
-                          <SelectItem
-                            key={opt.value}
-                            value={opt.value}
-                            className="text-xs"
-                          >
-                            {opt.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      compact
+                    />
                   </TableCell>
                   <TableCell>
                     <Input
@@ -350,7 +335,12 @@ export function AllocationHistoryDialog({
                       size="icon"
                       className="h-7 w-7"
                       onClick={() => saveDraft(idx)}
-                      disabled={d.saving || !d.effectiveDate || !draftsValid(d.classDrafts)}
+                      disabled={
+                        d.saving ||
+                        !d.effectiveDate ||
+                        !draftsValid(d.classDrafts) ||
+                        !entityDraftsValid(d.entityDrafts)
+                      }
                     >
                       {d.saving ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />

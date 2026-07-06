@@ -16,6 +16,13 @@ export interface ClassSplit {
   pct: number; // 0-100
 }
 
+/** One entity (company) % split entry. Percentages within a row sum to 100. */
+export interface EntitySplit {
+  entityId: string;
+  entityName: string | null;
+  pct: number; // 0-100
+}
+
 export interface AllocationRow {
   employee_id: string;
   paylocity_company_id: string;
@@ -23,6 +30,9 @@ export interface AllocationRow {
   class: string | null;
   /** Multi-class % split: [{class, pct}, ...] summing to 100. Null = legacy single `class` at 100%. */
   class_allocations?: { class: string; pct: number }[] | null;
+  /** Multi-entity % split: [{entity_id, entity_name, pct}, ...] summing to 100.
+   *  Null = legacy single allocated_entity_id at 100%. */
+  entity_allocations?: { entity_id: string; entity_name?: string | null; pct: number }[] | null;
   allocated_entity_id: string | null;
   allocated_entity_name: string | null;
   effective_date: string; // "YYYY-MM-DD"
@@ -59,6 +69,35 @@ export function getClassSplits(row: AllocationRow | null): ClassSplit[] {
   }
   if (row.class && row.class.trim() !== "") {
     return [{ className: row.class.trim(), pct: 100 }];
+  }
+  return [];
+}
+
+/**
+ * Normalize a row's entity configuration into a clean split list.
+ * Prefers entity_allocations; falls back to the legacy single
+ * allocated_entity_id at 100%. Returns [] when the row (or its entity)
+ * is unset — callers fall through to the cost-center default entity.
+ */
+export function getEntitySplits(row: AllocationRow | null): EntitySplit[] {
+  if (!row) return [];
+  const raw = Array.isArray(row.entity_allocations) ? row.entity_allocations : [];
+  const valid = raw
+    .filter((s) => s && typeof s.entity_id === "string" && s.entity_id !== "" && Number(s.pct) > 0)
+    .map((s) => ({
+      entityId: s.entity_id,
+      entityName: s.entity_name ?? null,
+      pct: Number(s.pct),
+    }));
+  if (valid.length > 0) {
+    const sum = valid.reduce((t, s) => t + s.pct, 0);
+    if (sum <= 0) return [];
+    return valid.map((s) => ({ ...s, pct: (s.pct / sum) * 100 }));
+  }
+  if (row.allocated_entity_id) {
+    return [
+      { entityId: row.allocated_entity_id, entityName: row.allocated_entity_name, pct: 100 },
+    ];
   }
   return [];
 }

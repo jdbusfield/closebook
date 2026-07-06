@@ -58,6 +58,7 @@ export async function PUT(req: NextRequest) {
       department,
       class: classValue,
       classAllocations,
+      entityAllocations,
       allocatedEntityId,
       allocatedEntityName,
     } = body;
@@ -98,6 +99,45 @@ export async function PUT(req: NextRequest) {
       }
     }
 
+    // Validate + normalize multi-entity (company) splits
+    let entitySplits: { entity_id: string; entity_name: string | null; pct: number }[] | null =
+      null;
+    if (Array.isArray(entityAllocations) && entityAllocations.length > 0) {
+      entitySplits = entityAllocations
+        .map((s: { entityId?: unknown; entityName?: unknown; pct?: unknown }) => ({
+          entity_id: String(s?.entityId ?? "").trim(),
+          entity_name: s?.entityName ? String(s.entityName) : null,
+          pct: Math.round(Number(s?.pct ?? 0) * 100) / 100,
+        }))
+        .filter((s) => s.entity_id !== "" && s.pct > 0);
+      if (entitySplits.length === 0) {
+        entitySplits = null;
+      } else {
+        const sum = entitySplits.reduce((t, s) => t + s.pct, 0);
+        if (Math.abs(sum - 100) > 0.1) {
+          return NextResponse.json(
+            { error: `Company allocation percentages must sum to 100 (got ${sum.toFixed(2)})` },
+            { status: 400 }
+          );
+        }
+        const dupes = new Set(entitySplits.map((s) => s.entity_id));
+        if (dupes.size !== entitySplits.length) {
+          return NextResponse.json(
+            { error: "Each company may appear only once in the allocation" },
+            { status: 400 }
+          );
+        }
+        entitySplits.sort((a, b) => b.pct - a.pct);
+      }
+    }
+
+    // Keep the legacy single-entity columns in sync: largest split wins
+    // (readers that can't handle splits attribute to the dominant company).
+    const legacyEntityId =
+      entitySplits !== null ? entitySplits[0].entity_id : allocatedEntityId ?? null;
+    const legacyEntityName =
+      entitySplits !== null ? entitySplits[0].entity_name : allocatedEntityName ?? null;
+
     // Keep the legacy single-class column in sync: single split → its name,
     // multi split → null (readers must use class_allocations).
     const legacyClass =
@@ -116,8 +156,9 @@ export async function PUT(req: NextRequest) {
       department: (department ?? null) as string | null,
       class: legacyClass as string | null,
       class_allocations: splits,
-      allocated_entity_id: (allocatedEntityId ?? null) as string | null,
-      allocated_entity_name: (allocatedEntityName ?? null) as string | null,
+      entity_allocations: entitySplits,
+      allocated_entity_id: legacyEntityId as string | null,
+      allocated_entity_name: legacyEntityName as string | null,
       updated_at: new Date().toISOString(),
     };
 
@@ -127,17 +168,23 @@ export async function PUT(req: NextRequest) {
       .select()
       .single();
 
-    // Graceful degradation: if the class_allocations column doesn't exist yet
-    // (migration 20260706 not applied), retry without it.
-    if (error && /class_allocations/.test(error.message ?? "")) {
+    // Graceful degradation: if a splits column doesn't exist yet (its
+    // migration isn't applied), retry without the jsonb columns.
+    if (error && /class_allocations|entity_allocations/.test(error.message ?? "")) {
       if (splits && splits.length > 1) {
         return NextResponse.json(
           { error: "Multi-class splits require DB migration 20260706_employee_class_allocations.sql — run it in Supabase Studio first." },
           { status: 400 }
         );
       }
+      if (entitySplits && entitySplits.length > 1) {
+        return NextResponse.json(
+          { error: "Multi-company splits require DB migration 20260706_employee_entity_allocations.sql — run it in Supabase Studio first." },
+          { status: 400 }
+        );
+      }
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { class_allocations: _omit, ...withoutSplits } = record;
+      const { class_allocations: _c, entity_allocations: _e, ...withoutSplits } = record;
       ({ data, error } = await supabase
         .from("employee_allocations")
         .upsert(withoutSplits, { onConflict: "employee_id,paylocity_company_id,effective_date" })

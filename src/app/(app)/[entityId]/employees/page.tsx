@@ -67,8 +67,15 @@ import {
   draftsToPayload,
   draftsValid,
   formatClassSplits,
+  EntitySplitsEditor,
+  entityDraftsFromAllocation,
+  entityDraftsToPayload,
+  entityDraftsValid,
+  formatEntitySplits,
   type ClassAllocationEntry,
   type ClassSplitDraft,
+  type EntityAllocationEntry,
+  type EntitySplitDraft,
 } from "./class-splits-editor";
 
 // --- Constants ---
@@ -120,6 +127,7 @@ interface AllocationOverride {
   department: string | null;
   class: string | null;
   class_allocations?: ClassAllocationEntry[] | null;
+  entity_allocations?: EntityAllocationEntry[] | null;
   allocated_entity_id: string | null;
   allocated_entity_name: string | null;
   effective_date?: string;
@@ -133,7 +141,11 @@ interface DisplayEmployee extends MappedEmployee {
   classValue: string;
   /** Class % splits currently in effect */
   classAllocations: ClassAllocationEntry[] | null;
-  /** Effective company/entity (override or default) */
+  /** Company % splits currently in effect */
+  entityAllocations: EntityAllocationEntry[] | null;
+  /** Company cell display label ("AVON 60% / HDR 40%" for splits) */
+  companyLabel: string;
+  /** Effective company/entity (override or default; dominant split when multi) */
   effectiveEntityId: string;
   effectiveEntityName: string;
   /** Whether this employee has any overrides */
@@ -144,10 +156,12 @@ interface DisplayEmployee extends MappedEmployee {
 interface PendingEdit {
   emp: DisplayEmployee;
   field: "department" | "company" | "class";
-  /** New department name or entity id (unused for class edits) */
+  /** New department name (department edits only) */
   value: string;
   /** New class splits (class edits only) */
   classDrafts?: ClassSplitDraft[];
+  /** New company splits (company edits only) */
+  entityDrafts?: EntitySplitDraft[];
 }
 
 // --- Helpers ---
@@ -244,43 +258,6 @@ function EditableTextCell({
       <span className={value ? "" : "text-muted-foreground"}>{value || placeholder}</span>
       <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
     </div>
-  );
-}
-
-function EditableSelectCell({
-  value,
-  options,
-  onSave,
-}: {
-  value: string;
-  options: { value: string; label: string }[];
-  onSave: (newValue: string) => Promise<void>;
-}) {
-  const [saving, setSaving] = useState(false);
-
-  const handleChange = async (newValue: string) => {
-    if (newValue === value) return;
-    setSaving(true);
-    try {
-      await onSave(newValue);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Select value={value} onValueChange={handleChange} disabled={saving}>
-      <SelectTrigger className="h-7 text-xs w-[160px] border-transparent hover:border-input">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map((opt) => (
-          <SelectItem key={opt.value} value={opt.value} className="text-xs">
-            {opt.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
   );
 }
 
@@ -395,13 +372,31 @@ export default function EmployeeRosterPage() {
           : override?.class
             ? [{ class: override.class, pct: 100 }]
             : null;
+      const entityAllocations =
+        override?.entity_allocations && override.entity_allocations.length > 0
+          ? override.entity_allocations
+          : override?.allocated_entity_id
+            ? [
+                {
+                  entity_id: override.allocated_entity_id,
+                  entity_name: override.allocated_entity_name,
+                  pct: 100,
+                },
+              ]
+            : null;
+      const effectiveEntityId = override?.allocated_entity_id || emp.operatingEntityId;
+      const effectiveEntityName = override?.allocated_entity_name || emp.operatingEntityName;
       return {
         ...emp,
         effectiveDepartment: override?.department || emp.department,
         classValue: formatClassSplits(override?.class_allocations, override?.class),
         classAllocations,
-        effectiveEntityId: override?.allocated_entity_id || emp.operatingEntityId,
-        effectiveEntityName: override?.allocated_entity_name || emp.operatingEntityName,
+        entityAllocations,
+        companyLabel:
+          formatEntitySplits(override?.entity_allocations, null, OPERATING_ENTITIES) ||
+          effectiveEntityName,
+        effectiveEntityId,
+        effectiveEntityName,
         hasOverrides: !!override,
       };
     },
@@ -416,11 +411,14 @@ export default function EmployeeRosterPage() {
       .map(mergeOverrides);
   }, [employees, isEmployingEntity, paylocityCompanyId, mergeOverrides]);
 
-  // Cost allocation employees: those whose effective entity matches THIS entity (across all companies)
+  // Cost allocation employees: those with any share allocated to THIS entity (across all companies)
   const allocDisplayEmployees: DisplayEmployee[] = useMemo(() => {
     return employees
       .filter((e) => {
         const override = activeOverride(e.id, e.companyId);
+        if (override?.entity_allocations && override.entity_allocations.length > 0) {
+          return override.entity_allocations.some((s) => s.entity_id === entityId);
+        }
         const effectiveEntityId = override?.allocated_entity_id || e.operatingEntityId;
         return effectiveEntityId === entityId;
       })
@@ -485,7 +483,7 @@ export default function EmployeeRosterPage() {
   // Inline edits don't save directly — they queue a PendingEdit so the user
   // picks an effective date first (new period vs. rewrite current period).
   const requestEdit = useCallback(
-    async (emp: DisplayEmployee, field: "department" | "company", value: string) => {
+    async (emp: DisplayEmployee, field: "department", value: string) => {
       setPendingEdit({ emp, field, value });
     },
     []
@@ -500,13 +498,28 @@ export default function EmployeeRosterPage() {
     });
   }, []);
 
+  const openCompanyEditor = useCallback((emp: DisplayEmployee) => {
+    setPendingEdit({
+      emp,
+      field: "company",
+      value: "",
+      entityDrafts: entityDraftsFromAllocation(emp.entityAllocations, emp.effectiveEntityId),
+    });
+  }, []);
+
   /**
    * Persist a pending edit. mode "new" creates a period starting on `date`
    * (carrying forward the fields in effect on that date); mode "current"
    * rewrites the period active today without changing its start date.
    */
   const commitPendingEdit = useCallback(
-    async (edit: PendingEdit, mode: "new" | "current", date: string, classDrafts: ClassSplitDraft[]) => {
+    async (
+      edit: PendingEdit,
+      mode: "new" | "current",
+      date: string,
+      classDrafts: ClassSplitDraft[],
+      entityDrafts: EntitySplitDraft[]
+    ) => {
       const { emp, field } = edit;
       const periods = periodsByEmp[`${emp.id}:${emp.companyId}`] ?? [];
       const asOf = mode === "new" ? date : todayIso;
@@ -517,19 +530,27 @@ export default function EmployeeRosterPage() {
       const effectiveDate = mode === "new" ? date : (base?.effective_date ?? "2000-01-01");
 
       let department = base?.department ?? emp.department;
-      let allocatedEntityId = base?.allocated_entity_id ?? emp.operatingEntityId;
-      let allocatedEntityName = base?.allocated_entity_name ?? emp.operatingEntityName;
+      const allocatedEntityId = base?.allocated_entity_id ?? emp.operatingEntityId;
+      const allocatedEntityName = base?.allocated_entity_name ?? emp.operatingEntityName;
       let classValue = base?.class ?? null;
       let classAllocations: ClassAllocationEntry[] | null =
         base?.class_allocations && base.class_allocations.length > 0
           ? base.class_allocations
           : null;
+      // Carry the company splits forward unless this edit changes them
+      let entityAllocations: { entityId: string; entityName?: string | null; pct: number }[] | null =
+        base?.entity_allocations && base.entity_allocations.length > 0
+          ? base.entity_allocations.map((s) => ({
+              entityId: s.entity_id,
+              entityName: s.entity_name,
+              pct: s.pct,
+            }))
+          : null;
 
       if (field === "department") department = edit.value;
       if (field === "company") {
-        allocatedEntityId = edit.value;
-        const entity = OPERATING_ENTITIES.find((e) => e.id === edit.value);
-        allocatedEntityName = entity?.name ?? edit.value;
+        entityAllocations = entityDraftsToPayload(entityDrafts, OPERATING_ENTITIES);
+        // API syncs allocated_entity_id/_name to the largest split
       }
       if (field === "class") {
         classAllocations = draftsToPayload(classDrafts);
@@ -546,6 +567,7 @@ export default function EmployeeRosterPage() {
           department,
           class: classValue,
           classAllocations,
+          entityAllocations,
           allocatedEntityId,
           allocatedEntityName,
         }),
@@ -559,12 +581,6 @@ export default function EmployeeRosterPage() {
     },
     [periodsByEmp, todayIso, refreshAllocations]
   );
-
-  // Entity options for Company dropdown
-  const entityOptions = OPERATING_ENTITIES.map((e) => ({
-    value: e.id,
-    label: e.name,
-  }));
 
   if (loading) {
     return (
@@ -861,13 +877,21 @@ export default function EmployeeRosterPage() {
                       <TableCell className="max-w-[180px] truncate">
                         {emp.jobTitle || "---"}
                       </TableCell>
-                      {/* Company — editable select (effective-dated) */}
+                      {/* Company — multi-entity % splits (effective-dated) */}
                       <TableCell>
-                        <EditableSelectCell
-                          value={emp.effectiveEntityId}
-                          options={entityOptions}
-                          onSave={(val) => requestEdit(emp, "company", val)}
-                        />
+                        <div
+                          className="flex items-center gap-1 cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 py-0.5"
+                          onClick={() => openCompanyEditor(emp)}
+                          title="Edit company allocation"
+                        >
+                          <span className="whitespace-nowrap">{emp.companyLabel}</span>
+                          {(emp.entityAllocations?.length ?? 0) > 1 && (
+                            <Badge variant="secondary" className="text-[9px] px-1 py-0 h-4 font-normal">
+                              split
+                            </Badge>
+                          )}
+                          <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
                       </TableCell>
                       {/* Department — editable text (effective-dated) */}
                       <TableCell>
@@ -1016,6 +1040,7 @@ export default function EmployeeRosterPage() {
                 department: a.department,
                 class: a.class,
                 class_allocations: a.class_allocations ?? null,
+                entity_allocations: a.entity_allocations ?? null,
                 allocated_entity_id: a.allocated_entity_id,
                 allocated_entity_name: a.allocated_entity_name,
               })) as AllocationPeriod[]
@@ -1052,7 +1077,8 @@ function AllocationEditDialog({
     edit: PendingEdit,
     mode: "new" | "current",
     date: string,
-    classDrafts: ClassSplitDraft[]
+    classDrafts: ClassSplitDraft[],
+    entityDrafts: EntitySplitDraft[]
   ) => Promise<void>;
 }) {
   const todayIso = new Date().toISOString().slice(0, 10);
@@ -1061,27 +1087,30 @@ function AllocationEditDialog({
   const [classDrafts, setClassDrafts] = useState<ClassSplitDraft[]>(
     pendingEdit.classDrafts ?? []
   );
+  const [entityDrafts, setEntityDrafts] = useState<EntitySplitDraft[]>(
+    pendingEdit.entityDrafts ?? []
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const { emp, field } = pendingEdit;
   const isClassEdit = field === "class";
-  const targetEntity = OPERATING_ENTITIES.find((e) => e.id === pendingEdit.value);
+  const isCompanyEdit = field === "company";
 
-  const changeSummary = isClassEdit
-    ? null
-    : field === "company"
-      ? `Company: ${emp.effectiveEntityName} → ${targetEntity?.name ?? pendingEdit.value}`
-      : `Department: ${emp.effectiveDepartment || "—"} → ${pendingEdit.value || "—"}`;
+  const changeSummary =
+    field === "department"
+      ? `Department: ${emp.effectiveDepartment || "—"} → ${pendingEdit.value || "—"}`
+      : null;
 
   const classOk = !isClassEdit || draftsValid(classDrafts);
-  const canSave = classOk && (mode === "current" || !!date) && !saving;
+  const companyOk = !isCompanyEdit || entityDraftsValid(entityDrafts);
+  const canSave = classOk && companyOk && (mode === "current" || !!date) && !saving;
 
   const handleSave = async () => {
     setSaving(true);
     setError(null);
     try {
-      await onCommit(pendingEdit, mode, date, classDrafts);
+      await onCommit(pendingEdit, mode, date, classDrafts, entityDrafts);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -1094,7 +1123,11 @@ function AllocationEditDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {isClassEdit ? "Class Allocation" : "Allocation Change"}
+            {isClassEdit
+              ? "Class Allocation"
+              : isCompanyEdit
+                ? "Company Allocation"
+                : "Allocation Change"}
           </DialogTitle>
           <DialogDescription>{emp.displayName}</DialogDescription>
         </DialogHeader>
@@ -1114,6 +1147,20 @@ function AllocationEditDialog({
               <ClassSplitsEditor
                 drafts={classDrafts}
                 onChange={setClassDrafts}
+                disabled={saving}
+              />
+            </div>
+          )}
+
+          {isCompanyEdit && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">
+                Split this employee&apos;s cost across companies (must total 100%)
+              </p>
+              <EntitySplitsEditor
+                drafts={entityDrafts}
+                onChange={setEntityDrafts}
+                entities={OPERATING_ENTITIES}
                 disabled={saving}
               />
             </div>

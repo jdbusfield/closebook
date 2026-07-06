@@ -9,7 +9,7 @@ import {
   calculateEmployerTaxes,
 } from "@/lib/utils/payroll-calculations";
 import { getOperatingEntityForCostCenter } from "@/lib/paylocity/cost-center-config";
-import { AllocationResolver, getClassSplits } from "@/lib/paylocity/allocation-resolver";
+import { AllocationResolver, getClassSplits, getEntitySplits } from "@/lib/paylocity/allocation-resolver";
 
 // Use an untyped Supabase client since the table isn't in generated types yet
 function getSupabase() {
@@ -98,26 +98,34 @@ export async function GET(request: NextRequest) {
         Number(row.month)
       );
 
-      // Aggregate the month's segments per effective entity
+      // Aggregate the month's segments per effective entity, fanning each
+      // segment across the period's multi-company % splits.
       const byEntity = new Map<string, EntityShare>();
       for (const seg of segments) {
-        const segEntityId = seg.row?.allocated_entity_id || defaultEntity.operatingEntityId;
         const segDept = seg.row?.department || defaultEntity.department;
-        let share = byEntity.get(segEntityId);
-        if (!share) {
-          share = { weight: 0, department: segDept, departmentDays: 0, classWeights: new Map() };
-          byEntity.set(segEntityId, share);
-        }
-        share.weight += seg.weight;
-        if (seg.days > share.departmentDays) {
-          share.department = segDept;
-          share.departmentDays = seg.days;
-        }
-        for (const split of getClassSplits(seg.row)) {
-          share.classWeights.set(
-            split.className,
-            (share.classWeights.get(split.className) ?? 0) + seg.weight * split.pct
-          );
+        const entitySplits = getEntitySplits(seg.row);
+        const fan =
+          entitySplits.length > 0
+            ? entitySplits
+            : [{ entityId: defaultEntity.operatingEntityId, entityName: null, pct: 100 }];
+        for (const f of fan) {
+          const w = seg.weight * (f.pct / 100);
+          let share = byEntity.get(f.entityId);
+          if (!share) {
+            share = { weight: 0, department: segDept, departmentDays: 0, classWeights: new Map() };
+            byEntity.set(f.entityId, share);
+          }
+          share.weight += w;
+          if (w > share.departmentDays) {
+            share.department = segDept;
+            share.departmentDays = w;
+          }
+          for (const split of getClassSplits(seg.row)) {
+            share.classWeights.set(
+              split.className,
+              (share.classWeights.get(split.className) ?? 0) + w * split.pct
+            );
+          }
         }
       }
 

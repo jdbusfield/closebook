@@ -38,6 +38,7 @@ import {
 } from "@/lib/paylocity/cost-center-config";
 import {
   getClassSplits,
+  getEntitySplits,
   type AllocationResolver,
   type ClassSplit,
   type MonthSegment,
@@ -454,36 +455,50 @@ export function resolveEmployeeEntity(
         },
       ];
 
-  // Resolve each segment, then merge consecutive segments whose resolved
-  // (entity, department, class-mix) is identical — e.g. a period change that
-  // only touched a field we don't attribute by.
+  // Resolve each segment, fanning it across the period's entity % splits
+  // (a multi-company employee yields one slice per entity, weight =
+  // segment-day-fraction × entity pct). Slices with the same
+  // (entity, department, class-mix) merge, so a stable 60/40 employee shows
+  // two clean slices for the whole month.
   const resolved: SliceResolution[] = [];
+  const byKey = new Map<string, SliceResolution>();
+  const segSignatures: string[] = [];
   for (const seg of segments) {
-    const entityId = seg.row?.allocated_entity_id || ccEntry.operatingEntityId;
-    const entMeta = getEntityMeta(entityId);
-    const slice: SliceResolution = {
-      entityId,
-      entityCode: entMeta.code,
-      entityName: entMeta.name,
-      department: seg.row?.department || ccEntry.department,
-      weight: seg.weight,
-      days: seg.days,
-      startDate: seg.startDate,
-      endDate: seg.endDate,
-      classSplits: getClassSplits(seg.row),
-    };
-    const prev = resolved[resolved.length - 1];
-    if (
-      prev &&
-      prev.entityId === slice.entityId &&
-      prev.department === slice.department &&
-      classKey(prev.classSplits) === classKey(slice.classSplits)
-    ) {
-      prev.days += slice.days;
-      prev.weight += slice.weight;
-      prev.endDate = slice.endDate;
-    } else {
-      resolved.push(slice);
+    const department = seg.row?.department || ccEntry.department;
+    const classSplits = getClassSplits(seg.row);
+    const entitySplits = getEntitySplits(seg.row);
+    const fan =
+      entitySplits.length > 0
+        ? [...entitySplits].sort((a, b) => b.pct - a.pct)
+        : [{ entityId: ccEntry.operatingEntityId, entityName: null, pct: 100 }];
+    segSignatures.push(
+      fan.map((f) => `${f.entityId}:${f.pct.toFixed(4)}`).join(",") +
+        `|${department}|${classKey(classSplits)}`
+    );
+    for (const f of fan) {
+      const entMeta = getEntityMeta(f.entityId);
+      const key = `${f.entityId}|${department}|${classKey(classSplits)}`;
+      const weight = seg.weight * (f.pct / 100);
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.weight += weight;
+        existing.days += seg.days;
+        existing.endDate = seg.endDate;
+      } else {
+        const slice: SliceResolution = {
+          entityId: f.entityId,
+          entityCode: entMeta.code,
+          entityName: entMeta.name,
+          department,
+          weight,
+          days: seg.days,
+          startDate: seg.startDate,
+          endDate: seg.endDate,
+          classSplits,
+        };
+        byKey.set(key, slice);
+        resolved.push(slice);
+      }
     }
   }
 
@@ -494,7 +509,9 @@ export function resolveEmployeeEntity(
     effectiveEntityName: primary.entityName,
     department: primary.department,
     usedCostCenterFallback,
-    allocationChangedInMonth: resolved.length > 1,
+    // Flag only when the allocation MIX changes mid-month — a stable
+    // multi-entity split is not an exception.
+    allocationChangedInMonth: new Set(segSignatures).size > 1,
     slices: resolved,
   };
 }
