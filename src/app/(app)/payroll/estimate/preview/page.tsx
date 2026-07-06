@@ -368,48 +368,85 @@ function MonthPreviewContent() {
     }
   };
 
-  // ── Page 2: one row per employee, grouped by company allocation.
-  // Within each company: most OT hours first, tiebreaker highest total cost.
+  // ── Page 2: grouped by company allocation. A split employee appears in
+  // EACH company's group carrying only that company's share of OT / meal /
+  // cost (so subtotals equal the entity totals), flagged in the Split column
+  // with their share %. Within each company: most OT hours first, tiebreaker
+  // highest total cost.
   const otGroups = useMemo(() => {
     if (!data) return [];
-    const rows = data.payingEntities.flatMap((pe) =>
-      pe.employees.map((emp) => {
-        const slices = [...(emp.slices ?? [])].sort((a, b) => b.weight - a.weight);
-        const dominant = slices[0];
-        const others = [
-          ...new Set(
-            slices.slice(1).map((s) => entityLabel(s.entityCode, s.entityName)).filter(
-              (l) => l !== entityLabel(dominant?.entityCode ?? "", dominant?.entityName)
-            )
-          ),
-        ];
-        const classLabelStr = dominant
-          ? dominant.classSplits.length === 0
-            ? ""
-            : dominant.classSplits.length === 1
-              ? dominant.classSplits[0].className
-              : dominant.classSplits
-                  .map((s) => `${s.className} ${Math.round(s.pct)}%`)
-                  .join(" / ")
-          : "";
-        return {
-          key: `${emp.employeeId}:${emp.companyId}`,
+
+    interface EntityAgg {
+      code: string;
+      entityName: string;
+      weight: number;
+      maxSliceWeight: number;
+      department: string;
+      classLabel: string;
+      otHours: number;
+      mealHours: number;
+      totalCost: number;
+    }
+
+    const rows: OtRow[] = data.payingEntities.flatMap((pe) =>
+      pe.employees.flatMap((emp) => {
+        const slices = emp.slices ?? [];
+        // Aggregate this employee's slices per allocated entity
+        const byEntity = new Map<string, EntityAgg>();
+        for (const s of slices) {
+          let agg = byEntity.get(s.entityCode);
+          if (!agg) {
+            agg = {
+              code: s.entityCode,
+              entityName: s.entityName,
+              weight: 0,
+              maxSliceWeight: -1,
+              department: s.department,
+              classLabel: "",
+              otHours: 0,
+              mealHours: 0,
+              totalCost: 0,
+            };
+            byEntity.set(s.entityCode, agg);
+          }
+          agg.weight += s.weight;
+          agg.otHours += s.overtimeHours;
+          agg.mealHours += s.mealPremiums;
+          agg.totalCost += tTotal(s.earnedInMonth);
+          // Department/class label from the entity's largest slice
+          if (s.weight > agg.maxSliceWeight) {
+            agg.maxSliceWeight = s.weight;
+            agg.department = s.department;
+            agg.classLabel =
+              s.classSplits.length === 0
+                ? ""
+                : s.classSplits.length === 1
+                  ? s.classSplits[0].className
+                  : s.classSplits
+                      .map((sp) => `${sp.className} ${Math.round(sp.pct)}%`)
+                      .join(" / ");
+          }
+        }
+        const aggs = [...byEntity.values()];
+        const isSplit = aggs.length > 1;
+        return aggs.map((agg) => ({
+          key: `${emp.employeeId}:${emp.companyId}:${agg.code}`,
+          split: isSplit ? `${Math.round(agg.weight * 100)}%` : "",
           name: emp.employeeName,
           id: emp.employeeId,
           paylocity: PAYLOCITY_LABEL[pe.entityCode] ?? pe.entityCode,
-          allocCode: dominant?.entityCode ?? pe.entityCode,
-          coAllocation: dominant ? entityLabel(dominant.entityCode, dominant.entityName) : "",
-          split: others.join(", "),
-          className: classLabelStr,
-          department: dominant?.department ?? emp.department,
-          otHours: emp.overtimeHours,
-          mealHours: emp.mealPremiums,
-          totalCost: tTotal(emp.earnedInMonth),
-        };
+          allocCode: agg.code,
+          coAllocation: entityLabel(agg.code, agg.entityName),
+          className: agg.classLabel,
+          department: agg.department,
+          otHours: agg.otHours,
+          mealHours: agg.mealHours,
+          totalCost: agg.totalCost,
+        }));
       })
     );
 
-    const byCode = new Map<string, typeof rows>();
+    const byCode = new Map<string, OtRow[]>();
     for (const r of rows) {
       const arr = byCode.get(r.allocCode);
       if (arr) arr.push(r);
@@ -696,11 +733,11 @@ function MonthPreviewContent() {
             <table className="w-full text-[9.5px] leading-[1.35]">
               <thead>
                 <tr className="font-bold text-left">
+                  <th className="py-0.5 pr-1">Split</th>
                   <th className="py-0.5 pr-1">Name</th>
                   <th className="py-0.5 pr-1">ID</th>
                   <th className="py-0.5 pr-1">Paylocity</th>
                   <th className="py-0.5 pr-1">Co Allocation</th>
-                  <th className="py-0.5 pr-1">Split</th>
                   <th className="py-0.5 pr-1">Class</th>
                   <th className="py-0.5 pr-1">Department</th>
                   <th className="py-0.5 pl-1 text-right">OT Hours</th>
@@ -768,11 +805,13 @@ function MonthPreviewContent() {
 
 interface OtRow {
   key: string;
+  /** Share % of this employee's month in this company (blank when not split) */
+  split: string;
   name: string;
   id: string;
   paylocity: string;
+  allocCode: string;
   coAllocation: string;
-  split: string;
   className: string;
   department: string;
   otHours: number;
@@ -814,11 +853,13 @@ function GroupRows({
               : undefined
           }
         >
+          <td className="py-[1px] pr-1 font-bold" style={{ color: "#1D4ED8" }}>
+            {r.split}
+          </td>
           <td className="py-[1px] pr-1 whitespace-nowrap">{r.name}</td>
           <td className="py-[1px] pr-1">{r.id}</td>
           <td className="py-[1px] pr-1">{r.paylocity}</td>
           <td className="py-[1px] pr-1">{r.coAllocation}</td>
-          <td className="py-[1px] pr-1">{r.split}</td>
           <td className="py-[1px] pr-1">{r.className}</td>
           <td className="py-[1px] pr-1">{r.department}</td>
           <td className="py-[1px] pl-1 text-right font-mono">{num1(r.otHours)}</td>
