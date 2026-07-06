@@ -259,6 +259,7 @@ function MonthPreviewContent() {
   const [month, setMonth] = useState(Number(searchParams.get("month")) || defaultMonth);
   const [data, setData] = useState<OrgEstimate | null>(null);
   const [inputs, setInputs] = useState<Record<string, PreviewInput>>({});
+  const [revenueBudgets, setRevenueBudgets] = useState<Record<string, number>>({});
   const [inputsTableExists, setInputsTableExists] = useState(true);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
@@ -284,6 +285,7 @@ function MonthPreviewContent() {
         if (cancelled) return;
         setData(est);
         setInputsTableExists(inp.tableExists !== false);
+        setRevenueBudgets(inp.revenueBudgets ?? {});
         const map: Record<string, PreviewInput> = {};
         for (const row of inp.inputs ?? []) {
           map[row.entity_id] = {
@@ -318,6 +320,14 @@ function MonthPreviewContent() {
     (entityId: string): PreviewInput =>
       inputs[entityId] ?? { revenueEstimate: "", revenueBudget: "", revenueDeduction: "", payrollBudget: "" },
     [inputs]
+  );
+
+  // Revenue budget: live from the budgeting module (active version, Revenue/
+  // Income accounts); falls back to a manually-saved figure if no budget exists.
+  const getRevenueBudget = useCallback(
+    (entityId: string): number =>
+      revenueBudgets[entityId] ?? parseNum(getInput(entityId).revenueBudget),
+    [revenueBudgets, getInput]
   );
 
   const setInputField = (entityId: string, field: keyof PreviewInput, value: string) => {
@@ -358,46 +368,71 @@ function MonthPreviewContent() {
     }
   };
 
-  // ── Page 2 rows: one per employee, dominant slice for attribution ──
-  const otRows = useMemo(() => {
+  // ── Page 2: one row per employee, grouped by company allocation.
+  // Within each company: most OT hours first, tiebreaker highest total cost.
+  const otGroups = useMemo(() => {
     if (!data) return [];
-    return data.payingEntities
-      .flatMap((pe) =>
-        pe.employees.map((emp) => {
-          const slices = [...(emp.slices ?? [])].sort((a, b) => b.weight - a.weight);
-          const dominant = slices[0];
-          const others = [
-            ...new Set(
-              slices.slice(1).map((s) => entityLabel(s.entityCode, s.entityName)).filter(
-                (l) => l !== entityLabel(dominant?.entityCode ?? "", dominant?.entityName)
-              )
-            ),
-          ];
-          const classLabelStr = dominant
-            ? dominant.classSplits.length === 0
-              ? ""
-              : dominant.classSplits.length === 1
-                ? dominant.classSplits[0].className
-                : dominant.classSplits
-                    .map((s) => `${s.className} ${Math.round(s.pct)}%`)
-                    .join(" / ")
-            : "";
-          return {
-            key: `${emp.employeeId}:${emp.companyId}`,
-            name: emp.employeeName,
-            id: emp.employeeId,
-            paylocity: PAYLOCITY_LABEL[pe.entityCode] ?? pe.entityCode,
-            coAllocation: dominant ? entityLabel(dominant.entityCode, dominant.entityName) : "",
-            split: others.join(", "),
-            className: classLabelStr,
-            department: dominant?.department ?? emp.department,
-            otHours: emp.overtimeHours,
-            mealHours: emp.mealPremiums,
-            totalCost: tTotal(emp.earnedInMonth),
-          };
-        })
+    const rows = data.payingEntities.flatMap((pe) =>
+      pe.employees.map((emp) => {
+        const slices = [...(emp.slices ?? [])].sort((a, b) => b.weight - a.weight);
+        const dominant = slices[0];
+        const others = [
+          ...new Set(
+            slices.slice(1).map((s) => entityLabel(s.entityCode, s.entityName)).filter(
+              (l) => l !== entityLabel(dominant?.entityCode ?? "", dominant?.entityName)
+            )
+          ),
+        ];
+        const classLabelStr = dominant
+          ? dominant.classSplits.length === 0
+            ? ""
+            : dominant.classSplits.length === 1
+              ? dominant.classSplits[0].className
+              : dominant.classSplits
+                  .map((s) => `${s.className} ${Math.round(s.pct)}%`)
+                  .join(" / ")
+          : "";
+        return {
+          key: `${emp.employeeId}:${emp.companyId}`,
+          name: emp.employeeName,
+          id: emp.employeeId,
+          paylocity: PAYLOCITY_LABEL[pe.entityCode] ?? pe.entityCode,
+          allocCode: dominant?.entityCode ?? pe.entityCode,
+          coAllocation: dominant ? entityLabel(dominant.entityCode, dominant.entityName) : "",
+          split: others.join(", "),
+          className: classLabelStr,
+          department: dominant?.department ?? emp.department,
+          otHours: emp.overtimeHours,
+          mealHours: emp.mealPremiums,
+          totalCost: tTotal(emp.earnedInMonth),
+        };
+      })
+    );
+
+    const byCode = new Map<string, typeof rows>();
+    for (const r of rows) {
+      const arr = byCode.get(r.allocCode);
+      if (arr) arr.push(r);
+      else byCode.set(r.allocCode, [r]);
+    }
+    return [...byCode.entries()]
+      .sort(
+        ([a], [b]) =>
+          (REPORT_ENTITIES[a]?.order ?? 99) - (REPORT_ENTITIES[b]?.order ?? 99)
       )
-      .sort((a, b) => b.otHours - a.otHours || a.name.localeCompare(b.name));
+      .map(([code, groupRows]) => {
+        const sorted = groupRows.sort(
+          (a, b) => b.otHours - a.otHours || b.totalCost - a.totalCost
+        );
+        return {
+          code,
+          label: entityLabel(code, sorted[0]?.coAllocation),
+          rows: sorted,
+          otHours: sorted.reduce((s, r) => s + r.otHours, 0),
+          mealHours: sorted.reduce((s, r) => s + r.mealHours, 0),
+          totalCost: sorted.reduce((s, r) => s + r.totalCost, 0),
+        };
+      });
   }, [data]);
 
   // ── Page 3 matrix: entity → department rows × class columns of OT hours ──
@@ -482,14 +517,14 @@ function MonthPreviewContent() {
     for (const e of reportEntities) {
       const i = getInput(e.entityId);
       t.revenueEstimate += parseNum(i.revenueEstimate) - parseNum(i.revenueDeduction);
-      t.revenueBudget += parseNum(i.revenueBudget);
+      t.revenueBudget += getRevenueBudget(e.entityId);
       t.payrollEstimate += tTotal(e.earnedInMonth);
       t.payrollBudget += parseNum(i.payrollBudget);
       t.otHours += e.overtimeHours;
       t.mealPremiums += e.mealPremiums;
     }
     return t;
-  }, [reportEntities, getInput]);
+  }, [reportEntities, getInput, getRevenueBudget]);
 
   return (
     <div className="max-w-[850px] mx-auto">
@@ -544,7 +579,8 @@ function MonthPreviewContent() {
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Revenue & budget figures — {monthLabel} {year}</CardTitle>
               <CardDescription>
-                These live outside the payroll system; payroll cost, OT, and meal figures come from the estimate.
+                Payroll cost, OT, and meal figures come from the estimate. Revenue Budget pulls
+                automatically from the Budgeting module (active budget version, Revenue accounts).
                 {!inputsTableExists && (
                   <span className="block text-destructive mt-1">
                     Saving requires DB migration 20260706_payroll_preview_inputs.sql (Supabase Studio → SQL Editor).
@@ -556,19 +592,24 @@ function MonthPreviewContent() {
               <div className="grid grid-cols-[110px_repeat(4,1fr)] gap-2 items-center text-xs font-medium text-muted-foreground">
                 <span />
                 <span>Revenue Estimate</span>
-                <span>Revenue Budget</span>
+                <span>Revenue Budget (auto)</span>
                 <span>Less: Versa Group</span>
                 <span>Payroll Budget</span>
               </div>
               {reportEntities.map((e) => {
                 const i = getInput(e.entityId);
+                const budgetFromModule = revenueBudgets[e.entityId];
                 return (
                   <div key={e.entityId} className="grid grid-cols-[110px_repeat(4,1fr)] gap-2 items-center">
                     <span className="text-sm font-medium">{entityLabel(e.entityCode, e.entityName)}</span>
                     <Input className="h-8 text-sm text-right" inputMode="decimal" value={i.revenueEstimate}
                       onChange={(ev) => setInputField(e.entityId, "revenueEstimate", ev.target.value)} />
-                    <Input className="h-8 text-sm text-right" inputMode="decimal" value={i.revenueBudget}
-                      onChange={(ev) => setInputField(e.entityId, "revenueBudget", ev.target.value)} />
+                    <span
+                      className="h-8 flex items-center justify-end px-3 text-sm font-mono rounded-md border bg-muted/40 text-muted-foreground"
+                      title={budgetFromModule != null ? "From Budgeting module" : "No active budget found for this month"}
+                    >
+                      {budgetFromModule != null ? usd0(budgetFromModule) : "—"}
+                    </span>
                     <Input className="h-8 text-sm text-right" inputMode="decimal" value={i.revenueDeduction}
                       onChange={(ev) => setInputField(e.entityId, "revenueDeduction", ev.target.value)}
                       disabled={e.entityCode !== "VS"} placeholder={e.entityCode !== "VS" ? "—" : ""} />
@@ -624,7 +665,7 @@ function MonthPreviewContent() {
                   label={entityLabel(e.entityCode, e.entityName)}
                   color={meta?.color ?? "#555555"}
                   revenueEstimate={parseNum(i.revenueEstimate)}
-                  revenueBudget={parseNum(i.revenueBudget)}
+                  revenueBudget={getRevenueBudget(e.entityId)}
                   revenueDeduction={parseNum(i.revenueDeduction)}
                   showDeductionLine={e.entityCode === "VS"}
                   payrollEstimate={tTotal(e.earnedInMonth)}
@@ -668,32 +709,14 @@ function MonthPreviewContent() {
                 </tr>
               </thead>
               <tbody>
-                {otRows.map((r, idx) => (
-                  <tr
-                    key={r.key}
-                    style={
-                      idx % 2 === 0
-                        ? { backgroundColor: "#DEEBF7", printColorAdjust: "exact", WebkitPrintColorAdjust: "exact" }
-                        : undefined
-                    }
-                  >
-                    <td className="py-[1px] pr-1 whitespace-nowrap">{r.name}</td>
-                    <td className="py-[1px] pr-1">{r.id}</td>
-                    <td className="py-[1px] pr-1">{r.paylocity}</td>
-                    <td className="py-[1px] pr-1">{r.coAllocation}</td>
-                    <td className="py-[1px] pr-1">{r.split}</td>
-                    <td className="py-[1px] pr-1">{r.className}</td>
-                    <td className="py-[1px] pr-1">{r.department}</td>
-                    <td className="py-[1px] pl-1 text-right font-mono">{num1(r.otHours)}</td>
-                    <td className="py-[1px] pl-1 text-right font-mono">{num1(r.mealHours)}</td>
-                    <td className="py-[1px] pl-1 text-right font-mono">{num1(r.totalCost)}</td>
-                  </tr>
+                {otGroups.map((g) => (
+                  <GroupRows key={g.code} group={g} />
                 ))}
-                <tr className="font-bold border-t border-black">
-                  <td className="py-0.5" colSpan={7}>Grand Total</td>
-                  <td className="py-0.5 pl-1 text-right font-mono">{num1(data.org.overtimeHours)}</td>
-                  <td className="py-0.5 pl-1 text-right font-mono">{num1(data.org.mealPremiums)}</td>
-                  <td className="py-0.5 pl-1 text-right font-mono">{num1(tTotal(data.org.earnedInMonth))}</td>
+                <tr className="font-bold border-t-2 border-black">
+                  <td className="py-1" colSpan={7}>Grand Total</td>
+                  <td className="py-1 pl-1 text-right font-mono">{num1(data.org.overtimeHours)}</td>
+                  <td className="py-1 pl-1 text-right font-mono">{num1(data.org.mealPremiums)}</td>
+                  <td className="py-1 pl-1 text-right font-mono">{num1(tTotal(data.org.earnedInMonth))}</td>
                 </tr>
               </tbody>
             </table>
@@ -740,6 +763,76 @@ function MonthPreviewContent() {
         </div>
       )}
     </div>
+  );
+}
+
+interface OtRow {
+  key: string;
+  name: string;
+  id: string;
+  paylocity: string;
+  coAllocation: string;
+  split: string;
+  className: string;
+  department: string;
+  otHours: number;
+  mealHours: number;
+  totalCost: number;
+}
+
+function GroupRows({
+  group,
+}: {
+  group: {
+    code: string;
+    label: string;
+    rows: OtRow[];
+    otHours: number;
+    mealHours: number;
+    totalCost: number;
+  };
+}) {
+  const headerColor = REPORT_ENTITIES[group.code]?.color ?? "#555555";
+  return (
+    <>
+      <tr>
+        <td colSpan={10} className="pt-2 pb-0.5">
+          <span
+            className="inline-block text-white font-bold px-2 py-[1px] text-[10px]"
+            style={{ backgroundColor: headerColor, printColorAdjust: "exact", WebkitPrintColorAdjust: "exact" }}
+          >
+            {group.label}
+          </span>
+        </td>
+      </tr>
+      {group.rows.map((r, idx) => (
+        <tr
+          key={r.key}
+          style={
+            idx % 2 === 0
+              ? { backgroundColor: "#DEEBF7", printColorAdjust: "exact", WebkitPrintColorAdjust: "exact" }
+              : undefined
+          }
+        >
+          <td className="py-[1px] pr-1 whitespace-nowrap">{r.name}</td>
+          <td className="py-[1px] pr-1">{r.id}</td>
+          <td className="py-[1px] pr-1">{r.paylocity}</td>
+          <td className="py-[1px] pr-1">{r.coAllocation}</td>
+          <td className="py-[1px] pr-1">{r.split}</td>
+          <td className="py-[1px] pr-1">{r.className}</td>
+          <td className="py-[1px] pr-1">{r.department}</td>
+          <td className="py-[1px] pl-1 text-right font-mono">{num1(r.otHours)}</td>
+          <td className="py-[1px] pl-1 text-right font-mono">{num1(r.mealHours)}</td>
+          <td className="py-[1px] pl-1 text-right font-mono">{num1(r.totalCost)}</td>
+        </tr>
+      ))}
+      <tr className="font-bold border-t border-black">
+        <td className="py-0.5" colSpan={7}>{group.label} Total ({group.rows.length} employees)</td>
+        <td className="py-0.5 pl-1 text-right font-mono">{num1(group.otHours)}</td>
+        <td className="py-0.5 pl-1 text-right font-mono">{num1(group.mealHours)}</td>
+        <td className="py-0.5 pl-1 text-right font-mono">{num1(group.totalCost)}</td>
+      </tr>
+    </>
   );
 }
 
