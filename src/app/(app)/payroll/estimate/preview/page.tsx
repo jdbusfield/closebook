@@ -759,21 +759,31 @@ function MonthPreviewContent() {
             </table>
           </section>
 
-          {/* ══ Page 3: OT Hours by Class ══ */}
+          {/* ══ Page 3: OT Hours by Class (prints landscape) ══ */}
           {matrix && (
-            <section className="pt-6 print:pt-0">
+            <section className="pt-6 print:pt-0 ot-matrix-page">
+              <style>{`
+                @media print {
+                  .ot-matrix-page { page: otmatrix; }
+                }
+                @page otmatrix {
+                  size: letter landscape;
+                  margin: 0.3in 0.4in;
+                }
+              `}</style>
               <h2 className="font-bold text-sm mb-2">
                 Overtime Hours by Class — {monthLabel} {year}
               </h2>
-              <table className="text-[10.5px] leading-snug">
+              <div className="overflow-x-auto print:overflow-visible">
+              <table className="w-full text-[9.5px] leading-snug">
                 <thead>
-                  <tr className="font-bold border-b border-black text-left">
-                    <th className="py-1 pr-3">Row Labels</th>
+                  <tr className="font-bold border-b border-black text-left align-bottom">
+                    <th className="py-1 pr-2 whitespace-nowrap">Row Labels</th>
                     {matrix.classCols.map((c) => (
-                      <th key={c} className="py-1 px-2 text-right whitespace-nowrap">{c}</th>
+                      <th key={c} className="py-1 px-1 text-right break-words max-w-[70px]">{c}</th>
                     ))}
-                    <th className="py-1 px-2 text-right border-l">Total OT</th>
-                    <th className="py-1 px-2 text-right">Total Cost</th>
+                    <th className="py-1 px-1 text-right border-l whitespace-nowrap">Total OT</th>
+                    <th className="py-1 px-1 text-right whitespace-nowrap">Total Cost</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -784,17 +794,18 @@ function MonthPreviewContent() {
                     className="font-bold border-t border-black"
                     style={{ backgroundColor: "#DEEBF7", printColorAdjust: "exact", WebkitPrintColorAdjust: "exact" }}
                   >
-                    <td className="py-1 pr-3">Grand Total</td>
+                    <td className="py-1 pr-2">Grand Total</td>
                     {matrix.classCols.map((c) => (
-                      <td key={c} className="py-1 px-2 text-right font-mono">
+                      <td key={c} className="py-1 px-1 text-right font-mono">
                         {num1(matrix.classTotals[c] ?? 0)}
                       </td>
                     ))}
-                    <td className="py-1 px-2 text-right font-mono border-l">{num1(data.org.overtimeHours)}</td>
-                    <td className="py-1 px-2 text-right font-mono">{num1(tTotal(data.org.earnedInMonth))}</td>
+                    <td className="py-1 px-1 text-right font-mono border-l">{num1(data.org.overtimeHours)}</td>
+                    <td className="py-1 px-1 text-right font-mono">{num1(tTotal(data.org.earnedInMonth))}</td>
                   </tr>
                 </tbody>
               </table>
+              </div>
             </section>
           )}
         </div>
@@ -894,25 +905,25 @@ function EntityMatrixRows({
   return (
     <>
       <tr className="font-bold border-t">
-        <td className="py-1 pr-3">{ent.label}</td>
+        <td className="py-1 pr-2 whitespace-nowrap">{ent.label}</td>
         {classCols.map((c) => (
-          <td key={c} className="py-1 px-2 text-right font-mono">{num1(ent.otByClass[c] ?? 0)}</td>
+          <td key={c} className="py-1 px-1 text-right font-mono">{num1(ent.otByClass[c] ?? 0)}</td>
         ))}
-        <td className="py-1 px-2 text-right font-mono border-l">{num1(ent.totalOt)}</td>
-        <td className="py-1 px-2 text-right font-mono">{num1(ent.totalCost)}</td>
+        <td className="py-1 px-1 text-right font-mono border-l">{num1(ent.totalOt)}</td>
+        <td className="py-1 px-1 text-right font-mono">{num1(ent.totalCost)}</td>
       </tr>
       {deptNames.map((d) => {
         const row = ent.depts[d];
         return (
           <tr key={d}>
-            <td className="py-[2px] pr-3 pl-5">{d}</td>
+            <td className="py-[2px] pr-2 pl-4 whitespace-nowrap">{d}</td>
             {classCols.map((c) => (
-              <td key={c} className="py-[2px] px-2 text-right font-mono">
+              <td key={c} className="py-[2px] px-1 text-right font-mono">
                 {num1(row.otByClass[c] ?? 0)}
               </td>
             ))}
-            <td className="py-[2px] px-2 text-right font-mono border-l">{num1(row.totalOt)}</td>
-            <td className="py-[2px] px-2 text-right font-mono">{num1(row.totalCost)}</td>
+            <td className="py-[2px] px-1 text-right font-mono border-l">{num1(row.totalOt)}</td>
+            <td className="py-[2px] px-1 text-right font-mono">{num1(row.totalCost)}</td>
           </tr>
         );
       })}
