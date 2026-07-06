@@ -43,6 +43,7 @@ import {
   AlertTriangle,
   Lock,
   Clock,
+  Download,
 } from "lucide-react";
 
 // ── Types (mirror /api/paylocity/monthly-estimate) ──
@@ -56,6 +57,22 @@ interface AmountTriple {
 interface ClassSplit {
   className: string;
   pct: number;
+}
+
+interface EmployeeSlice {
+  entityId: string;
+  entityCode: string;
+  entityName: string;
+  department: string;
+  weight: number;
+  startDate: string;
+  endDate: string;
+  classSplits: ClassSplit[];
+  earnedInMonth: AmountTriple;
+  overtimeHours: number;
+  doubletimeHours: number;
+  mealPremiums: number;
+  premiumPayCost: number;
 }
 
 interface ClassBridge {
@@ -102,6 +119,8 @@ interface EmployeeBridge {
   allocationWeight?: number;
   /** On entity-grouped rows: class % splits in effect for this row's slice. */
   classSplits?: ClassSplit[];
+  /** Full day-weighted allocation slices for this employee. */
+  slices?: EmployeeSlice[];
 }
 
 interface EntityBridge {
@@ -314,6 +333,7 @@ export default function OrgMonthlyEstimatePage() {
   const [data, setData] = useState<OrgEstimate | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedEmp, setSelectedEmp] = useState<EmployeeBridge | null>(null);
   const [groupMode, setGroupMode] = useState<"allocated" | "paying">("allocated");
@@ -355,6 +375,20 @@ export default function OrgMonthlyEstimatePage() {
     }
   };
 
+  const handleExport = async () => {
+    if (!data) return;
+    setExporting(true);
+    setError(null);
+    try {
+      const { exportEstimateXlsx } = await import("./export-xlsx");
+      await exportEstimateXlsx(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Export failed");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const headline = data ? total(data.org.earnedInMonth) : 0;
   const groups = data ? (groupMode === "paying" ? data.payingEntities : data.entities) : [];
 
@@ -392,6 +426,15 @@ export default function OrgMonthlyEstimatePage() {
           <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing}>
             {syncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
             {syncing ? "Syncing..." : "Sync"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExport}
+            disabled={exporting || loading || !data}
+          >
+            {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+            {exporting ? "Exporting..." : "Export"}
           </Button>
         </div>
       </div>
