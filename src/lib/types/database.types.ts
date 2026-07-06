@@ -4681,6 +4681,45 @@ export type Database = {
           }
         ]
       }
+      payroll_preview_inputs: {
+        Row: {
+          id: string
+          year: number
+          month: number
+          entity_id: string
+          revenue_estimate: number | null
+          revenue_budget: number | null
+          revenue_deduction: number | null
+          payroll_budget: number | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          year: number
+          month: number
+          entity_id: string
+          revenue_estimate?: number | null
+          revenue_budget?: number | null
+          revenue_deduction?: number | null
+          payroll_budget?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          year?: number
+          month?: number
+          entity_id?: string
+          revenue_estimate?: number | null
+          revenue_budget?: number | null
+          revenue_deduction?: number | null
+          payroll_budget?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       employee_allocations: {
         Row: {
           id: string

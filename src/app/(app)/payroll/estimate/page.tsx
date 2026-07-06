@@ -44,6 +44,7 @@ import {
   Lock,
   Clock,
   Download,
+  FileText,
 } from "lucide-react";
 
 // ── Types (mirror /api/paylocity/monthly-estimate) ──
@@ -436,6 +437,12 @@ export default function OrgMonthlyEstimatePage() {
             {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
             {exporting ? "Exporting..." : "Export"}
           </Button>
+          <Link href={`/payroll/estimate/preview?year=${year}&month=${month}`}>
+            <Button variant="outline" size="sm">
+              <FileText className="mr-2 h-4 w-4" />
+              Preview Report
+            </Button>
+          </Link>
         </div>
       </div>
 
