@@ -14,6 +14,7 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   MousePointerClick,
+  Clapperboard,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -69,6 +70,27 @@ export function StagePill({ status }: { status: string }) {
     >
       <span className="size-1.5 rounded-full" style={{ background: s.color }} />
       {s.label}
+    </span>
+  );
+}
+
+// Which marketing site a lead came from. Hollywood Depot (production equipment)
+// leads share the HDR board with Site Services (bathroom trailer) leads, so the
+// production ones get a loud amber chip to keep the two businesses unmistakable.
+export function BrandBadge({
+  source,
+  className = "",
+}: {
+  source: string | null | undefined;
+  className?: string;
+}) {
+  if (source !== "hollywooddepot") return null;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-300 ${className}`}
+      title="This lead came from hollywooddepot.com (production equipment rentals)."
+    >
+      <Clapperboard className="size-3" /> Hollywood Depot
     </span>
   );
 }

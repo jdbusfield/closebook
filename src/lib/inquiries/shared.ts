@@ -18,6 +18,16 @@ export const VERSATILE_ENTITY_ID =
 export const BRAND_ENTITY: Record<string, { entityId: string; source: string }> = {
   hdr: { entityId: HDR_ENTITY_ID, source: "website" },
   versatile: { entityId: VERSATILE_ENTITY_ID, source: "versatile" },
+  // hollywooddepot.com (production equipment rentals) shares the HDR entity but
+  // keeps its own source tag so the board can badge + filter its leads.
+  hollywooddepot: { entityId: HDR_ENTITY_ID, source: "hollywooddepot" },
+};
+
+// Friendly display names for lead sources (board badge + drawer).
+export const SOURCE_LABELS: Record<string, string> = {
+  website: "Site Services site",
+  hollywooddepot: "Hollywood Depot site",
+  versatile: "Versatile site",
 };
 
 export function resolveBrand(brand?: string | null): { entityId: string; source: string } {

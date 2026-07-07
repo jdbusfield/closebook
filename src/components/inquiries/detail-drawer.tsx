@@ -36,6 +36,7 @@ import {
   DueBadge,
   ActivityIcon,
   GoogleAdBadge,
+  BrandBadge,
   hexA,
 } from "@/components/inquiries/atoms";
 import { TemplatePicker } from "@/components/inquiries/template-picker";
@@ -66,6 +67,7 @@ import {
   messageDate,
   messageSide,
   isReservationRequest,
+  SOURCE_LABELS,
 } from "@/lib/inquiries/shared";
 
 export interface DrawerCallbacks {
@@ -633,7 +635,8 @@ export function ContactGrid({
           k="Source"
           v={
             <span className="inline-flex items-center gap-1.5">
-              {inquiry.source || "—"}
+              {(inquiry.source && SOURCE_LABELS[inquiry.source]) || inquiry.source || "—"}
+              <BrandBadge source={inquiry.source} />
               <GoogleAdBadge gclid={inquiry.gclid} />
             </span>
           }

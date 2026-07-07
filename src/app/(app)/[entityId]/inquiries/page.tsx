@@ -14,6 +14,7 @@ import {
   LastTouched,
   CorrespondenceBadge,
   GoogleAdBadge,
+  BrandBadge,
 } from "@/components/inquiries/atoms";
 import {
   type Inquiry,
@@ -121,8 +122,9 @@ function DealCard({
           </span>
         </div>
       )}
-      {inq.gclid && (
-        <div className="mt-1.5">
+      {(inq.gclid || inq.source === "hollywooddepot") && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <BrandBadge source={inq.source} />
           <GoogleAdBadge gclid={inq.gclid} />
         </div>
       )}
@@ -156,6 +158,9 @@ export default function InquiriesPipelinePage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [emailId, setEmailId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<InquiryStatus | null>(null);
+  // Which marketing site's leads to show. Only surfaces once Hollywood Depot
+  // leads exist on this board, so other entities' boards stay uncluttered.
+  const [sourceFilter, setSourceFilter] = useState<"all" | "hss" | "hwd">("all");
   const draggedRef = useRef(false);
 
   const callbacks: DrawerCallbacks = {
@@ -184,6 +189,17 @@ export default function InquiriesPipelinePage() {
   const selected = data.inquiries.find((i) => i.id === selectedId) ?? null;
   const emailInquiry = data.inquiries.find((i) => i.id === emailId) ?? null;
 
+  const hasHwd = useMemo(
+    () => data.inquiries.some((i) => i.source === "hollywooddepot"),
+    [data.inquiries]
+  );
+  const matchesSource = (inq: Inquiry) =>
+    sourceFilter === "all"
+      ? true
+      : sourceFilter === "hwd"
+        ? inq.source === "hollywooddepot"
+        : inq.source !== "hollywooddepot";
+
   const { openCount, overdueCount } = useMemo(() => {
     const open = data.inquiries.filter((i) => isOpenStatus(i.status)).length;
     const overdue = data.inquiries.reduce(
@@ -208,12 +224,39 @@ export default function InquiriesPipelinePage() {
       </div>
       <SectionTabs entityId={entityId} openCount={openCount} overdueCount={overdueCount} />
 
+      {hasHwd && (
+        <div className="flex items-center gap-1 self-start rounded-lg bg-muted p-1">
+          {(
+            [
+              ["all", "All leads"],
+              ["hss", "Site Services"],
+              ["hwd", "Hollywood Depot"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setSourceFilter(key)}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                sourceFilter === key
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {data.loading ? (
         <div className="text-sm text-muted-foreground">Loading…</div>
       ) : (
         <div className="flex flex-1 gap-3 overflow-x-auto pb-2">
           {STAGES.map((stage) => {
-            const items = data.inquiries.filter((i) => i.status === stage.key);
+            const items = data.inquiries.filter(
+              (i) => i.status === stage.key && matchesSource(i)
+            );
             const colValue = items.reduce((s, i) => s + (i.estimated_value || 0), 0);
             const isOver = dragOverCol === stage.key;
             return (

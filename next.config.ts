@@ -18,7 +18,7 @@ const nextConfig: NextConfig = {
           {
             key: "Content-Security-Policy",
             value:
-              "frame-ancestors 'self' https://rentalworks-dashboard.vercel.app https://hdrsiteservices.com https://www.hdrsiteservices.com https://versatilestudios.com https://www.versatilestudios.com https://versatile-studios.jd-023.workers.dev https://*.vercel.app",
+              "frame-ancestors 'self' https://rentalworks-dashboard.vercel.app https://hdrsiteservices.com https://www.hdrsiteservices.com https://versatilestudios.com https://www.versatilestudios.com https://versatile-studios.jd-023.workers.dev https://hollywooddepot.com https://www.hollywooddepot.com https://hollywood-depot.jd-023.workers.dev https://*.vercel.app",
           },
         ],
       },
