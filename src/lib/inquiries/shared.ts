@@ -700,6 +700,7 @@ export interface ThreadMessage {
   direction: string;
   kind: string | null;
   subject: string | null;
+  from_addr?: string | null;
 }
 
 // Strip one leading Re:/Fwd: and surrounding whitespace so a forwarded echo and
@@ -707,6 +708,14 @@ export interface ThreadMessage {
 function normalizeSubject(s: string | null | undefined): string {
   return (s ?? "").toLowerCase().replace(/^\s*(re|fwd|fw)\s*:\s*/i, "").trim();
 }
+
+/** True when the raw subject carries a human reply/forward prefix (Re:/Fwd:). */
+function hasReplyPrefix(s: string | null | undefined): boolean {
+  return /^\s*(re|fwd|fw)\s*:/i.test(s ?? "");
+}
+
+/** The automation sender for site-generated inquiry mail. */
+const AUTOMATION_FROM_RE = /inquiries@hdrsiteservices\.com/i;
 
 // Returns the messages that belong in the communication thread, dropping the
 // automated "thank you" autoreply and collapsing the duplicate inquiry
@@ -729,7 +738,13 @@ export function visibleThreadMessages<T extends ThreadMessage>(messages: T[]): T
     const subj = normalizeSubject(m.subject);
     if (m.kind === "customer_autoreply") return false;
     if (m.kind === "reply" && m.direction === "outbound" && autoreplySubjects.has(subj)) {
-      return false;
+      // Hide only the automation's own echo of the autoreply (same subject with
+      // no Re:/Fwd: prefix, or sent by the automation address). A rep's GENUINE
+      // reply in the autoreply thread ("Re: Thanks for your HDR inquiry ...")
+      // shares the normalized subject but must stay visible.
+      const isAutomationEcho =
+        AUTOMATION_FROM_RE.test(m.from_addr ?? "") || !hasReplyPrefix(m.subject);
+      if (isAutomationEcho) return false;
     }
     if (m.kind === "internal_notification" && outboundReplySubjects.has(subj)) {
       return false;
