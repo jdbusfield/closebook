@@ -49,6 +49,14 @@ export interface NormalizedEmail {
   directionHint?: Direction | null;
   /** Which brand's CRM this mail belongs to. Defaults to HDR. */
   entityId?: string | null;
+  /** Second brand to try when the first has no matching inquiry. */
+  fallbackEntityId?: string | null;
+  /**
+   * What to do with mail that matches no inquiry in any tried brand:
+   * "record" (default) keeps it for Inbox triage; "skip" drops it — used for
+   * personal mailboxes watched only to catch brand mail.
+   */
+  unmatchedPolicy?: "record" | "skip";
 }
 
 export interface IngestResult {
@@ -58,7 +66,7 @@ export interface IngestResult {
   direction: Direction | null;
   deduped: boolean;
   /** Set when the message was intentionally not recorded. */
-  skipped?: "internal" | "empty";
+  skipped?: "internal" | "empty" | "unmatched";
   error?: string;
 }
 
@@ -138,68 +146,95 @@ export async function ingestEmailMessage(
   }
 
   // --- Match to an inquiry --------------------------------------------------
-  // Priority: explicit HDR-XXXXX reference in the subject (canonical) ->
-  // Gmail thread stickiness (a reply that lost the tag still lands right) ->
-  // most-recent open inquiry whose customer email is a participant.
+  // Tried per brand, primary entity first then the fallback (a mailbox can
+  // serve both brands). Within a brand the priority is: explicit HDR-/VS-XXXXX
+  // reference in the subject (canonical) -> Gmail thread stickiness (a reply
+  // that lost the tag still lands right) -> most-recent open inquiry whose
+  // customer email is a participant.
   let inquiry: InquiryRow | null = null;
+  let matchedEntityId = entityId;
 
   const reference = extractReference(subject);
-  if (reference) {
-    const { data } = await supabase
-      .from("rental_inquiries")
-      .select("id, email, status")
-      .eq("entity_id", entityId)
-      .eq("reference", reference)
-      .maybeSingle();
-    inquiry = data ?? null;
-  }
+  const tryEntities = [entityId, input.fallbackEntityId].filter(
+    (e, i, arr): e is string => !!e && arr.indexOf(e) === i
+  );
 
-  if (!inquiry && input.gmailThreadId) {
-    const { data: sibling } = await supabase
-      .from("rental_inquiry_messages")
-      .select("inquiry_id")
-      .eq("gmail_thread_id", input.gmailThreadId)
-      .not("inquiry_id", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (sibling?.inquiry_id) {
+  for (const tryEntity of tryEntities) {
+    if (reference) {
       const { data } = await supabase
         .from("rental_inquiries")
         .select("id, email, status")
-        .eq("entity_id", entityId)
-        .eq("id", sibling.inquiry_id)
+        .eq("entity_id", tryEntity)
+        .eq("reference", reference)
         .maybeSingle();
       inquiry = data ?? null;
     }
-  }
 
-  if (!inquiry && participants.length > 0) {
-    // Direct, case-insensitive lookup per external participant — open deals
-    // first, then booked ones (a customer emailing about a confirmed rental
-    // still belongs on that deal). No recency cap: an old-but-open inquiry
-    // must still match.
-    const externals = [...new Set(participants.filter((p) => !isStaff(p)))];
-    outer: for (const statuses of [OPEN_INQUIRY_STATUSES, BOOKED_STATUSES]) {
-      for (const addr of externals) {
-        // ilike = case-insensitive equality here, so escape its wildcards
-        // (emails legitimately contain "_").
-        const pattern = addr.replace(/[\\%_]/g, "\\$&");
+    if (!inquiry && input.gmailThreadId) {
+      const { data: sibling } = await supabase
+        .from("rental_inquiry_messages")
+        .select("inquiry_id")
+        .eq("gmail_thread_id", input.gmailThreadId)
+        .not("inquiry_id", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (sibling?.inquiry_id) {
         const { data } = await supabase
           .from("rental_inquiries")
           .select("id, email, status")
-          .eq("entity_id", entityId)
-          .in("status", statuses)
-          .ilike("email", pattern)
-          .order("last_activity_at", { ascending: false })
-          .limit(1)
+          .eq("entity_id", tryEntity)
+          .eq("id", sibling.inquiry_id)
           .maybeSingle();
-        if (data) {
-          inquiry = data;
-          break outer;
+        inquiry = data ?? null;
+      }
+    }
+
+    if (!inquiry && participants.length > 0) {
+      // Direct, case-insensitive lookup per external participant — open deals
+      // first, then booked ones (a customer emailing about a confirmed rental
+      // still belongs on that deal). No recency cap: an old-but-open inquiry
+      // must still match.
+      const externals = [...new Set(participants.filter((p) => !isStaff(p)))];
+      outer: for (const statuses of [OPEN_INQUIRY_STATUSES, BOOKED_STATUSES]) {
+        for (const addr of externals) {
+          // ilike = case-insensitive equality here, so escape its wildcards
+          // (emails legitimately contain "_").
+          const pattern = addr.replace(/[\\%_]/g, "\\$&");
+          const { data } = await supabase
+            .from("rental_inquiries")
+            .select("id, email, status")
+            .eq("entity_id", tryEntity)
+            .in("status", statuses)
+            .ilike("email", pattern)
+            .order("last_activity_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (data) {
+            inquiry = data;
+            break outer;
+          }
         }
       }
     }
+
+    if (inquiry) {
+      matchedEntityId = tryEntity;
+      break;
+    }
+  }
+
+  // Personal mailboxes are watched only to catch brand mail — anything that
+  // matched no inquiry in any tried brand stays out of the CRM entirely.
+  if (!inquiry && input.unmatchedPolicy === "skip") {
+    return {
+      ok: true,
+      matched: false,
+      inquiryId: null,
+      direction: null,
+      deduped: false,
+      skipped: "unmatched",
+    };
   }
 
   // --- Classify direction ---------------------------------------------------
@@ -226,7 +261,7 @@ export async function ingestEmailMessage(
     .from("rental_inquiry_messages")
     .insert({
       inquiry_id: inquiry?.id ?? null,
-      entity_id: entityId,
+      entity_id: matchedEntityId,
       direction,
       channel: "email",
       kind: "reply",

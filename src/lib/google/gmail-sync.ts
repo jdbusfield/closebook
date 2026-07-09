@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ingestEmailMessage } from "@/lib/inquiries/ingest-message";
-import { entityForMailbox } from "@/lib/inquiries/shared";
+import { mailboxRouting } from "@/lib/inquiries/shared";
 import {
   HistoryGoneError,
   getMessage,
@@ -73,6 +73,12 @@ async function ingestParsed(
 ) {
   if (parsed.isDraft) return; // never record draft autosaves
   counts.processed++;
+  const routing = mailboxRouting(mailbox);
+  // Mail addressed to/from a versatilestudios.com address (e.g. the rentals@
+  // distribution group) is brand mail even when no inquiry exists yet — keep it
+  // for Inbox triage rather than applying the personal-mailbox skip.
+  const versatileParticipant = [parsed.fromAddr, ...parsed.toAddrs, ...parsed.ccAddrs]
+    .some((a) => (a ?? "").toLowerCase().endsWith("@versatilestudios.com"));
   const result = await ingestEmailMessage({
     fromAddr: parsed.fromAddr,
     toAddrs: parsed.toAddrs,
@@ -85,8 +91,10 @@ async function ingestParsed(
     receivedAt: parsed.internalDate,
     sentAt: parsed.isSent ? parsed.internalDate : null,
     directionHint: parsed.isSent ? "outbound" : "inbound",
-    // Mail in a Versatile mailbox belongs to Versatile inquiries; HDR otherwise.
-    entityId: entityForMailbox(mailbox),
+    entityId: routing.entityId,
+    fallbackEntityId: routing.fallbackEntityId,
+    unmatchedPolicy:
+      routing.recordUnmatched || versatileParticipant ? "record" : "skip",
   });
   if (result.deduped) counts.deduped++;
   else if (result.skipped) counts.skipped++;

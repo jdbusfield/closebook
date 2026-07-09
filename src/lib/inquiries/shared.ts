@@ -35,13 +35,36 @@ export function resolveBrand(brand?: string | null): { entityId: string; source:
   return BRAND_ENTITY[key] ?? BRAND_ENTITY.hdr;
 }
 
-// Which brand's CRM a watched Gmail mailbox feeds. rentals@versatilestudios.com
-// captures onto Versatile inquiries; every hdrsiteservices.com mailbox (and any
-// unknown domain) stays on HDR, matching the pipeline's original behavior.
-export function entityForMailbox(addr: string | null | undefined): string {
+// Which brand's CRM a watched Gmail mailbox feeds, and how to treat mail that
+// matches no inquiry. Matching tries entityId first, then fallbackEntityId, so
+// one mailbox can serve both brands (e.g. jd@avonrents.com receives Versatile's
+// rentals@ group mail alongside unrelated Avon business mail).
+export interface MailboxRouting {
+  /** Brand tried first when matching this mailbox's mail to an inquiry. */
+  entityId: string;
+  /** Brand tried second; a message matching neither stays with entityId. */
+  fallbackEntityId: string | null;
+  /**
+   * Record mail that matches no inquiry in either brand? Brand-owned mailboxes
+   * keep it (it feeds the Inbox triage view). Personal mailboxes watched only
+   * to catch brand mail drop it so unrelated correspondence never enters the CRM.
+   */
+  recordUnmatched: boolean;
+}
+
+export function mailboxRouting(addr: string | null | undefined): MailboxRouting {
   const at = (addr ?? "").lastIndexOf("@");
   const domain = at >= 0 ? (addr ?? "").slice(at + 1).trim().toLowerCase() : "";
-  return domain === "versatilestudios.com" ? VERSATILE_ENTITY_ID : HDR_ENTITY_ID;
+  if (domain === "versatilestudios.com") {
+    return { entityId: VERSATILE_ENTITY_ID, fallbackEntityId: HDR_ENTITY_ID, recordUnmatched: true };
+  }
+  // jd@avonrents.com is watched as the delivery point for the rentals@
+  // versatilestudios.com distribution group — Versatile-first, and unmatched
+  // personal/Avon mail is skipped.
+  if (domain === "avonrents.com") {
+    return { entityId: VERSATILE_ENTITY_ID, fallbackEntityId: HDR_ENTITY_ID, recordUnmatched: false };
+  }
+  return { entityId: HDR_ENTITY_ID, fallbackEntityId: VERSATILE_ENTITY_ID, recordUnmatched: true };
 }
 
 // ---------------------------------------------------------------------------
