@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ingestEmailMessage } from "@/lib/inquiries/ingest-message";
+import { entityForMailbox } from "@/lib/inquiries/shared";
 import {
   HistoryGoneError,
   getMessage,
@@ -65,7 +66,11 @@ async function fetchMessage(
 }
 
 /** Ingest one parsed message; returns how it was counted. */
-async function ingestParsed(parsed: ParsedGmailMessage, counts: SyncCounts) {
+async function ingestParsed(
+  mailbox: string,
+  parsed: ParsedGmailMessage,
+  counts: SyncCounts
+) {
   if (parsed.isDraft) return; // never record draft autosaves
   counts.processed++;
   const result = await ingestEmailMessage({
@@ -80,6 +85,8 @@ async function ingestParsed(parsed: ParsedGmailMessage, counts: SyncCounts) {
     receivedAt: parsed.internalDate,
     sentAt: parsed.isSent ? parsed.internalDate : null,
     directionHint: parsed.isSent ? "outbound" : "inbound",
+    // Mail in a Versatile mailbox belongs to Versatile inquiries; HDR otherwise.
+    entityId: entityForMailbox(mailbox),
   });
   if (result.deduped) counts.deduped++;
   else if (result.skipped) counts.skipped++;
@@ -96,7 +103,7 @@ async function processHistory(
   for (const id of ids) {
     const parsed = await fetchMessage(mailbox, id);
     if (!parsed) continue;
-    await ingestParsed(parsed, counts);
+    await ingestParsed(mailbox, parsed, counts);
   }
   return counts;
 }
@@ -116,7 +123,7 @@ export async function backfillMailbox(
   for (const id of ids) {
     const parsed = await fetchMessage(mailbox, id);
     if (!parsed) continue;
-    await ingestParsed(parsed, counts);
+    await ingestParsed(mailbox, parsed, counts);
   }
   return counts;
 }

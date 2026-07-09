@@ -35,6 +35,15 @@ export function resolveBrand(brand?: string | null): { entityId: string; source:
   return BRAND_ENTITY[key] ?? BRAND_ENTITY.hdr;
 }
 
+// Which brand's CRM a watched Gmail mailbox feeds. rentals@versatilestudios.com
+// captures onto Versatile inquiries; every hdrsiteservices.com mailbox (and any
+// unknown domain) stays on HDR, matching the pipeline's original behavior.
+export function entityForMailbox(addr: string | null | undefined): string {
+  const at = (addr ?? "").lastIndexOf("@");
+  const domain = at >= 0 ? (addr ?? "").slice(at + 1).trim().toLowerCase() : "";
+  return domain === "versatilestudios.com" ? VERSATILE_ENTITY_ID : HDR_ENTITY_ID;
+}
+
 // ---------------------------------------------------------------------------
 // Pipeline stages
 // ---------------------------------------------------------------------------
@@ -406,6 +415,7 @@ export const STAFF_EMAIL_DOMAINS = new Set([
   "hollywooddepot.com",
   "hollywooddepotrentals.com",
   "avonrents.com",
+  "versatilestudios.com",
 ]);
 
 function emailDomain(addr: string | null | undefined): string | null {
@@ -597,7 +607,7 @@ export function isAutomatedIntakeMail<
   if (m.direction === "outbound" && automatedSubjects.has(normalizeSubject(m.subject))) {
     const isHumanReply =
       /^\s*(re|fwd|fw)\s*:/i.test(m.subject ?? "") &&
-      !(m.from_addr ?? "").toLowerCase().includes("inquiries@");
+      !/(inquiries|leads)@/i.test(m.from_addr ?? "");
     return !isHumanReply;
   }
   return false;
@@ -726,8 +736,9 @@ function hasReplyPrefix(s: string | null | undefined): boolean {
   return /^\s*(re|fwd|fw)\s*:/i.test(s ?? "");
 }
 
-/** The automation sender for site-generated inquiry mail. */
-const AUTOMATION_FROM_RE = /inquiries@hdrsiteservices\.com/i;
+/** The automation senders for site-generated inquiry mail (HDR uses inquiries@,
+ * the Versatile site alerts send from leads@). */
+const AUTOMATION_FROM_RE = /(inquiries|leads)@hdrsiteservices\.com/i;
 
 // Returns the messages that belong in the communication thread, dropping the
 // automated "thank you" autoreply and collapsing the duplicate inquiry
@@ -765,9 +776,10 @@ export function visibleThreadMessages<T extends ThreadMessage>(messages: T[]): T
   });
 }
 
-// Inquiry references look like "HDR-AB12C". Used to match inbound replies
-// (the reference is carried in every email subject) back to an inquiry.
-const REFERENCE_RE = /\bHDR-[A-Z0-9]{3,8}\b/i;
+// Inquiry references look like "HDR-AB12C" (HDR) or "VS-AB12C" (Versatile).
+// Used to match inbound replies (the reference is carried in every email
+// subject) back to an inquiry.
+const REFERENCE_RE = /\b(?:HDR|VS)-[A-Z0-9]{3,8}\b/i;
 
 export function extractReference(subject: string | null | undefined): string | null {
   if (!subject) return null;

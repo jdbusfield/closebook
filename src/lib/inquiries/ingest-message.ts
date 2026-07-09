@@ -17,7 +17,9 @@ import {
 //     Cloudflare/Postmark inbound parse, manual test posts)
 //   * /api/webhooks/gmail          — the Gmail API + Pub/Sub real-time pipeline
 //
-// Everything here is HDR-scoped and runs through the service-role admin client
+// Brand-scoped: the caller passes the entity the mail belongs to (derived from
+// the watched mailbox — see entityForMailbox); it defaults to HDR so existing
+// callers keep their behavior. Runs through the service-role admin client
 // (the website ingest + email webhooks bypass RLS by design).
 // ============================================================================
 
@@ -45,6 +47,8 @@ export interface NormalizedEmail {
    * domain is otherwise authoritative (mirrors shared.ts read-time correction).
    */
   directionHint?: Direction | null;
+  /** Which brand's CRM this mail belongs to. Defaults to HDR. */
+  entityId?: string | null;
 }
 
 export interface IngestResult {
@@ -80,6 +84,7 @@ export async function ingestEmailMessage(
 ): Promise<IngestResult> {
   const supabase = createAdminClient();
 
+  const entityId = input.entityId || HDR_ENTITY_ID;
   const fromAddr = input.fromAddr;
   const toAddrs = input.toAddrs ?? [];
   const ccAddrs = input.ccAddrs ?? [];
@@ -143,7 +148,7 @@ export async function ingestEmailMessage(
     const { data } = await supabase
       .from("rental_inquiries")
       .select("id, email, status")
-      .eq("entity_id", HDR_ENTITY_ID)
+      .eq("entity_id", entityId)
       .eq("reference", reference)
       .maybeSingle();
     inquiry = data ?? null;
@@ -162,7 +167,7 @@ export async function ingestEmailMessage(
       const { data } = await supabase
         .from("rental_inquiries")
         .select("id, email, status")
-        .eq("entity_id", HDR_ENTITY_ID)
+        .eq("entity_id", entityId)
         .eq("id", sibling.inquiry_id)
         .maybeSingle();
       inquiry = data ?? null;
@@ -183,7 +188,7 @@ export async function ingestEmailMessage(
         const { data } = await supabase
           .from("rental_inquiries")
           .select("id, email, status")
-          .eq("entity_id", HDR_ENTITY_ID)
+          .eq("entity_id", entityId)
           .in("status", statuses)
           .ilike("email", pattern)
           .order("last_activity_at", { ascending: false })
@@ -221,7 +226,7 @@ export async function ingestEmailMessage(
     .from("rental_inquiry_messages")
     .insert({
       inquiry_id: inquiry?.id ?? null,
-      entity_id: HDR_ENTITY_ID,
+      entity_id: entityId,
       direction,
       channel: "email",
       kind: "reply",
