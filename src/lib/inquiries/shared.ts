@@ -580,13 +580,25 @@ function automatedIntakeSubjects<
 }
 
 export function isAutomatedIntakeMail<
-  T extends { kind: string | null; direction?: string; subject: string | null }
+  T extends {
+    kind: string | null;
+    direction?: string;
+    subject: string | null;
+    from_addr?: string | null;
+  }
 >(m: T, automatedSubjects: Set<string>): boolean {
   if (m.kind === "internal_notification" || m.kind === "customer_autoreply") return true;
   // The forwarded echo of those mails reappears as an outbound message with the
-  // same subject — not something a human on our side actually wrote.
+  // same subject — not something a human on our side actually wrote. But a rep
+  // replying to the lead notification ALSO inherits that subject, just with a
+  // "Re:" prefix — that IS genuine correspondence. So an outbound subject-match
+  // only counts as an echo when it lacks a reply prefix or was sent by the
+  // automated inquiries@ sender.
   if (m.direction === "outbound" && automatedSubjects.has(normalizeSubject(m.subject))) {
-    return true;
+    const isHumanReply =
+      /^\s*(re|fwd|fw)\s*:/i.test(m.subject ?? "") &&
+      !(m.from_addr ?? "").toLowerCase().includes("inquiries@");
+    return !isHumanReply;
   }
   return false;
 }
