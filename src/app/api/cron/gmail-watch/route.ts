@@ -42,7 +42,11 @@ export async function GET(request: Request) {
       ? Math.min(Math.floor(requestedDays), MAX_BACKFILL_DAYS)
       : DEFAULT_BACKFILL_DAYS;
 
-  const mailboxes = watchedMailboxes();
+  // ?mailbox=<addr> limits the run to one watched mailbox — used for manual
+  // deep backfills that would blow the function budget if every mailbox's
+  // sweep ran first. Must still be on the watched list.
+  const only = url.searchParams.get("mailbox")?.trim().toLowerCase() || null;
+  const mailboxes = watchedMailboxes().filter((m) => !only || m === only);
   if (mailboxes.length === 0) {
     return NextResponse.json({ ok: true, message: "No watched mailboxes configured" });
   }
