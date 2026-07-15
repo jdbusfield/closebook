@@ -588,6 +588,7 @@ export type Database = {
           entity_id: string
           inquiry_id: string
           funnel_id: string
+          quote_id: string | null
           status: string
           enrolled_at: string
           enrolled_by: string | null
@@ -603,6 +604,7 @@ export type Database = {
           entity_id: string
           inquiry_id: string
           funnel_id: string
+          quote_id?: string | null
           status?: string
           enrolled_at?: string
           enrolled_by?: string | null
@@ -618,6 +620,7 @@ export type Database = {
           entity_id?: string
           inquiry_id?: string
           funnel_id?: string
+          quote_id?: string | null
           status?: string
           enrolled_at?: string
           enrolled_by?: string | null

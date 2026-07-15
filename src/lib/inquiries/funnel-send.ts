@@ -12,7 +12,9 @@ import { Resend } from "resend";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import {
   type Inquiry,
+  type InquiryQuote,
   isOpenStatus,
+  quoteEmailBlock,
 } from "@/lib/inquiries/shared";
 import { brandOf, renderTemplate, type MessageTemplate } from "@/lib/inquiries/templates";
 import { publicResourceUrl } from "@/lib/inquiries/resources";
@@ -34,6 +36,7 @@ export interface EnrollmentRow {
   entity_id: string;
   inquiry_id: string;
   funnel_id: string;
+  quote_id: string | null;
   status: string;
   enrolled_at: string;
   steps_sent: number;
@@ -44,7 +47,42 @@ export const FUNNEL_STEP_COLUMNS =
   "id, funnel_id, day_offset, subject, body, resource_ids, sort_order";
 
 export const ENROLLMENT_COLUMNS =
-  "id, entity_id, inquiry_id, funnel_id, status, enrolled_at, enrolled_by, steps_sent, next_send_at, replied_at, stopped_reason, created_at";
+  "id, entity_id, inquiry_id, funnel_id, quote_id, status, enrolled_at, enrolled_by, steps_sent, next_send_at, replied_at, stopped_reason, created_at";
+
+const QUOTE_COLUMNS =
+  "id, inquiry_id, quote_number, status, lines, subtotal, tax_rate, tax, total, valid_until, terms, accepted_at, created_by, created_at, updated_at";
+
+// The quote riding along on an enrollment: the one picked at enroll time,
+// falling back to the inquiry's latest saved quote (covers enrollments made
+// before a quote existed, or a picked quote that was since deleted).
+export async function enrollmentQuote(
+  admin: Admin,
+  enrollment: Pick<EnrollmentRow, "inquiry_id" | "quote_id">
+): Promise<InquiryQuote | null> {
+  if (enrollment.quote_id) {
+    const { data } = await admin
+      .from("rental_inquiry_quotes")
+      .select(QUOTE_COLUMNS)
+      .eq("id", enrollment.quote_id)
+      .maybeSingle();
+    if (data) return data as unknown as InquiryQuote;
+  }
+  const { data } = await admin
+    .from("rental_inquiry_quotes")
+    .select(QUOTE_COLUMNS)
+    .eq("inquiry_id", enrollment.inquiry_id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data as unknown as InquiryQuote) ?? null;
+}
+
+// Does any step of this funnel merge the quote in?
+export function funnelUsesQuote(steps: Pick<FunnelStepRow, "subject" | "body">[]): boolean {
+  return steps.some(
+    (s) => s.body.includes("{quote}") || (s.subject ?? "").includes("{quote")
+  );
+}
 
 export function resendClient(): Resend | null {
   const key = process.env.RESEND_API_KEY;
@@ -203,8 +241,20 @@ export async function processEnrollment(
       subject: step.subject,
       body: step.body,
     };
+    // Resolve the quote riding on this enrollment when the step merges it in.
+    let extra: { quote?: string; quote_number?: string } | undefined;
+    if (funnelUsesQuote([step])) {
+      const quote = await enrollmentQuote(admin, enrollment);
+      extra = quote
+        ? { quote: quoteEmailBlock(quote), quote_number: quote.quote_number }
+        : // Enrollment validates a quote exists for quote-led funnels, so this
+          // only happens if every quote was deleted mid-funnel. Degrade to a
+          // sentence that still reads naturally after "here's your quote:".
+          { quote: "I'm finalizing your pricing now — reply here and I'll have the exact number over to you the same day." };
+    }
+
     // Empty rep name falls back to the brand team signature ("the HDR team").
-    const rendered = renderTemplate(tpl, inq, "");
+    const rendered = renderTemplate(tpl, inq, "", extra);
 
     const links = await loadResourceLinks(admin, enrollment.entity_id, step.resource_ids);
     let text = rendered.body;

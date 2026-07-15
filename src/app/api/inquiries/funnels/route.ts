@@ -5,6 +5,8 @@ import { resolveEmbedEntity } from "@/lib/inquiries/embed-auth";
 import { isOpenStatus } from "@/lib/inquiries/shared";
 import {
   ENROLLMENT_COLUMNS,
+  enrollmentQuote,
+  funnelUsesQuote,
   processEnrollment,
   stepDueAt,
   type EnrollmentRow,
@@ -86,10 +88,11 @@ export async function POST(request: Request) {
 
   switch (action) {
     case "enroll": {
-      const { inquiryId, funnelId, actor } = body as {
+      const { inquiryId, funnelId, actor, quoteId } = body as {
         inquiryId: string;
         funnelId: string;
         actor?: string | null;
+        quoteId?: string | null;
       };
       if (!inquiryId || !funnelId) {
         return NextResponse.json({ error: "inquiryId and funnelId required" }, { status: 400 });
@@ -128,6 +131,38 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "This funnel has no steps yet" }, { status: 400 });
       }
 
+      // A picked quote must be one of THIS inquiry's saved quotes.
+      if (quoteId) {
+        const { data: q } = await admin
+          .from("rental_inquiry_quotes")
+          .select("id")
+          .eq("id", quoteId)
+          .eq("inquiry_id", inquiryId)
+          .eq("entity_id", inquiry.entity_id)
+          .maybeSingle();
+        if (!q) {
+          return NextResponse.json(
+            { error: "That quote doesn't belong to this inquiry" },
+            { status: 400 }
+          );
+        }
+      }
+
+      // Quote-led funnels ({quote} in a step) refuse to start without a quote —
+      // better a clear error now than a customer email with a hole in it.
+      if (funnelUsesQuote(ordered) && !quoteId) {
+        const fallback = await enrollmentQuote(admin, {
+          inquiry_id: inquiryId,
+          quote_id: null,
+        });
+        if (!fallback) {
+          return NextResponse.json(
+            { error: "This funnel sends your quote — draft a quote on the inquiry first" },
+            { status: 400 }
+          );
+        }
+      }
+
       // Switching funnels replaces the live one — a lead should never be on two.
       await admin
         .from("rental_inquiry_funnel_enrollments")
@@ -142,6 +177,7 @@ export async function POST(request: Request) {
           entity_id: inquiry.entity_id,
           inquiry_id: inquiryId,
           funnel_id: funnelId,
+          quote_id: quoteId ?? null,
           status: "active",
           enrolled_at: enrolledAt,
           enrolled_by: actor ?? null,

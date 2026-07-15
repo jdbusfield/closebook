@@ -340,6 +340,28 @@ export interface InquiryQuote {
   updated_at: string;
 }
 
+// Renders a SAVED quote as the plain-text block the {quote} merge token drops
+// into an email body — same shape the template picker's live builder produces
+// (bulleted lines, then totals). Used by both the funnel send engine and the
+// enroll dialog's preview, so what the rep previews is exactly what sends.
+export function quoteEmailBlock(
+  q: Pick<InquiryQuote, "lines" | "subtotal" | "tax" | "total">
+): string {
+  const rows = (q.lines ?? [])
+    .filter((l) => (l.description ?? "").trim() !== "" || Number(l.rate) > 0)
+    .map((l) => {
+      const qty = Number(l.qty) || 1;
+      const rate = Number(l.rate) || 0;
+      const qtyNote = qty !== 1 ? ` (${qty} × ${fmtMoney(rate)})` : "";
+      return `• ${(l.description ?? "").trim() || "Item"}${qtyNote} — ${fmtMoney(qty * rate)}`;
+    });
+  const totals =
+    Number(q.tax) > 0
+      ? [`Subtotal: ${fmtMoney(q.subtotal)}`, `Tax: ${fmtMoney(q.tax)}`, `Total: ${fmtMoney(q.total)}`]
+      : [`Total: ${fmtMoney(q.total)}`];
+  return [...rows, ...totals].join("\n");
+}
+
 export interface InquiryMessage {
   id: string;
   inquiry_id: string | null;

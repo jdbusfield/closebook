@@ -30,7 +30,21 @@ import {
   type Funnel,
 } from "@/lib/inquiries/funnels";
 import { renderTemplate, type MessageTemplate } from "@/lib/inquiries/templates";
-import { isOpenStatus, fmtDate, type Inquiry } from "@/lib/inquiries/shared";
+import {
+  isOpenStatus,
+  fmtDate,
+  fmtMoney,
+  quoteEmailBlock,
+  type Inquiry,
+  type InquiryQuote,
+} from "@/lib/inquiries/shared";
+import type { FunnelStep } from "@/lib/inquiries/funnels";
+
+// Does any step of this funnel merge the saved quote in? (Client twin of the
+// server check in funnel-send.ts.)
+function usesQuote(steps: Pick<FunnelStep, "subject" | "body">[]): boolean {
+  return steps.some((s) => s.body.includes("{quote}") || (s.subject ?? "").includes("{quote"));
+}
 
 function fmtWhen(d: Date): string {
   return d.toLocaleString(undefined, {
@@ -54,6 +68,7 @@ export function FunnelBlock({
   const fn = useFunnels(entityId);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [candidate, setCandidate] = useState<Funnel | null>(null);
+  const [quoteId, setQuoteId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
 
   const enrollment = fn.enrollmentFor(inquiry.id);
@@ -65,12 +80,19 @@ export function FunnelBlock({
   const start = async () => {
     if (!candidate) return;
     setStarting(true);
-    const ok = await fn.enroll(inquiry.id, candidate.id, actor);
+    const ok = await fn.enroll(inquiry.id, candidate.id, actor, quoteId);
     setStarting(false);
     if (ok) {
       setPickerOpen(false);
       setCandidate(null);
+      setQuoteId(null);
     }
+  };
+
+  const pickCandidate = (f: Funnel | null) => {
+    setCandidate(f);
+    // Default the quote to the inquiry's latest whenever the funnel merges one in.
+    setQuoteId(f && usesQuote(fn.stepsFor(f.id)) ? (inquiry.quotes?.[0]?.id ?? null) : null);
   };
 
   // --- A live/paused/finished enrollment: status + controls -----------------
@@ -138,12 +160,14 @@ export function FunnelBlock({
           open={pickerOpen}
           onOpenChange={(o) => {
             setPickerOpen(o);
-            if (!o) setCandidate(null);
+            if (!o) pickCandidate(null);
           }}
           fn={fn}
           inquiry={inquiry}
           candidate={candidate}
-          setCandidate={setCandidate}
+          setCandidate={pickCandidate}
+          quoteId={quoteId}
+          setQuoteId={setQuoteId}
           onStart={start}
           starting={starting}
         />
@@ -184,12 +208,14 @@ export function FunnelBlock({
         open={pickerOpen}
         onOpenChange={(o) => {
           setPickerOpen(o);
-          if (!o) setCandidate(null);
+          if (!o) pickCandidate(null);
         }}
         fn={fn}
         inquiry={inquiry}
         candidate={candidate}
-        setCandidate={setCandidate}
+        setCandidate={pickCandidate}
+        quoteId={quoteId}
+        setQuoteId={setQuoteId}
         onStart={start}
         starting={starting}
       />
@@ -204,6 +230,8 @@ function StartDialog({
   inquiry,
   candidate,
   setCandidate,
+  quoteId,
+  setQuoteId,
   onStart,
   starting,
 }: {
@@ -213,9 +241,19 @@ function StartDialog({
   inquiry: Inquiry;
   candidate: Funnel | null;
   setCandidate: (f: Funnel | null) => void;
+  quoteId: string | null;
+  setQuoteId: (id: string | null) => void;
   onStart: () => void;
   starting: boolean;
 }) {
+  const quotes: InquiryQuote[] = inquiry.quotes ?? [];
+  const candidateSteps = candidate ? fn.stepsFor(candidate.id) : [];
+  const needsQuote = candidate ? usesQuote(candidateSteps) : false;
+  const selectedQuote = quotes.find((q) => q.id === quoteId) ?? null;
+  const missingQuote = needsQuote && !selectedQuote;
+  const extra = selectedQuote
+    ? { quote: quoteEmailBlock(selectedQuote), quote_number: selectedQuote.quote_number }
+    : undefined;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-[520px]">
@@ -244,6 +282,11 @@ function StartDialog({
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium">{f.name}</span>
+                    {usesQuote(steps) && (
+                      <span className="rounded-full bg-emerald-100 px-1.5 py-px text-[11px] font-medium text-emerald-700">
+                        sends your quote
+                      </span>
+                    )}
                     <span className="ml-auto text-xs text-muted-foreground">
                       {steps.length} email{steps.length === 1 ? "" : "s"} ·{" "}
                       {steps.map((s) => (s.day_offset === 0 ? "now" : `d${s.day_offset}`)).join(" / ")}
@@ -270,6 +313,42 @@ function StartDialog({
             >
               <ChevronLeft className="size-3.5" /> All funnels
             </button>
+
+            {/* Quote rider — shown when any step merges {quote} in */}
+            {needsQuote &&
+              (quotes.length > 0 ? (
+                <div className="rounded-lg border bg-muted/30 p-2.5">
+                  <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+                    This funnel sends a quote — which one?
+                  </div>
+                  <div className="space-y-1">
+                    {quotes.map((q) => (
+                      <label
+                        key={q.id}
+                        className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-sm hover:bg-muted/60"
+                      >
+                        <input
+                          type="radio"
+                          name="funnel-quote"
+                          checked={quoteId === q.id}
+                          onChange={() => setQuoteId(q.id)}
+                        />
+                        <span className="font-mono text-xs">{q.quote_number}</span>
+                        <span className="font-medium">{fmtMoney(q.total)}</span>
+                        <span className="text-xs capitalize text-muted-foreground">
+                          {q.status} · {fmtDate(q.created_at)}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
+                  This funnel sends your quote, but this inquiry has none saved yet. Close this,
+                  use &quot;Draft a Quote&quot;, then come back.
+                </div>
+              ))}
+
             <div className="space-y-2">
               {schedulePreview(fn.stepsFor(candidate.id)).map(({ step, at }, i) => {
                 const tpl: MessageTemplate = {
@@ -281,7 +360,7 @@ function StartDialog({
                   subject: step.subject,
                   body: step.body,
                 };
-                const rendered = renderTemplate(tpl, inquiry, "");
+                const rendered = renderTemplate(tpl, inquiry, "", extra);
                 return (
                   <div key={step.id} className="rounded-lg border p-2.5">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -310,7 +389,12 @@ function StartDialog({
               <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <Button size="sm" onClick={onStart} disabled={starting} className="gap-1.5">
+              <Button
+                size="sm"
+                onClick={onStart}
+                disabled={starting || missingQuote}
+                className="gap-1.5"
+              >
                 <Zap className="size-3.5" />
                 {starting ? "Starting…" : "Start funnel"}
               </Button>

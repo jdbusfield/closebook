@@ -26,6 +26,7 @@ export interface FunnelEnrollment {
   id: string;
   inquiry_id: string;
   funnel_id: string;
+  quote_id: string | null;
   status: EnrollmentStatus;
   enrolled_at: string;
   enrolled_by: string | null;

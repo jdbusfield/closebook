@@ -15,7 +15,7 @@ import type { Funnel, FunnelStep, FunnelEnrollment } from "@/lib/inquiries/funne
 const FUNNEL_COLUMNS = "id, name, description, archived, sort_order";
 const STEP_COLUMNS = "id, funnel_id, day_offset, subject, body, resource_ids, sort_order";
 const ENROLLMENT_COLUMNS =
-  "id, inquiry_id, funnel_id, status, enrolled_at, enrolled_by, steps_sent, next_send_at, replied_at, stopped_reason";
+  "id, inquiry_id, funnel_id, quote_id, status, enrolled_at, enrolled_by, steps_sent, next_send_at, replied_at, stopped_reason";
 
 export interface UseFunnels {
   funnels: Funnel[]; // live (unarchived)
@@ -44,7 +44,12 @@ export interface UseFunnels {
     sort_order?: number;
   }) => Promise<boolean>;
   deleteStep: (stepId: string) => Promise<void>;
-  enroll: (inquiryId: string, funnelId: string, actor?: string | null) => Promise<boolean>;
+  enroll: (
+    inquiryId: string,
+    funnelId: string,
+    actor?: string | null,
+    quoteId?: string | null
+  ) => Promise<boolean>;
   stopEnrollment: (enrollmentId: string) => Promise<void>;
   resumeEnrollment: (enrollmentId: string) => Promise<void>;
 }
@@ -282,9 +287,14 @@ export function useFunnels(entityId: string): UseFunnels {
   );
 
   const enroll = useCallback(
-    async (inquiryId: string, funnelId: string, actor?: string | null): Promise<boolean> => {
+    async (
+      inquiryId: string,
+      funnelId: string,
+      actor?: string | null,
+      quoteId?: string | null
+    ): Promise<boolean> => {
       try {
-        const data = await funnelsApi({ action: "enroll", inquiryId, funnelId, actor });
+        const data = await funnelsApi({ action: "enroll", inquiryId, funnelId, actor, quoteId });
         toast.success(
           data.sendResult?.outcome === "sent"
             ? "Funnel started — first email sent"

@@ -302,7 +302,7 @@ export async function POST(request: Request) {
         admin
           .from("rental_inquiry_funnel_enrollments")
           .select(
-            "id, inquiry_id, funnel_id, status, enrolled_at, enrolled_by, steps_sent, next_send_at, replied_at, stopped_reason"
+            "id, inquiry_id, funnel_id, quote_id, status, enrolled_at, enrolled_by, steps_sent, next_send_at, replied_at, stopped_reason"
           )
           .eq("entity_id", entityId)
           .order("created_at", { ascending: false })
