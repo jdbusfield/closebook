@@ -33,6 +33,7 @@ import {
   FolderPlus,
   Upload,
   Link as LinkIcon,
+  Download,
   ExternalLink,
   MoreHorizontal,
   Pencil,
@@ -45,6 +46,7 @@ import {
 import { useResources } from "@/lib/inquiries/use-resources";
 import {
   publicResourceUrl,
+  downloadResourceUrl,
   isImage,
   fmtSize,
   type ResourceFolder,
@@ -123,6 +125,13 @@ function ResourceRow({
       >
         <LinkIcon className="size-3.5" />
       </Button>
+      <a
+        href={downloadResourceUrl(item)}
+        className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+        title="Download"
+      >
+        <Download className="size-3.5" />
+      </a>
       <a
         href={url}
         target="_blank"

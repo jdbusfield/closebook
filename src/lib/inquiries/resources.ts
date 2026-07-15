@@ -31,6 +31,16 @@ export function publicResourceUrl(filePath: string): string {
     .join("/")}`;
 }
 
+// Same URL with Supabase's ?download flag, which makes storage answer with a
+// Content-Disposition: attachment header — the browser saves the file instead
+// of rendering it. Named after the resource's label so the saved file reads
+// "4-Stall Luxury exterior.jpg", not the timestamped storage path.
+export function downloadResourceUrl(r: Pick<ResourceItem, "file_path" | "label">): string {
+  const ext = r.file_path.match(/\.[^./]+$/)?.[0] ?? "";
+  const name = `${r.label.replace(/[\\/:*?"<>|]+/g, "-").trim() || "resource"}${ext}`;
+  return `${publicResourceUrl(r.file_path)}?download=${encodeURIComponent(name)}`;
+}
+
 export function isImage(r: Pick<ResourceItem, "mime_type" | "file_path">): boolean {
   if (r.mime_type) return r.mime_type.startsWith("image/");
   return /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(r.file_path);
