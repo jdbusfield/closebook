@@ -7,6 +7,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEmbed } from "@/lib/inquiries/embed-context";
+import { ResourceLibrary } from "@/components/inquiries/resource-library";
 import {
   LayoutDashboard,
   KanbanSquare,
@@ -86,14 +87,17 @@ export function SectionTabs({
           </Link>
         );
       })}
-      {overdueCount != null && overdueCount > 0 && (
-        <Link
-          href={`${base}/dashboard`}
-          className="ml-auto flex items-center gap-1.5 whitespace-nowrap rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700"
-        >
-          {overdueCount} overdue follow-up{overdueCount === 1 ? "" : "s"}
-        </Link>
-      )}
+      <div className="ml-auto flex items-center gap-2 pl-2">
+        {overdueCount != null && overdueCount > 0 && (
+          <Link
+            href={`${base}/dashboard`}
+            className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700"
+          >
+            {overdueCount} overdue follow-up{overdueCount === 1 ? "" : "s"}
+          </Link>
+        )}
+        <ResourceLibrary entityId={entityId} />
+      </div>
     </div>
   );
 }

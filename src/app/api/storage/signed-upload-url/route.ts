@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { resolveEmbedEntity } from "@/lib/inquiries/embed-auth";
 
 /**
  * POST /api/storage/signed-upload-url
@@ -8,16 +9,21 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * (service role, bypasses RLS). The client then uploads directly to that URL,
  * avoiding both Vercel's payload limit and storage RLS restrictions.
  *
+ * Auth: a Supabase session (any bucket), OR the inquiries embed key — the
+ * embedded CRM iframes with no session. An embed key is only ever allowed to
+ * upload into the inquiry-resources bucket under its own entity's prefix.
+ *
  * JSON body: { bucket, path }
  * Returns: { signedUrl, token, path }
  */
 export async function POST(request: NextRequest) {
-  // Verify user is authenticated
+  // Verify user is authenticated (session or inquiries embed key)
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) {
+  const embedEntityId = user ? null : resolveEmbedEntity(request);
+  if (!user && !embedEntityId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -29,6 +35,13 @@ export async function POST(request: NextRequest) {
       { error: "Missing required fields: bucket, path" },
       { status: 400 }
     );
+  }
+
+  // Embed keys are scoped hard: one bucket, own-entity path prefix only.
+  if (embedEntityId) {
+    if (bucket !== "inquiry-resources" || !path.startsWith(`${embedEntityId}/`)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
   }
 
   try {

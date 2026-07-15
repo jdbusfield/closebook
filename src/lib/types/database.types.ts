@@ -441,6 +441,195 @@ export type Database = {
         }
         Relationships: []
       }
+      rental_inquiry_resource_folders: {
+        Row: {
+          id: string
+          entity_id: string
+          name: string
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          name: string
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          name?: string
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      rental_inquiry_resources: {
+        Row: {
+          id: string
+          entity_id: string
+          folder_id: string | null
+          label: string
+          file_path: string
+          mime_type: string | null
+          size_bytes: number | null
+          sort_order: number
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          folder_id?: string | null
+          label: string
+          file_path: string
+          mime_type?: string | null
+          size_bytes?: number | null
+          sort_order?: number
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          folder_id?: string | null
+          label?: string
+          file_path?: string
+          mime_type?: string | null
+          size_bytes?: number | null
+          sort_order?: number
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      rental_inquiry_funnels: {
+        Row: {
+          id: string
+          entity_id: string
+          name: string
+          description: string | null
+          archived: boolean
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          name: string
+          description?: string | null
+          archived?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          name?: string
+          description?: string | null
+          archived?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      rental_inquiry_funnel_steps: {
+        Row: {
+          id: string
+          entity_id: string
+          funnel_id: string
+          day_offset: number
+          subject: string
+          body: string
+          resource_ids: string[]
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          funnel_id: string
+          day_offset?: number
+          subject?: string
+          body?: string
+          resource_ids?: string[]
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          funnel_id?: string
+          day_offset?: number
+          subject?: string
+          body?: string
+          resource_ids?: string[]
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      rental_inquiry_funnel_enrollments: {
+        Row: {
+          id: string
+          entity_id: string
+          inquiry_id: string
+          funnel_id: string
+          status: string
+          enrolled_at: string
+          enrolled_by: string | null
+          steps_sent: number
+          next_send_at: string | null
+          replied_at: string | null
+          stopped_reason: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          inquiry_id: string
+          funnel_id: string
+          status?: string
+          enrolled_at?: string
+          enrolled_by?: string | null
+          steps_sent?: number
+          next_send_at?: string | null
+          replied_at?: string | null
+          stopped_reason?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          inquiry_id?: string
+          funnel_id?: string
+          status?: string
+          enrolled_at?: string
+          enrolled_by?: string | null
+          steps_sent?: number
+          next_send_at?: string | null
+          replied_at?: string | null
+          stopped_reason?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       rental_inquiry_quotes: {
         Row: {
           id: string

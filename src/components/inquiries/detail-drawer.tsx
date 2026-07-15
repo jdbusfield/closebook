@@ -40,6 +40,7 @@ import {
   hexA,
 } from "@/components/inquiries/atoms";
 import { TemplatePicker } from "@/components/inquiries/template-picker";
+import { FunnelBlock } from "@/components/inquiries/funnel-block";
 import { QuoteDialog } from "@/components/inquiries/quote-dialog";
 import { QuotesList } from "@/components/inquiries/quotes-list";
 import { useTemplates } from "@/lib/inquiries/use-templates";
@@ -1098,6 +1099,11 @@ function EmailBubble({
         <span>
           {who} · {fmtDateTime(messageDate(message))}
         </span>
+        {message.kind === "funnel" && (
+          <span className="rounded-full bg-amber-100 px-1.5 py-px font-medium text-amber-800">
+            Auto
+          </span>
+        )}
         {canToggle && (
           <button
             type="button"
@@ -1340,6 +1346,10 @@ export function InquiryDrawer({
                   }
                   onDelete={callbacks.onDelete}
                 />
+              </Section>
+
+              <Section title="Email funnel">
+                <FunnelBlock inquiry={inquiry} entityId={entityId} actor={actor} />
               </Section>
 
               <Section title="Event & contact">

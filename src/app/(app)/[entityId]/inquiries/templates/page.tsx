@@ -17,9 +17,11 @@ import {
   EyeOff,
   Eye,
   Sparkles,
+  Zap,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { SectionTabs } from "@/components/inquiries/section-tabs";
+import { FunnelsEditor } from "@/components/inquiries/funnels-editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -506,6 +508,21 @@ export default function TemplatesPage() {
           )}
         </div>
       )}
+
+      {/* --- Automated email funnels ------------------------------------- */}
+      <div className="pt-6">
+        <div className="mb-3">
+          <h2 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
+            <Zap className="size-5 text-amber-500" /> Email funnels
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Automated follow-up sequences. Put a customer on a funnel from their inquiry card
+            — each step sends on its day, and the chain breaks the moment they reply (a
+            follow-up task brings a human in). Booking or losing the inquiry stops it too.
+          </p>
+        </div>
+        <FunnelsEditor entityId={entityId} />
+      </div>
     </div>
   );
 }

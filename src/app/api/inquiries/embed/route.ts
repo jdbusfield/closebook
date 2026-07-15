@@ -281,6 +281,244 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
 
+    // --- Email funnels (definitions + live enrollments) -----------------------
+    // Enrollment MUTATIONS (enroll/stop/resume) go through /api/inquiries/funnels
+    // in both modes — sending happens server-side there. These are just reads +
+    // funnel/step editing for the Templates page.
+    case "list_funnels": {
+      const [funnels, steps, enrollments] = await Promise.all([
+        admin
+          .from("rental_inquiry_funnels")
+          .select("id, name, description, archived, sort_order")
+          .eq("entity_id", entityId)
+          .order("sort_order", { ascending: true })
+          .order("name", { ascending: true }),
+        admin
+          .from("rental_inquiry_funnel_steps")
+          .select("id, funnel_id, day_offset, subject, body, resource_ids, sort_order")
+          .eq("entity_id", entityId)
+          .order("day_offset", { ascending: true })
+          .order("sort_order", { ascending: true }),
+        admin
+          .from("rental_inquiry_funnel_enrollments")
+          .select(
+            "id, inquiry_id, funnel_id, status, enrolled_at, enrolled_by, steps_sent, next_send_at, replied_at, stopped_reason"
+          )
+          .eq("entity_id", entityId)
+          .order("created_at", { ascending: false })
+          .limit(2000),
+      ]);
+      return NextResponse.json({
+        funnels: funnels.data ?? [],
+        steps: steps.data ?? [],
+        enrollments: enrollments.data ?? [],
+      });
+    }
+
+    case "save_funnel": {
+      const { funnel } = body as {
+        funnel: {
+          id?: string;
+          name: string;
+          description?: string | null;
+          archived?: boolean;
+          sort_order?: number;
+        };
+      };
+      if (funnel.id) {
+        const { id, ...patch } = funnel;
+        const { error } = await admin
+          .from("rental_inquiry_funnels")
+          .update(patch)
+          .eq("id", id)
+          .eq("entity_id", entityId);
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ ok: true, id });
+      }
+      const { data, error } = await admin
+        .from("rental_inquiry_funnels")
+        .insert({ ...funnel, entity_id: entityId })
+        .select("id")
+        .single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true, id: data.id });
+    }
+
+    case "delete_funnel": {
+      const { funnelId } = body as { funnelId: string };
+      const { error } = await admin
+        .from("rental_inquiry_funnels")
+        .delete()
+        .eq("id", funnelId)
+        .eq("entity_id", entityId);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true });
+    }
+
+    case "save_funnel_step": {
+      const { step } = body as {
+        step: {
+          id?: string;
+          funnel_id: string;
+          day_offset?: number;
+          subject?: string;
+          body?: string;
+          resource_ids?: string[];
+          sort_order?: number;
+        };
+      };
+      // The parent funnel must belong to this entity.
+      const { data: funnel } = await admin
+        .from("rental_inquiry_funnels")
+        .select("id")
+        .eq("id", step.funnel_id)
+        .eq("entity_id", entityId)
+        .maybeSingle();
+      if (!funnel) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      if (step.id) {
+        const { id, ...patch } = step;
+        const { error } = await admin
+          .from("rental_inquiry_funnel_steps")
+          .update(patch)
+          .eq("id", id)
+          .eq("entity_id", entityId);
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      } else {
+        const { error } = await admin
+          .from("rental_inquiry_funnel_steps")
+          .insert({ ...step, entity_id: entityId });
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    case "delete_funnel_step": {
+      const { stepId } = body as { stepId: string };
+      const { error } = await admin
+        .from("rental_inquiry_funnel_steps")
+        .delete()
+        .eq("id", stepId)
+        .eq("entity_id", entityId);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true });
+    }
+
+    // --- Resource library (folders + files in the inquiry-resources bucket) --
+    case "list_resources": {
+      const [folders, resources] = await Promise.all([
+        admin
+          .from("rental_inquiry_resource_folders")
+          .select("id, name, sort_order")
+          .eq("entity_id", entityId)
+          .order("sort_order", { ascending: true })
+          .order("name", { ascending: true }),
+        admin
+          .from("rental_inquiry_resources")
+          .select(
+            "id, folder_id, label, file_path, mime_type, size_bytes, sort_order, created_at"
+          )
+          .eq("entity_id", entityId)
+          .order("sort_order", { ascending: true })
+          .order("created_at", { ascending: true }),
+      ]);
+      return NextResponse.json({
+        folders: folders.data ?? [],
+        resources: resources.data ?? [],
+      });
+    }
+
+    case "save_resource_folder": {
+      const { folder } = body as { folder: { id?: string; name: string; sort_order?: number } };
+      if (folder.id) {
+        const { error } = await admin
+          .from("rental_inquiry_resource_folders")
+          .update({ name: folder.name, ...(folder.sort_order != null ? { sort_order: folder.sort_order } : {}) })
+          .eq("id", folder.id)
+          .eq("entity_id", entityId);
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      } else {
+        const { error } = await admin
+          .from("rental_inquiry_resource_folders")
+          .insert({ entity_id: entityId, name: folder.name, sort_order: folder.sort_order ?? 0 });
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    case "delete_resource_folder": {
+      const { folderId } = body as { folderId: string };
+      const { error } = await admin
+        .from("rental_inquiry_resource_folders")
+        .delete()
+        .eq("id", folderId)
+        .eq("entity_id", entityId);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true });
+    }
+
+    case "save_resource": {
+      const { resource } = body as {
+        resource: {
+          id?: string;
+          folder_id?: string | null;
+          label?: string;
+          file_path?: string;
+          mime_type?: string | null;
+          size_bytes?: number | null;
+          sort_order?: number;
+        };
+      };
+      if (resource.id) {
+        const { id, ...patch } = resource;
+        const { error } = await admin
+          .from("rental_inquiry_resources")
+          .update(patch)
+          .eq("id", id)
+          .eq("entity_id", entityId);
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      } else {
+        if (!resource.label || !resource.file_path) {
+          return NextResponse.json({ error: "label and file_path required" }, { status: 400 });
+        }
+        // The upload route only signs paths under this entity's prefix, but
+        // re-assert it here so a crafted row can't point at another brand's file.
+        if (!resource.file_path.startsWith(`${entityId}/`)) {
+          return NextResponse.json({ error: "Invalid file path" }, { status: 400 });
+        }
+        const { error } = await admin.from("rental_inquiry_resources").insert({
+          entity_id: entityId,
+          folder_id: resource.folder_id ?? null,
+          label: resource.label,
+          file_path: resource.file_path,
+          mime_type: resource.mime_type ?? null,
+          size_bytes: resource.size_bytes ?? null,
+          sort_order: resource.sort_order ?? 0,
+        });
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    case "delete_resource": {
+      const { resourceId } = body as { resourceId: string };
+      const { data: row } = await admin
+        .from("rental_inquiry_resources")
+        .select("id, file_path")
+        .eq("id", resourceId)
+        .eq("entity_id", entityId)
+        .maybeSingle();
+      if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      const { error } = await admin
+        .from("rental_inquiry_resources")
+        .delete()
+        .eq("id", resourceId)
+        .eq("entity_id", entityId);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      // Best-effort storage cleanup; an orphaned public file is harmless.
+      await admin.storage.from("inquiry-resources").remove([row.file_path]);
+      return NextResponse.json({ ok: true });
+    }
+
     // --- Quote writes -------------------------------------------------------
     case "create_quote": {
       const { id, draft } = body as {

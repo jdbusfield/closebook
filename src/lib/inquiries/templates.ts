@@ -21,7 +21,7 @@ import {
 // fallback, chosen the same way the quote PDF picks its theme: Versatile by
 // source "versatile" or a "VS-" reference, else HDR (default). This keeps a
 // Versatile lead's follow-ups signed as Versatile while HDR copy is unchanged.
-function brandOf(inq: Inquiry): {
+export function brandOf(inq: Inquiry): {
   company: string;
   email: string;
   phone: string;
