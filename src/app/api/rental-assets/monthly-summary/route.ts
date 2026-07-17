@@ -7,6 +7,7 @@ import {
   type CustomVehicleClassRow,
   type VehicleClassification,
 } from "@/lib/utils/vehicle-classification";
+import { rwSupplementClass } from "@/lib/utils/rw-supplement";
 
 /**
  * GET /api/rental-assets/monthly-summary
@@ -124,6 +125,7 @@ export async function GET(request: NextRequest) {
     period_year: number;
     period_month: number;
     fixed_asset_id: string | null;
+    orphan_veh_number: string | null;
     rental_dbr_days: number | null;
     rental_act_days: number | null;
     fleet_days: number | null;
@@ -137,7 +139,7 @@ export async function GET(request: NextRequest) {
       const { data, error } = await admin
         .from("rental_asset_kpis")
         .select(
-          "period_year, period_month, fixed_asset_id, rental_dbr_days, rental_act_days, fleet_days, total_revenue"
+          "period_year, period_month, fixed_asset_id, orphan_veh_number, rental_dbr_days, rental_act_days, fleet_days, total_revenue"
         )
         .eq("organization_id", organizationId)
         .eq("grain", "asset")
@@ -188,8 +190,19 @@ export async function GET(request: NextRequest) {
   };
 
   for (const k of kpis) {
-    if (!k.fixed_asset_id || !allowedAssetIds.has(k.fixed_asset_id)) continue;
-    const mt = masterTypeByAsset.get(k.fixed_asset_id);
+    // Unmatched rows are excluded — except RentalWorks class-revenue
+    // supplements ("RW-13"), whose class routes them to a master type. They
+    // carry revenue only (no days, no fleet count), so utilization and
+    // fleet-size stay DBR-derived while ADR reflects combined revenue.
+    let mt: "Vehicle" | "Trailer" | null | undefined;
+    if (k.fixed_asset_id) {
+      if (!allowedAssetIds.has(k.fixed_asset_id)) continue;
+      mt = masterTypeByAsset.get(k.fixed_asset_id);
+    } else {
+      const rwCls = rwSupplementClass(k.orphan_veh_number);
+      if (!rwCls) continue;
+      mt = getEffectiveMasterType(rwCls, null, customClasses);
+    }
     const targets: Segment[] = [segments.total];
     if (mt === "Vehicle") targets.push(segments.vehicle);
     else if (mt === "Trailer") targets.push(segments.trailer);
@@ -204,13 +217,14 @@ export async function GET(request: NextRequest) {
         addTo(seg.ytd, k);
         if (isMonth) {
           addTo(seg.month, k);
-          if (hasFleet) seg.fleetMonth.add(k.fixed_asset_id);
+          if (hasFleet && k.fixed_asset_id) seg.fleetMonth.add(k.fixed_asset_id);
         }
       } else if (isPy) {
         addTo(seg.pyYtd, k);
         if (isMonth) {
           addTo(seg.pyMonth, k);
-          if (hasFleet) seg.fleetPyMonth.add(k.fixed_asset_id);
+          if (hasFleet && k.fixed_asset_id)
+            seg.fleetPyMonth.add(k.fixed_asset_id);
         }
       }
     }

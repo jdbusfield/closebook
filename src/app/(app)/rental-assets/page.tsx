@@ -48,6 +48,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { formatCurrency, formatIsoDateLocal, getCurrentPeriod } from "@/lib/utils/dates";
 import { useRentalAssetData } from "./use-rental-asset-data";
+import { rwSupplementClass } from "@/lib/utils/rw-supplement";
 import { TrendsTab } from "./trends-tab";
 import { VehicleLookup } from "./vehicle-lookup";
 
@@ -263,6 +264,16 @@ export default function RentalAssetsPage() {
   const lastMaintSync =
     syncStateByResource.get("service_entries")?.last_incremental_sync_at;
 
+  // RentalWorks class-revenue supplements ("RW-13") are intentional rows,
+  // not unregistered vehicles — keep them off the Orphans tab.
+  const trueOrphanKpis = useMemo(
+    () =>
+      computed.orphanKpis.filter(
+        (k) => !rwSupplementClass(k.orphan_veh_number)
+      ),
+    [computed.orphanKpis]
+  );
+
   async function handleUploadKpis(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !organizationId) return;
@@ -287,20 +298,31 @@ export default function RentalAssetsPage() {
         orphans: number;
         equipment: number;
         upserted: number;
+        rwClasses?: number;
+        rwRevenue?: number;
       }> = data.sheets ?? [];
 
       if (sheets.length === 0) {
         toast.warning("No month-tagged sheets found in the workbook.");
       } else if (sheets.length === 1) {
         const s = sheets[0];
+        const rwNote =
+          s.rwClasses && s.rwClasses > 0
+            ? ` + ${formatCurrency(s.rwRevenue ?? 0)} RentalWorks revenue across ${s.rwClasses} classes`
+            : "";
         toast.success(
-          `Loaded ${s.upserted} rows for ${MONTH_SHORT[s.period.month]} ${s.period.year} — ${s.matched} matched, ${s.orphans} orphans, ${s.equipment} equipment.`
+          `Loaded ${s.upserted} rows for ${MONTH_SHORT[s.period.month]} ${s.period.year} — ${s.matched} matched, ${s.orphans} orphans, ${s.equipment} equipment${rwNote}.`
         );
         // Jump to the period we just refreshed.
         setPeriod({ year: s.period.year, month: s.period.month });
       } else {
+        const rwSheets = sheets.filter((s) => (s.rwClasses ?? 0) > 0);
+        const rwTotal = rwSheets.reduce((sum, s) => sum + (s.rwRevenue ?? 0), 0);
         toast.success(
-          `Loaded ${data.totalUpserted} rows across ${sheets.length} sheets.`
+          `Loaded ${data.totalUpserted} rows across ${sheets.length} sheets.` +
+            (rwSheets.length > 0
+              ? ` Includes ${formatCurrency(rwTotal)} RentalWorks revenue from ${rwSheets.length} RW tab${rwSheets.length > 1 ? "s" : ""}.`
+              : "")
         );
         // Default to the latest sheet uploaded.
         const latest = [...sheets].sort((a, b) =>
@@ -563,9 +585,9 @@ export default function RentalAssetsPage() {
           <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
           <TabsTrigger value="orphans">
             Orphans
-            {computed.orphanKpis.length > 0 && (
+            {trueOrphanKpis.length > 0 && (
               <Badge variant="secondary" className="ml-1.5">
-                {computed.orphanKpis.length}
+                {trueOrphanKpis.length}
               </Badge>
             )}
           </TabsTrigger>
@@ -834,7 +856,7 @@ export default function RentalAssetsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {computed.orphanKpis.length === 0 ? (
+              {trueOrphanKpis.length === 0 ? (
                 <p className="py-4 text-sm text-muted-foreground">
                   No orphans for this period. 🎉
                 </p>
@@ -855,7 +877,7 @@ export default function RentalAssetsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {computed.orphanKpis.map((k) => (
+                    {trueOrphanKpis.map((k) => (
                       <TableRow key={k.id}>
                         <TableCell className="font-medium">
                           {k.orphan_veh_number}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isSubrental } from "@/lib/utils/subrental";
+import { rwSupplementClass } from "@/lib/utils/rw-supplement";
 
 /**
  * GET /api/rental-assets/trends
@@ -315,11 +316,18 @@ export async function GET(request: NextRequest) {
     if (k.fixed_asset_id && !allowedAssetIds.has(k.fixed_asset_id)) continue;
     // Class filter — skip rows whose linked asset isn't in the selected
     // class set. Orphans and unmatched rows are excluded when a class
-    // filter is active since they have no class to compare against.
+    // filter is active since they have no class to compare against — except
+    // RentalWorks supplements ("RW-13"), which carry their class in the
+    // veh number.
     if (classFilter) {
-      if (!k.fixed_asset_id) continue;
-      const cls = classByAssetId.get(k.fixed_asset_id);
-      if (!cls || !classFilter.has(String(cls).trim().toUpperCase())) continue;
+      if (!k.fixed_asset_id) {
+        const rwCls = rwSupplementClass(k.orphan_veh_number);
+        if (!rwCls || !classFilter.has(rwCls)) continue;
+      } else {
+        const cls = classByAssetId.get(k.fixed_asset_id);
+        if (!cls || !classFilter.has(String(cls).trim().toUpperCase()))
+          continue;
+      }
     }
     // Prefer the stored reporting_group (filled at ingest). Fallback to
     // deriving from the linked asset's vehicle_class.

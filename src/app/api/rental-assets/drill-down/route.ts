@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { rwSupplementClass } from "@/lib/utils/rw-supplement";
 
 /**
  * GET /api/rental-assets/drill-down
@@ -216,10 +217,14 @@ export async function GET(request: NextRequest) {
       if (entityId) continue; // orphans have no entity
     }
     // Class filter — when active, skip rows whose asset's class isn't in
-    // the set. Orphans are excluded since they have no class to compare.
+    // the set. Orphans are excluded since they have no class to compare,
+    // except RentalWorks supplements ("RW-13"), which carry their class in
+    // the veh number.
     if (classFilter) {
-      if (!asset) continue;
-      if (
+      if (!asset) {
+        const rwCls = rwSupplementClass(k.orphan_veh_number);
+        if (!rwCls || !classFilter.has(rwCls)) continue;
+      } else if (
         !asset.vehicle_class ||
         !classFilter.has(String(asset.vehicle_class).trim().toUpperCase())
       ) {
