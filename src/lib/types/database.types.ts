@@ -510,6 +510,39 @@ export type Database = {
         }
         Relationships: []
       }
+      rental_inquiry_faqs: {
+        Row: {
+          id: string
+          entity_id: string
+          question: string
+          answer: string
+          sort_order: number
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          question: string
+          answer: string
+          sort_order?: number
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          question?: string
+          answer?: string
+          sort_order?: number
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       rental_inquiry_funnels: {
         Row: {
           id: string

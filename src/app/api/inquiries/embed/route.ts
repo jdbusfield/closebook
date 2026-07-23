@@ -519,6 +519,55 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
 
+    // --- FAQ reference (the FAQ tab of the resource library) ------------------
+    case "list_faqs": {
+      const { data } = await admin
+        .from("rental_inquiry_faqs")
+        .select("id, question, answer, sort_order, created_at")
+        .eq("entity_id", entityId)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true });
+      return NextResponse.json({ faqs: data ?? [] });
+    }
+
+    case "save_faq": {
+      const { faq } = body as {
+        faq: { id?: string; question?: string; answer?: string; sort_order?: number };
+      };
+      if (faq.id) {
+        const { id, ...patch } = faq;
+        const { error } = await admin
+          .from("rental_inquiry_faqs")
+          .update(patch)
+          .eq("id", id)
+          .eq("entity_id", entityId);
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      } else {
+        if (!faq.question?.trim() || !faq.answer?.trim()) {
+          return NextResponse.json({ error: "question and answer required" }, { status: 400 });
+        }
+        const { error } = await admin.from("rental_inquiry_faqs").insert({
+          entity_id: entityId,
+          question: faq.question.trim(),
+          answer: faq.answer.trim(),
+          sort_order: faq.sort_order ?? 0,
+        });
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    case "delete_faq": {
+      const { faqId } = body as { faqId: string };
+      const { error } = await admin
+        .from("rental_inquiry_faqs")
+        .delete()
+        .eq("id", faqId)
+        .eq("entity_id", entityId);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true });
+    }
+
     // --- Quote writes -------------------------------------------------------
     case "create_quote": {
       const { id, draft } = body as {

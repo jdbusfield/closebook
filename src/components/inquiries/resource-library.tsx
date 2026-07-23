@@ -44,6 +44,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { useResources } from "@/lib/inquiries/use-resources";
+import { FaqPanel } from "@/components/inquiries/faq-panel";
 import {
   publicResourceUrl,
   downloadResourceUrl,
@@ -319,6 +320,7 @@ function FolderSection({
 export function ResourceLibrary({ entityId }: { entityId: string }) {
   const lib = useResources(entityId);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [tab, setTab] = useState<"files" | "faq">("files");
   const [newFolder, setNewFolder] = useState("");
   const [addingFolder, setAddingFolder] = useState(false);
   const [uploadingIn, setUploadingIn] = useState<string | "unfiled" | null>(null);
@@ -351,12 +353,36 @@ export function ResourceLibrary({ entityId }: { entityId: string }) {
             <FolderOpen className="size-4" /> Resource library
           </SheetTitle>
           <p className="text-xs text-muted-foreground">
-            Photos and documents you send customers all the time. Copy a link and paste it
-            into any email — links are permanent and public.
+            {tab === "files"
+              ? "Photos and documents you send customers all the time. Copy a link and paste it into any email — links are permanent and public."
+              : "The questions customers ask most, with answers ready to copy into a reply."}
           </p>
+          <div className="flex gap-1 rounded-lg bg-muted p-0.5">
+            {(
+              [
+                { key: "files", label: "Files" },
+                { key: "faq", label: "FAQ" },
+              ] as const
+            ).map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                  tab === t.key
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         </SheetHeader>
         <div className="flex-1 space-y-2 overflow-y-auto px-4 pb-4">
-          {lib.loading ? (
+          {tab === "faq" ? (
+            <FaqPanel entityId={entityId} />
+          ) : lib.loading ? (
             <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" /> Loading…
             </div>
