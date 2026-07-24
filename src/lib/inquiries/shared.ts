@@ -11,6 +11,11 @@ export const HDR_ENTITY_ID =
 export const VERSATILE_ENTITY_ID =
   process.env.VERSATILE_ENTITY_ID || "2fdafa28-8ba2-4caa-aa9f-5d8f39f57081";
 
+// Silverco Enterprises entity id (operates as Avon Rents, entity code AVON).
+// Mirrors ENTITY_IDS.SILVERCO in cost-center-config.ts.
+export const SILVERCO_ENTITY_ID =
+  process.env.SILVERCO_ENTITY_ID || "b664a9c1-3817-4df4-9261-f51b3403a5de";
+
 // Multi-tenant routing for the inquiry ingest webhook. Each marketing site POSTs
 // a `brand`; we map it to the entity its inquiries belong to and the `source`
 // tag stored on the row. Absent/unknown brands fall back to HDR so existing
@@ -21,6 +26,9 @@ export const BRAND_ENTITY: Record<string, { entityId: string; source: string }> 
   // hollywooddepot.com (production equipment rentals) shares the HDR entity but
   // keeps its own source tag so the board can badge + filter its leads.
   hollywooddepot: { entityId: HDR_ENTITY_ID, source: "hollywooddepot" },
+  // avon-trucks marketing site (truck rentals). Avon Rents operates under the
+  // Silverco entity, so its leads get their own board at that entity.
+  avonrents: { entityId: SILVERCO_ENTITY_ID, source: "avonrents" },
 };
 
 // Friendly display names for lead sources (board badge + drawer).
@@ -28,6 +36,7 @@ export const SOURCE_LABELS: Record<string, string> = {
   website: "Site Services site",
   hollywooddepot: "Hollywood Depot site",
   versatile: "Versatile site",
+  avonrents: "Avon Trucks site",
 };
 
 export function resolveBrand(brand?: string | null): { entityId: string; source: string } {
