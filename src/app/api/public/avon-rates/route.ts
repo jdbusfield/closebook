@@ -24,7 +24,14 @@ export async function GET() {
     .eq("entity_id", SILVERCO_ENTITY_ID);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    // Pre-migration (table not created yet) or transient DB trouble: serve an
+    // empty rate card instead of a 500. The site merges nothing and falls back
+    // to "Call for today's rate" — same behavior as blank rows, no error state.
+    console.error("[avon-rates] read failed:", error.message);
+    return NextResponse.json(
+      { vehicles: [] },
+      { headers: { "Cache-Control": "public, s-maxage=60" } }
+    );
   }
 
   const vehicles = (data ?? []).map((r) => ({
