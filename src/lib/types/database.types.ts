@@ -510,6 +510,54 @@ export type Database = {
         }
         Relationships: []
       }
+      rental_inquiry_fleet_rates: {
+        Row: {
+          id: string
+          entity_id: string
+          vehicle_id: string
+          vehicle_name: string
+          class_slug: string
+          class_name: string
+          day_rate: number | null
+          week_rate: number | null
+          month_rate: number | null
+          photo_path: string | null
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          vehicle_id: string
+          vehicle_name: string
+          class_slug: string
+          class_name: string
+          day_rate?: number | null
+          week_rate?: number | null
+          month_rate?: number | null
+          photo_path?: string | null
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          vehicle_id?: string
+          vehicle_name?: string
+          class_slug?: string
+          class_name?: string
+          day_rate?: number | null
+          week_rate?: number | null
+          month_rate?: number | null
+          photo_path?: string | null
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       rental_inquiry_faqs: {
         Row: {
           id: string

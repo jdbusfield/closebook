@@ -8,6 +8,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEmbed } from "@/lib/inquiries/embed-context";
 import { ResourceLibrary } from "@/components/inquiries/resource-library";
+import { SILVERCO_ENTITY_ID } from "@/lib/inquiries/shared";
 import {
   LayoutDashboard,
   KanbanSquare,
@@ -17,6 +18,7 @@ import {
   MessageSquareText,
   XCircle,
   CheckCircle2,
+  Tag,
   type LucideIcon,
 } from "lucide-react";
 
@@ -57,6 +59,12 @@ export function SectionTabs({
     { key: "completed", label: "Completed", href: `${base}/completed`, icon: CheckCircle2 },
     { key: "templates", label: "Templates", href: `${base}/templates`, icon: MessageSquareText },
     { key: "inbox", label: "Inbox", href: `${base}/inbox`, icon: Inbox },
+    // Rate card only means anything for Avon Trucks (Silverco) — it's what
+    // drives trucks.avonrents.com's live pricing/photos. Hidden for HDR and
+    // Versatile rather than shown empty.
+    ...(entityId === SILVERCO_ENTITY_ID
+      ? [{ key: "rate-card", label: "Rate Card", href: `${base}/rate-card`, icon: Tag }]
+      : []),
   ];
 
   const isActive = (href: string) =>

@@ -107,6 +107,12 @@ export function getOrgNavGroups(): NavGroup[] {
   ];
 }
 
+// Silverco Enterprises entity id (operates as Avon Rents). Mirrors
+// SILVERCO_ENTITY_ID in lib/inquiries/shared.ts — duplicated as a literal
+// here rather than imported so nav-config stays free of the inquiries lib's
+// server-only dependencies.
+const SILVERCO_ENTITY_ID = "b664a9c1-3817-4df4-9261-f51b3403a5de";
+
 export function getEntityNavGroups(entityId: string): NavGroup[] {
   const prefix = `/${entityId}`;
   return [
@@ -142,6 +148,11 @@ export function getEntityNavGroups(entityId: string): NavGroup[] {
             { title: "Customers", href: `${prefix}/inquiries/customers` },
             { title: "Templates", href: `${prefix}/inquiries/templates` },
             { title: "Inbox Activity", href: `${prefix}/inquiries/inbox` },
+            // Rate card drives trucks.avonrents.com's live pricing/photos —
+            // only meaningful for Avon Trucks (Silverco).
+            ...(entityId === SILVERCO_ENTITY_ID
+              ? [{ title: "Rate Card", href: `${prefix}/inquiries/rate-card` }]
+              : []),
           ],
         },
       ],
@@ -202,6 +213,7 @@ export function getEntityFeatures(entityName: string | undefined): Set<EntityFea
   }
   if (entityName?.includes("Silverco")) {
     features.add("revenue_projection");
+    features.add("inquiries");
   }
   if (entityName?.includes("Hollywood")) {
     features.add("inquiries");

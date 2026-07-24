@@ -519,6 +519,43 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
 
+    // --- Fleet rate card (Avon Trucks day/week/month rates + photos) --------
+    case "list_fleet_rates": {
+      const { data } = await admin
+        .from("rental_inquiry_fleet_rates")
+        .select(
+          "id, vehicle_id, vehicle_name, class_slug, class_name, day_rate, week_rate, month_rate, photo_path, sort_order, updated_at"
+        )
+        .eq("entity_id", entityId)
+        .order("sort_order", { ascending: true });
+      return NextResponse.json({ rows: data ?? [] });
+    }
+
+    case "save_fleet_rate": {
+      const { id, patch } = body as {
+        id: string;
+        patch: {
+          day_rate?: number | null;
+          week_rate?: number | null;
+          month_rate?: number | null;
+          photo_path?: string | null;
+        };
+      };
+      if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+      // Photo paths are only ever written by the upload flow, which signs
+      // paths under this entity's prefix — re-assert it here too.
+      if (patch.photo_path && !patch.photo_path.startsWith(`${entityId}/`)) {
+        return NextResponse.json({ error: "Invalid file path" }, { status: 400 });
+      }
+      const { error } = await admin
+        .from("rental_inquiry_fleet_rates")
+        .update(patch)
+        .eq("id", id)
+        .eq("entity_id", entityId);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true });
+    }
+
     // --- FAQ reference (the FAQ tab of the resource library) ------------------
     case "list_faqs": {
       const { data } = await admin
