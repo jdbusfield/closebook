@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import { FLEET_PHOTO_PREFIX, type FleetRateRow } from "@/lib/inquiries/fleet-rates";
 
 const RATE_COLUMNS =
-  "id, vehicle_id, vehicle_name, class_slug, class_name, day_rate, week_rate, month_rate, photo_path, sort_order, updated_at";
+  "id, vehicle_id, vehicle_name, class_slug, class_name, class_code, reporting_group, day_rate, week_rate, month_rate, photo_path, sort_order, updated_at";
 
 export interface RatePatch {
   day_rate?: number | null;

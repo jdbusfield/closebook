@@ -518,6 +518,8 @@ export type Database = {
           vehicle_name: string
           class_slug: string
           class_name: string
+          class_code: string | null
+          reporting_group: string | null
           day_rate: number | null
           week_rate: number | null
           month_rate: number | null
@@ -533,6 +535,8 @@ export type Database = {
           vehicle_name: string
           class_slug: string
           class_name: string
+          class_code?: string | null
+          reporting_group?: string | null
           day_rate?: number | null
           week_rate?: number | null
           month_rate?: number | null
@@ -548,6 +552,8 @@ export type Database = {
           vehicle_name?: string
           class_slug?: string
           class_name?: string
+          class_code?: string | null
+          reporting_group?: string | null
           day_rate?: number | null
           week_rate?: number | null
           month_rate?: number | null

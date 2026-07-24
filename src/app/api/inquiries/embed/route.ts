@@ -524,7 +524,7 @@ export async function POST(request: Request) {
       const { data } = await admin
         .from("rental_inquiry_fleet_rates")
         .select(
-          "id, vehicle_id, vehicle_name, class_slug, class_name, day_rate, week_rate, month_rate, photo_path, sort_order, updated_at"
+          "id, vehicle_id, vehicle_name, class_slug, class_name, class_code, reporting_group, day_rate, week_rate, month_rate, photo_path, sort_order, updated_at"
         )
         .eq("entity_id", entityId)
         .order("sort_order", { ascending: true });

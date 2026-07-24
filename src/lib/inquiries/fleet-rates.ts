@@ -12,6 +12,10 @@ export interface FleetRateRow {
   vehicle_name: string;
   class_slug: string;
   class_name: string;
+  /** Real fleet class code from VEHICLE_CLASSIFICATIONS, e.g. "15" — accounting/RentalWorks, not the marketing grouping above. */
+  class_code: string | null;
+  /** Real reporting group, e.g. "Stakebed" — see src/lib/utils/vehicle-classification.ts. */
+  reporting_group: string | null;
   day_rate: number | null;
   week_rate: number | null;
   month_rate: number | null;

@@ -163,7 +163,15 @@ export function FleetRateCard({ entityId }: { entityId: string }) {
                       }}
                     />
                   </td>
-                  <td className="px-3 py-2 font-medium">{row.vehicle_name}</td>
+                  <td className="px-3 py-2">
+                    <div className="font-medium">{row.vehicle_name}</div>
+                    {row.class_code && (
+                      <div className="text-[11px] text-muted-foreground">
+                        Class {row.class_code}
+                        {row.reporting_group ? ` · ${row.reporting_group}` : ""}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-right">
                     <RateInput value={row.day_rate} onCommit={(n) => rates.saveRate(row.id, { day_rate: n })} />
                   </td>
