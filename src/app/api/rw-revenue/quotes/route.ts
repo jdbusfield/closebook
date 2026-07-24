@@ -18,7 +18,7 @@ export async function GET() {
     const now = new Date();
     const threeMonthsAgo = formatRWDate(new Date(now.getFullYear(), now.getMonth() - 3, 1));
 
-    const result = await rw.browse<RWQuoteRow>("quote", {
+    const result = await rw.browseAll<RWQuoteRow>("quote", {
       pagesize: 2000,
       searchfields: ["QuoteDate"],
       searchfieldoperators: [">="],

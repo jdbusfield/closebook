@@ -44,7 +44,7 @@ export async function fetchRentalWorksRevenueData(): Promise<RentalWorksRevenueD
   // Fetch two sets of invoices + orders + quotes in parallel
   const [invoiceByDate, invoiceByBilling, orderResult, quoteResult] =
     await Promise.all([
-      rw.browse<RWInvoiceRow>("invoice", {
+      rw.browseAll<RWInvoiceRow>("invoice", {
         pagesize: 2000,
         searchfields: ["InvoiceDate"],
         searchfieldoperators: [">="],
@@ -53,7 +53,7 @@ export async function fetchRentalWorksRevenueData(): Promise<RentalWorksRevenueD
         orderby: "InvoiceDate",
         orderbydirection: "desc",
       }),
-      rw.browse<RWInvoiceRow>("invoice", {
+      rw.browseAll<RWInvoiceRow>("invoice", {
         pagesize: 2000,
         searchfields: ["BillingEndDate"],
         searchfieldoperators: [">="],
@@ -62,7 +62,7 @@ export async function fetchRentalWorksRevenueData(): Promise<RentalWorksRevenueD
         orderby: "BillingEndDate",
         orderbydirection: "desc",
       }),
-      rw.browse<RWOrderRow>("order", {
+      rw.browseAll<RWOrderRow>("order", {
         pagesize: 2000,
         searchfields: ["OrderDate"],
         searchfieldoperators: [">="],
@@ -71,7 +71,7 @@ export async function fetchRentalWorksRevenueData(): Promise<RentalWorksRevenueD
         orderby: "OrderDate",
         orderbydirection: "desc",
       }),
-      rw.browse<RWQuoteRow>("quote", {
+      rw.browseAll<RWQuoteRow>("quote", {
         pagesize: 2000,
         searchfields: ["QuoteDate"],
         searchfieldoperators: [">="],

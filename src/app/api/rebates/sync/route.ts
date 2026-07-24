@@ -160,7 +160,7 @@ export async function POST(request: Request) {
         await rw.ensureAuth(process.env.RW_USERNAME!, process.env.RW_PASSWORD!);
 
         // Search for the invoice by number
-        const invoiceResult = await rw.browse<RWInvoice>("invoice", {
+        const invoiceResult = await rw.browseAll<RWInvoice>("invoice", {
           pagesize: 10,
           searchfields: ["InvoiceNumber"],
           searchfieldoperators: ["="],
@@ -243,7 +243,7 @@ export async function POST(request: Request) {
         // Fetch and store invoice items
         let itemsSynced = 0;
         try {
-          const itemResult = await rw.browse<RWInvoiceItem>("invoiceitem", {
+          const itemResult = await rw.browseAll<RWInvoiceItem>("invoiceitem", {
             pagesize: 500,
             uniqueids: { InvoiceId: inv.InvoiceId },
           });
@@ -318,7 +318,7 @@ export async function POST(request: Request) {
         // Fetch orders for this customer
         // Note: order browse doesn't support CustomerId as searchfield,
         // so we search by Customer name instead
-        const orderResult = await rw.browse<{
+        const orderResult = await rw.browseAll<{
           OrderId: string;
           OrderNumber: string;
           OrderDate: string;
@@ -399,7 +399,7 @@ async function syncCustomerInvoices(
   await rw.ensureAuth(process.env.RW_USERNAME!, process.env.RW_PASSWORD!);
 
   // Fetch invoices for this customer
-  const invoiceResult = await rw.browse<RWInvoice>("invoice", {
+  const invoiceResult = await rw.browseAll<RWInvoice>("invoice", {
     pagesize: 2000,
     searchfields: ["CustomerId"],
     searchfieldoperators: ["="],
@@ -465,7 +465,7 @@ async function syncCustomerInvoices(
 
     // Fetch invoice items (batched 5 at a time)
     try {
-      const itemResult = await rw.browse<RWInvoiceItem>("invoiceitem", {
+      const itemResult = await rw.browseAll<RWInvoiceItem>("invoiceitem", {
         pagesize: 500,
         uniqueids: { InvoiceId: inv.InvoiceId },
       });

@@ -18,7 +18,7 @@ export async function GET() {
     const now = new Date();
     const threeMonthsAgo = formatRWDate(new Date(now.getFullYear(), now.getMonth() - 3, 1));
 
-    const result = await rw.browse<RWOrderRow>("order", {
+    const result = await rw.browseAll<RWOrderRow>("order", {
       pagesize: 2000,
       searchfields: ["OrderDate"],
       searchfieldoperators: [">="],

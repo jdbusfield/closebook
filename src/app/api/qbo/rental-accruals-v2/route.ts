@@ -109,7 +109,7 @@ export async function POST(request: Request) {
   );
 
   const [byInvoiceDate, byBillingEnd, ordersRes] = await Promise.all([
-    rw.browse<RWInvoiceRowWithLocation>("invoice", {
+    rw.browseAll<RWInvoiceRowWithLocation>("invoice", {
       pagesize: 2000,
       searchfields: ["InvoiceDate"],
       searchfieldoperators: [">="],
@@ -118,7 +118,7 @@ export async function POST(request: Request) {
       orderby: "InvoiceDate",
       orderbydirection: "desc",
     }),
-    rw.browse<RWInvoiceRowWithLocation>("invoice", {
+    rw.browseAll<RWInvoiceRowWithLocation>("invoice", {
       pagesize: 2000,
       searchfields: ["BillingEndDate"],
       searchfieldoperators: [">="],
@@ -127,7 +127,7 @@ export async function POST(request: Request) {
       orderby: "BillingEndDate",
       orderbydirection: "desc",
     }),
-    rw.browse<RWOrderRowWithLocation>("order", {
+    rw.browseAll<RWOrderRowWithLocation>("order", {
       pagesize: 2000,
       searchfields: ["OrderDate"],
       searchfieldoperators: [">="],

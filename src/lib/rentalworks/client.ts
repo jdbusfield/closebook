@@ -236,6 +236,33 @@ export class RentalWorksClient {
   }
 
   /**
+   * Browse ALL pages of a query, concatenating rows. The browse endpoint caps
+   * each response at `pagesize` rows (max 2000) and does NOT reliably honor the
+   * requested sort when truncating, so any query that can exceed one page MUST
+   * use this instead of browse() to avoid silently dropping rows.
+   */
+  async browseAll<T = Record<string, unknown>>(
+    entity: string,
+    params: BrowseRequest = {},
+    maxPages = 50,
+  ): Promise<BrowseResponse<T>> {
+    const pagesize = params.pagesize ?? 2000;
+    let page = await this.browse<T>(entity, { ...params, pagesize, pageno: 1 });
+    const rows = [...page.rows];
+    let pageno = 1;
+    while (
+      rows.length < page.totalRows &&
+      page.rows.length > 0 &&
+      pageno < maxPages
+    ) {
+      pageno++;
+      page = await this.browse<T>(entity, { ...params, pagesize, pageno });
+      rows.push(...page.rows);
+    }
+    return { ...page, rows, pageNo: 1 };
+  }
+
+  /**
    * Browse returning raw positional arrays (for performance-critical paths
    * where you want to avoid object creation overhead).
    */

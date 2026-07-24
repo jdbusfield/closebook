@@ -112,7 +112,7 @@ export async function syncRwInvoiceItems(
   since.setMonth(since.getMonth() - monthsBack);
   since.setDate(1);
 
-  const headerResult = await rw.browse<RWInvoiceHeaderRow>("invoice", {
+  const headerResult = await rw.browseAll<RWInvoiceHeaderRow>("invoice", {
     pagesize: 2000,
     searchfields: ["InvoiceDate"],
     searchfieldoperators: [">="],
@@ -175,7 +175,7 @@ export async function syncRwInvoiceItems(
 
       try {
         // Fetch line items for this invoice
-        const items = await rw.browse<RWInvoiceItemRow>("invoiceitem", {
+        const items = await rw.browseAll<RWInvoiceItemRow>("invoiceitem", {
           pagesize: 500,
           uniqueids: { InvoiceId: inv.InvoiceId },
         });

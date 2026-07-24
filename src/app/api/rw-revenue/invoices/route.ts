@@ -20,7 +20,7 @@ export async function GET() {
     const thirtySixMonthsAgo = formatRWDate(new Date(now.getFullYear(), now.getMonth() - 36, 1));
 
     const [byDate, byBilling] = await Promise.all([
-      rw.browse<RWInvoiceRow>("invoice", {
+      rw.browseAll<RWInvoiceRow>("invoice", {
         pagesize: 2000,
         searchfields: ["InvoiceDate"],
         searchfieldoperators: [">="],
@@ -29,7 +29,7 @@ export async function GET() {
         orderby: "InvoiceDate",
         orderbydirection: "desc",
       }),
-      rw.browse<RWInvoiceRow>("invoice", {
+      rw.browseAll<RWInvoiceRow>("invoice", {
         pagesize: 2000,
         searchfields: ["BillingEndDate"],
         searchfieldoperators: [">="],
