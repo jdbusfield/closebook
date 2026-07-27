@@ -39,7 +39,6 @@ export async function fetchRentalWorksRevenueData(): Promise<RentalWorksRevenueD
 
   const invoiceStartDate = formatRWDate(thirteenMonthsAgo);
   const billingStartDate = formatRWDate(thirtySixMonthsAgo);
-  const orderStartDate = formatRWDate(threeMonthsAgo);
 
   // Fetch two sets of invoices + orders + quotes in parallel
   const [invoiceByDate, invoiceByBilling, orderResult, quoteResult] =
@@ -62,21 +61,14 @@ export async function fetchRentalWorksRevenueData(): Promise<RentalWorksRevenueD
         orderby: "BillingEndDate",
         orderbydirection: "desc",
       }),
-      rw.browseAll<RWOrderRow>("order", {
+      // Month-windowed: a single 3-month order browse exceeds the 60s function cap.
+      rw.browseAllByMonthWindows<RWOrderRow>("order", "OrderDate", threeMonthsAgo, {
         pagesize: 2000,
-        searchfields: ["OrderDate"],
-        searchfieldoperators: [">="],
-        searchfieldvalues: [orderStartDate],
-        searchfieldtypes: ["date"],
         orderby: "OrderDate",
         orderbydirection: "desc",
       }),
-      rw.browseAll<RWQuoteRow>("quote", {
+      rw.browseAllByMonthWindows<RWQuoteRow>("quote", "QuoteDate", threeMonthsAgo, {
         pagesize: 2000,
-        searchfields: ["QuoteDate"],
-        searchfieldoperators: [">="],
-        searchfieldvalues: [orderStartDate],
-        searchfieldtypes: ["date"],
         orderby: "QuoteDate",
         orderbydirection: "desc",
       }),

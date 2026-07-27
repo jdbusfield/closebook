@@ -3,12 +3,6 @@ import type { RWOrderRow } from "@/lib/utils/revenue-projection";
 
 export const maxDuration = 60;
 
-function formatRWDate(d: Date): string {
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${mm}/${dd}/${d.getFullYear()}`;
-}
-
 export async function GET() {
   try {
     const { RentalWorksClient } = await import("@/lib/rentalworks/client");
@@ -16,14 +10,11 @@ export async function GET() {
     await rw.ensureAuth(process.env.RW_USERNAME!, process.env.RW_PASSWORD!);
 
     const now = new Date();
-    const threeMonthsAgo = formatRWDate(new Date(now.getFullYear(), now.getMonth() - 3, 1));
+    const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1);
 
-    const result = await rw.browseAll<RWOrderRow>("order", {
+    // Month-windowed: a single 3-month browse exceeds Vercel's 60s cap.
+    const result = await rw.browseAllByMonthWindows<RWOrderRow>("order", "OrderDate", threeMonthsAgo, {
       pagesize: 2000,
-      searchfields: ["OrderDate"],
-      searchfieldoperators: [">="],
-      searchfieldvalues: [threeMonthsAgo],
-      searchfieldtypes: ["date"],
       orderby: "OrderDate",
       orderbydirection: "desc",
     });

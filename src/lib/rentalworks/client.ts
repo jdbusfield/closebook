@@ -263,6 +263,62 @@ export class RentalWorksClient {
   }
 
   /**
+   * Browse a date-filtered query as parallel calendar-month windows.
+   *
+   * Browse server time scales with row count (~2000 rows ≈ 48s on `order`),
+   * so a single wide date range can blow past Vercel's 60s function cap.
+   * Splitting into month windows keeps each call small and runs them
+   * concurrently. Windows are [monthStart, nextMonthStart) except the
+   * current month, which is open-ended to catch future-dated records.
+   * Rows come back newest-window-first; pass orderbydirection 'desc' to
+   * keep rows sorted desc overall like a single browse would return.
+   */
+  async browseAllByMonthWindows<T = Record<string, unknown>>(
+    entity: string,
+    dateField: string,
+    fromDate: Date,
+    params: BrowseRequest = {},
+  ): Promise<BrowseResponse<T>> {
+    const fmt = (d: Date) =>
+      `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}/${d.getFullYear()}`;
+
+    const now = new Date();
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const starts: Date[] = [];
+    const cursor = new Date(fromDate.getFullYear(), fromDate.getMonth(), 1);
+    while (cursor <= currentMonthStart) {
+      starts.push(new Date(cursor));
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+    if (starts.length === 0) starts.push(currentMonthStart);
+
+    const pages = await Promise.all(
+      starts.map((start, i) => {
+        const end = i < starts.length - 1 ? starts[i + 1] : null;
+        return this.browseAll<T>(entity, {
+          ...params,
+          searchfields: end ? [dateField, dateField] : [dateField],
+          searchfieldoperators: end ? ['>=', '<'] : ['>='],
+          searchfieldvalues: end ? [fmt(start), fmt(end)] : [fmt(start)],
+          searchfieldtypes: end ? ['date', 'date'] : ['date'],
+          searchcondition: end ? ['and'] : [],
+        });
+      }),
+    );
+
+    const rows = pages.slice().reverse().flatMap((p) => p.rows);
+    const last = pages[pages.length - 1];
+    return {
+      rows,
+      totalRows: rows.length,
+      pageNo: 1,
+      pageSize: rows.length,
+      totalPages: 1,
+      columnIndex: last.columnIndex,
+    };
+  }
+
+  /**
    * Browse returning raw positional arrays (for performance-critical paths
    * where you want to avoid object creation overhead).
    */
