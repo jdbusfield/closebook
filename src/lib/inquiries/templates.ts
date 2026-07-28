@@ -179,6 +179,39 @@ export const DEFAULT_TEMPLATES: MessageTemplate[] = [
       "Hi {first},\n\nWanted to check back in — are you still planning on the restroom trailer for {date}? If you've got questions on sizing, service, or delivery I'm glad to help, and I can still lock in your date.\n\n— {rep}\n{company}",
   },
   {
+    id: "photos-email",
+    label: "Photos + what to expect",
+    channel: "email",
+    track: "general",
+    stages: ["quoted", "followup"],
+    cadence: "Day 2 — value touch, no ask",
+    subject: "A look inside the trailer for {date}",
+    body:
+      "Hi {first},\n\nWhile you're deciding, want a look inside? I can send interior photos of the exact unit I quoted for {date} — real sinks, climate control, and finishes people don't expect from a rental.\n\nReply \"photos\" and they're on the way. If it helps to see one in person, we can usually arrange that too.\n\n— {rep}\n{company}",
+  },
+  {
+    id: "budget-email",
+    label: "Budget check — right-size the quote",
+    channel: "email",
+    track: "general",
+    stages: ["quoted", "followup"],
+    cadence: "Day 5 — if price might be the holdup",
+    subject: "If the number didn't fit, tell me",
+    body:
+      "Hi {first},\n\nIf my quote missed your budget, I'd rather fix it than lose you. There's usually room to right-size — a smaller unit, a tighter service schedule, or different dates can move the number a fair amount.\n\nWhat were you hoping to spend? I'll tell you straight what we can do at that price.\n\n— {rep}\n{company}",
+  },
+  {
+    id: "prod-email-checkin",
+    label: "Shoot check-in + COI offer",
+    channel: "email",
+    track: "production",
+    stages: ["quoted", "followup"],
+    cadence: "Day 3 — production leads",
+    subject: "Still good for the {location} shoot?",
+    body:
+      "Hi {first},\n\nChecking in on the trailer for your shoot. If the schedule moved, no problem — we flex dates all the time and I can re-hold the unit around your new plan.\n\nIf you're waiting on locations or insurance, send over the COI requirements and I'll have the certificate back to you the same day.\n\n— {rep}\n{company}",
+  },
+  {
     id: "breakup-email",
     label: "Breakup / closing your file",
     channel: "email",
