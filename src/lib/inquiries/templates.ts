@@ -15,6 +15,7 @@ import {
   fmtDate,
   fmtRange,
   fmtMoney,
+  inquiryKind,
 } from "./shared";
 
 // Brand identity for the {company}/{company_email} merge tokens + the rep
@@ -275,7 +276,17 @@ export function buildDetailsBlock(inq: Inquiry): string {
   });
   if (dates) lines.push(`Dates: ${dates}`);
   if (inq.duration) lines.push(`Duration: ${inq.duration}`);
-  if (inq.units != null) lines.push(`Units: ${inq.units} (${inq.units * 4} stalls)`);
+  // Stall math only applies to bathroom-trailer requests. Production-supplies
+  // orders skip units entirely (legacy rows hold a meaningless piece-count sum);
+  // their real contents are already in the notes' itemized ORDER block.
+  if (inq.units != null) {
+    const kind = inquiryKind(inq);
+    if (kind === "trailer") {
+      lines.push(`Units: ${inq.units} (${inq.units * 4} stalls)`);
+    } else if (kind === "general") {
+      lines.push(`Units: ${inq.units}`);
+    }
+  }
   if (inq.guests) lines.push(`Guest count: ${inq.guests}`);
   if (inq.location) lines.push(`Location: ${inq.location}`);
   if (inq.attendant) lines.push(`Attendant: ${inq.attendant}`);

@@ -69,6 +69,10 @@ import {
   messageSide,
   isReservationRequest,
   SOURCE_LABELS,
+  inquiryKind,
+  intakeMethodLabel,
+  parseOrderNotes,
+  orderHeaderValue,
 } from "@/lib/inquiries/shared";
 
 export interface DrawerCallbacks {
@@ -534,6 +538,14 @@ export function ContactGrid({
   const set = (k: keyof DetailsDraft, v: string) =>
     setDraft((d) => ({ ...d, [k]: v }));
 
+  // The detail rows follow the inquiry's shape: production-supplies orders show
+  // job/pickup/shoot/return + the itemized order; trailer requests keep the
+  // units/guests/attendant fields; general Versatile inquiries show neither.
+  const kind = inquiryKind(inquiry);
+  const order = kind === "order" ? parseOrderNotes(inquiry.notes) : null;
+  const method = intakeMethodLabel(inquiry);
+  const shootDate = orderHeaderValue(order, "Shoot");
+
   // Build a patch of ONLY the changed fields, normalizing "" → null and the
   // numeric fields to numbers. Dates compare against the picker-normalized
   // original so untouched free-text values are never overwritten.
@@ -583,15 +595,23 @@ export function ContactGrid({
     return (
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
-          <DetailField label="Event type" value={draft.use_case} onChange={(v) => set("use_case", v)} />
+          <DetailField label={kind === "order" ? "Type" : "Event type"} value={draft.use_case} onChange={(v) => set("use_case", v)} />
           <DetailField label="Source" value={draft.source} onChange={(v) => set("source", v)} />
-          <DetailField label="Start date" type="date" value={draft.start_date} onChange={(v) => set("start_date", v)} />
-          <DetailField label="End date" type="date" value={draft.end_date} onChange={(v) => set("end_date", v)} />
-          <DetailField label="Duration" placeholder="e.g. 3 days" value={draft.duration} onChange={(v) => set("duration", v)} />
+          <DetailField label={kind === "order" ? "Pickup date" : "Start date"} type="date" value={draft.start_date} onChange={(v) => set("start_date", v)} />
+          <DetailField label={kind === "order" ? "Return date" : "End date"} type="date" value={draft.end_date} onChange={(v) => set("end_date", v)} />
+          {kind !== "order" && (
+            <DetailField label="Duration" placeholder="e.g. 3 days" value={draft.duration} onChange={(v) => set("duration", v)} />
+          )}
           <DetailField label="Location" value={draft.location} onChange={(v) => set("location", v)} />
-          <DetailField label="Units" type="number" value={draft.units} onChange={(v) => set("units", v)} />
-          <DetailField label="Guests" value={draft.guests} onChange={(v) => set("guests", v)} />
-          <DetailField label="Attendant" value={draft.attendant} onChange={(v) => set("attendant", v)} />
+          {kind !== "order" && (
+            <DetailField label="Units" type="number" value={draft.units} onChange={(v) => set("units", v)} />
+          )}
+          {kind !== "order" && (
+            <DetailField label="Guests" value={draft.guests} onChange={(v) => set("guests", v)} />
+          )}
+          {kind !== "order" && (
+            <DetailField label="Attendant" value={draft.attendant} onChange={(v) => set("attendant", v)} />
+          )}
           <DetailField label="Est. value ($)" type="number" value={draft.estimated_value} onChange={(v) => set("estimated_value", v)} />
           <DetailField label="Phone" type="tel" value={draft.phone} onChange={(v) => set("phone", v)} />
           <DetailField label="Email" type="email" value={draft.email} onChange={(v) => set("email", v)} />
@@ -620,16 +640,41 @@ export function ContactGrid({
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2.5">
-        <KV k="Event type" v={inquiry.use_case} />
-        <KV k="Dates" v={dates} mono />
-        <KV k="Duration" v={inquiry.duration} />
+        <KV k={kind === "order" ? "Type" : "Event type"} v={inquiry.use_case} />
+        {kind === "order" && (
+          <>
+            <KV k="Job" v={orderHeaderValue(order, "Job Name")} />
+            <KV k="Production co." v={orderHeaderValue(order, "Production Company")} />
+          </>
+        )}
+        {kind === "order" && (inquiry.start_date || inquiry.end_date) ? (
+          <>
+            <KV k="Pickup" v={toDateInput(inquiry.start_date) || inquiry.start_date} mono />
+            {shootDate && <KV k="Shoot" v={shootDate} mono />}
+            <KV k="Return" v={toDateInput(inquiry.end_date) || inquiry.end_date} mono />
+          </>
+        ) : (
+          <KV k="Dates" v={dates} mono />
+        )}
+        {kind !== "order" && <KV k="Duration" v={inquiry.duration} />}
         <KV k="Location" v={inquiry.location} />
-        <KV
-          k="Units"
-          v={inquiry.units != null ? `${inquiry.units} (${inquiry.units * 4} stalls)` : null}
-        />
-        <KV k="Guests" v={inquiry.guests} />
-        <KV k="Attendant" v={inquiry.attendant} />
+        {kind === "trailer" && (
+          <KV
+            k="Units"
+            v={inquiry.units != null ? `${inquiry.units} (${inquiry.units * 4} stalls)` : null}
+          />
+        )}
+        {kind === "general" && inquiry.units != null && (
+          <KV k="Units" v={String(inquiry.units)} />
+        )}
+        {kind !== "order" && <KV k="Guests" v={inquiry.guests} />}
+        {kind !== "order" && <KV k="Attendant" v={inquiry.attendant} />}
+        {kind === "order" && order && (
+          <KV k="Order size" v={`${order.lineCount} line items · ${order.pieceCount} pieces`} />
+        )}
+        {kind === "order" && order?.specialRequests && (
+          <KV k="Special requests" v={order.specialRequests} />
+        )}
         <KV k="Phone" v={inquiry.phone} mono />
         <KV k="Email" v={inquiry.email} />
         <KV
@@ -637,6 +682,7 @@ export function ContactGrid({
           v={
             <span className="inline-flex items-center gap-1.5">
               {(inquiry.source && SOURCE_LABELS[inquiry.source]) || inquiry.source || "—"}
+              {method && <span className="text-muted-foreground">· {method}</span>}
               <BrandBadge source={inquiry.source} />
               <GoogleAdBadge gclid={inquiry.gclid} />
             </span>
@@ -688,6 +734,8 @@ export function ContactGrid({
         )}
       </div>
 
+      {order && <OrderItemsBlock order={order} />}
+
       {onSaveDetails && (
         <Button
           size="sm"
@@ -700,6 +748,53 @@ export function ContactGrid({
         >
           <Pencil className="size-3.5" /> Edit details
         </Button>
+      )}
+    </div>
+  );
+}
+
+// --- Itemized order (production-supplies inquiries) ------------------------
+// Renders the parsed ORDER block from the website order form: categories with
+// qty × item lines, collapsed behind a toggle so long orders don't swallow the
+// drawer. Resale items are tagged.
+function OrderItemsBlock({ order }: { order: NonNullable<ReturnType<typeof parseOrderNotes>> }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-md border">
+      <button
+        className="flex w-full items-center justify-between px-3 py-2 text-xs font-medium hover:bg-muted/50"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span>
+          Ordered items ({order.lineCount} lines · {order.pieceCount} pieces)
+        </span>
+        <span className="text-muted-foreground">{open ? "Hide" : "Show"}</span>
+      </button>
+      {open && (
+        <div className="max-h-64 space-y-2 overflow-y-auto border-t px-3 py-2">
+          {order.categories.map((cat) => (
+            <div key={cat.name}>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {cat.name}
+              </div>
+              {cat.lines.map((line, i) => (
+                <div key={i} className="flex items-baseline gap-2 py-0.5 text-sm">
+                  <span className="w-8 shrink-0 text-right font-mono text-xs text-muted-foreground">
+                    {line.qty}×
+                  </span>
+                  <span>
+                    {line.name}
+                    {line.resale && (
+                      <span className="ml-1.5 rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-800">
+                        resale
+                      </span>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

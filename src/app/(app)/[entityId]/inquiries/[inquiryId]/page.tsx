@@ -51,6 +51,10 @@ import {
   fmtMoney,
   type Inquiry as CrmInquiry,
   type InquiryQuote,
+  inquiryKind,
+  intakeMethodLabel,
+  parseOrderNotes,
+  orderHeaderValue,
 } from "@/lib/inquiries/shared";
 
 interface Inquiry {
@@ -69,6 +73,7 @@ interface Inquiry {
   guests: string | null;
   location: string | null;
   notes: string | null;
+  source: string | null;
   internal_notes: string | null;
   rw_quote_number: string | null;
   rw_order_number: string | null;
@@ -415,6 +420,13 @@ export default function InquiryDetailPage() {
     eventsByMessage.get(ev.message_id)!.add(ev.event_type);
   }
 
+  // Shape-aware request details: production-supplies orders show job/pickup/
+  // shoot/return + order size instead of the trailer fields (units → stalls,
+  // guests, attendant), which only apply to bathroom-trailer inquiries.
+  const kind = inquiryKind(inquiry);
+  const order = kind === "order" ? parseOrderNotes(inquiry.notes) : null;
+  const method = intakeMethodLabel(inquiry);
+
   return (
     <div className="space-y-6 p-4 md:p-6 max-w-5xl">
       <div className="flex items-center gap-3">
@@ -440,23 +452,50 @@ export default function InquiryDetailPage() {
             <CardTitle className="text-base">Request</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-4">
-            <Field label="Use case" value={inquiry.use_case} />
+            <Field label={kind === "order" ? "Type" : "Use case"} value={inquiry.use_case} />
             <Field label="Location" value={inquiry.location} />
-            <Field
-              label="Dates"
-              value={
-                inquiry.start_date
-                  ? `${inquiry.start_date}${inquiry.end_date ? ` → ${inquiry.end_date}` : ""}`
-                  : null
-              }
-            />
-            <Field label="Duration" value={inquiry.duration} />
-            <Field
-              label="Units"
-              value={inquiry.units != null ? `${inquiry.units} (${inquiry.units * 4} stalls)` : null}
-            />
-            <Field label="Attendant" value={inquiry.attendant} />
-            <Field label="Guest count" value={inquiry.guests} />
+            {kind === "order" && (
+              <>
+                <Field label="Job" value={orderHeaderValue(order, "Job Name")} />
+                <Field label="Production co." value={orderHeaderValue(order, "Production Company")} />
+                <Field label="Pickup" value={inquiry.start_date} />
+                <Field label="Shoot" value={orderHeaderValue(order, "Shoot")} />
+                <Field label="Return" value={inquiry.end_date} />
+                {order && (
+                  <Field
+                    label="Order size"
+                    value={`${order.lineCount} line items · ${order.pieceCount} pieces`}
+                  />
+                )}
+                <Field label="Special requests" value={order?.specialRequests ?? null} />
+              </>
+            )}
+            {kind !== "order" && (
+              <>
+                <Field
+                  label="Dates"
+                  value={
+                    inquiry.start_date
+                      ? `${inquiry.start_date}${inquiry.end_date ? ` → ${inquiry.end_date}` : ""}`
+                      : null
+                  }
+                />
+                <Field label="Duration" value={inquiry.duration} />
+                <Field
+                  label="Units"
+                  value={
+                    inquiry.units != null
+                      ? kind === "trailer"
+                        ? `${inquiry.units} (${inquiry.units * 4} stalls)`
+                        : String(inquiry.units)
+                      : null
+                  }
+                />
+                <Field label="Attendant" value={inquiry.attendant} />
+                <Field label="Guest count" value={inquiry.guests} />
+              </>
+            )}
+            {method && <Field label="Received via" value={method} />}
             <Field
               label="Est. value"
               value={

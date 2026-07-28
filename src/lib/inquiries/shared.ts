@@ -840,3 +840,125 @@ export function extractReference(subject: string | null | undefined): string | n
   const m = subject.match(REFERENCE_RE);
   return m ? m[0].toUpperCase() : null;
 }
+
+// ─── Inquiry shape detection ─────────────────────────────────────────────────
+//
+// The pipeline started as a bathroom-trailer CRM, so its detail views assumed
+// every inquiry had trailer fields (units → stalls, guests, attendant). The
+// Versatile site feeds three different shapes through the same board, so the
+// views branch on the detected kind:
+//   order   — Versatile production-supplies order form (itemized ORDER block)
+//   trailer — bathroom/restroom trailer request (HDR's native shape)
+//   general — everything else from the Versatile site (vehicles, equipment,
+//             studios, open-account) where trailer fields are meaningless
+export type InquiryKind = "order" | "trailer" | "general";
+
+const ORDER_BLOCK_RE = /ORDER \(\d+ items?\):/;
+
+type KindFields = Pick<Inquiry, "use_case" | "notes" | "source">;
+
+export function inquiryKind(inq: KindFields): InquiryKind {
+  const useCase = (inq.use_case || "").toLowerCase();
+  if (useCase.includes("production supplies order") || ORDER_BLOCK_RE.test(inq.notes || "")) {
+    return "order";
+  }
+  // Non-Versatile sources (HDR site services, manual entries, email captures)
+  // keep the trailer shape exactly as before.
+  if ((inq.source || "") !== "versatile") return "trailer";
+  return /bathroom|restroom|stall|trailer/.test(useCase) ? "trailer" : "general";
+}
+
+// How the lead physically arrived, shown next to the source badge. Only the
+// Versatile site runs multiple intake forms; other sources are self-describing.
+export function intakeMethodLabel(inq: KindFields): string | null {
+  if ((inq.source || "") !== "versatile") return null;
+  if (inquiryKind(inq) === "order") return "Order form";
+  if ((inq.use_case || "").toLowerCase().includes("open an account")) return "Open-account form";
+  return "Inquiry form";
+}
+
+// ─── Production-supplies order parsing ──────────────────────────────────────
+//
+// The Versatile /orders form serializes the whole submission into `notes`:
+//   Job Name: …\nProduction Company: …\n…
+//   \nSPECIAL REQUESTS:\n…
+//   \nORDER (14 items):\nCATEGORY\n  4 × 6' Table\n  1 × Trashliners (resale)
+// This parses it back into structure for type-aware display.
+
+export interface OrderLine {
+  qty: number;
+  name: string;
+  resale: boolean;
+}
+
+export interface OrderCategory {
+  name: string;
+  lines: OrderLine[];
+}
+
+export interface ParsedOrder {
+  /** "Label: value" pairs from the production/contact header. */
+  header: { label: string; value: string }[];
+  specialRequests: string | null;
+  categories: OrderCategory[];
+  /** Distinct order lines. */
+  lineCount: number;
+  /** Total pieces (sum of quantities). */
+  pieceCount: number;
+}
+
+export function parseOrderNotes(notes: string | null | undefined): ParsedOrder | null {
+  if (!notes) return null;
+  const marker = notes.match(ORDER_BLOCK_RE);
+  if (!marker || marker.index == null) return null;
+
+  let before = notes.slice(0, marker.index);
+  const after = notes.slice(marker.index + marker[0].length);
+
+  let specialRequests: string | null = null;
+  const sr = before.match(/SPECIAL REQUESTS:\s*\n?([\s\S]*)$/);
+  if (sr && sr.index != null) {
+    specialRequests = sr[1].trim() || null;
+    before = before.slice(0, sr.index);
+  }
+
+  const header: { label: string; value: string }[] = [];
+  for (const line of before.split(/\r?\n/)) {
+    const m = line.match(/^([^:\n]+):\s*(.+)$/);
+    if (m) header.push({ label: m[1].trim(), value: m[2].trim() });
+  }
+
+  const categories: OrderCategory[] = [];
+  let current: OrderCategory | null = null;
+  let lineCount = 0;
+  let pieceCount = 0;
+  for (const raw of after.split(/\r?\n/)) {
+    if (!raw.trim()) continue;
+    // Item lines are indented: "  4 × 6' Table" ("×" from the form; accept "x" too)
+    const item = raw.match(/^\s+(\d+)\s*[×x]\s*(.+)$/);
+    if (item) {
+      const resale = /\(resale\)\s*$/i.test(item[2]);
+      const name = item[2].replace(/\s*\(resale\)\s*$/i, "").trim();
+      if (!current) {
+        current = { name: "Items", lines: [] };
+        categories.push(current);
+      }
+      current.lines.push({ qty: Number(item[1]), name, resale });
+      lineCount += 1;
+      pieceCount += Number(item[1]);
+    } else {
+      current = { name: raw.trim(), lines: [] };
+      categories.push(current);
+    }
+  }
+  if (lineCount === 0) return null;
+
+  return { header, specialRequests, categories, lineCount, pieceCount };
+}
+
+/** Case-insensitive lookup into a parsed order's header block. */
+export function orderHeaderValue(order: ParsedOrder | null, label: string): string | null {
+  if (!order) return null;
+  const hit = order.header.find((h) => h.label.toLowerCase() === label.toLowerCase());
+  return hit?.value ?? null;
+}
