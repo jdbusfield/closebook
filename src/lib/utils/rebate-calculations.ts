@@ -310,11 +310,14 @@ export function calculateCustomerRebates(
   invoiceItemsMap: Map<string, CachedInvoiceItem[]>,
   excludedICodes: Set<string>,
 ): RebateCalculationResult[] {
-  // Sort by BillingEndDate asc, then InvoiceDate asc
+  // Sort by BillingEndDate asc, then InvoiceDate asc, then invoice number so a
+  // base invoice always lands before its lettered adjustment when dates tie.
   const sorted = [...invoices].sort((a, b) => {
     const da = a.billing_end_date || a.invoice_date || "";
     const db = b.billing_end_date || b.invoice_date || "";
-    return da.localeCompare(db);
+    return (
+      da.localeCompare(db) || a.invoice_number.localeCompare(b.invoice_number)
+    );
   });
 
   // Filter to rebatable invoices (CLOSED, PROCESSED, or APPROVED status)
@@ -323,9 +326,25 @@ export function calculateCustomerRebates(
     return status === "CLOSED" || status === "PROCESSED" || status === "APPROVED";
   });
 
+  // RW issues reversal invoices as the base number plus a trailing letter
+  // (V300607 → V300607A) with negated header totals, while the cached line
+  // items keep positive amounts. Pair each adjustment with its base invoice so
+  // the two legs cancel: the adjustment reverses rebate at the base leg's
+  // effective rate, netting the pair to the adjusted amount (zero on a full
+  // reversal).
+  const numbersInSet = new Set(filtered.map((i) => i.invoice_number));
+  const adjustmentBaseNumber = new Map<string, string>();
+  for (const inv of filtered) {
+    const m = inv.invoice_number.match(/^(.+\d)[A-Z]$/);
+    if (m && numbersInSet.has(m[1]) && inv.gross_total < 0) {
+      adjustmentBaseNumber.set(inv.invoice_number, m[1]);
+    }
+  }
+
   let cumulativeRevenue = 0;
   let cumulativeRebate = 0;
   const results: RebateCalculationResult[] = [];
+  const resultByNumber = new Map<string, RebateCalculationResult>();
 
   for (const inv of filtered) {
     // Calculate excluded amount from cached line items.
@@ -372,123 +391,95 @@ export function calculateCustomerRebates(
       }
     }
 
+    // Adjustment leg? Header totals are negated but line items are cached
+    // positive, so run the formula on absolute values and negate the results.
+    const baseNumber = adjustmentBaseNumber.get(inv.invoice_number);
+    const isAdjustment = baseNumber != null;
+    const baseResult = baseNumber != null ? resultByNumber.get(baseNumber) : undefined;
+    const sign = isAdjustment ? -1 : 1;
+
     // Effective discount = invoice-level discount minus the portion that
     // landed on excluded items. This is what the rebate formula should see.
-    const effectiveDiscount = Math.max(0, (inv.discount_amount || 0) - excludedDiscount);
+    const invoiceDiscount = isAdjustment
+      ? Math.abs(inv.discount_amount || 0)
+      : inv.discount_amount || 0;
+    const effectiveDiscount = Math.max(0, invoiceDiscount - excludedDiscount);
 
     // Equipment type
     const equipType = inv.equipment_type as EquipmentType;
 
-    // Tier lookup based on cumulative revenue BEFORE this invoice
+    // Tier lookup based on cumulative revenue BEFORE this invoice. An
+    // adjustment reverses at its base invoice's tier and rate so the pair
+    // cancels exactly even if cumulative revenue has since crossed a tier
+    // threshold.
     const tier = getTierForRevenue(customer.tiers, cumulativeRevenue);
-    const rebateRate = getTierRate(tier, equipType);
+    const rebateRate = baseResult ? baseResult.rebate_rate : getTierRate(tier, equipType);
+    const maxDiscRate = getTierMaxDisc(tier, equipType);
 
     // Quarter
     const quarter = getQuarter(inv.billing_end_date || inv.invoice_date);
 
-    let result: RebateCalculationResult;
+    const calc = calculateCommercialInvoice({
+      grossTotal: isAdjustment ? Math.abs(inv.gross_total) : inv.gross_total,
+      taxAmount: isAdjustment ? Math.abs(inv.tax_amount) : inv.tax_amount,
+      discountAmount: effectiveDiscount,
+      excludedTotal,
+      excludedGrossTotal,
+      excludedTaxableTotal,
+      taxRate: customer.tax_rate,
+      rebateRate,
+      maxDiscRate,
+    });
 
-    if (customer.agreement_type === "commercial") {
-      const maxDiscRate = getTierMaxDisc(tier, equipType);
-      const calc = calculateCommercialInvoice({
-        grossTotal: inv.gross_total,
-        taxAmount: inv.tax_amount,
-        discountAmount: effectiveDiscount,
-        excludedTotal,
-        excludedGrossTotal,
-        excludedTaxableTotal,
-        taxRate: customer.tax_rate,
-        rebateRate,
-        maxDiscRate,
-      });
+    // An adjustment reverses at the base leg's effective rebate percentage so
+    // a full reversal cancels its rebate to the penny.
+    const remainingRebatePct = baseResult
+      ? baseResult.remaining_rebate_pct
+      : calc.remainingRebatePct;
+    const netRebate = isAdjustment
+      ? -(calc.beforeDiscount * (remainingRebatePct / 100))
+      : calc.netRebate;
 
-      result = {
-        invoice_id: inv.id,
-        rw_invoice_id: inv.rw_invoice_id,
-        invoice_number: inv.invoice_number,
-        invoice_date: inv.invoice_date,
-        billing_end_date: inv.billing_end_date,
-        quarter,
-        deal: inv.deal,
-        order_number: inv.order_number,
-        order_description: inv.order_description,
-        purchase_order_number: inv.purchase_order_number,
-        equipment_type: equipType,
-        list_total: inv.list_total,
-        gross_total: inv.gross_total,
-        sub_total: inv.sub_total,
-        tax_amount: inv.tax_amount,
-        discount_amount: inv.discount_amount,
-        discount_eligible_amount: effectiveDiscount,
-        taxable_sales: calc.taxableSales,
-        before_discount: calc.beforeDiscount,
-        discount_percent: calc.discountPercent,
-        excluded_total: excludedTotal,
-        excluded_items: excludedItems,
-        final_amount: calc.finalAmount,
-        tier_label: tier.label,
-        rebate_rate: rebateRate,
-        remaining_rebate_pct: calc.remainingRebatePct,
-        gross_rebate: calc.grossRebate,
-        net_rebate: calc.netRebate,
-        cumulative_revenue: 0, // set below
-        cumulative_rebate: 0,
-        is_manually_excluded: inv.is_manually_excluded,
-        manual_exclusion_reason: inv.manual_exclusion_reason,
-      };
-    } else {
-      // Freelancer — use same commercial formula
-      const maxDiscRate = getTierMaxDisc(tier, equipType);
-      const calc = calculateCommercialInvoice({
-        grossTotal: inv.gross_total,
-        taxAmount: inv.tax_amount,
-        discountAmount: effectiveDiscount,
-        excludedTotal,
-        excludedGrossTotal,
-        excludedTaxableTotal,
-        taxRate: customer.tax_rate,
-        rebateRate,
-        maxDiscRate,
-      });
+    const result: RebateCalculationResult = {
+      invoice_id: inv.id,
+      rw_invoice_id: inv.rw_invoice_id,
+      invoice_number: inv.invoice_number,
+      invoice_date: inv.invoice_date,
+      billing_end_date: inv.billing_end_date,
+      quarter,
+      deal: inv.deal,
+      order_number: inv.order_number,
+      order_description: inv.order_description,
+      purchase_order_number: inv.purchase_order_number,
+      equipment_type: equipType,
+      list_total: inv.list_total,
+      gross_total: inv.gross_total,
+      sub_total: inv.sub_total,
+      tax_amount: inv.tax_amount,
+      discount_amount: inv.discount_amount,
+      discount_eligible_amount: sign * effectiveDiscount,
+      taxable_sales: sign * calc.taxableSales,
+      before_discount: sign * calc.beforeDiscount,
+      discount_percent: calc.discountPercent,
+      excluded_total: sign * excludedTotal,
+      excluded_items: isAdjustment
+        ? excludedItems.map((e) => ({ ...e, amount: -e.amount }))
+        : excludedItems,
+      final_amount: sign * calc.finalAmount,
+      tier_label: baseResult ? baseResult.tier_label : tier.label,
+      rebate_rate: rebateRate,
+      remaining_rebate_pct: remainingRebatePct,
+      gross_rebate: netRebate,
+      net_rebate: netRebate,
+      cumulative_revenue: 0, // set below
+      cumulative_rebate: 0,
+      is_manually_excluded: inv.is_manually_excluded,
+      manual_exclusion_reason: inv.manual_exclusion_reason,
+    };
 
-      result = {
-        invoice_id: inv.id,
-        rw_invoice_id: inv.rw_invoice_id,
-        invoice_number: inv.invoice_number,
-        invoice_date: inv.invoice_date,
-        billing_end_date: inv.billing_end_date,
-        quarter,
-        deal: inv.deal,
-        order_number: inv.order_number,
-        order_description: inv.order_description,
-        purchase_order_number: inv.purchase_order_number,
-        equipment_type: equipType,
-        list_total: inv.list_total,
-        gross_total: inv.gross_total,
-        sub_total: inv.sub_total,
-        tax_amount: inv.tax_amount,
-        discount_amount: inv.discount_amount,
-        discount_eligible_amount: effectiveDiscount,
-        taxable_sales: calc.taxableSales,
-        before_discount: calc.beforeDiscount,
-        discount_percent: calc.discountPercent,
-        excluded_total: excludedTotal,
-        excluded_items: excludedItems,
-        final_amount: calc.finalAmount,
-        tier_label: tier.label,
-        rebate_rate: rebateRate,
-        remaining_rebate_pct: calc.remainingRebatePct,
-        gross_rebate: calc.grossRebate,
-        net_rebate: calc.netRebate,
-        cumulative_revenue: 0,
-        cumulative_rebate: 0,
-        is_manually_excluded: inv.is_manually_excluded,
-        manual_exclusion_reason: inv.manual_exclusion_reason,
-      };
-    }
-
-    // Handle manual exclusion
-    if (result.is_manually_excluded) {
+    // Handle manual exclusion — a manually excluded base invoice earns no
+    // rebate, so its adjustment leg must not reverse anything either.
+    if (result.is_manually_excluded || (isAdjustment && baseResult?.is_manually_excluded)) {
       result.net_rebate = 0;
       result.gross_rebate = 0;
       result.remaining_rebate_pct = 0;
@@ -501,6 +492,7 @@ export function calculateCustomerRebates(
     result.cumulative_revenue = cumulativeRevenue;
     result.cumulative_rebate = cumulativeRebate;
 
+    resultByNumber.set(result.invoice_number, result);
     results.push(result);
   }
 
