@@ -260,6 +260,7 @@ function MonthPreviewContent() {
   const [data, setData] = useState<OrgEstimate | null>(null);
   const [inputs, setInputs] = useState<Record<string, PreviewInput>>({});
   const [revenueBudgets, setRevenueBudgets] = useState<Record<string, number>>({});
+  const [payrollBudgets, setPayrollBudgets] = useState<Record<string, number>>({});
   const [inputsTableExists, setInputsTableExists] = useState(true);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
@@ -286,6 +287,7 @@ function MonthPreviewContent() {
         setData(est);
         setInputsTableExists(inp.tableExists !== false);
         setRevenueBudgets(inp.revenueBudgets ?? {});
+        setPayrollBudgets(inp.payrollBudgets ?? {});
         const map: Record<string, PreviewInput> = {};
         for (const row of inp.inputs ?? []) {
           map[row.entity_id] = {
@@ -328,6 +330,14 @@ function MonthPreviewContent() {
     (entityId: string): number =>
       revenueBudgets[entityId] ?? parseNum(getInput(entityId).revenueBudget),
     [revenueBudgets, getInput]
+  );
+
+  // Payroll budget: live from the budgeting module (active version, Personnel/
+  // payroll expense lines); falls back to a manually-saved figure if none.
+  const getPayrollBudget = useCallback(
+    (entityId: string): number =>
+      payrollBudgets[entityId] ?? parseNum(getInput(entityId).payrollBudget),
+    [payrollBudgets, getInput]
   );
 
   const setInputField = (entityId: string, field: keyof PreviewInput, value: string) => {
@@ -556,12 +566,12 @@ function MonthPreviewContent() {
       t.revenueEstimate += parseNum(i.revenueEstimate) - parseNum(i.revenueDeduction);
       t.revenueBudget += getRevenueBudget(e.entityId);
       t.payrollEstimate += tTotal(e.earnedInMonth);
-      t.payrollBudget += parseNum(i.payrollBudget);
+      t.payrollBudget += getPayrollBudget(e.entityId);
       t.otHours += e.overtimeHours;
       t.mealPremiums += e.mealPremiums;
     }
     return t;
-  }, [reportEntities, getInput, getRevenueBudget]);
+  }, [reportEntities, getInput, getRevenueBudget, getPayrollBudget]);
 
   return (
     <div className="max-w-[850px] mx-auto">
@@ -616,8 +626,9 @@ function MonthPreviewContent() {
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Revenue & budget figures — {monthLabel} {year}</CardTitle>
               <CardDescription>
-                Payroll cost, OT, and meal figures come from the estimate. Revenue Budget pulls
-                automatically from the Budgeting module (active budget version, Revenue accounts).
+                Payroll cost, OT, and meal figures come from the estimate. Revenue Budget and
+                Payroll Budget pull automatically from the Budgeting module (active budget
+                version; Revenue accounts / Personnel Costs).
                 {!inputsTableExists && (
                   <span className="block text-destructive mt-1">
                     Saving requires DB migration 20260706_payroll_preview_inputs.sql (Supabase Studio → SQL Editor).
@@ -631,11 +642,12 @@ function MonthPreviewContent() {
                 <span>Revenue Estimate</span>
                 <span>Revenue Budget (auto)</span>
                 <span>Less: Versa Group</span>
-                <span>Payroll Budget</span>
+                <span>Payroll Budget (auto)</span>
               </div>
               {reportEntities.map((e) => {
                 const i = getInput(e.entityId);
                 const budgetFromModule = revenueBudgets[e.entityId];
+                const payrollFromModule = payrollBudgets[e.entityId];
                 return (
                   <div key={e.entityId} className="grid grid-cols-[110px_repeat(4,1fr)] gap-2 items-center">
                     <span className="text-sm font-medium">{entityLabel(e.entityCode, e.entityName)}</span>
@@ -650,8 +662,18 @@ function MonthPreviewContent() {
                     <Input className="h-8 text-sm text-right" inputMode="decimal" value={i.revenueDeduction}
                       onChange={(ev) => setInputField(e.entityId, "revenueDeduction", ev.target.value)}
                       disabled={e.entityCode !== "VS"} placeholder={e.entityCode !== "VS" ? "—" : ""} />
-                    <Input className="h-8 text-sm text-right" inputMode="decimal" value={i.payrollBudget}
-                      onChange={(ev) => setInputField(e.entityId, "payrollBudget", ev.target.value)} />
+                    {payrollFromModule != null ? (
+                      <span
+                        className="h-8 flex items-center justify-end px-3 text-sm font-mono rounded-md border bg-muted/40 text-muted-foreground"
+                        title="From Budgeting module (Personnel Costs)"
+                      >
+                        {usd0(payrollFromModule)}
+                      </span>
+                    ) : (
+                      <Input className="h-8 text-sm text-right" inputMode="decimal" value={i.payrollBudget}
+                        title="No active budget found for this month — manual entry"
+                        onChange={(ev) => setInputField(e.entityId, "payrollBudget", ev.target.value)} />
+                    )}
                   </div>
                 );
               })}
@@ -706,7 +728,7 @@ function MonthPreviewContent() {
                   revenueDeduction={parseNum(i.revenueDeduction)}
                   showDeductionLine={e.entityCode === "VS"}
                   payrollEstimate={tTotal(e.earnedInMonth)}
-                  payrollBudget={parseNum(i.payrollBudget)}
+                  payrollBudget={getPayrollBudget(e.entityId)}
                   otHours={e.overtimeHours}
                   mealPremiums={e.mealPremiums}
                 />

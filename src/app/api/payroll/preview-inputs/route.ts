@@ -4,27 +4,35 @@ import { createAdminClient } from "@/lib/supabase/admin";
 type AdminClient = ReturnType<typeof createAdminClient>;
 
 /**
- * Total Revenue BUDGET per entity for one month, from the budgeting module:
- * active budget_versions for the fiscal year → budget_amounts for the month →
- * master_accounts where classification='Revenue' AND account_type='Income'
- * (the same rule as the financial statements "Revenue" section).
+ * Revenue and Payroll BUDGET per entity for one month, from the budgeting
+ * module: active budget_versions for the fiscal year → budget_amounts for the
+ * month → master_accounts, where
+ *   Revenue = classification='Revenue' AND account_type='Income'
+ *     (the same rule as the financial statements "Revenue" section), and
+ *   Payroll = classification='Expense' with a personnel/payroll-type name
+ *     (the budget chart's "Personnel Costs" line; also matches
+ *     payroll/salaries/wages lines on other charts).
  *
  * Mirrors the app's column fallback: live DB uses budget_amounts.master_account_id,
  * the original migration used account_id (mapped via master_account_mappings).
  */
-async function fetchRevenueBudgets(
+const PAYROLL_ACCOUNT_NAME = /personnel|payroll|salar|wage/i;
+
+async function fetchBudgets(
   supabase: AdminClient,
   year: number,
   month: number
-): Promise<Record<string, number>> {
-  const budgets: Record<string, number> = {};
+): Promise<{ revenueBudgets: Record<string, number>; payrollBudgets: Record<string, number> }> {
+  const revenueBudgets: Record<string, number> = {};
+  const payrollBudgets: Record<string, number> = {};
+  const result = { revenueBudgets, payrollBudgets };
   try {
     const { data: versions, error: vErr } = await supabase
       .from("budget_versions")
       .select("id, entity_id")
       .eq("is_active", true)
       .eq("fiscal_year", year);
-    if (vErr || !versions || versions.length === 0) return budgets;
+    if (vErr || !versions || versions.length === 0) return result;
     const versionEntity = new Map(versions.map((v) => [v.id, v.entity_id]));
     const versionIds = versions.map((v) => v.id);
 
@@ -34,8 +42,18 @@ async function fetchRevenueBudgets(
       .select("id")
       .eq("classification", "Revenue")
       .eq("account_type", "Income");
-    if (rErr || !revAccounts) return budgets;
+    if (rErr || !revAccounts) return result;
     const revenueIds = new Set(revAccounts.map((a) => a.id));
+
+    // Payroll master accounts (expense lines named personnel/payroll/salaries/wages)
+    const { data: expAccounts, error: eErr } = await supabase
+      .from("master_accounts")
+      .select("id, name")
+      .eq("classification", "Expense");
+    if (eErr || !expAccounts) return result;
+    const payrollIds = new Set(
+      expAccounts.filter((a) => PAYROLL_ACCOUNT_NAME.test(a.name ?? "")).map((a) => a.id)
+    );
 
     // Try the live column name first, fall back to the original
     interface BudgetAmountRow {
@@ -61,7 +79,7 @@ async function fetchRevenueBudgets(
         .in("budget_version_id", versionIds)
         .eq("period_year", year)
         .eq("period_month", month);
-      if (legacy.error) return budgets;
+      if (legacy.error) return result;
       rows = (legacy.data ?? []) as unknown as BudgetAmountRow[];
       usedLegacy = true;
     }
@@ -88,25 +106,33 @@ async function fetchRevenueBudgets(
       const masterId = usedLegacy
         ? entityToMaster?.get(row.account_id ?? "") ?? null
         : row.master_account_id ?? null;
-      if (!masterId || !revenueIds.has(masterId)) continue;
+      if (!masterId) continue;
       const entityId = versionEntity.get(row.budget_version_id);
       if (!entityId) continue;
-      budgets[entityId] = (budgets[entityId] ?? 0) + Number(row.amount ?? 0);
+      if (revenueIds.has(masterId)) {
+        revenueBudgets[entityId] = (revenueBudgets[entityId] ?? 0) + Number(row.amount ?? 0);
+      } else if (payrollIds.has(masterId)) {
+        payrollBudgets[entityId] = (payrollBudgets[entityId] ?? 0) + Number(row.amount ?? 0);
+      }
     }
-    for (const k of Object.keys(budgets)) budgets[k] = Math.round(budgets[k] * 100) / 100;
+    for (const k of Object.keys(revenueBudgets))
+      revenueBudgets[k] = Math.round(revenueBudgets[k] * 100) / 100;
+    for (const k of Object.keys(payrollBudgets))
+      payrollBudgets[k] = Math.round(payrollBudgets[k] * 100) / 100;
   } catch (err) {
-    console.error("Revenue budget fetch error:", err);
+    console.error("Budget fetch error:", err);
   }
-  return budgets;
+  return result;
 }
 
 /**
  * GET /api/payroll/preview-inputs?year=2026&month=4
  *
  * Returns the manually-entered Month Preview figures (revenue estimate,
- * deduction, payroll budget) per entity for a month, plus revenueBudgets
- * pulled live from the budgeting module (active version, Revenue/Income
- * accounts). Gracefully returns empty inputs if the table doesn't exist yet
+ * deduction, payroll budget) per entity for a month, plus revenueBudgets and
+ * payrollBudgets pulled live from the budgeting module (active version;
+ * Revenue/Income accounts and Personnel/payroll expense lines respectively).
+ * Gracefully returns empty inputs if the table doesn't exist yet
  * (migration 20260706_payroll_preview_inputs).
  */
 export async function GET(req: NextRequest) {
@@ -118,21 +144,22 @@ export async function GET(req: NextRequest) {
     }
 
     const supabase = createAdminClient();
-    const [inputsRes, revenueBudgets] = await Promise.all([
+    const [inputsRes, budgets] = await Promise.all([
       supabase.from("payroll_preview_inputs").select("*").eq("year", year).eq("month", month),
-      fetchRevenueBudgets(supabase, year, month),
+      fetchBudgets(supabase, year, month),
     ]);
+    const { revenueBudgets, payrollBudgets } = budgets;
 
     const { data, error } = inputsRes;
     if (error && error.message?.includes("payroll_preview_inputs")) {
-      return NextResponse.json({ inputs: [], tableExists: false, revenueBudgets });
+      return NextResponse.json({ inputs: [], tableExists: false, revenueBudgets, payrollBudgets });
     }
     if (error) throw error;
 
-    return NextResponse.json({ inputs: data ?? [], tableExists: true, revenueBudgets });
+    return NextResponse.json({ inputs: data ?? [], tableExists: true, revenueBudgets, payrollBudgets });
   } catch (err) {
     console.error("Preview inputs GET error:", err);
-    return NextResponse.json({ inputs: [], tableExists: false, revenueBudgets: {} });
+    return NextResponse.json({ inputs: [], tableExists: false, revenueBudgets: {}, payrollBudgets: {} });
   }
 }
 
