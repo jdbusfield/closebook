@@ -9,8 +9,9 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, AlertCircle, Calendar, Clock, Banknote } from "lucide-react";
+import { Loader2, AlertCircle, Calendar, Clock, Banknote, Ban, Undo2 } from "lucide-react";
 
 // --- Types ---
 
@@ -42,6 +43,9 @@ interface PaycheckEntry {
   checkDate: string;
   beginDate: string;
   endDate: string;
+  transactionNumber: string | null;
+  excluded: boolean;
+  excludedReason: string | null;
   payPeriodDays: number;
   daysInMonth: number;
   proRataFraction: number;
@@ -168,13 +172,15 @@ export function PaycheckDetailBody({
   const [data, setData] = useState<DetailResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [togglingTxn, setTogglingTxn] = useState<string | null>(null);
 
-  useEffect(() => {
-    setLoading(true);
+  const load = (background = false) => {
+    if (!background) {
+      setLoading(true);
+      onLoaded?.(null);
+    }
     setError(null);
-    onLoaded?.(null);
-
-    fetch(
+    return fetch(
       `/api/paylocity/monthly-costs/detail?employeeId=${employeeId}&companyId=${companyId}&year=${year}&month=${month}`
     )
       .then(async (res) => {
@@ -190,9 +196,42 @@ export function PaycheckDetailBody({
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    load();
     // onLoaded intentionally omitted from deps (parent callback identity)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employeeId, companyId, year, month]);
+
+  const toggleExcluded = async (pc: PaycheckEntry) => {
+    if (!pc.transactionNumber) return;
+    setTogglingTxn(pc.transactionNumber);
+    setError(null);
+    try {
+      const res = await fetch("/api/paylocity/paycheck-exclusions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employeeId,
+          companyId,
+          checkDate: pc.checkDate,
+          transactionNumber: pc.transactionNumber,
+          excluded: !pc.excluded,
+          reason: !pc.excluded ? "Manually excluded" : undefined,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Failed to update exclusion");
+      }
+      await load(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update exclusion");
+    } finally {
+      setTogglingTxn(null);
+    }
+  };
 
   const totalCost = data
     ? data.totalAllocated.grossPay + data.totalAllocated.erTaxes + data.totalAllocated.erBenefits
@@ -298,7 +337,10 @@ export function PaycheckDetailBody({
 
         <div className="space-y-3">
           {data.paychecks.map((pc, idx) => (
-            <div key={idx} className="rounded-lg border overflow-hidden">
+            <div
+              key={idx}
+              className={`rounded-lg border overflow-hidden ${pc.excluded ? "border-dashed opacity-60" : ""}`}
+            >
               {/* Header */}
               <div className="px-4 py-2.5 bg-muted/50 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-3 text-sm">
@@ -309,6 +351,11 @@ export function PaycheckDetailBody({
                   <span className="text-muted-foreground">
                     {fmtDate(pc.beginDate)} &ndash; {fmtDate(pc.endDate)}
                   </span>
+                  {pc.excluded && (
+                    <Badge variant="outline" className="text-xs border-destructive/50 text-destructive shrink-0">
+                      Excluded — not counted
+                    </Badge>
+                  )}
                 </div>
                 <Badge variant="secondary" className="text-xs shrink-0">
                   {pc.daysInMonth}/{pc.payPeriodDays}d &middot; {fmtPct(pc.proRataFraction)}
@@ -395,12 +442,35 @@ export function PaycheckDetailBody({
                 ))}
               </div>
 
-              {/* Paycheck total */}
-              <div className="px-4 py-2 bg-muted/30 border-t flex justify-between text-sm font-semibold">
-                <span>Paycheck Total (Allocated)</span>
-                <span className="font-mono">
-                  {fmt(pc.allocated.grossPay + pc.allocated.erTaxes + pc.allocated.erBenefits)}
-                </span>
+              {/* Paycheck total + exclusion toggle */}
+              <div className="px-4 py-2 bg-muted/30 border-t flex items-center justify-between gap-2 text-sm">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={`h-7 px-2 text-xs ${pc.excluded ? "" : "text-muted-foreground hover:text-destructive"}`}
+                  disabled={!pc.transactionNumber || togglingTxn === pc.transactionNumber}
+                  onClick={() => toggleExcluded(pc)}
+                  title={
+                    pc.excluded
+                      ? "Count this paycheck in payroll costs again"
+                      : "Exclude this paycheck from all payroll cost views (estimate, monthly costs, reports)"
+                  }
+                >
+                  {togglingTxn === pc.transactionNumber ? (
+                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                  ) : pc.excluded ? (
+                    <Undo2 className="mr-1 h-3 w-3" />
+                  ) : (
+                    <Ban className="mr-1 h-3 w-3" />
+                  )}
+                  {pc.excluded ? "Include in costs" : "Exclude from costs"}
+                </Button>
+                <div className="flex items-center gap-2 font-semibold">
+                  <span>Paycheck Total (Allocated)</span>
+                  <span className={`font-mono ${pc.excluded ? "line-through text-muted-foreground" : ""}`}>
+                    {fmt(pc.allocated.grossPay + pc.allocated.erTaxes + pc.allocated.erBenefits)}
+                  </span>
+                </div>
               </div>
             </div>
           ))}

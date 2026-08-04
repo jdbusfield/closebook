@@ -102,6 +102,7 @@ export async function GET(request: NextRequest) {
     let maxEndDate: Date | null = null;
 
     for (const row of rawChecks) {
+      if (row.excluded === true) continue; // manually excluded paycheck
       const endD = toDate(row.end_date);
       const checkD = toDate(row.check_date);
       const beginD = toDate(row.begin_date);

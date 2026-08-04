@@ -84,6 +84,9 @@ export async function GET(request: NextRequest) {
         checkDate: pc.check_date,
         beginDate: pc.begin_date,
         endDate: pc.end_date,
+        transactionNumber: pc.transaction_number ?? null,
+        excluded: pc.excluded === true,
+        excludedReason: pc.excluded_reason ?? null,
         payPeriodDays: totalPeriodDays,
         daysInMonth: overlapDays,
         proRataFraction: Math.round(fraction * 10000) / 10000,
@@ -128,8 +131,12 @@ export async function GET(request: NextRequest) {
     const now = new Date();
     const isCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
 
+    // Excluded paychecks stay visible in the list but contribute nothing to
+    // totals or the accrual estimate.
+    const countedPaychecks = allocatedPaychecks.filter((pc) => !pc.excluded);
+
     if (isCurrentMonth && monthlyCost?.is_accrual !== undefined) {
-      const daysCoveredByChecks = allocatedPaychecks.reduce(
+      const daysCoveredByChecks = countedPaychecks.reduce(
         (sum, pc) => sum + pc.daysInMonth, 0
       );
       const daysUncovered = Math.max(0, daysInMonth - daysCoveredByChecks);
@@ -138,7 +145,7 @@ export async function GET(request: NextRequest) {
         const dailyRate = monthlyCost.annual_comp / 365;
         const accrualGross = round(dailyRate * daysUncovered);
         // Average monthly benefit from actual paycheck data
-        const totalAllocBenefits = allocatedPaychecks.reduce(
+        const totalAllocBenefits = countedPaychecks.reduce(
           (sum, pc) => sum + pc.allocated.erBenefits, 0
         );
         const avgDailyBenefit = daysCoveredByChecks > 0
@@ -157,16 +164,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Totals
+    // Totals (excluded paychecks contribute nothing)
     const totalAllocated = {
-      grossPay: round(allocatedPaychecks.reduce((s, p) => s + p.allocated.grossPay, 0) + (accrual?.estimatedGross ?? 0)),
-      regularDollars: round(allocatedPaychecks.reduce((s, p) => s + p.allocated.regularDollars, 0)),
-      overtimeDollars: round(allocatedPaychecks.reduce((s, p) => s + p.allocated.overtimeDollars, 0)),
-      doubletimeDollars: round(allocatedPaychecks.reduce((s, p) => s + p.allocated.doubletimeDollars, 0)),
-      mealDollars: round(allocatedPaychecks.reduce((s, p) => s + p.allocated.mealDollars, 0)),
-      otherEarningsDollars: round(allocatedPaychecks.reduce((s, p) => s + p.allocated.otherEarningsDollars, 0)),
-      erTaxes: round(allocatedPaychecks.reduce((s, p) => s + p.allocated.erTaxes, 0) + (accrual?.estimatedErTaxes ?? 0)),
-      erBenefits: round(allocatedPaychecks.reduce((s, p) => s + p.allocated.erBenefits, 0) + (accrual?.estimatedErBenefits ?? 0)),
+      grossPay: round(countedPaychecks.reduce((s, p) => s + p.allocated.grossPay, 0) + (accrual?.estimatedGross ?? 0)),
+      regularDollars: round(countedPaychecks.reduce((s, p) => s + p.allocated.regularDollars, 0)),
+      overtimeDollars: round(countedPaychecks.reduce((s, p) => s + p.allocated.overtimeDollars, 0)),
+      doubletimeDollars: round(countedPaychecks.reduce((s, p) => s + p.allocated.doubletimeDollars, 0)),
+      mealDollars: round(countedPaychecks.reduce((s, p) => s + p.allocated.mealDollars, 0)),
+      otherEarningsDollars: round(countedPaychecks.reduce((s, p) => s + p.allocated.otherEarningsDollars, 0)),
+      erTaxes: round(countedPaychecks.reduce((s, p) => s + p.allocated.erTaxes, 0) + (accrual?.estimatedErTaxes ?? 0)),
+      erBenefits: round(countedPaychecks.reduce((s, p) => s + p.allocated.erBenefits, 0) + (accrual?.estimatedErBenefits ?? 0)),
     };
 
     return NextResponse.json({

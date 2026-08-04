@@ -225,6 +225,24 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const paycheckDetailRows: any[] = [];
 
+    // Manually excluded paychecks: keep syncing their rows (the flag is not
+    // in the upsert payload, so it survives), but skip them when aggregating
+    // monthly cost buckets. Tolerates the column not existing yet.
+    const excludedChecks = new Set<string>();
+    try {
+      const { data: exRows } = await supabase
+        .from("employee_paycheck_details")
+        .select("employee_id, paylocity_company_id, check_date, transaction_number")
+        .eq("excluded", true);
+      for (const r of exRows ?? []) {
+        excludedChecks.add(
+          `${r.employee_id}:${r.paylocity_company_id}:${String(r.check_date).split("T")[0]}:${r.transaction_number}`
+        );
+      }
+    } catch {
+      // migration 20260804_paycheck_exclusions not applied yet — no exclusions
+    }
+
     let totalEmployees = 0;
     let totalSummaries = 0;
     let totalDetails = 0;
@@ -483,6 +501,15 @@ export async function POST(request: NextRequest) {
               const end = parseDate(ps.endDate || ps.checkDate);
               const totalDays = daysBetween(begin, end);
               if (totalDays <= 0) continue;
+
+              // Skip manually excluded paychecks in the monthly buckets
+              if (
+                excludedChecks.has(
+                  `${emp.id}:${companyId}:${stripTime(ps.checkDate)}:${ps.transactionNumber ?? stripTime(ps.checkDate)}`
+                )
+              ) {
+                continue;
+              }
 
               const key = checkKey(ps.checkDate, ps.transactionNumber);
               const checkBenefits = benefitsByCheck[key] ?? 0;
