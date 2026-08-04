@@ -38,6 +38,109 @@ Steps required to adopt, or "None".
 - /settings/wiki/<page>
 ```
 
+Work pushed directly to `main` without a pull request is identified by its
+short commit SHA in place of `[PR #<number>]`.
+
+---
+
+## [9a2cd8f] - Monthly estimate: new-hire allocation dialog - 2026-08-04
+
+**Author:** JD Busfield (jd@avonrents.com)
+**Type:** Feature
+**Related Issues:** N/A (pushed directly to `main`; no PR)
+
+### Summary
+Payroll cost is attributed to an operating entity by each employee's
+`employee_allocations` row. A brand-new employee has no row yet, so the
+Monthly Payroll Estimate quietly falls back to the entity mapped to their
+Paylocity cost center — a real accounting decision made by default, with
+nothing on screen saying so. This change surfaces it. The
+`/api/paylocity/monthly-estimate` response now carries a `newHires` array of
+employees whose first paycheck activity falls in the viewed month and who have
+no allocation row, and `/payroll/estimate` auto-opens a dialog listing them
+with the cost-center-assumed entity preselected. Saving writes a 100% base
+entity allocation per employee; dismissing leaves an amber banner that reopens
+the dialog. The estimate's numbers are unchanged — this only adds a prompt to
+confirm or correct the assumption behind them.
+
+### Changes Made
+- In `src/app/api/paylocity/monthly-estimate/route.ts`: the paycheck loop now
+  records the earliest `begin_date` per `employeeId:companyId` **before** the
+  month-window filter is applied, so the earliest date reflects the full
+  three-year fetch (`year - 1`, `year`, `year + 1`) rather than only the
+  in-window checks. Two guard clauses moved below that bookkeeping; no change
+  to which checks enter the estimate.
+- Same file: a new `newHires` block runs after `buildOrgEstimate`. An employee
+  is included when they have checks in the month, have **no**
+  `employee_allocations` row for that `employee_id:paylocity_company_id`, and
+  their earliest begin date falls between 21 days before the month start and
+  the month end (inclusive). Each entry carries `employeeId`, `companyId`,
+  `employeeName`, `department`, `costCenterCode`, `firstActivityDate`,
+  `assumedEntityId` / `assumedEntityCode` / `assumedEntityName` (from
+  `getOperatingEntityForCostCenter`), and `earnedInMonth` (wages + employer
+  taxes + employer benefits, rounded to cents). Sorted by cost descending,
+  then name. The array is returned alongside the existing estimate payload;
+  every pre-existing field is untouched.
+- In `src/app/(app)/payroll/estimate/page.tsx`: a new `applyData` handler
+  replaces the bare `setData` on load — it seeds a per-employee draft keyed
+  `employeeId:companyId` defaulting to `assumedEntityId` and opens the dialog
+  when `newHires` is non-empty.
+- Same file: the **New employees — {Month} {Year}** dialog renders a table of
+  Employee (with "HDR payroll" / "Silverco payroll" beneath the name),
+  Department, First check period, Est. cost this month, and an **Allocate to**
+  entity `Select` listing every entity in `ENTITY_ORDER`, with the assumed one
+  suffixed *(assumed)*.
+- Same file: **Save N allocations** issues one `PUT /api/paylocity/allocations`
+  per employee with `effectiveDate: "2000-01-01"` and
+  `entityAllocations: [{ entityId, entityName, pct: 100 }]`, then refetches the
+  estimate. Requests are sequential and stop at the first failure, surfacing
+  the API's error message in the dialog. **Later** closes without writing.
+- Same file: when `newHires` is non-empty, an amber-bordered card above the
+  headline reports the count and offers **Review & allocate** to reopen the
+  dialog.
+
+### User Impact
+Accountants opening `/payroll/estimate` for a month containing new employees
+are now interrupted once, with the specific list of people whose entity
+attribution is being assumed rather than chosen, the dollar amount at stake
+for each, and a one-click confirm. Previously that assumption was invisible
+and typically only caught when an entity's payroll looked off. Saving from the
+dialog writes a base allocation dated `2000-01-01`, so it governs the
+employee's whole history rather than starting in the viewed month — correcting
+prior months' estimates as well. The dialog writes only whole-entity (100%)
+allocations; percentage splits across companies, class splits, and
+effective-dated transfers still belong on the entity's *Employees* roster.
+Months with no unallocated new hires behave exactly as before — no dialog, no
+banner.
+
+### Migration Notes
+None. No schema change, no new environment variables, no new dependencies.
+`newHires` is additive on an existing response and the page treats it as
+optional (`newHires?`), so a stale client against the new API — or a new
+client against a cached old response — degrades to the previous behavior.
+
+Two behaviors worth knowing before adopting:
+
+- The dialog lists only employees whose **first** paycheck activity is in the
+  viewed month. Employees hired earlier who are still missing an allocation
+  are not surfaced; audit those from the entity *Employees* roster.
+- "First ever" is measured across the three years the estimate fetches, so a
+  rehire with no checks in that window until now is reported as a new hire.
+
+### Wiki Pages Updated
+- /settings/wiki/features (new "Monthly Payroll Estimate" subsection under
+  Org-level features, covering the page and the new-hire dialog; the Payroll
+  bullet now points to it)
+- /settings/wiki/core-concepts (new "Employee allocations (payroll)" section:
+  effective dating, percentage splits, the cost-center fallback, and an
+  "Assumed vs. allocated new hires" subsection with the inclusion criteria)
+- /settings/wiki/usage-guide (new "Allocate new employees on the monthly
+  payroll estimate" workflow)
+- /settings/wiki/troubleshooting (new entries "A new employee's payroll cost
+  landed in the wrong entity" and "The new-hire banner will not go away / an
+  employee is missing from the dialog")
+- /settings/wiki/changelog
+
 ---
 
 ## [PR #149] - Fix per-entity/RE balance sheet imbalance from cross-scope allocation adjustments - 2026-06-12

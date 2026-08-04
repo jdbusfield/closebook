@@ -123,6 +123,60 @@ consolidated output is unchanged.
 > balance. See
 > [Changelog → PR #149](/settings/wiki/changelog#pr-149---fix-per-entityre-balance-sheet-imbalance-from-cross-scope-allocation-adjustments---2026-06-12).
 
+## Employee allocations (payroll)
+
+Distinct from the GL allocations above. An **employee allocation** says which
+operating entity (and class) bears an employee's payroll cost. Rows live in
+`employee_allocations`, keyed by `employee_id` + `paylocity_company_id`, and
+are resolved per day by `AllocationResolver`
+(`src/lib/paylocity/allocation-resolver.ts`).
+
+Three things are worth knowing:
+
+- **Effective dating.** Each row carries an `effective_date`. The allocation
+  active on a given date is the row with the latest `effective_date` on or
+  before it, so a mid-month transfer splits the month by calendar-day weight.
+  The conventional **base row** — "this is where they have always belonged" —
+  uses `effective_date` `2000-01-01`.
+- **Percentage splits.** A row may hold `entity_allocations` (company splits)
+  and `class_allocations` (class splits), each summing to 100. A single
+  entity at 100% is the simple case; the legacy single-column
+  `allocated_entity_id` is kept in sync with the largest split for readers
+  that predate splits.
+- **The cost-center fallback.** When an employee has **no** allocation row,
+  Closebook does not drop them — it falls back to the entity mapped to their
+  Paylocity cost center in `COMPANY_COST_CENTER_MAPS`
+  (`src/lib/paylocity/cost-center-config.ts`). Cost-center codes overlap
+  between the two Paylocity companies (132427 Silverco, 316791 HDR), so that
+  lookup is company-scoped.
+
+### Assumed vs. allocated new hires
+
+The cost-center fallback is a reasonable default but it is *silent* — a new
+employee's cost lands in an entity nobody explicitly chose. To make that
+choice explicit, the Monthly Payroll Estimate flags **new hires needing
+allocation**: employees who both
+
+1. have their **earliest paycheck period begin date** inside the viewed month
+   or in the **21 days before** the month starts (the lookback catches a
+   late-prior-month hire whose first check data only lands now), and
+2. have **no** `employee_allocations` row at all.
+
+They are returned as `newHires` on `/api/paylocity/monthly-estimate` and
+surfaced in a dialog on `/payroll/estimate`. Saving from that dialog writes a
+100% base entity allocation (`effective_date` `2000-01-01`), which removes the
+employee from the list on the next load, because criterion 2 no longer holds.
+
+> **Nuance:** "earliest paycheck activity" is measured across the three years
+> the estimate fetches (`year - 1`, `year`, `year + 1`), not across all
+> history. A rehire with no checks in that window until this month therefore
+> reads as a new hire. Allocating them is still the right action; the label is
+> just imprecise. Employees hired *earlier* who are missing an allocation are
+> **not** surfaced here — only first-month employees are.
+>
+> See
+> [Changelog → 9a2cd8f](/settings/wiki/changelog#9a2cd8f---monthly-estimate-new-hire-allocation-dialog---2026-08-04).
+
 ## Year-end adjustments
 
 Chart-scoped one-time entries that true up a master GL account at year

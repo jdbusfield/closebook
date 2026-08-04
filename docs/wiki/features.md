@@ -33,10 +33,34 @@ treatment in the relevant sections.
   entities (unmapped accounts, missing GL rows, prior-period drift).
 - **IC Eliminations** (`/ic-eliminations`) — verifies intercompany balances
   net to zero.
-- **Payroll** (`/payroll`) — org-wide payroll roster and accruals.
+- **Payroll** (`/payroll`) — org-wide payroll roster and accruals. See
+  **Monthly Payroll Estimate** below.
 - **Real Estate** (`/real-estate`) — leases, subleases, lot square footage.
 - **QBO Sync** (`/sync`) — connect each entity's QuickBooks Online file and
   pull trial balances.
+
+### Monthly Payroll Estimate
+
+`/payroll/estimate` produces an org-level, accrual-basis payroll estimate for
+a single month: the cash → accrual bridge, a per-entity breakdown, employee
+detail, exceptions, and reconciliation flags. It reads stored Paylocity
+paycheck detail (`employee_paycheck_details`) only — it makes no live
+Paylocity API calls. Costs are attributed to operating entities by the
+employee allocation rules described in
+[Core Concepts → Employee allocations](/settings/wiki/core-concepts#employee-allocations-payroll).
+
+**New-hire allocation dialog.** Employees whose first paycheck activity falls
+in the viewed month and who have no allocation row on file are returned by the
+API as `newHires`, and the page auto-opens a dialog listing them. Each row
+shows the employee, payroll company, department, first check period, and
+estimated cost this month, with an entity dropdown preselected to the entity
+their Paylocity cost center implies (marked *(assumed)*). Saving writes a
+**100% base entity allocation** per employee. Dismissing with **Later** leaves
+an amber **Review & allocate** banner above the estimate that reopens the
+dialog. See
+[Usage Guide → Allocate new employees](/settings/wiki/usage-guide#allocate-new-employees-on-the-monthly-payroll-estimate)
+and
+[Changelog → 9a2cd8f](/settings/wiki/changelog#9a2cd8f---monthly-estimate-new-hire-allocation-dialog---2026-08-04).
 
 ## Entity-level features
 

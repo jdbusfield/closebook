@@ -100,6 +100,40 @@ For entities with the `revenue_projection` feature flag, the *Revenue
 Projection* page produces forward-looking revenue from RentalWorks open
 quotes / orders weighted by close probability.
 
+## Allocate new employees on the monthly payroll estimate
+
+Payroll cost is attributed to an operating entity by each employee's
+allocation row. A brand-new employee has no row yet, so Closebook falls back
+to the entity implied by their Paylocity cost center — a silent assumption.
+The Monthly Payroll Estimate makes you confirm it.
+
+1. Open *Payroll → Monthly Estimate* (`/payroll/estimate`) and pick the year
+   and month.
+2. If the month contains employees with a first paycheck and no allocation on
+   file, the **New employees** dialog opens automatically. (If you dismissed
+   it, click **Review & allocate** on the amber banner above the estimate.)
+3. Review each row: employee and payroll company, department, first check
+   period, and estimated cost this month. Rows are ordered by cost, largest
+   first.
+4. In **Allocate to**, confirm or change the operating entity. The dropdown
+   is preselected to the cost-center-implied entity, labelled *(assumed)*.
+5. Click **Save N allocations**. Each employee gets a **100% allocation** with
+   effective date `2000-01-01`, so the attribution applies to their whole
+   history rather than starting this month. The estimate then reloads and the
+   banner disappears.
+6. Choose **Later** to defer. Nothing is written and the estimate keeps using
+   the assumed entities, but the amber banner stays until the allocations are
+   saved.
+
+> The dialog only writes whole-entity allocations. For an employee whose cost
+> genuinely splits across companies, save any entity here, then open the
+> entity's *Employees* roster and set the percentage split (and any class
+> split or effective-dated change) there.
+
+See [Core Concepts → Employee allocations](/settings/wiki/core-concepts#employee-allocations-payroll)
+for how the resolver picks a row, and
+[Changelog → 9a2cd8f](/settings/wiki/changelog#9a2cd8f---monthly-estimate-new-hire-allocation-dialog---2026-08-04).
+
 ## Run consolidated financial statements
 
 1. Org sidebar -> *Financial Model*.

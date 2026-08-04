@@ -95,6 +95,48 @@ total or a large plug line on a recent period:
 See [Core Concepts → Statement of cash flows](/settings/wiki/core-concepts)
 for the methodology and the [PR #147 changelog entry](/settings/wiki/changelog#pr-147---fix-cash-flow-misclassification-intangible-amortization-double-count--dead-ic-exclusion---2026-06-12).
 
+## "A new employee's payroll cost landed in the wrong entity"
+
+Until an employee has an `employee_allocations` row, the Monthly Payroll
+Estimate attributes their cost to the entity mapped to their Paylocity cost
+center. If that mapping is wrong for this person, the estimate is wrong.
+
+- Reopen `/payroll/estimate` for the month, click **Review & allocate** on the
+  amber banner, pick the correct entity, and save. The write is a base
+  allocation (`effective_date` `2000-01-01`), so it corrects every month, not
+  just the one you are viewing.
+- If the banner is gone because an allocation was already saved to the wrong
+  entity, fix it on the entity's *Employees* roster instead — the dialog only
+  lists employees with **no** allocation row, so a saved-but-wrong employee
+  will never reappear there.
+- If the same cost center keeps producing the wrong default, the mapping
+  itself is stale. Update `COMPANY_COST_CENTER_MAPS` in
+  `src/lib/paylocity/cost-center-config.ts` — remember the map is scoped by
+  Paylocity company (132427 Silverco, 316791 HDR) because the codes overlap.
+
+## "The new-hire banner will not go away" / "an employee is missing from the dialog"
+
+The dialog lists an employee only when **both** conditions hold: their
+earliest paycheck period begins in the viewed month (or the 21 days before it)
+**and** they have no `employee_allocations` row.
+
+- **Banner persists after saving** — a save failed partway. The dialog saves
+  employees one at a time and stops at the first error, so the earlier
+  employees are written and the rest are not. Reopen it; the ones already
+  saved are gone and only the remainder are listed.
+- **Employee you expect is missing** — usually they already have an allocation
+  row (any effective date), or their first check period predates the 21-day
+  lookback. Employees hired in earlier months who lack an allocation are out
+  of scope for this dialog by design; audit those from the entity *Employees*
+  roster.
+- **A long-tenured employee appears as a new hire** — the estimate only reads
+  three years of checks (`year - 1`, `year`, `year + 1`), so a rehire with no
+  checks in that window until now reads as new. Allocate them normally.
+
+See [Core Concepts → Employee allocations](/settings/wiki/core-concepts#employee-allocations-payroll)
+and the
+[9a2cd8f changelog entry](/settings/wiki/changelog#9a2cd8f---monthly-estimate-new-hire-allocation-dialog---2026-08-04).
+
 ## "RentalWorks API returns 500"
 
 Some RW endpoints are known broken on the HDR instance:
