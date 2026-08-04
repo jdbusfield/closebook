@@ -326,30 +326,42 @@ export async function POST(request: NextRequest) {
               };
             }
 
-            // Track actual ER taxes per checkDate for pro-rating into months
+            // Track actual ER taxes per check for pro-rating into months
             const erTaxesByCheck: Record<string, number> = {};
 
-            // ── Group detail lines by checkDate for paycheck-level storage ──
+            // ── Group detail lines by check for paycheck-level storage ──
+            //
+            // Keyed by checkDate + transactionNumber: an employee can have
+            // TWO checks on the same date (e.g. a regular run plus a
+            // supplemental/correction check). Keying by date alone merged
+            // both checks' lines into every row, doubling OT, ER taxes, and
+            // benefits on each. Date-only maps remain as a fallback for any
+            // detail rows missing a transactionNumber.
+
+            const checkKey = (date: string, txn: unknown) => `${stripTime(date)}|${String(txn ?? "")}`;
 
             const detailsByCheck: Record<string, typeof details> = {};
+            const detailsByDate: Record<string, typeof details> = {};
+            // Benefits per check, derived from each check's own detail bucket
+            // in the per-summary loop below (so the date-only fallback path
+            // stays consistent with the detail lines actually attributed).
             const benefitsByCheck: Record<string, number> = {};
-            const benefitDetailByCheck: Record<string, Record<string, number>> = {};
 
             for (const d of details) {
               const ck = stripTime(d.checkDate);
-              if (!detailsByCheck[ck]) detailsByCheck[ck] = [];
-              detailsByCheck[ck].push(d);
+              const key = checkKey(d.checkDate, d.transactionNumber);
+              if (!detailsByCheck[key]) detailsByCheck[key] = [];
+              detailsByCheck[key].push(d);
+              if (!detailsByDate[ck]) detailsByDate[ck] = [];
+              detailsByDate[ck].push(d);
+            }
 
-              const detTypeLower = (d.detType ?? "").toLowerCase();
-              if (detTypeLower === "memo" || detTypeLower === "memoermatch") {
-                const amount = d.amount ?? 0;
-                if (amount > 0) {
-                  benefitsByCheck[d.checkDate] = (benefitsByCheck[d.checkDate] ?? 0) + amount;
-                  if (!benefitDetailByCheck[ck]) benefitDetailByCheck[ck] = {};
-                  const code = d.detCode ?? "OTHER";
-                  benefitDetailByCheck[ck][code] = (benefitDetailByCheck[ck][code] ?? 0) + amount;
-                }
-              }
+            // How many summary checks share each check date — the date-only
+            // fallback is only safe when the date has a single check.
+            const summariesPerDate: Record<string, number> = {};
+            for (const ps of summaries) {
+              const ck = stripTime(ps.checkDate);
+              summariesPerDate[ck] = (summariesPerDate[ck] ?? 0) + 1;
             }
 
             // Running YTD gross before each check (for the capped ER-tax
@@ -369,7 +381,13 @@ export async function POST(request: NextRequest) {
             // Build per-paycheck detail rows
             for (const ps of summaries) {
               const ck = stripTime(ps.checkDate);
-              const checkDetails = detailsByCheck[ck] ?? [];
+              const key = checkKey(ps.checkDate, ps.transactionNumber);
+              // Prefer the per-transaction bucket; fall back to date-only
+              // when no txn-keyed details exist AND the date has one check.
+              const checkDetails =
+                detailsByCheck[key] ??
+                (summariesPerDate[ck] === 1 ? detailsByDate[ck] : undefined) ??
+                [];
 
               let regHrs = 0, regDollars = 0;
               let otHrs = 0, otDollars = 0;
@@ -377,6 +395,8 @@ export async function POST(request: NextRequest) {
               let mealDollars = 0;
               let otherDollars = 0;
               let erTaxesActual = 0;
+              let erBenefitsCheck = 0;
+              const benefitDetail: Record<string, number> = {};
 
               // Employer tax codes: -R suffix (SS-R, MED-R) and FUTA, CASUI, CAETT
               const ER_TAX_CODES = new Set(["SS-R", "MED-R", "FUTA", "CASUI", "CAETT"]);
@@ -386,6 +406,13 @@ export async function POST(request: NextRequest) {
                 const code = (d.detCode ?? "").toUpperCase();
                 const hrs = d.hours ?? 0;
                 const amt = d.amount ?? 0;
+
+                // Employer benefits (Memo lines, e.g. ERMED)
+                if ((detTypeLower === "memo" || detTypeLower === "memoermatch") && amt > 0) {
+                  erBenefitsCheck += amt;
+                  const benefitCode = d.detCode ?? "OTHER";
+                  benefitDetail[benefitCode] = (benefitDetail[benefitCode] ?? 0) + amt;
+                }
 
                 // Earnings — detType varies: Reg, OT, Standard, DT, Earning
                 const isEarning = ["earning", "reg", "standard", "ot", "dt"].includes(detTypeLower);
@@ -410,7 +437,6 @@ export async function POST(request: NextRequest) {
                 }
               }
 
-              const erBenefitsCheck = benefitsByCheck[ps.checkDate] ?? 0;
               const erTaxes = erTaxesActual > 0
                 ? round(erTaxesActual)
                 : round(
@@ -418,7 +444,8 @@ export async function POST(request: NextRequest) {
                   );
 
               // Store for monthly bucket pro-rating
-              erTaxesByCheck[ps.checkDate] = erTaxes;
+              erTaxesByCheck[key] = erTaxes;
+              benefitsByCheck[key] = erBenefitsCheck;
 
               paycheckDetailRows.push({
                 employee_id: emp.id,
@@ -442,7 +469,7 @@ export async function POST(request: NextRequest) {
                 other_earnings_dollars: round(otherDollars),
                 er_taxes_estimated: erTaxes,
                 er_benefits: round(erBenefitsCheck),
-                er_benefit_detail: benefitDetailByCheck[ck] ?? {},
+                er_benefit_detail: benefitDetail,
                 detail_lines: checkDetails.map((d) => ({
                   detType: d.detType, detCode: d.detCode,
                   amount: d.amount, hours: d.hours, rate: d.rate,
@@ -457,7 +484,8 @@ export async function POST(request: NextRequest) {
               const totalDays = daysBetween(begin, end);
               if (totalDays <= 0) continue;
 
-              const checkBenefits = benefitsByCheck[ps.checkDate] ?? 0;
+              const key = checkKey(ps.checkDate, ps.transactionNumber);
+              const checkBenefits = benefitsByCheck[key] ?? 0;
 
               // Walk each month the pay period touches
               const startMonth = begin.getMonth() + 1;
@@ -491,7 +519,7 @@ export async function POST(request: NextRequest) {
                     buckets[curMonth].actualRegHours += (ps.regularHours || 0) * fraction;
                     buckets[curMonth].actualOtHours += (ps.overtimeHours || 0) * fraction;
                     buckets[curMonth].actualBenefits += checkBenefits * fraction;
-                    buckets[curMonth].actualErTaxes += (erTaxesByCheck[ps.checkDate] ?? 0) * fraction;
+                    buckets[curMonth].actualErTaxes += (erTaxesByCheck[key] ?? 0) * fraction;
                     buckets[curMonth].daysCovered += daysInMonth;
                     buckets[curMonth].checks++;
                   }
