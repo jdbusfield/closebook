@@ -31,10 +31,19 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { PaycheckDetailBody } from "@/app/(app)/[entityId]/employees/monthly/paycheck-detail-sheet";
+import { OPERATING_ENTITIES, ENTITY_ORDER } from "@/lib/paylocity/entities";
 import {
   ArrowLeft,
   Loader2,
@@ -45,6 +54,7 @@ import {
   Clock,
   Download,
   FileText,
+  UserPlus,
 } from "lucide-react";
 
 // ── Types (mirror /api/paylocity/monthly-estimate) ──
@@ -148,6 +158,19 @@ interface Exception {
   detail: string;
 }
 
+interface NewHire {
+  employeeId: string;
+  companyId: string;
+  employeeName: string;
+  department: string;
+  costCenterCode: string | null;
+  firstActivityDate: string;
+  assumedEntityId: string;
+  assumedEntityCode: string;
+  assumedEntityName: string;
+  earnedInMonth: number;
+}
+
 interface OrgEstimate {
   year: number;
   month: number;
@@ -168,6 +191,7 @@ interface OrgEstimate {
   payingEntities: EntityBridge[];
   classes: ClassBridge[];
   exceptions: Exception[];
+  newHires?: NewHire[];
   reconciliation: {
     orgEqualsEntities: boolean;
     entitiesEqualEmployees: boolean;
@@ -338,6 +362,10 @@ export default function OrgMonthlyEstimatePage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedEmp, setSelectedEmp] = useState<EmployeeBridge | null>(null);
   const [groupMode, setGroupMode] = useState<"allocated" | "paying">("allocated");
+  const [newHireOpen, setNewHireOpen] = useState(false);
+  const [newHireDraft, setNewHireDraft] = useState<Record<string, string>>({});
+  const [savingNewHires, setSavingNewHires] = useState(false);
+  const [newHireError, setNewHireError] = useState<string | null>(null);
 
   const years = Array.from({ length: 3 }, (_, i) => now.getFullYear() - 2 + i);
 
@@ -350,14 +378,58 @@ export default function OrgMonthlyEstimatePage() {
     return (await res.json()) as OrgEstimate;
   }, []);
 
+  // Load estimate; if the month has unallocated new hires, seed the draft
+  // (defaulting each to their cost-center-assumed entity) and pop the dialog.
+  const applyData = useCallback((d: OrgEstimate) => {
+    setData(d);
+    const hires = d.newHires ?? [];
+    setNewHireDraft(
+      Object.fromEntries(hires.map((h) => [`${h.employeeId}:${h.companyId}`, h.assumedEntityId]))
+    );
+    setNewHireError(null);
+    setNewHireOpen(hires.length > 0);
+  }, []);
+
   useEffect(() => {
     setLoading(true);
     setError(null);
     fetchData(year, month)
-      .then(setData)
+      .then(applyData)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [year, month, fetchData]);
+  }, [year, month, fetchData, applyData]);
+
+  const handleSaveNewHires = async () => {
+    const hires = data?.newHires ?? [];
+    if (hires.length === 0) return;
+    setSavingNewHires(true);
+    setNewHireError(null);
+    try {
+      for (const h of hires) {
+        const entityId = newHireDraft[`${h.employeeId}:${h.companyId}`] || h.assumedEntityId;
+        const meta = OPERATING_ENTITIES[entityId];
+        const res = await fetch("/api/paylocity/allocations", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            employeeId: h.employeeId,
+            paylocityCompanyId: h.companyId,
+            effectiveDate: "2000-01-01",
+            entityAllocations: [{ entityId, entityName: meta?.name ?? null, pct: 100 }],
+          }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error ?? `Failed to save allocation for ${h.employeeName}`);
+        }
+      }
+      applyData(await fetchData(year, month));
+    } catch (e) {
+      setNewHireError(e instanceof Error ? e.message : "Failed to save allocations");
+    } finally {
+      setSavingNewHires(false);
+    }
+  };
 
   const handleSync = async () => {
     setSyncing(true);
@@ -460,6 +532,27 @@ export default function OrgMonthlyEstimatePage() {
 
       {data && !loading && (
         <>
+          {/* New hires awaiting allocation */}
+          {(data.newHires?.length ?? 0) > 0 && (
+            <Card className="border-amber-500/50">
+              <CardContent className="pt-4 flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-center gap-2 text-sm">
+                  <UserPlus className="h-4 w-4 text-amber-600 shrink-0" />
+                  <span>
+                    <span className="font-medium">
+                      {data.newHires!.length} new employee{data.newHires!.length === 1 ? "" : "s"}
+                    </span>{" "}
+                    this month {data.newHires!.length === 1 ? "has" : "have"} no allocation on file
+                    — costs are assumed from the Paylocity cost center.
+                  </span>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => setNewHireOpen(true)}>
+                  Review & allocate
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Headline */}
           <Card>
             <CardContent className="pt-6">
@@ -865,6 +958,105 @@ export default function OrgMonthlyEstimatePage() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* New-hire allocation dialog — pops when the month has employees with
+          first-ever paychecks and no allocation row yet. */}
+      <Dialog open={newHireOpen} onOpenChange={setNewHireOpen}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5" />
+              New employees — {MONTHS[month - 1]} {year}
+            </DialogTitle>
+            <DialogDescription>
+              These employees had their first paychecks this month and have no allocation on
+              file. Until one is saved, the estimate assumes the entity mapped to their
+              Paylocity cost center. Confirm or change where each belongs — saving writes a
+              100% allocation at the org level. For % splits across companies, use the entity
+              Employees roster afterward.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[50vh] overflow-y-auto overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="min-w-[160px]">Employee</TableHead>
+                  <TableHead>Department</TableHead>
+                  <TableHead>First check period</TableHead>
+                  <TableHead className="text-right">Est. cost this month</TableHead>
+                  <TableHead className="min-w-[220px]">Allocate to</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(data?.newHires ?? []).map((h) => {
+                  const key = `${h.employeeId}:${h.companyId}`;
+                  const selected = newHireDraft[key] || h.assumedEntityId;
+                  return (
+                    <TableRow key={key}>
+                      <TableCell>
+                        <div className="text-sm font-medium">{h.employeeName}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {h.companyId === "316791" ? "HDR payroll" : "Silverco payroll"}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm">{h.department}</TableCell>
+                      <TableCell className="text-sm">
+                        {fmtMD(h.firstActivityDate)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {fmt(h.earnedInMonth)}
+                      </TableCell>
+                      <TableCell>
+                        <Select
+                          value={selected}
+                          onValueChange={(v) =>
+                            setNewHireDraft((prev) => ({ ...prev, [key]: v }))
+                          }
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ENTITY_ORDER.map((id) => {
+                              const e = OPERATING_ENTITIES[id];
+                              return (
+                                <SelectItem key={id} value={id}>
+                                  {e.code} — {e.name}
+                                  {id === h.assumedEntityId ? " (assumed)" : ""}
+                                </SelectItem>
+                              );
+                            })}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+          {newHireError && <p className="text-sm text-destructive">{newHireError}</p>}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setNewHireOpen(false)}
+              disabled={savingNewHires}
+            >
+              Later
+            </Button>
+            <Button onClick={handleSaveNewHires} disabled={savingNewHires}>
+              {savingNewHires ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                `Save ${data?.newHires?.length ?? 0} allocation${(data?.newHires?.length ?? 0) === 1 ? "" : "s"}`
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

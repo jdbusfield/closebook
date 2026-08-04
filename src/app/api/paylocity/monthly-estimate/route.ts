@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { AllocationResolver } from "@/lib/paylocity/allocation-resolver";
+import { getOperatingEntityForCostCenter } from "@/lib/paylocity/cost-center-config";
 import {
   buildOrgEstimate,
   monthBounds,
@@ -95,6 +96,9 @@ export async function GET(request: NextRequest) {
 
     const seen = new Set<string>();
     const checksByEmployee = new Map<string, PaycheckRow[]>();
+    // Earliest period-begin per employee across the FULL fetch (pre-window),
+    // used to spot brand-new hires whose first activity is this month.
+    const earliestBegin = new Map<string, Date>();
     let maxEndDate: Date | null = null;
 
     for (const row of rawChecks) {
@@ -102,12 +106,16 @@ export async function GET(request: NextRequest) {
       const checkD = toDate(row.check_date);
       const beginD = toDate(row.begin_date);
       if (!endD || !checkD || !beginD) continue;
-      // Keep checks whose period could touch the month and that were paid within the window
-      if (endD < windowStart) continue;
-      if (checkD > windowEnd) continue;
 
       const empId = String(row.employee_id);
       const companyId = String(row.paylocity_company_id);
+      const firstKey = `${empId}:${companyId}`;
+      const prevFirst = earliestBegin.get(firstKey);
+      if (!prevFirst || beginD < prevFirst) earliestBegin.set(firstKey, beginD);
+
+      // Keep checks whose period could touch the month and that were paid within the window
+      if (endD < windowStart) continue;
+      if (checkD > windowEnd) continue;
       const dedupeKey = `${empId}:${companyId}:${row.check_date}:${row.transaction_number ?? ""}`;
       if (seen.has(dedupeKey)) continue;
       seen.add(dedupeKey);
@@ -222,6 +230,63 @@ export async function GET(request: NextRequest) {
       resolver,
     });
 
+    // ── New hires needing allocation ──
+    // Employees whose first-ever paycheck activity starts in the viewed month
+    // (with a 21-day lookback for late-prior-month hires whose data lands now)
+    // and who have NO allocation row: the estimate silently assumes their
+    // cost-center default entity, so surface them for an explicit org-level
+    // allocation decision. Saving any allocation removes them from this list.
+    const isoStr = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const allocatedKeys = new Set(
+      allocations.map((a) => `${String(a.employee_id)}:${String(a.paylocity_company_id)}`)
+    );
+    const lookbackStart = new Date(mStart.getTime() - 21 * 86400000);
+    const newHires: {
+      employeeId: string;
+      companyId: string;
+      employeeName: string;
+      department: string;
+      costCenterCode: string | null;
+      firstActivityDate: string;
+      assumedEntityId: string;
+      assumedEntityCode: string;
+      assumedEntityName: string;
+      earnedInMonth: number;
+    }[] = [];
+    for (const key of checksByEmployee.keys()) {
+      if (allocatedKeys.has(key)) continue;
+      const first = earliestBegin.get(key);
+      if (!first || first < lookbackStart || first > mEnd) continue;
+      const empMeta = metaByEmployee.get(key);
+      if (!empMeta) continue;
+      const cc = getOperatingEntityForCostCenter(empMeta.costCenterCode, empMeta.companyId);
+      let earnedInMonth = 0;
+      for (const ent of estimate.entities) {
+        for (const emp of ent.employees) {
+          if (emp.employeeId === empMeta.employeeId && emp.companyId === empMeta.companyId) {
+            earnedInMonth +=
+              emp.earnedInMonth.wages + emp.earnedInMonth.erTaxes + emp.earnedInMonth.erBenefits;
+          }
+        }
+      }
+      newHires.push({
+        employeeId: empMeta.employeeId,
+        companyId: empMeta.companyId,
+        employeeName: empMeta.employeeName,
+        department: cc.department,
+        costCenterCode: empMeta.costCenterCode,
+        firstActivityDate: isoStr(first),
+        assumedEntityId: cc.operatingEntityId,
+        assumedEntityCode: cc.operatingEntityCode,
+        assumedEntityName: cc.operatingEntityName,
+        earnedInMonth: Math.round(earnedInMonth * 100) / 100,
+      });
+    }
+    newHires.sort(
+      (a, b) => b.earnedInMonth - a.earnedInMonth || a.employeeName.localeCompare(b.employeeName)
+    );
+
     // Data freshness / month-end coverage
     const lastSynced = monthlyCosts.reduce((latest: string, r) => {
       const t = (r.synced_at as string) ?? "";
@@ -231,6 +296,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       ...estimate,
+      newHires,
       meta: {
         lastSynced: lastSynced || null,
         monthEndCovered,
