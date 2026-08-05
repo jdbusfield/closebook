@@ -6,7 +6,7 @@ import {
 import { fetchRentalWorksRevenueData } from "@/lib/rentalworks/fetch-revenue-data";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function POST(request: Request) {
   try {

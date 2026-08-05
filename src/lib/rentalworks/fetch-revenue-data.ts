@@ -61,8 +61,11 @@ export async function fetchRentalWorksRevenueData(): Promise<RentalWorksRevenueD
         orderby: "BillingEndDate",
         orderbydirection: "desc",
       }),
-      // Month-windowed: a single 3-month order browse exceeds the 60s function cap.
-      rw.browseAllByMonthWindows<RWOrderRow>("order", "OrderDate", threeMonthsAgo, {
+      // Month-windowed: a single wide order browse exceeds the 60s function cap.
+      // 13 months (matching the invoice window) so long-outstanding orders stay
+      // visible — with a 3-month window, any order opened earlier silently
+      // dropped out of the projection even if it was never billed.
+      rw.browseAllByMonthWindows<RWOrderRow>("order", "OrderDate", thirteenMonthsAgo, {
         pagesize: 2000,
         orderby: "OrderDate",
         orderbydirection: "desc",

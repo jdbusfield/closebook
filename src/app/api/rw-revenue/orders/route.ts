@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { RWOrderRow } from "@/lib/utils/revenue-projection";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function GET() {
   try {
@@ -10,10 +10,12 @@ export async function GET() {
     await rw.ensureAuth(process.env.RW_USERNAME!, process.env.RW_PASSWORD!);
 
     const now = new Date();
-    const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+    // 13 months to match the invoice window — long-outstanding orders must
+    // stay visible to the projection's unbilled/overdue calculations.
+    const thirteenMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 13, 1);
 
-    // Month-windowed: a single 3-month browse exceeds Vercel's 60s cap.
-    const result = await rw.browseAllByMonthWindows<RWOrderRow>("order", "OrderDate", threeMonthsAgo, {
+    // Month-windowed: a single wide browse exceeds Vercel's function cap.
+    const result = await rw.browseAllByMonthWindows<RWOrderRow>("order", "OrderDate", thirteenMonthsAgo, {
       pagesize: 2000,
       orderby: "OrderDate",
       orderbydirection: "desc",

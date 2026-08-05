@@ -292,19 +292,27 @@ export class RentalWorksClient {
     }
     if (starts.length === 0) starts.push(currentMonthStart);
 
-    const pages = await Promise.all(
-      starts.map((start, i) => {
-        const end = i < starts.length - 1 ? starts[i + 1] : null;
-        return this.browseAll<T>(entity, {
-          ...params,
-          searchfields: end ? [dateField, dateField] : [dateField],
-          searchfieldoperators: end ? ['>=', '<'] : ['>='],
-          searchfieldvalues: end ? [fmt(start), fmt(end)] : [fmt(start)],
-          searchfieldtypes: end ? ['date', 'date'] : ['date'],
-          searchcondition: end ? ['and'] : [],
-        });
-      }),
-    );
+    // Run windows in batches of 5 — RW's observed safe concurrency. Wide
+    // ranges (13+ months) would otherwise fire every window at once.
+    const pages: BrowseResponse<T>[] = [];
+    const BATCH = 5;
+    for (let b = 0; b < starts.length; b += BATCH) {
+      const batch = await Promise.all(
+        starts.slice(b, b + BATCH).map((start, j) => {
+          const i = b + j;
+          const end = i < starts.length - 1 ? starts[i + 1] : null;
+          return this.browseAll<T>(entity, {
+            ...params,
+            searchfields: end ? [dateField, dateField] : [dateField],
+            searchfieldoperators: end ? ['>=', '<'] : ['>='],
+            searchfieldvalues: end ? [fmt(start), fmt(end)] : [fmt(start)],
+            searchfieldtypes: end ? ['date', 'date'] : ['date'],
+            searchcondition: end ? ['and'] : [],
+          });
+        }),
+      );
+      pages.push(...batch);
+    }
 
     const rows = pages.slice().reverse().flatMap((p) => p.rows);
     const last = pages[pages.length - 1];

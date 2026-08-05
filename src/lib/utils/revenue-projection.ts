@@ -64,7 +64,7 @@ export interface MonthlyRevenue {
   earned: number; // revenue pro-rata by rental period (closed invoices only)
   accrued: number; // earned > billed → recognize extra revenue
   deferred: number; // billed > earned → defer excess to future
-  unbilledEarned: number; // active orders: rental in period, no matching closed invoice yet (gross/list rate)
+  unbilledEarned: number; // active orders: rental in period, not covered by any live invoice (list rate)
   unbilledOrderCount: number; // count of orders contributing to unbilledEarned
 }
 
@@ -75,7 +75,7 @@ export interface UnbilledEarnedLine {
   rentalStartDate: string;
   rentalEndDate: string;
   orderTotal: number;
-  billedAgainstOrder: number; // sum of CLOSED invoice subtotals already applied
+  billedAgainstOrder: number; // closed + pending invoices, at list basis (subtotal + discount)
   unbilledRemainder: number;  // orderTotal - billedAgainstOrder, floored at 0
   amountInMonth: number;      // allocated portion of unbilledRemainder to this month
   month: string;              // "2026-03"
@@ -544,13 +544,22 @@ export function processRevenueData(
     }
   }
 
-  // --- Unbilled Earned: rental occurred in-month, no matching closed invoice ─
-  // Build OrderNumber → sum of closed InvoiceSubTotal lookup
+  // --- Unbilled Earned: rental occurred in-month, not yet covered by invoices ─
+  // Build OrderNumber → billed-against lookup. Two deliberate choices:
+  //  - Pending (NEW/APPROVED) invoices count as billed: they already appear in
+  //    the "pending" series, so leaving their order fully "unbilled" too would
+  //    double-count the same dollars.
+  //  - Billed amounts are taken at list basis (subtotal + discount added back):
+  //    Order.Total is at list rate while InvoiceSubTotal is post-discount, so
+  //    differencing them directly leaves a phantom remainder on discounted
+  //    orders that are in fact fully billed.
   const orderBilledMap = new Map<string, number>();
-  for (const inv of closedInvoices) {
+  for (const inv of [...closedInvoices, ...pendingInvoices]) {
     if (!inv.OrderNumber) continue;
+    const billedAtList =
+      toNum(inv.InvoiceSubTotal) + toNum(inv.InvoiceDiscountTotal);
     const prev = orderBilledMap.get(inv.OrderNumber) ?? 0;
-    orderBilledMap.set(inv.OrderNumber, prev + toNum(inv.InvoiceSubTotal));
+    orderBilledMap.set(inv.OrderNumber, prev + billedAtList);
   }
 
   const unbilledEarnedLines: UnbilledEarnedLine[] = [];
