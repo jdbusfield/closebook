@@ -43,6 +43,74 @@ short commit SHA in place of `[PR #<number>]`.
 
 ---
 
+## [b0c8f3b] - Revenue projection: fix three unbilled-order blind spots - 2026-08-05
+
+**Author:** JD Busfield (jd@avonrents.com)
+**Type:** Bug Fix
+**Related Issues:** N/A (pushed directly to `main`; no PR)
+
+### Summary
+An investigation into outstanding SilverCo (`AS`/`AC`) orders found 321 active
+orders past their stop date carrying roughly $306K of unbilled value, most of
+which had never been invoiced at all — and the Revenue Projection was not
+showing them faithfully. Three separate defects were responsible. The order
+fetch only reached back 3 months, so any order opened earlier vanished from the
+projection even when it was entirely unbilled. Drafted invoices counted in the
+*pending* series while their orders still counted as fully unbilled, so the same
+dollars appeared twice. And billed amounts were compared post-discount against
+order totals stated at list rate, leaving a phantom unbilled remainder on every
+discounted order that was in fact fully billed. All three are now fixed.
+
+### Changes Made
+- Widened the RentalWorks order browse from 3 to 13 months, matching the invoice
+  window, in both `fetchRentalWorksRevenueData`
+  (`src/lib/rentalworks/fetch-revenue-data.ts`) and
+  `/api/rw-revenue/orders` (`src/app/api/rw-revenue/orders/route.ts`). The quote
+  window is unchanged at 3 months.
+- `browseAllByMonthWindows()` in `src/lib/rentalworks/client.ts` now runs its
+  month windows in **batches of 5** rather than firing every window at once —
+  RentalWorks's observed safe concurrency. A 13-month range would otherwise open
+  13 simultaneous browses.
+- Raised `maxDuration` from 60 to 120 on `/api/rw-revenue/orders` and
+  `/api/revenue-projection` to accommodate the wider pull.
+- In `processRevenueData` (`src/lib/utils/revenue-projection.ts`), the
+  `orderBilledMap` now includes **pending** (`NEW`/`APPROVED`) invoices
+  alongside closed (`CLOSED`/`PROCESSED`) ones, so a drafted invoice no longer
+  leaves its order fully unbilled while also showing in the pending series.
+- Billed-against amounts are now accumulated at **list basis**
+  (`InvoiceSubTotal + InvoiceDiscountTotal`) to match `Order.Total`'s list-rate
+  basis. The `UnbilledEarnedLine.billedAgainstOrder` field and the
+  `MonthlyRevenue.unbilledEarned` doc comments were updated to match.
+
+### User Impact
+Long-outstanding orders now stay visible in the unbilled-earned figure and its
+drilldown instead of silently ageing out after 3 months — the main reason the
+SilverCo backlog was invisible. Two offsetting corrections also change the
+number: pending invoices no longer inflate it, and discounted orders no longer
+contribute phantom remainders. Measured on June 2026 SilverCo data, unbilled
+earned moves from **$102.4K under the old logic to $106.1K under the new**. The
+figure is more complete and less double-counted, but it is not directly
+comparable to numbers recorded before this date. The projection page and the
+daily `/api/rw-revenue/snapshot` cron both take longer to run, since the order
+pull now covers 13 months.
+
+### Migration Notes
+None. No schema or configuration change. Revenue Projection snapshots stored
+before 2026-08-05 reflect the old logic; re-run the projection for any month
+whose unbilled figure you intend to compare or rely on.
+
+### Wiki Pages Updated
+- /settings/wiki/core-concepts (new "Revenue projection" section: data windows,
+  monthly series, unbilled-earned definition)
+- /settings/wiki/usage-guide (rewrote "Project revenue" — the previous text
+  described the page as probability-weighted, which it has never been)
+- /settings/wiki/features (Revenue Projection bullet)
+- /settings/wiki/troubleshooting (three new entries: missing unbilled order,
+  discounted-order remainder, projection timeouts)
+- /settings/wiki/changelog
+
+---
+
 ## [9a2cd8f] - Monthly estimate: new-hire allocation dialog - 2026-08-04
 
 **Author:** JD Busfield (jd@avonrents.com)

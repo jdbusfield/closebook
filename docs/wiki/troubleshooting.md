@@ -137,6 +137,42 @@ See [Core Concepts → Employee allocations](/settings/wiki/core-concepts#employ
 and the
 [9a2cd8f changelog entry](/settings/wiki/changelog#9a2cd8f---monthly-estimate-new-hire-allocation-dialog---2026-08-04).
 
+## "An unbilled order I know about is missing from Revenue Projection"
+
+Work through these in order:
+
+- **The order is older than the window.** Orders are pulled 13 months back by
+  `OrderDate`. An order opened before that is invisible to the projection, no
+  matter how much of it is unbilled. Check it directly in RentalWorks.
+- **The order is in a terminal status.** Only orders that are not `CANCELLED`,
+  `CLOSED`, or `VOID` are treated as active.
+- **A pending invoice already covers it.** Drafted `NEW`/`APPROVED` invoices
+  count as billed-against, so the order shows in the *pending* series instead of
+  *unbilled earned*. This is deliberate — otherwise the same dollars appear in
+  both (b0c8f3b).
+- **The rental period has not started.** Only the portion of the unbilled
+  remainder allocated to the current month or earlier counts as earned. The
+  rest sits in pipeline.
+- **The order has no rental dates or a zero total.** Orders missing
+  `EstimatedStartDate` / `EstimatedStopDate`, or totalling zero, are skipped.
+
+## "The unbilled remainder on a discounted order looks wrong"
+
+Amounts are compared at **list basis**: `Order.Total` is at list rate, so the
+billed figure adds the discount back (`InvoiceSubTotal + InvoiceDiscountTotal`).
+Before b0c8f3b the comparison used the post-discount subtotal, which left every
+fully billed discounted order showing a phantom remainder equal to its discount.
+If the numbers still look off, check whether the invoice carries misc or labor
+charges — those are outside the list-rate basis on both sides.
+
+## "Revenue Projection times out"
+
+The order pull is month-windowed (`browseAllByMonthWindows`) at five concurrent
+windows, and `/api/revenue-projection` and `/api/rw-revenue/orders` both run
+with `maxDuration = 120`. A cold 13-month pull is genuinely slow. If it still
+times out, RentalWorks is likely throttling — do not raise the batch size above
+5, which is the observed safe concurrency.
+
 ## "RentalWorks API returns 500"
 
 Some RW endpoints are known broken on the HDR instance:

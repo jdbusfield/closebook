@@ -97,8 +97,26 @@ Only enabled for entities with the `rebates` feature flag (currently
 ## Project revenue
 
 For entities with the `revenue_projection` feature flag, the *Revenue
-Projection* page produces forward-looking revenue from RentalWorks open
-quotes / orders weighted by close probability.
+Projection* page (`/<entityId>/revenue-projection`) buckets live RentalWorks
+invoices, orders, and quotes into months — 12 back through 3 forward.
+
+1. Open the page and let it pull from RentalWorks. The order and invoice pulls
+   each cover 13 months, so the fetch takes up to two minutes on a cold run.
+2. Read the month columns: **closed** (finalized invoices), **pending**
+   (drafted or approved invoices), **pipeline** (active orders), and
+   **forecast** for future months.
+3. Use the **Unbilled** tab to find work that has happened but has no invoice
+   covering it. Each line shows the order total, how much has been billed
+   against it, and the remainder allocated to the month.
+4. Drill into a line to get the order number and customer, then chase the
+   invoice in RentalWorks.
+
+> Forecast for future months is a 6-month simple moving average of closed
+> revenue. It is not a probability-weighted pipeline — no per-deal close
+> percentage is applied anywhere in this page.
+
+See [Core Concepts → Revenue projection](/settings/wiki/core-concepts#revenue-projection)
+for the data windows and the exact unbilled-earned definition.
 
 ## Allocate new employees on the monthly payroll estimate
 

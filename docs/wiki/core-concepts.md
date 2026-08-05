@@ -269,3 +269,95 @@ caused, which is what keeps the entity/RE balance sheet and cash-flow statement
 articulated. Unlike the `__intercompany_*` elimination accounts, this account is
 **not** flagged intercompany, so it is intentionally *not* filtered out of the
 statement.
+
+## Revenue projection
+
+The Revenue Projection feature (entity flag `revenue_projection`) reads live
+RentalWorks orders, quotes, and invoices and buckets them into months. Fetching
+happens in `fetchRentalWorksRevenueData`
+(`src/lib/rentalworks/fetch-revenue-data.ts`); all bucketing and revenue
+semantics live in `processRevenueData` (`src/lib/utils/revenue-projection.ts`).
+Both the on-demand `/api/revenue-projection` route and the daily
+`/api/rw-revenue/snapshot` cron use the same code path, so anything described
+here applies to the page and to the stored snapshot alike.
+
+### Data window
+
+RentalWorks is queried over fixed look-back windows. Anything older than its
+window is invisible to the projection — not zero, simply absent:
+
+| Source | Date field | Look-back |
+|---|---|---|
+| Invoices (by invoice date) | `InvoiceDate` | 13 months |
+| Invoices (by billing period) | `BillingEndDate` | 36 months |
+| Orders | `OrderDate` | 13 months |
+| Quotes | `QuoteDate` | 3 months |
+
+The two invoice pulls are merged and de-duplicated by `InvoiceId`.
+
+Orders and quotes are fetched with `browseAllByMonthWindows()`, which splits the
+range into one browse per calendar month — a single wide browse exceeds the
+Vercel function cap. Month windows run **five at a time**, RentalWorks's
+observed safe concurrency. The `/api/rw-revenue/orders` and
+`/api/revenue-projection` routes both declare `maxDuration = 120` to leave room
+for the wider order pull.
+
+> The order window was 3 months until [b0c8f3b](/settings/wiki/changelog#b0c8f3b---revenue-projection-fix-three-unbilled-order-blind-spots---2026-08-05).
+> Any order opened before that cutoff dropped out of the projection entirely,
+> even if it had never been billed — which hid long-outstanding unbilled work.
+> Orders opened more than 13 months ago are still out of scope.
+
+### Monthly series
+
+Buckets span 12 months back through 3 months forward. Invoices are classified
+by RW status: **closed** = `CLOSED` or `PROCESSED` (`PROCESSED` is finalized in
+RW, same as closed), **pending** = `NEW` or `APPROVED`. Orders are **active**
+unless their status is `CANCELLED`, `CLOSED`, or `VOID`. No-charge and
+non-billable invoices are dropped before any of this.
+
+- **Closed** — finalized invoice revenue.
+- **Pending** — invoices drafted or approved but not finalized.
+- **Pipeline** — active orders, placed by rental period or order date depending
+  on the page's date mode.
+- **Forecast** — future months only: a 6-month simple moving average of closed
+  revenue, projected 3 months forward. There is no per-deal probability
+  weighting.
+- **Billed / earned** — billed is invoice value in the month it was invoiced;
+  earned is the same value spread pro-rata across the rental period. Their
+  difference produces **accrued** (earned > billed) or **deferred**
+  (billed > earned).
+- **Unbilled earned** — see below.
+
+### Unbilled earned
+
+Unbilled earned answers: *rental work has happened, and no invoice covers it
+yet.* For each active order with a rental period and a positive total:
+
+```
+unbilledRemainder = max(0, Order.Total − billedAgainstOrder)
+```
+
+The remainder is allocated pro-rata across the rental period, and only the
+portion falling in the **current month or earlier** counts as unbilled earned.
+Later portions remain pipeline forecast, not earned revenue. `unbilledOrderCount`
+de-duplicates orders within a month.
+
+Two properties of `billedAgainstOrder` matter, both set in
+[b0c8f3b](/settings/wiki/changelog#b0c8f3b---revenue-projection-fix-three-unbilled-order-blind-spots---2026-08-05):
+
+- **Pending invoices count as billed.** A drafted `NEW`/`APPROVED` invoice
+  already shows in the *pending* series. Treating its order as still fully
+  unbilled would count the same dollars twice.
+- **Comparison happens at list basis.** `Order.Total` is stated at list rate,
+  while `InvoiceSubTotal` is post-discount. The billed figure therefore adds the
+  discount back — `InvoiceSubTotal + InvoiceDiscountTotal` — so a fully billed
+  discounted order nets to zero instead of leaving a phantom remainder equal to
+  its discount.
+
+The unbilled-earned drilldown shows `billedAgainstOrder` on the same list basis,
+so a line's `orderTotal − billedAgainstOrder` ties to its `unbilledRemainder`.
+
+> **Not an accrual entry.** Unbilled earned is a read-only operational signal
+> about orders that should be invoiced. Nothing here posts to the GL — the
+> entity's *Revenue Accruals* page (`/<entityId>/revenue`) is the separate
+> place where unbilled revenue is tracked for booking.

@@ -87,8 +87,11 @@ Available under `/<entityId>/...`:
   export. Sales / Misc / L&D categories are flagged "Excluded from
   rebate" on detail views and exports (PR #56). Line-item math:
   Regular = list price, Net = post-discount (PR #57).
-- **Revenue Projection** — forward-looking revenue from RentalWorks
-  pipeline (feature-flagged).
+- **Revenue Projection** — monthly closed / pending / pipeline revenue from
+  live RentalWorks data, plus an unbilled-earned drilldown for work done but
+  not yet invoiced (feature-flagged). Orders and invoices are both pulled over
+  a 13-month window (b0c8f3b). See
+  [Core Concepts → Revenue projection](/settings/wiki/core-concepts#revenue-projection).
 
 ## Settings / Administration
 
