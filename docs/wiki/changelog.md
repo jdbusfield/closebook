@@ -50,10 +50,10 @@ short commit SHA in place of `[PR #<number>]`.
 **Related Issues:** N/A (pushed directly to `main`; no PR)
 
 ### Summary
-An investigation into outstanding SilverCo (`AS`/`AC`) orders found 321 active
-orders past their stop date carrying roughly $306K of unbilled value, most of
-which had never been invoiced at all — and the Revenue Projection was not
-showing them faithfully. Three separate defects were responsible. The order
+An investigation into long-outstanding orders found a substantial backlog of
+active orders past their stop date, most never invoiced at all — and the
+Revenue Projection was not showing them faithfully. Three separate defects
+were responsible. The order
 fetch only reached back 3 months, so any order opened earlier vanished from the
 projection even when it was entirely unbilled. Drafted invoices counted in the
 *pending* series while their orders still counted as fully unbilled, so the same
@@ -85,12 +85,12 @@ discounted order that was in fact fully billed. All three are now fixed.
 ### User Impact
 Long-outstanding orders now stay visible in the unbilled-earned figure and its
 drilldown instead of silently ageing out after 3 months — the main reason the
-SilverCo backlog was invisible. Two offsetting corrections also change the
-number: pending invoices no longer inflate it, and discounted orders no longer
-contribute phantom remainders. Measured on June 2026 SilverCo data, unbilled
-earned moves from **$102.4K under the old logic to $106.1K under the new**. The
-figure is more complete and less double-counted, but it is not directly
-comparable to numbers recorded before this date. The projection page and the
+backlog was invisible. Two offsetting corrections also change the number:
+pending invoices no longer inflate it, and discounted orders no longer
+contribute phantom remainders. The window widening pushes the figure up while
+the other two fixes pull it down, so the net effect is a moderately higher and
+more complete number that is not directly comparable to figures recorded
+before this date. The projection page and the
 daily `/api/rw-revenue/snapshot` cron both take longer to run, since the order
 pull now covers 13 months.
 
