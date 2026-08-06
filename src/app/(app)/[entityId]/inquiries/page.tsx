@@ -28,6 +28,8 @@ import {
   parseDate,
   isOpenStatus,
   isReservationRequest,
+  contactOverdue,
+  lastContactedAt,
 } from "@/lib/inquiries/shared";
 
 function firstOpenTask(inq: Inquiry) {
@@ -254,9 +256,24 @@ export default function InquiriesPipelinePage() {
       ) : (
         <div className="flex flex-1 gap-3 overflow-x-auto pb-2">
           {STAGES.map((stage) => {
-            const items = data.inquiries.filter(
-              (i) => i.status === stage.key && matchesSource(i)
-            );
+            // Deals overdue for outreach float to the top of their column,
+            // most-neglected first (never-contacted above everything); the
+            // rest keep their fetched order (sort is stable).
+            const needsFollowUp = (i: Inquiry) =>
+              isOpenStatus(i.status) && contactOverdue(i);
+            const items = data.inquiries
+              .filter((i) => i.status === stage.key && matchesSource(i))
+              .sort((a, b) => {
+                const an = needsFollowUp(a);
+                const bn = needsFollowUp(b);
+                if (an !== bn) return an ? -1 : 1;
+                if (an && bn) {
+                  const at = lastContactedAt(a)?.getTime() ?? 0;
+                  const bt = lastContactedAt(b)?.getTime() ?? 0;
+                  return at - bt;
+                }
+                return 0;
+              });
             const colValue = items.reduce((s, i) => s + (i.estimated_value || 0), 0);
             const isOver = dragOverCol === stage.key;
             return (
