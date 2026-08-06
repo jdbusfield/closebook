@@ -80,13 +80,16 @@ export function mailboxRouting(addr: string | null | undefined): MailboxRouting 
 // Pipeline stages
 // ---------------------------------------------------------------------------
 // Stored in rental_inquiries.status (text, constrained by a CHECK — keep in
-// sync with the 20260602 migration). First three stages are open inquiries that
-// need follow-up; the next three are booked rentals; `lost` is terminal and
+// sync with the 20260806 migration). First five stages are open inquiries that
+// need follow-up (the three followup stages track how many outreach rounds
+// we've done); the next three are booked rentals; `lost` is terminal and
 // lives off the board (visible in Customers).
 export const INQUIRY_STATUSES = [
   "new",
   "quoted",
   "followup",
+  "followup2",
+  "followup3",
   "confirmed",
   "out",
   "returned",
@@ -105,12 +108,16 @@ export interface Stage {
   color: string; // hex — used consistently for dots, pills, stage bar
 }
 
-// The six board stages, in board / progress order. `lost` is intentionally not
-// here (it's a terminal archive state shown only as a pill).
+// The board stages, in board / progress order. `lost` is intentionally not
+// here (it's a terminal archive state shown only as a pill). The three
+// follow-up stages count outreach rounds — a deal moves right each time we
+// chase it again, with heat escalating amber → orange → red.
 export const STAGES: Stage[] = [
   { key: "new", label: "New Inquiry", kind: "open", color: "#2845F0" },
   { key: "quoted", label: "Quote Sent", kind: "open", color: "#7c3aed" },
-  { key: "followup", label: "Follow-Up", kind: "open", color: "#d97706" },
+  { key: "followup", label: "Follow-Up 1", kind: "open", color: "#d97706" },
+  { key: "followup2", label: "Follow-Up 2", kind: "open", color: "#c2410c" },
+  { key: "followup3", label: "Follow-Up 3+", kind: "open", color: "#b91c1c" },
   { key: "confirmed", label: "Confirmed", kind: "booked", color: "#0f7b6c" },
   { key: "out", label: "Out", kind: "booked", color: "#0369a1" },
   { key: "returned", label: "Returned", kind: "booked", color: "#64748b" },
@@ -155,7 +162,13 @@ export const LOST_REASONS = [
 // Open stages where inbound correspondence should still attach to the inquiry
 // (used by the inbound-email webhook's fallback matcher) and that count as
 // "open" on the dashboard.
-export const OPEN_INQUIRY_STATUSES: InquiryStatus[] = ["new", "quoted", "followup"];
+export const OPEN_INQUIRY_STATUSES: InquiryStatus[] = [
+  "new",
+  "quoted",
+  "followup",
+  "followup2",
+  "followup3",
+];
 
 // Booked stages — a committed rental. A deal is calendar-eligible when it has a
 // unit AND its stage is one of these.

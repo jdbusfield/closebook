@@ -5,6 +5,8 @@ const STATUS_STYLES: Record<InquiryStatus, string> = {
   new: "bg-blue-100 text-blue-800 hover:bg-blue-100",
   quoted: "bg-violet-100 text-violet-800 hover:bg-violet-100",
   followup: "bg-amber-100 text-amber-800 hover:bg-amber-100",
+  followup2: "bg-orange-100 text-orange-800 hover:bg-orange-100",
+  followup3: "bg-red-100 text-red-800 hover:bg-red-100",
   confirmed: "bg-emerald-100 text-emerald-800 hover:bg-emerald-100",
   out: "bg-sky-100 text-sky-800 hover:bg-sky-100",
   returned: "bg-slate-100 text-slate-700 hover:bg-slate-100",
