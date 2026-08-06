@@ -552,19 +552,25 @@ export interface Inquiry {
   quotes?: InquiryQuote[];
 }
 
-// Most recent activity timestamp (for staleness). Falls back to last_activity_at
-// then created_at.
+// Most recent activity timestamp (for staleness). Takes the NEWEST of the
+// activity timeline, genuine correspondence, and the last_activity_at stamp —
+// not just the first source that has a value. Emails captured from Gmail land
+// only in `messages` (no activity row is logged for them), so ignoring
+// messages here made freshly-emailed deals read as "going cold".
 export function lastActivityDate(inq: Inquiry): Date | null {
-  const fromActivity = (inq.activity || [])
-    .map((a) => parseDate(a.occurred_at))
-    .filter((d): d is Date => !!d)
-    .sort((a, b) => b.getTime() - a.getTime())[0];
-  return (
-    fromActivity ||
-    parseDate(inq.last_activity_at) ||
-    parseDate(inq.created_at) ||
-    null
-  );
+  const candidates: Date[] = [];
+  for (const a of inq.activity || []) {
+    const d = parseDate(a.occurred_at);
+    if (d) candidates.push(d);
+  }
+  for (const m of genuineMessages(inq.messages || [])) {
+    const d = parseTimestamp(messageDate(m));
+    if (d) candidates.push(d);
+  }
+  const stamp = parseDate(inq.last_activity_at) || parseDate(inq.created_at);
+  if (stamp) candidates.push(stamp);
+  if (!candidates.length) return null;
+  return candidates.sort((a, b) => b.getTime() - a.getTime())[0];
 }
 
 // Days since last activity — powers the "going cold" surface.
@@ -687,17 +693,16 @@ const TOUCH_ACTIVITY_TYPES: ReadonlySet<InquiryActivity["type"]> = new Set([
   "email",
 ]);
 
-// Most recent moment a customer was actually contacted — an email exchanged or a
-// call/email logged. Stage moves and other bookkeeping activity do NOT count, so
-// shuffling a deal across the board never resets its "most recent activity"
-// clock. Also ignores the inquiry's `last_activity_at` stamp (bumped by record
-// edits), so the card time reflects the genuine last call or email. Falls back to
-// created_at only when there's no correspondence or qualifying activity at all.
-export function lastTouchedAt(inq: Inquiry): Date | null {
+// Most recent moment WE reached out to the customer — an outbound email (sent
+// from the CRM or captured from Gmail) or a logged call/email. Customer inbound
+// mail, stage moves, and record edits do NOT count. Null when we've never
+// contacted them, so callers can surface "no contact yet" honestly.
+export function lastContactedAt(inq: Inquiry): Date | null {
   const auto = automatedIntakeSubjects(inq.messages || []);
   const candidates: Date[] = [];
   for (const m of inq.messages || []) {
     if (isAutomatedIntakeMail(m, auto)) continue;
+    if (messageSide(m, inq.email) !== "us") continue;
     const d = parseTimestamp(messageDate(m));
     if (d) candidates.push(d);
   }
@@ -706,10 +711,18 @@ export function lastTouchedAt(inq: Inquiry): Date | null {
     const d = parseTimestamp(a.occurred_at);
     if (d) candidates.push(d);
   }
-  if (!candidates.length) {
-    return parseTimestamp(inq.created_at);
-  }
+  if (!candidates.length) return null;
   return candidates.sort((a, b) => b.getTime() - a.getTime())[0];
+}
+
+// A lead is overdue for outreach when we've never contacted them or the last
+// outreach is more than three days old. Drives the red state of the card's
+// last-contacted badge.
+const CONTACT_OVERDUE_AFTER_MS = 3 * 86_400_000;
+
+export function contactOverdue(inq: Inquiry): boolean {
+  const t = lastContactedAt(inq);
+  return !t || Date.now() - t.getTime() > CONTACT_OVERDUE_AFTER_MS;
 }
 
 // Who had the last word — 'us' (we sent the most recent thing) or 'customer'

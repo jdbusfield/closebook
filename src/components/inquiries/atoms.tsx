@@ -29,7 +29,9 @@ import {
   parseDate,
   today,
   normalizeStatus,
-  lastTouchedAt,
+  isOpenStatus,
+  lastContactedAt,
+  contactOverdue,
   lastCorrespondence,
 } from "@/lib/inquiries/shared";
 
@@ -189,23 +191,36 @@ export function ActivityIcon({ type, size = 12 }: { type: string; size?: number 
 
 export const ACTIVITY_COLOR = ACT_COLOR;
 
-// "When was this lead last touched" — relative time across emails + activity.
-export function LastTouched({
+// "When did WE last contact them" — outbound emails (CRM-sent or Gmail-captured)
+// and logged calls/emails only. Turns red on open deals once the last outreach
+// is more than three days old (or was never made), so the board shows exactly
+// who is overdue for a follow-up.
+export function LastContacted({
   inq,
   className = "",
 }: {
   inq: Inquiry;
   className?: string;
 }) {
-  const t = lastTouchedAt(inq);
-  if (!t) return null;
+  const t = lastContactedAt(inq);
+  const open = isOpenStatus(normalizeStatus(inq.status));
+  const overdue = open && contactOverdue(inq);
+  if (!t && !open) return null;
   return (
     <span
-      className={`inline-flex items-center gap-1 text-[11px] text-muted-foreground ${className}`}
-      title={`Last touched ${t.toLocaleString()}`}
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${
+        overdue
+          ? "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-400"
+          : "text-muted-foreground"
+      } ${className}`}
+      title={
+        t
+          ? `We last contacted them ${t.toLocaleString()}`
+          : "We haven't contacted them yet"
+      }
     >
       <Clock className="size-3" />
-      {relTime(t)}
+      {t ? relTime(t) : "no contact yet"}
     </span>
   );
 }

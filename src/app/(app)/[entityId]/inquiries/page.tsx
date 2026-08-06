@@ -11,7 +11,7 @@ import { InquiryDrawer, type DrawerCallbacks } from "@/components/inquiries/deta
 import { TemplatePicker } from "@/components/inquiries/template-picker";
 import {
   InquiryAvatar,
-  LastTouched,
+  LastContacted,
   CorrespondenceBadge,
   GoogleAdBadge,
   BrandBadge,
@@ -129,7 +129,7 @@ function DealCard({
         </div>
       )}
       <div className="mt-1.5 flex items-center justify-between gap-2">
-        <LastTouched inq={inq} />
+        <LastContacted inq={inq} />
         <CorrespondenceBadge inq={inq} />
       </div>
       {(overdue || stale) && (
