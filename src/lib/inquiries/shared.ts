@@ -90,6 +90,7 @@ export const INQUIRY_STATUSES = [
   "followup",
   "followup2",
   "followup3",
+  "responded",
   "keepwarm",
   "confirmed",
   "out",
@@ -119,6 +120,10 @@ export const STAGES: Stage[] = [
   { key: "followup", label: "Followed Up 1", kind: "open", color: "#d97706" },
   { key: "followup2", label: "Followed Up 2", kind: "open", color: "#c2410c" },
   { key: "followup3", label: "Followed Up 3+", kind: "open", color: "#b91c1c" },
+  // The customer wrote back — an active two-way conversation. Still gets the
+  // full follow-up nagging (dropping the ball mid-conversation is the worst
+  // time to), and the who-had-the-last-word badge shows whose court it's in.
+  { key: "responded", label: "Responded Back", kind: "open", color: "#0891b2" },
   // "Not right now, but we're interested in the future" — parked, not dead.
   // Open for email matching (a reply months later still lands on the card),
   // but excluded from every follow-up nag: see needsOutreachStatus.
@@ -173,6 +178,7 @@ export const OPEN_INQUIRY_STATUSES: InquiryStatus[] = [
   "followup",
   "followup2",
   "followup3",
+  "responded",
   "keepwarm",
 ];
 
