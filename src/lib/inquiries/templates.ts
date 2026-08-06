@@ -273,10 +273,12 @@ export function selectTemplates<T extends MessageTemplate>(
   inq: Inquiry
 ): T[] {
   const raw = (inq.status || "new") as InquiryStatus;
-  // Later follow-up rounds reuse the follow-up stage's template library —
-  // including any DB overrides saved before those stages existed.
+  // Later follow-up rounds and Keep Warm reuse the follow-up stage's template
+  // library — including any DB overrides saved before those stages existed.
   const status: InquiryStatus =
-    raw === "followup2" || raw === "followup3" ? "followup" : raw;
+    raw === "followup2" || raw === "followup3" || raw === "keepwarm"
+      ? "followup"
+      : raw;
   const track = inferTrack(inq);
   const relevant = list.filter(
     (t) =>

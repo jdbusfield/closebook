@@ -90,6 +90,7 @@ export const INQUIRY_STATUSES = [
   "followup",
   "followup2",
   "followup3",
+  "keepwarm",
   "confirmed",
   "out",
   "returned",
@@ -118,6 +119,10 @@ export const STAGES: Stage[] = [
   { key: "followup", label: "Followed Up 1", kind: "open", color: "#d97706" },
   { key: "followup2", label: "Followed Up 2", kind: "open", color: "#c2410c" },
   { key: "followup3", label: "Followed Up 3+", kind: "open", color: "#b91c1c" },
+  // "Not right now, but we're interested in the future" — parked, not dead.
+  // Open for email matching (a reply months later still lands on the card),
+  // but excluded from every follow-up nag: see needsOutreachStatus.
+  { key: "keepwarm", label: "Keep Warm", kind: "open", color: "#db2777" },
   { key: "confirmed", label: "Confirmed", kind: "booked", color: "#0f7b6c" },
   { key: "out", label: "Out", kind: "booked", color: "#0369a1" },
   { key: "returned", label: "Returned", kind: "booked", color: "#64748b" },
@@ -168,6 +173,7 @@ export const OPEN_INQUIRY_STATUSES: InquiryStatus[] = [
   "followup",
   "followup2",
   "followup3",
+  "keepwarm",
 ];
 
 // Booked stages — a committed rental. A deal is calendar-eligible when it has a
@@ -176,6 +182,13 @@ export const BOOKED_STATUSES: InquiryStatus[] = ["confirmed", "out", "returned"]
 
 export function isOpenStatus(s: string): boolean {
   return OPEN_INQUIRY_STATUSES.includes(s as InquiryStatus);
+}
+// Open AND actively being chased. Keep Warm deals are open (mail still
+// attaches, they count in the pipeline) but the customer asked us to circle
+// back later — so the red contact badges, going-cold flames, overdue-first
+// sorting, and automated funnel sends all leave them alone.
+export function needsOutreachStatus(s: string): boolean {
+  return isOpenStatus(s) && s !== "keepwarm";
 }
 export function isBookedStatus(s: string): boolean {
   return BOOKED_STATUSES.includes(s as InquiryStatus);

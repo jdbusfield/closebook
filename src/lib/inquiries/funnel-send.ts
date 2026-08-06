@@ -13,7 +13,7 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 import {
   type Inquiry,
   type InquiryQuote,
-  isOpenStatus,
+  needsOutreachStatus,
   quoteEmailBlock,
 } from "@/lib/inquiries/shared";
 import { brandOf, renderTemplate, type MessageTemplate } from "@/lib/inquiries/templates";
@@ -173,8 +173,9 @@ export async function processEnrollment(
       return { outcome: "stopped", reason: "inquiry_deleted" };
     }
 
-    // Break condition: inquiry booked/closed (mirror of the stage trigger).
-    if (!isOpenStatus(inquiry.status ?? "new")) {
+    // Break condition: inquiry booked/closed/parked in Keep Warm (mirror of
+    // the stage trigger) — "not right now" stops the drip too.
+    if (!needsOutreachStatus(inquiry.status ?? "new")) {
       await admin
         .from("rental_inquiry_funnel_enrollments")
         .update({ status: "stopped", stopped_reason: `stage:${inquiry.status}` })

@@ -29,7 +29,7 @@ import {
   parseDate,
   today,
   normalizeStatus,
-  isOpenStatus,
+  needsOutreachStatus,
   lastContactedAt,
   contactOverdue,
   lastCorrespondence,
@@ -203,7 +203,7 @@ export function LastContacted({
   className?: string;
 }) {
   const t = lastContactedAt(inq);
-  const open = isOpenStatus(normalizeStatus(inq.status));
+  const open = needsOutreachStatus(normalizeStatus(inq.status));
   const overdue = open && contactOverdue(inq);
   if (!t && !open) return null;
   return (

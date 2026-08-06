@@ -27,6 +27,7 @@ import {
   today,
   parseDate,
   isOpenStatus,
+  needsOutreachStatus,
   isReservationRequest,
   contactOverdue,
   lastContactedAt,
@@ -52,7 +53,7 @@ function DealCard({
   const openTask = firstOpenTask(inq);
   const due = parseDate(openTask?.due_date ?? null);
   const overdue = !!due && daysBetween(today(), due) < 0;
-  const stale = isOpenStatus(inq.status) && daysStale(inq) >= 5;
+  const stale = needsOutreachStatus(inq.status) && daysStale(inq) >= 5;
   // Priced self-serve reservation requests are warmer leads — tint them green
   // so they stand out from plain quote inquiries on the same board.
   const reservation = isReservationRequest(inq);
@@ -260,7 +261,7 @@ export default function InquiriesPipelinePage() {
             // most-neglected first (never-contacted above everything); the
             // rest keep their fetched order (sort is stable).
             const needsFollowUp = (i: Inquiry) =>
-              isOpenStatus(i.status) && contactOverdue(i);
+              needsOutreachStatus(i.status) && contactOverdue(i);
             const items = data.inquiries
               .filter((i) => i.status === stage.key && matchesSource(i))
               .sort((a, b) => {

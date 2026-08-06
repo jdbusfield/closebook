@@ -35,6 +35,7 @@ import {
   today,
   parseDate,
   isOpenStatus,
+  needsOutreachStatus,
   isReservation,
 } from "@/lib/inquiries/shared";
 
@@ -136,9 +137,10 @@ export default function InquiriesDashboardPage() {
       return d && daysBetween(today(), d) <= 7;
     }).length;
 
-    // Going cold: open deals with no activity in 5+ days.
+    // Going cold: actively-chased deals with no activity in 5+ days (Keep
+    // Warm deals are parked on purpose, so they never show here).
     const cold = inquiries
-      .filter((i) => isOpenStatus(i.status))
+      .filter((i) => needsOutreachStatus(i.status))
       .map((i) => ({ inq: i, stale: daysStale(i) }))
       .filter((x) => x.stale >= 5)
       .sort((a, b) => b.stale - a.stale);

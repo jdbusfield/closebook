@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveEmbedEntity } from "@/lib/inquiries/embed-auth";
-import { isOpenStatus } from "@/lib/inquiries/shared";
+import { needsOutreachStatus } from "@/lib/inquiries/shared";
 import {
   ENROLLMENT_COLUMNS,
   enrollmentQuote,
@@ -105,9 +105,9 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
-      if (!isOpenStatus(inquiry.status ?? "new")) {
+      if (!needsOutreachStatus(inquiry.status ?? "new")) {
         return NextResponse.json(
-          { error: "Funnels only run on open inquiries (New / Quoted / Follow-Up)" },
+          { error: "Funnels only run on actively-chased inquiries (New / Quoted / Followed Up)" },
           { status: 400 }
         );
       }

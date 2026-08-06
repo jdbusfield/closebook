@@ -31,7 +31,7 @@ import {
 } from "@/lib/inquiries/funnels";
 import { renderTemplate, type MessageTemplate } from "@/lib/inquiries/templates";
 import {
-  isOpenStatus,
+  needsOutreachStatus,
   fmtDate,
   fmtMoney,
   quoteEmailBlock,
@@ -75,7 +75,7 @@ export function FunnelBlock({
   const enrolledFunnel = enrollment
     ? fn.allFunnels.find((f) => f.id === enrollment.funnel_id)
     : undefined;
-  const open = isOpenStatus(inquiry.status ?? "new");
+  const open = needsOutreachStatus(inquiry.status ?? "new");
 
   const start = async () => {
     if (!candidate) return;
