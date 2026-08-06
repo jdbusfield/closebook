@@ -23,6 +23,10 @@ import type { AdSpendRow } from "@/lib/inquiries/use-ad-spend";
 
 const ALL_STAGES = [...STAGES, COMPLETED_STAGE, LOST_STAGE];
 
+// The tracking table never reaches back before this month (pre-dates the ad
+// tracking effort; earlier months would just be noise).
+const EARLIEST_MONTH = "2026-05-01";
+
 const PRESETS = [
   { key: "this", label: "This month" },
   { key: "last", label: "Last month" },
@@ -122,10 +126,12 @@ function buildRoi(
     return m <= toMonth.slice(0, 7);
   });
 
-  // Last 6 calendar months, newest first, always including the current one.
+  // Every month from the current one back to May 2026 (when ad tracking
+  // starts), newest first — the table grows a row each month.
   const months: MonthRow[] = [];
-  for (let n = 0; n < 6; n++) {
+  for (let n = 0; ; n++) {
     const m = shiftMonth(thisMonth, -n);
+    if (m < EARLIEST_MONTH && n > 0) break;
     const rows = inquiries.filter((i) => inMonth(i.created_at, m));
     const spendRow = spendRows.find((r) => r.month.slice(0, 7) === m.slice(0, 7));
     months.push({
@@ -229,7 +235,7 @@ export function RoiSection({
   spendRows: AdSpendRow[];
   onSaveSpend: (month: string, amount: number) => Promise<void>;
 }) {
-  const [preset, setPreset] = useState<PresetKey>("3mo");
+  const [preset, setPreset] = useState<PresetKey>("all");
   const m = useMemo(
     () => buildRoi(inquiries, spendRows, preset),
     [inquiries, spendRows, preset]
