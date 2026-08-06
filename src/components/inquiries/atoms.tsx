@@ -31,6 +31,7 @@ import {
   normalizeStatus,
   needsOutreachStatus,
   lastContactedAt,
+  sentEmailCount,
   contactOverdue,
   lastCorrespondence,
 } from "@/lib/inquiries/shared";
@@ -203,6 +204,7 @@ export function LastContacted({
   className?: string;
 }) {
   const t = lastContactedAt(inq);
+  const emails = sentEmailCount(inq);
   const open = needsOutreachStatus(normalizeStatus(inq.status));
   const overdue = open && contactOverdue(inq);
   if (!t && !open) return null;
@@ -221,6 +223,18 @@ export function LastContacted({
     >
       <Clock className="size-3" />
       {t ? relTime(t) : "no contact yet"}
+      {emails > 0 && (
+        <span
+          className={`inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums ${
+            overdue
+              ? "bg-red-200 text-red-900 dark:bg-red-900/60 dark:text-red-200"
+              : "bg-muted-foreground/15 text-foreground"
+          }`}
+          title={`${emails} email${emails === 1 ? "" : "s"} sent`}
+        >
+          {emails}
+        </span>
+      )}
     </span>
   );
 }

@@ -741,6 +741,21 @@ export function lastContactedAt(inq: Inquiry): Date | null {
   return candidates.sort((a, b) => b.getTime() - a.getTime())[0];
 }
 
+// How many emails we've actually sent this customer — captured outbound
+// messages only (Gmail capture + funnel sends), automated intake mail
+// excluded. Logged [email] activity rows are deliberately NOT counted: an
+// in-app template "send" logs one at compose time and the Gmail pipeline then
+// captures the real sent mail, so counting both would double-count.
+export function sentEmailCount(inq: Inquiry): number {
+  const auto = automatedIntakeSubjects(inq.messages || []);
+  let n = 0;
+  for (const m of inq.messages || []) {
+    if (isAutomatedIntakeMail(m, auto)) continue;
+    if (messageSide(m, inq.email) === "us") n++;
+  }
+  return n;
+}
+
 // A lead is overdue for outreach when we've never contacted them or the last
 // outreach is more than three days old. Drives the red state of the card's
 // last-contacted badge.
