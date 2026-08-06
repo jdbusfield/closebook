@@ -115,9 +115,9 @@ export interface Stage {
 export const STAGES: Stage[] = [
   { key: "new", label: "New Inquiry", kind: "open", color: "#2845F0" },
   { key: "quoted", label: "Quote Sent", kind: "open", color: "#7c3aed" },
-  { key: "followup", label: "Follow-Up 1", kind: "open", color: "#d97706" },
-  { key: "followup2", label: "Follow-Up 2", kind: "open", color: "#c2410c" },
-  { key: "followup3", label: "Follow-Up 3+", kind: "open", color: "#b91c1c" },
+  { key: "followup", label: "Followed Up 1", kind: "open", color: "#d97706" },
+  { key: "followup2", label: "Followed Up 2", kind: "open", color: "#c2410c" },
+  { key: "followup3", label: "Followed Up 3+", kind: "open", color: "#b91c1c" },
   { key: "confirmed", label: "Confirmed", kind: "booked", color: "#0f7b6c" },
   { key: "out", label: "Out", kind: "booked", color: "#0369a1" },
   { key: "returned", label: "Returned", kind: "booked", color: "#64748b" },
