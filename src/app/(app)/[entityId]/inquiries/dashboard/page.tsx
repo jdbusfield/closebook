@@ -16,6 +16,8 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { useInquiries } from "@/lib/inquiries/use-inquiries";
+import { useAdSpend } from "@/lib/inquiries/use-ad-spend";
+import { RoiSection } from "@/components/inquiries/roi-section";
 import { SectionTabs } from "@/components/inquiries/section-tabs";
 import { InquiryDrawer, type DrawerCallbacks } from "@/components/inquiries/detail-drawer";
 import {
@@ -58,6 +60,7 @@ export default function InquiriesDashboardPage() {
   const params = useParams();
   const entityId = params.entityId as string;
   const data = useInquiries(entityId);
+  const adSpend = useAdSpend(entityId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const callbacks: DrawerCallbacks = {
@@ -251,6 +254,13 @@ export default function InquiriesDashboardPage() {
               <RevCell label="Returned" value={m.returnedRev} color="#64748b" />
             </div>
           </div>
+
+          {/* Marketing ROI — stage revenue vs ad spend over time. */}
+          <RoiSection
+            inquiries={data.inquiries}
+            spendRows={adSpend.rows}
+            onSaveSpend={adSpend.save}
+          />
 
           <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
             <div className="space-y-4">

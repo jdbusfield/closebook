@@ -282,6 +282,36 @@ export type Database = {
         }
         Relationships: []
       }
+      rental_inquiry_ad_spend: {
+        Row: {
+          id: string
+          entity_id: string
+          month: string
+          amount: number
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          month: string
+          amount?: number
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          month?: string
+          amount?: number
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       rental_inquiry_email_events: {
         Row: {
           id: string
