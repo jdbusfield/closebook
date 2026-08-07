@@ -154,9 +154,25 @@ export async function buildQuoteDoc(
   inquiry: Inquiry,
   variant: QuoteDocVariant = "quote"
 ) {
-  const { default: jsPDF } = await import("jspdf");
-  const autoTableMod = await import("jspdf-autotable");
-  const autoTable = (autoTableMod.default ?? autoTableMod) as unknown as (
+  // Interop dance: the browser bundle resolves jspdf's ESM build (class on
+  // both the named and default export), while Node — the funnel's server-side
+  // quote attachment — gets the CJS build, where `default` is the whole
+  // exports object and only the NAMED jsPDF is the constructor. Prefer the
+  // named export, which exists in every build.
+  const jspdfMod = (await import("jspdf")) as unknown as {
+    jsPDF?: typeof import("jspdf").default;
+    default: typeof import("jspdf").default & { jsPDF?: typeof import("jspdf").default };
+  };
+  const jsPDF = jspdfMod.jsPDF ?? jspdfMod.default.jsPDF ?? jspdfMod.default;
+  const autoTableMod = (await import("jspdf-autotable")) as unknown as Record<
+    string,
+    unknown
+  > & { default?: unknown & { default?: unknown } };
+  const autoTableFn =
+    (typeof autoTableMod.default === "function"
+      ? autoTableMod.default
+      : autoTableMod.default?.default) ?? autoTableMod;
+  const autoTable = autoTableFn as unknown as (
     doc: InstanceType<typeof jsPDF>,
     opts: Record<string, unknown>
   ) => void;

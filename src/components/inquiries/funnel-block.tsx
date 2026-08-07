@@ -330,7 +330,8 @@ function StartDialog({
               (quotes.length > 0 ? (
                 <div className="rounded-lg border bg-muted/30 p-2.5">
                   <div className="mb-1.5 text-xs font-medium text-muted-foreground">
-                    This funnel sends a quote — which one?
+                    This funnel sends a quote (itemized in the email + attached as a PDF) —
+                    which one?
                   </div>
                   <div className="space-y-1">
                     {quotes.map((q) => (

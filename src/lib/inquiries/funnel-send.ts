@@ -249,8 +249,9 @@ export async function processEnrollment(
     };
     // Resolve the quote riding on this enrollment when the step merges it in.
     let extra: { quote?: string; quote_number?: string } | undefined;
+    let quote: InquiryQuote | null = null;
     if (funnelUsesQuote([step])) {
-      const quote = await enrollmentQuote(admin, enrollment);
+      quote = await enrollmentQuote(admin, enrollment);
       extra = quote
         ? { quote: quoteEmailBlock(quote), quote_number: quote.quote_number }
         : // Enrollment validates a quote exists for quote-led funnels, so this
@@ -293,6 +294,26 @@ export async function processEnrollment(
       anchor?.subject ||
       rendered.subject ||
       `Following up on your ${brand.company} request`;
+
+    // A step that merges the quote also carries it as the branded PDF — the
+    // same document "Download PDF" produces in the drawer. PDF trouble never
+    // blocks the send; the quote is in the body text regardless.
+    let attachments: { filename: string; content: Buffer }[] | undefined;
+    if (quote) {
+      try {
+        const { buildQuoteDoc } = await import("@/lib/inquiries/quote-pdf");
+        const doc = await buildQuoteDoc(quote, inq);
+        attachments = [
+          {
+            filename: `${quote.quote_number}.pdf`,
+            content: Buffer.from(doc.output("arraybuffer")),
+          },
+        ];
+      } catch (err) {
+        console.error("[funnel-send] quote PDF attachment failed", err);
+      }
+    }
+
     const { data: sendData, error: sendError } = await resend.emails.send({
       from: `${brand.company} <${brand.email}>`,
       to: [inquiry.email],
@@ -304,6 +325,7 @@ export async function processEnrollment(
       subject,
       text,
       html,
+      ...(attachments ? { attachments } : {}),
       ...(anchor?.inReplyTo
         ? {
             headers: {

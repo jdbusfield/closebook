@@ -2,9 +2,10 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { MapPin, AlertTriangle, Flame, Mail, Sparkles } from "lucide-react";
+import { MapPin, AlertTriangle, Flame, Mail, Sparkles, Zap } from "lucide-react";
 import { useInquiries } from "@/lib/inquiries/use-inquiries";
 import { useTemplates } from "@/lib/inquiries/use-templates";
+import { useFunnels } from "@/lib/inquiries/use-funnels";
 import { selectTemplates } from "@/lib/inquiries/templates";
 import { SectionTabs } from "@/components/inquiries/section-tabs";
 import { InquiryDrawer, type DrawerCallbacks } from "@/components/inquiries/detail-drawer";
@@ -43,12 +44,15 @@ function DealCard({
   onEmail,
   onDragStart,
   dragging,
+  funnel,
 }: {
   inq: Inquiry;
   onOpen: () => void;
   onEmail?: () => void;
   onDragStart: (e: React.DragEvent) => void;
   dragging: boolean;
+  /** Set when an email funnel is actively working this lead. */
+  funnel?: { sent: number; total: number } | null;
 }) {
   const openTask = firstOpenTask(inq);
   const due = parseDate(openTask?.due_date ?? null);
@@ -85,19 +89,31 @@ function DealCard({
         <InquiryAvatar name={inq.name} size={26} />
         <span className="flex-1 truncate text-sm font-semibold">{inq.name || "—"}</span>
         <span className="font-mono text-[11px] text-muted-foreground">{inq.reference}</span>
-        {onEmail && (
-          <button
-            type="button"
-            title="Email this customer from a template"
-            aria-label="Email this customer from a template"
-            onClick={(e) => {
-              e.stopPropagation();
-              onEmail();
-            }}
-            className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        {funnel ? (
+          // A live funnel replaces the compose button: the automation is
+          // already emailing this lead (and stops on its own if they reply).
+          <span
+            title={`Email funnel running — ${funnel.sent} of ${funnel.total} emails sent. Stops on its own the moment they reply.`}
+            aria-label="Email funnel running"
+            className="grid size-6 shrink-0 place-items-center rounded"
           >
-            <Mail className="size-3.5" />
-          </button>
+            <Zap className="size-3.5 fill-green-600 text-green-600 dark:fill-green-500 dark:text-green-500" />
+          </span>
+        ) : (
+          onEmail && (
+            <button
+              type="button"
+              title="Email this customer from a template"
+              aria-label="Email this customer from a template"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEmail();
+              }}
+              className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Mail className="size-3.5" />
+            </button>
+          )
         )}
       </div>
       <div className="mt-1.5 text-xs">
@@ -157,6 +173,21 @@ export default function InquiriesPipelinePage() {
   const entityId = params.entityId as string;
   const data = useInquiries(entityId);
   const { templates } = useTemplates(entityId);
+  const funnelData = useFunnels(entityId);
+
+  // Which inquiries have a funnel actively working them (at most one active
+  // enrollment per inquiry), with progress for the card's tooltip.
+  const activeFunnels = useMemo(() => {
+    const m = new Map<string, { sent: number; total: number }>();
+    for (const e of funnelData.enrollments) {
+      if (e.status !== "active") continue;
+      m.set(e.inquiry_id, {
+        sent: e.steps_sent,
+        total: funnelData.stepsFor(e.funnel_id).length,
+      });
+    }
+    return m;
+  }, [funnelData]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [emailId, setEmailId] = useState<string | null>(null);
@@ -340,6 +371,7 @@ export default function InquiriesPipelinePage() {
                           ? () => setEmailId(inq.id)
                           : undefined
                       }
+                      funnel={activeFunnels.get(inq.id) ?? null}
                     />
                   ))}
                 </div>
