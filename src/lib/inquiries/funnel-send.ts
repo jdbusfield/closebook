@@ -232,6 +232,21 @@ export async function processEnrollment(
       return { outcome: "completed" };
     }
 
+    // Honor "Send on day" edits made while a funnel is in flight: the stored
+    // next_send_at was computed from the offsets as they were when the prior
+    // email went out, so re-derive this step's due time from its CURRENT
+    // offset. Moved later → push the schedule out and wait; moved earlier →
+    // it's simply due now and sends on this tick.
+    const dueAt = stepDueAt(enrollment.enrolled_at, step.day_offset);
+    if (new Date(dueAt).getTime() > Date.now()) {
+      await admin
+        .from("rental_inquiry_funnel_enrollments")
+        .update({ next_send_at: dueAt })
+        .eq("id", enrollment.id)
+        .eq("status", "active");
+      return { outcome: "skipped", reason: "rescheduled_by_step_edit" };
+    }
+
     const resend = resendClient();
     if (!resend) {
       return { outcome: "error", error: "RESEND_API_KEY is not configured" };
