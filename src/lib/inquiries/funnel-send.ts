@@ -15,6 +15,7 @@ import {
   type InquiryQuote,
   funnelThreadAnchor,
   needsOutreachStatus,
+  normalizeStatus,
   quoteEmailBlock,
 } from "@/lib/inquiries/shared";
 import { brandOf, renderTemplate, type MessageTemplate } from "@/lib/inquiries/templates";
@@ -359,6 +360,28 @@ export async function processEnrollment(
       .from("rental_inquiries")
       .update({ last_activity_at: now })
       .eq("id", enrollment.inquiry_id);
+
+    // Keep the board honest: each funnel send walks the card down the outreach
+    // ladder — the quote email to Quote Sent, every later email to Followed Up
+    // 1 / 2 / 3+. Forward-only and ladder-only, so a deal the customer wrote
+    // back on (Responded), parked (Keep Warm), or booked never gets dragged
+    // backward by the automation.
+    const LADDER = ["new", "quoted", "followup", "followup2", "followup3"];
+    const followupsSent = ordered
+      .slice(0, enrollment.steps_sent + 1)
+      .filter((s) => !funnelUsesQuote([s])).length;
+    const targetStage = funnelUsesQuote([step])
+      ? "quoted"
+      : LADDER[Math.min(1 + followupsSent, LADDER.length - 1)];
+    const currentStage = normalizeStatus(inquiry.status);
+    const curIdx = LADDER.indexOf(currentStage);
+    if (curIdx !== -1 && LADDER.indexOf(targetStage) > curIdx) {
+      await admin
+        .from("rental_inquiries")
+        .update({ status: targetStage })
+        .eq("id", enrollment.inquiry_id)
+        .eq("status", inquiry.status ?? "new");
+    }
 
     const next = ordered[enrollment.steps_sent + 1];
     await admin
