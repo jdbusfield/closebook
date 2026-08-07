@@ -86,7 +86,11 @@ export function funnelUsesQuote(steps: Pick<FunnelStepRow, "subject" | "body">[]
 }
 
 export function resendClient(): Resend | null {
-  const key = process.env.RESEND_API_KEY;
+  // A dashboard copy-paste can smuggle a BOM/zero-width character into the env
+  // var, and the Authorization header then dies ByteString conversion ("the
+  // character at index 7 has a value of 65279"). Keys are plain ASCII — strip
+  // anything that isn't.
+  const key = (process.env.RESEND_API_KEY ?? "").replace(/[^\x21-\x7e]/g, "");
   return key ? new Resend(key) : null;
 }
 
