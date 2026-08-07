@@ -13,6 +13,7 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 import {
   type Inquiry,
   type InquiryQuote,
+  funnelThreadAnchor,
   needsOutreachStatus,
   quoteEmailBlock,
 } from "@/lib/inquiries/shared";
@@ -269,7 +270,25 @@ export async function processEnrollment(
         .join("<br>")}</div>`;
     }
 
-    const subject = rendered.subject || `Following up on your ${brand.company} request`;
+    // Reply into the customer's existing conversation when there is one — the
+    // site confirmation, a rep's hand-written email, or their own last message
+    // — instead of opening a new chain. The anchor's subject wins over the
+    // step's; In-Reply-To/References only exist for Gmail-captured threads.
+    const { data: priorMsgs } = await admin
+      .from("rental_inquiry_messages")
+      .select(
+        "direction, kind, subject, from_addr, provider_message_id, sent_at, received_at, created_at"
+      )
+      .eq("inquiry_id", enrollment.inquiry_id)
+      .eq("channel", "email")
+      .order("created_at", { ascending: true })
+      .limit(200);
+    const anchor = funnelThreadAnchor(priorMsgs ?? []);
+
+    const subject =
+      anchor?.subject ||
+      rendered.subject ||
+      `Following up on your ${brand.company} request`;
     const { data: sendData, error: sendError } = await resend.emails.send({
       from: `${brand.company} <${brand.email}>`,
       to: [inquiry.email],
@@ -277,6 +296,16 @@ export async function processEnrollment(
       subject,
       text,
       html,
+      ...(anchor?.inReplyTo
+        ? {
+            headers: {
+              "In-Reply-To": anchor.inReplyTo,
+              ...(anchor.references.length > 0
+                ? { References: anchor.references.join(" ") }
+                : {}),
+            },
+          }
+        : {}),
     });
     if (sendError) {
       return { outcome: "error", error: sendError.message };

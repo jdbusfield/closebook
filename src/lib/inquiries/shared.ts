@@ -414,6 +414,8 @@ export interface InquiryMessage {
   subject: string | null;
   body_text: string | null;
   body_html: string | null;
+  /** RFC Message-Id, when the message was captured with one (Gmail/inbound). */
+  provider_message_id?: string | null;
   sent_at: string | null;
   received_at: string | null;
   created_at: string;
@@ -853,6 +855,97 @@ function hasReplyPrefix(s: string | null | undefined): boolean {
 /** The automation senders for site-generated inquiry mail (HDR uses inquiries@,
  * the Versatile site alerts send from leads@). */
 const AUTOMATION_FROM_RE = /(inquiries|leads)@hdrsiteservices\.com/i;
+
+// ---------------------------------------------------------------------------
+// Funnel reply-threading. A funnel email should land in the conversation the
+// customer already has — replying to the last email they saw (the site's
+// "thanks for your request" confirmation, a rep's hand-written note, or the
+// customer's own last message) — rather than opening a new chain. The anchor
+// decides the subject ("Re: <original>") always; In-Reply-To/References ride
+// along only when the thread was captured with real RFC Message-Ids (Gmail
+// pipeline / inbound webhook). Resend-sent mail has no stored Message-Id, so
+// those threads rely on the shared subject, which Gmail and Outlook both
+// group on. Used by funnel-send (server) and the start-funnel preview
+// (client) so what the dialog shows is what actually sends.
+// ---------------------------------------------------------------------------
+
+/** Strip every stacked Re:/Fwd: prefix but keep the subject's own casing. */
+function baseSubject(s: string | null | undefined): string {
+  let out = (s ?? "").trim();
+  while (/^(re|fwd|fw)\s*:\s*/i.test(out)) {
+    out = out.replace(/^(re|fwd|fw)\s*:\s*/i, "");
+  }
+  return out.trim();
+}
+
+/** Ensure an RFC Message-Id is angle-bracketed the way headers expect. */
+function rfcMessageId(id: string): string {
+  const t = id.trim();
+  return t.startsWith("<") ? t : `<${t}>`;
+}
+
+export interface FunnelThreadAnchor {
+  /** Subject the funnel email sends under: "Re: <the thread's subject>". */
+  subject: string;
+  /** Message-Id for the In-Reply-To header, when the anchor has one. */
+  inReplyTo: string | null;
+  /** Same-thread Message-Ids for the References header, oldest first. */
+  references: string[];
+}
+
+export function funnelThreadAnchor(
+  messages: Pick<
+    InquiryMessage,
+    | "direction"
+    | "kind"
+    | "subject"
+    | "from_addr"
+    | "provider_message_id"
+    | "sent_at"
+    | "received_at"
+    | "created_at"
+  >[]
+): FunnelThreadAnchor | null {
+  // Customer-visible email only: the internal lead notification (and its
+  // forwarded echo through the sales mailbox) never reached the customer's
+  // inbox, and a subjectless row can't carry a thread. A rep hitting Reply on
+  // the lead alert DOES email the customer, so a Re:-prefixed human send on
+  // that subject stays in (mirrors isAutomatedIntakeMail).
+  const internalSubjects = new Set(
+    messages
+      .filter((m) => m.kind === "internal_notification")
+      .map((m) => baseSubject(m.subject).toLowerCase())
+  );
+  const visible = messages.filter((m) => {
+    if (m.kind === "internal_notification") return false;
+    const base = baseSubject(m.subject);
+    if (base === "") return false;
+    if (internalSubjects.has(base.toLowerCase())) {
+      const humanReply =
+        hasReplyPrefix(m.subject) && !AUTOMATION_FROM_RE.test(m.from_addr ?? "");
+      if (!humanReply) return false;
+    }
+    return true;
+  });
+  if (visible.length === 0) return null;
+  const ts = (m: (typeof visible)[number]) =>
+    new Date(m.sent_at || m.received_at || m.created_at).getTime() || 0;
+  const sorted = [...visible].sort((a, b) => ts(a) - ts(b));
+  const anchor = sorted[sorted.length - 1];
+  // References only from messages in the SAME thread (matching base subject) —
+  // ids from an unrelated thread would splice the reply into the wrong place.
+  const anchorBase = baseSubject(anchor.subject).toLowerCase();
+  const ids = sorted
+    .filter((m) => baseSubject(m.subject).toLowerCase() === anchorBase)
+    .map((m) => m.provider_message_id)
+    .filter((id): id is string => !!id)
+    .map(rfcMessageId);
+  return {
+    subject: `Re: ${baseSubject(anchor.subject)}`,
+    inReplyTo: ids.length > 0 ? ids[ids.length - 1] : null,
+    references: ids,
+  };
+}
 
 // Returns the messages that belong in the communication thread, dropping the
 // automated "thank you" autoreply and collapsing the duplicate inquiry

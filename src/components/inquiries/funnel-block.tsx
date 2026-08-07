@@ -6,12 +6,14 @@
 // automatically (and opens a follow-up task); booking or losing the inquiry
 // stops it.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Zap,
   Square,
   Play,
   ChevronLeft,
+  ChevronDown,
+  ChevronRight,
   Mail,
   Clock,
 } from "lucide-react";
@@ -34,6 +36,7 @@ import {
   needsOutreachStatus,
   fmtDate,
   fmtMoney,
+  funnelThreadAnchor,
   quoteEmailBlock,
   type Inquiry,
   type InquiryQuote,
@@ -254,6 +257,14 @@ function StartDialog({
   const extra = selectedQuote
     ? { quote: quoteEmailBlock(selectedQuote), quote_number: selectedQuote.quote_number }
     : undefined;
+  // Same anchor rule as the server send: when the customer already has an email
+  // thread, every funnel email goes out as a reply on it ("Re: <thread>").
+  const anchor = funnelThreadAnchor(inquiry.messages ?? []);
+  // Which step's full email is open in the preview; null = the first step.
+  const [expanded, setExpanded] = useState<string | null>(null);
+  useEffect(() => {
+    setExpanded(null);
+  }, [candidate?.id]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-[520px]">
@@ -361,29 +372,52 @@ function StartDialog({
                   body: step.body,
                 };
                 const rendered = renderTemplate(tpl, inquiry, "", extra);
+                const subject = anchor?.subject || rendered.subject || "(no subject)";
+                const isExpanded = expanded === null ? i === 0 : expanded === step.id;
                 return (
-                  <div key={step.id} className="rounded-lg border p-2.5">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Mail className="size-3.5" />
+                  <div key={step.id} className="rounded-lg border">
+                    <button
+                      type="button"
+                      onClick={() => setExpanded(isExpanded ? "" : step.id)}
+                      className="flex w-full items-center gap-2 p-2.5 text-left text-xs text-muted-foreground"
+                    >
+                      {isExpanded ? (
+                        <ChevronDown className="size-3.5 shrink-0" />
+                      ) : (
+                        <ChevronRight className="size-3.5 shrink-0" />
+                      )}
+                      <Mail className="size-3.5 shrink-0" />
                       <span className="font-medium text-foreground">
-                        {i + 1}. {rendered.subject || "(no subject)"}
+                        {i + 1}. {subject}
                       </span>
-                      <span className="ml-auto inline-flex items-center gap-1">
+                      <span className="ml-auto inline-flex shrink-0 items-center gap-1">
                         <Clock className="size-3" />
                         {step.day_offset === 0 ? "sends immediately" : fmtWhen(at)}
                       </span>
-                    </div>
-                    <p className="mt-1 line-clamp-2 whitespace-pre-wrap text-xs text-muted-foreground">
-                      {rendered.body}
-                    </p>
+                    </button>
+                    {isExpanded ? (
+                      <div className="border-t bg-muted/20 px-2.5 py-2">
+                        <p className="whitespace-pre-wrap text-xs text-foreground/80">
+                          {rendered.body}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="line-clamp-2 whitespace-pre-wrap px-2.5 pb-2.5 text-xs text-muted-foreground">
+                        {rendered.body}
+                      </p>
+                    )}
                   </div>
                 );
               })}
             </div>
             <p className="text-xs text-muted-foreground">
               Sends to <span className="font-medium">{inquiry.email}</span> from the brand
-              inbox. The chain breaks automatically if they reply, and a follow-up task brings
-              a human in.
+              inbox
+              {anchor
+                ? " as replies on the existing email thread — no new chain."
+                : ". No email thread exists yet, so the first send starts one."}{" "}
+              The chain breaks automatically if they reply, and a follow-up task brings a
+              human in.
             </p>
             <div className="flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
