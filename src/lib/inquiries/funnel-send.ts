@@ -296,6 +296,10 @@ export async function processEnrollment(
     const { data: sendData, error: sendError } = await resend.emails.send({
       from: `${brand.company} <${brand.email}>`,
       to: [inquiry.email],
+      // The brand inbox gets a copy so funnel mail is visible in Gmail, not
+      // just the CRM. The Gmail pipeline re-captures it and adopts it into
+      // this send's message row (see ingest-message.ts) instead of duplicating.
+      bcc: [brand.email],
       replyTo: brand.email,
       subject,
       text,

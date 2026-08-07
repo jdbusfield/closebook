@@ -251,6 +251,43 @@ export async function ingestEmailMessage(
       : null;
   const direction: Direction = derived ?? input.directionHint ?? "inbound";
 
+  // --- Adopt the BCC copy of a funnel send ----------------------------------
+  // Funnel emails BCC the brand inbox so they show up in Gmail; this capture
+  // is that copy coming back around. Rather than record a duplicate, fold it
+  // into the funnel's own message row — which also teaches the row its real
+  // RFC Message-Id, so later funnel steps can thread on it with proper
+  // In-Reply-To headers. The provider-id-is-null filter keeps each capture
+  // pairing with its own step even though every step shares the "Re:" subject.
+  if (direction === "outbound" && inquiry && subject) {
+    const { data: funnelTwin } = await supabase
+      .from("rental_inquiry_messages")
+      .select("id")
+      .eq("inquiry_id", inquiry.id)
+      .eq("kind", "funnel")
+      .eq("subject", subject)
+      .is("provider_message_id", null)
+      .gte("sent_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+      .order("sent_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (funnelTwin) {
+      await supabase
+        .from("rental_inquiry_messages")
+        .update({
+          provider_message_id: input.providerMessageId,
+          gmail_thread_id: input.gmailThreadId ?? null,
+        })
+        .eq("id", funnelTwin.id);
+      return {
+        ok: true,
+        matched: true,
+        inquiryId: inquiry.id,
+        direction,
+        deduped: true,
+      };
+    }
+  }
+
   // --- Record ---------------------------------------------------------------
   const nowIso = new Date().toISOString();
   const receivedAt = input.receivedAt ?? nowIso;
