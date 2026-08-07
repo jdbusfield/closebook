@@ -878,10 +878,14 @@ function baseSubject(s: string | null | undefined): string {
   return out.trim();
 }
 
-/** Ensure an RFC Message-Id is angle-bracketed the way headers expect. */
-function rfcMessageId(id: string): string {
-  const t = id.trim();
-  return t.startsWith("<") ? t : `<${t}>`;
+/** Normalize a captured Message-Id for use in an email header. Message-Ids
+ * are pure ASCII on the wire, but webhook parsing sometimes smuggles in a BOM
+ * or zero-width character — and HTTP headers reject anything past Latin-1
+ * ("Cannot convert argument to a ByteString"). Strip to printable ASCII,
+ * re-bracket, and give back null when nothing header-safe remains. */
+function rfcMessageId(id: string): string | null {
+  const t = id.replace(/[^\x21-\x7e]/g, "").replace(/^<+|>+$/g, "");
+  return t.includes("@") ? `<${t}>` : null;
 }
 
 export interface FunnelThreadAnchor {
@@ -937,9 +941,8 @@ export function funnelThreadAnchor(
   const anchorBase = baseSubject(anchor.subject).toLowerCase();
   const ids = sorted
     .filter((m) => baseSubject(m.subject).toLowerCase() === anchorBase)
-    .map((m) => m.provider_message_id)
-    .filter((id): id is string => !!id)
-    .map(rfcMessageId);
+    .map((m) => (m.provider_message_id ? rfcMessageId(m.provider_message_id) : null))
+    .filter((id): id is string => !!id);
   return {
     subject: `Re: ${baseSubject(anchor.subject)}`,
     inReplyTo: ids.length > 0 ? ids[ids.length - 1] : null,
