@@ -2,10 +2,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Flag, CircleAlert, ListChecks } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { getDiligenceDeal, getDiligenceItems, summarizeItems } from "@/lib/db/queries/diligence";
+import {
+  getDiligenceDeal,
+  getDiligenceDocuments,
+  getDiligenceItems,
+  summarizeItems,
+} from "@/lib/db/queries/diligence";
 import { DealStageBadge, formatDate } from "../_components/diligence-shared";
 import { DealHeaderControls } from "../_components/deal-header-controls";
 import { Checklist } from "../_components/checklist";
+import { DocumentsSection } from "../_components/documents";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +23,7 @@ export default async function DealDetailPage({ params }: PageProps) {
   const { id } = await params;
   const deal = await getDiligenceDeal(id);
   if (!deal) notFound();
-  const items = await getDiligenceItems(id);
+  const [items, documents] = await Promise.all([getDiligenceItems(id), getDiligenceDocuments(id)]);
   const progress = summarizeItems(items);
   const pct = progress.total ? Math.round((progress.complete / progress.total) * 100) : 0;
 
@@ -73,7 +79,9 @@ export default async function DealDetailPage({ params }: PageProps) {
         </Card>
       </div>
 
-      <Checklist dealId={deal.id} items={items} />
+      <DocumentsSection documents={documents} />
+
+      <Checklist dealId={deal.id} items={items} documents={documents} />
     </div>
   );
 }

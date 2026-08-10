@@ -95,6 +95,32 @@ export async function getDiligenceDeal(id: string): Promise<DiligenceDealRow | n
   return data as DiligenceDealRow | null;
 }
 
+export interface DiligenceDocumentRow {
+  id: string;
+  deal_id: string;
+  item_id: string;
+  file_name: string;
+  file_path: string;
+  mime_type: string | null;
+  size_bytes: number | null;
+  created_at: string;
+  item: { category: string; title: string } | null;
+}
+
+/** All documents on a deal, newest first, with the owning item's category/title. */
+export async function getDiligenceDocuments(dealId: string): Promise<DiligenceDocumentRow[]> {
+  const supabase = await diligenceClient();
+  const { data, error } = await supabase
+    .from("diligence_documents")
+    .select(
+      "id, deal_id, item_id, file_name, file_path, mime_type, size_bytes, created_at, item:diligence_items(category, title)"
+    )
+    .eq("deal_id", dealId)
+    .order("created_at", { ascending: false });
+  if (error) return [];
+  return (data ?? []) as unknown as DiligenceDocumentRow[];
+}
+
 export async function getDiligenceItems(dealId: string): Promise<DiligenceItemRow[]> {
   const supabase = await diligenceClient();
   const { data, error } = await supabase

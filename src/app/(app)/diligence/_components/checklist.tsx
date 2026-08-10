@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronRight, Flag, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Flag, Paperclip, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import type { DiligenceItemRow } from "@/lib/db/queries/diligence";
+import type { DiligenceDocumentRow, DiligenceItemRow } from "@/lib/db/queries/diligence";
 import { DILIGENCE_CATEGORIES } from "@/lib/diligence/template";
+import { ItemAttachments } from "./documents";
 import {
   ITEM_STATUS_ORDER,
   ITEM_STATUS_LABEL,
@@ -45,7 +46,15 @@ function StatusSelect({ item, onChanged }: { item: DiligenceItemRow; onChanged: 
   );
 }
 
-function ItemEditor({ item, onChanged }: { item: DiligenceItemRow; onChanged: () => void }) {
+function ItemEditor({
+  item,
+  documents,
+  onChanged,
+}: {
+  item: DiligenceItemRow;
+  documents: DiligenceDocumentRow[];
+  onChanged: () => void;
+}) {
   const [internalOwner, setInternalOwner] = useState(item.internal_owner ?? "");
   const [counterpartyOwner, setCounterpartyOwner] = useState(item.counterparty_owner ?? "");
   const [dueDate, setDueDate] = useState(item.due_date ?? "");
@@ -92,6 +101,7 @@ function ItemEditor({ item, onChanged }: { item: DiligenceItemRow; onChanged: ()
           <Input className="h-8 text-sm" value={docUrl} onChange={e => setDocUrl(e.target.value)} placeholder="Drive / data room URL" />
         </div>
       </div>
+      <ItemAttachments dealId={item.deal_id} itemId={item.id} documents={documents} />
       <div>
         <label className="mb-1 block text-xs font-medium text-muted-foreground">Findings / notes</label>
         <textarea
@@ -180,7 +190,15 @@ function AddItemRow({ dealId, category, onChanged }: { dealId: string; category:
   );
 }
 
-export function Checklist({ dealId, items }: { dealId: string; items: DiligenceItemRow[] }) {
+export function Checklist({
+  dealId,
+  items,
+  documents,
+}: {
+  dealId: string;
+  items: DiligenceItemRow[];
+  documents: DiligenceDocumentRow[];
+}) {
   const router = useRouter();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const refresh = () => router.refresh();
@@ -226,6 +244,9 @@ export function Checklist({ dealId, items }: { dealId: string; items: DiligenceI
                       <span className="flex-1 text-sm">
                         {item.red_flag && <Flag className="mr-1.5 inline h-3.5 w-3.5 text-rose-600" />}
                         {item.title}
+                        {documents.some(d => d.item_id === item.id) && (
+                          <Paperclip className="ml-1.5 inline h-3 w-3 text-muted-foreground" />
+                        )}
                       </span>
                       {item.internal_owner && (
                         <span className="hidden text-xs text-muted-foreground sm:inline">{item.internal_owner}</span>
@@ -235,7 +256,13 @@ export function Checklist({ dealId, items }: { dealId: string; items: DiligenceI
                         <StatusSelect item={item} onChanged={refresh} />
                       </div>
                     </div>
-                    {expanded && <ItemEditor item={item} onChanged={refresh} />}
+                    {expanded && (
+                      <ItemEditor
+                        item={item}
+                        documents={documents.filter(d => d.item_id === item.id)}
+                        onChanged={refresh}
+                      />
+                    )}
                   </div>
                 );
               })}
