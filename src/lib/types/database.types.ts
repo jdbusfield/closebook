@@ -6330,6 +6330,51 @@ export type Database = {
         }
         Relationships: []
       }
+      entity_accrual_snapshots: {
+        Row: {
+          id: string
+          entity_id: string
+          period_year: number
+          period_month: number
+          deferred_balance: number
+          accrued_balance: number
+          unbilled_gross_balance: number
+          allowance_balance: number
+          realization_rate_used: number
+          revenue_split: Json | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          period_year: number
+          period_month: number
+          deferred_balance?: number
+          accrued_balance?: number
+          unbilled_gross_balance?: number
+          allowance_balance?: number
+          realization_rate_used?: number
+          revenue_split?: Json | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          period_year?: number
+          period_month?: number
+          deferred_balance?: number
+          accrued_balance?: number
+          unbilled_gross_balance?: number
+          allowance_balance?: number
+          realization_rate_used?: number
+          revenue_split?: Json | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       accrual_close_periods: {
         Row: {
           id: string

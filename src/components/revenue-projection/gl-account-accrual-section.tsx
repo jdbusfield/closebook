@@ -136,10 +136,55 @@ interface UnbilledEarned {
   orders: UnbilledOrderDetail[];
 }
 
+interface TrueUpBalances {
+  deferred: number;
+  accrued: number;
+  unbilledGross: number;
+  allowance: number;
+  net: number;
+}
+
+interface TrueUpLine {
+  lineNo: number;
+  accountNumber: string;
+  accountName: string;
+  qboQboId: string | null;
+  debit: number;
+  credit: number;
+  memo: string;
+}
+
+interface TrueUpOrder {
+  orderNumber: string;
+  customer: string;
+  description: string;
+  rentalStart: string;
+  rentalEnd: string;
+  orderTotal: number;
+  billedAgainst: number;
+  unbilledRemainder: number;
+  earnedThroughEOM: number;
+}
+
+interface TrueUp {
+  asOfDate: string;
+  periodLabel: string;
+  priorPeriod: { year: number; month: number; label: string };
+  priorSource: "snapshot" | "recomputed";
+  prior: TrueUpBalances;
+  target: TrueUpBalances;
+  revenueImpact: number;
+  lines: TrueUpLine[];
+  snapshotSaved: boolean;
+  snapshotError: string | null;
+  unbilledBalanceOrders: TrueUpOrder[];
+}
+
 interface ApiResponse {
   entityId: string;
   periodYear: number;
   periodMonth: number;
+  trueUp?: TrueUp;
   invoicesFetched: number;
   invoicesOverlapping: number;
   glDistSuccess: number;
@@ -202,6 +247,7 @@ export function GLAccountAccrualSection({ entityId }: { entityId: string }) {
   const [exporting, setExporting] = useState(false);
   const [data, setData] = useState<ApiResponse | null>(null);
   const [showInvoiceDetail, setShowInvoiceDetail] = useState(false);
+  const [showLegacyJEs, setShowLegacyJEs] = useState(false);
   const [expandedInvoices, setExpandedInvoices] = useState<Set<string>>(new Set());
 
   // Account-link settings
@@ -373,6 +419,92 @@ export function GLAccountAccrualSection({ entityId }: { entityId: string }) {
         company: entityName,
         title: `Rental Revenue Accrual — ${periodLabel}`,
       });
+
+      // 0. Month-End True-Up JE — the single entry to post
+      if (data.trueUp && data.trueUp.lines.length > 0) {
+        const tu = data.trueUp;
+        addSheet<TrueUpLine>(wb, {
+          name: "True-Up JE (post this)",
+          title: {
+            entityName,
+            reportTitle: `Month-End True-Up JE — date ${tu.asOfDate}`,
+            subtitle:
+              "Single entry: reverses the prior month-end balances and books the new point-in-time balances, offset to revenue. Do not book a separate reversing entry and do not set it to auto-reverse. The component-JE sheets are reference only.",
+            period: periodLabel,
+            asOf: generatedOn,
+          },
+          columns: [
+            {
+              header: "Line #",
+              width: 8,
+              value: (r) => r.lineNo,
+              format: NUMBER_FORMATS.integer,
+            },
+            { header: "GL #", width: 12, value: (r) => r.accountNumber || "—" },
+            { header: "Account", width: 34, value: (r) => r.accountName },
+            { header: "QBO Account ID", width: 16, value: (r) => r.qboQboId ?? "—" },
+            { header: "Memo", width: 56, value: (r) => r.memo },
+            {
+              header: "Debit",
+              width: 16,
+              value: (r) => r.debit,
+              format: NUMBER_FORMATS.currency,
+              total: "sum",
+            },
+            {
+              header: "Credit",
+              width: 16,
+              value: (r) => r.credit,
+              format: NUMBER_FORMATS.currency,
+              total: "sum",
+            },
+          ],
+          rows: tu.lines,
+          grandTotal: true,
+          footnote: `Expected QBO balances after posting @ ${tu.asOfDate}: Deferred Revenue ${formatCurrency(tu.target.deferred)} · Accrued Revenue ${formatCurrency(tu.target.accrued)} · Unbilled Receivable (gross) ${formatCurrency(tu.target.unbilledGross)} · Allowance ${formatCurrency(tu.target.allowance)}. Prior (${tu.priorPeriod.label}) balances source: ${tu.priorSource === "snapshot" ? "saved snapshot of last month's report (as posted)" : "RECOMPUTED from current RentalWorks data — verify against the QBO balance sheet before posting"}.`,
+        });
+
+        interface BalanceSheetRow {
+          label: string;
+          prior: number;
+          target: number;
+        }
+        const balRows: BalanceSheetRow[] = [
+          ...BALANCE_ROWS.map((r) => ({
+            label: r.label,
+            prior: tu.prior[r.key],
+            target: tu.target[r.key],
+          })),
+          { label: "Net timing position", prior: tu.prior.net, target: tu.target.net },
+        ];
+        addSheet<BalanceSheetRow>(wb, {
+          name: "Ending Balances",
+          title: {
+            entityName,
+            reportTitle: `Revenue Timing Account Balances — ${tu.asOfDate}`,
+            subtitle:
+              "Balance each account should show on the QuickBooks balance sheet once the true-up entry posts.",
+            period: periodLabel,
+            asOf: generatedOn,
+          },
+          columns: [
+            { header: "Account", width: 42, value: (r) => r.label },
+            {
+              header: `Balance @ ${tu.priorPeriod.label}`,
+              width: 22,
+              value: (r) => r.prior,
+              format: NUMBER_FORMATS.currency,
+            },
+            {
+              header: `Expected after posting @ ${tu.asOfDate}`,
+              width: 28,
+              value: (r) => r.target,
+              format: NUMBER_FORMATS.currency,
+            },
+          ],
+          rows: balRows,
+        });
+      }
 
       // 1. Per-GL Summary
       addSheet<AccountTotal>(wb, {
@@ -925,6 +1057,9 @@ export function GLAccountAccrualSection({ entityId }: { entityId: string }) {
               </div>
             )}
 
+            {/* Month-end true-up JE — the entry to post */}
+            {data.trueUp && <TrueUpSection tu={data.trueUp} />}
+
             {/* Unbilled earned summary */}
             {data.unbilledEarned && data.unbilledEarned.gross > 0 && (
               <UnbilledEarnedSection ub={data.unbilledEarned} />
@@ -1011,6 +1146,32 @@ export function GLAccountAccrualSection({ entityId }: { entityId: string }) {
               );
             })()}
 
+            {/* Legacy component JEs — superseded by the true-up entry above */}
+            {(data.proposedJE.timingAccrual.length > 0 ||
+              data.proposedJE.unbilledAccrual.length > 0 ||
+              data.proposedJE.deferral.length > 0) && (
+              <div className="rounded-md border border-gray-200 bg-gray-50/40 p-3">
+                <button
+                  onClick={() => setShowLegacyJEs((v) => !v)}
+                  className="flex items-center gap-2 font-semibold text-sm hover:text-blue-600"
+                >
+                  {showLegacyJEs ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                  Legacy component JEs (reference only — do NOT post)
+                </button>
+                <p className="text-xs text-muted-foreground mt-1">
+                  These are the old one-month accrual/deferral entries. They are
+                  point-in-time snapshots that would need manual reversal every
+                  month — posting them cumulatively is what inflated the
+                  balance-sheet accounts through mid-2026. The true-up entry
+                  above replaces all three; keep these only for tracing where
+                  its numbers come from.
+                </p>
+                {!showLegacyJEs ? null : (
+                  <div className="mt-3 space-y-6">
             {/* Proposed Revenue Cut-Off Accrual (from invoiced-but-wrong-period invoices) */}
             {data.proposedJE.timingAccrual.length > 0 && (
               <div>
@@ -1251,6 +1412,10 @@ export function GLAccountAccrualSection({ entityId }: { entityId: string }) {
                 </TooltipProvider>
               </div>
             )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Invoice-level detail */}
             {data.invoiceDetails.length > 0 && (
@@ -1384,6 +1549,252 @@ function StatCard({ label, value }: { label: string; value: string }) {
     <div className="rounded-md border bg-gray-50/40 p-3">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-1 text-lg font-semibold tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+const BALANCE_ROWS: Array<{
+  key: keyof Omit<TrueUpBalances, "net">;
+  label: string;
+  hint: string;
+}> = [
+  {
+    key: "deferred",
+    label: "Deferred Revenue (liability)",
+    hint: "Billed on/before month-end, rental days after month-end",
+  },
+  {
+    key: "accrued",
+    label: "Accrued Revenue (asset)",
+    hint: "Rental days on/before month-end, billed after month-end",
+  },
+  {
+    key: "unbilledGross",
+    label: "Unbilled Receivable (asset, gross)",
+    hint: "Earned-to-date on active orders never invoiced",
+  },
+  {
+    key: "allowance",
+    label: "Allowance for Unbilled (contra-asset)",
+    hint: "Realization discount on gross unbilled",
+  },
+];
+
+function TrueUpSection({ tu }: { tu: TrueUp }) {
+  const [showOrders, setShowOrders] = useState(false);
+  const totals = tu.lines.reduce(
+    (acc, l) => ({ debit: acc.debit + l.debit, credit: acc.credit + l.credit }),
+    { debit: 0, credit: 0 },
+  );
+  return (
+    <div className="rounded-md border-2 border-emerald-300 bg-emerald-50/30 p-4 space-y-4">
+      <div>
+        <div className="font-semibold text-emerald-900 text-base">
+          Month-End True-Up JE — {tu.asOfDate} (post this entry)
+        </div>
+        <div className="text-xs text-emerald-900/80 mt-1">
+          One entry that moves all four revenue-timing accounts from their{" "}
+          {tu.priorPeriod.label} balances to the new point-in-time balances,
+          with the offset to revenue. <strong>The reversal of last
+          month&apos;s balances is built in</strong> — do not book a separate
+          reversing entry, and do not set this entry to auto-reverse. The
+          legacy component JEs further down are reference only and must not
+          be posted alongside it.
+        </div>
+      </div>
+
+      {tu.priorSource === "recomputed" && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+          <strong>No saved snapshot found for {tu.priorPeriod.label}.</strong>{" "}
+          Prior balances below were recomputed from current RentalWorks data,
+          which understates them when orders unbilled at the prior close have
+          since been invoiced. Before posting, compare the prior-balance
+          column against the QuickBooks balance sheet as of{" "}
+          {tu.priorPeriod.label} and adjust the entry by any difference.
+          {tu.snapshotError && (
+            <> Snapshot table unavailable: {tu.snapshotError} (has the
+            migration been applied?)</>
+          )}
+        </div>
+      )}
+
+      <div>
+        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+          Account balances (before → after posting)
+        </div>
+        <div className="overflow-x-auto rounded-md border bg-white">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Account</TableHead>
+                <TableHead className="text-right">
+                  Balance @ {tu.priorPeriod.label}
+                  {tu.priorSource === "snapshot" ? " (as posted)" : " (recomputed)"}
+                </TableHead>
+                <TableHead className="text-right">
+                  Expected balance after posting @ {tu.asOfDate}
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {BALANCE_ROWS.map((r) => (
+                <TableRow key={r.key}>
+                  <TableCell>
+                    <div className="text-sm">{r.label}</div>
+                    <div className="text-[11px] text-muted-foreground">{r.hint}</div>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatCurrency(tu.prior[r.key])}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums font-medium">
+                    {formatCurrency(tu.target[r.key])}
+                  </TableCell>
+                </TableRow>
+              ))}
+              <TableRow className="bg-gray-50/70 border-t-2 font-semibold">
+                <TableCell>Net timing position</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {formatCurrency(tu.prior.net)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {formatCurrency(tu.target.net)}
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </div>
+        <p className="text-[11px] text-muted-foreground mt-1">
+          The &quot;after posting&quot; column is what each account should show on the
+          QuickBooks balance sheet at {tu.asOfDate} once this entry is booked —
+          use it to verify the post. Revenue impact of this entry:{" "}
+          <strong className={tu.revenueImpact >= 0 ? "text-teal-700" : "text-amber-700"}>
+            {tu.revenueImpact >= 0 ? "+" : "−"}
+            {formatCurrency(Math.abs(tu.revenueImpact))}
+          </strong>
+          {tu.revenueImpact < 0 &&
+            " (a decrease is normal when last month's accrued revenue billed out this month)"}
+          .
+        </p>
+      </div>
+
+      {tu.lines.length > 0 ? (
+        <div>
+          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+            Journal entry — date {tu.asOfDate}
+          </div>
+          <div className="overflow-x-auto rounded-md border bg-white">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[50px]">#</TableHead>
+                  <TableHead>GL #</TableHead>
+                  <TableHead>Account</TableHead>
+                  <TableHead>QBO ID</TableHead>
+                  <TableHead>Memo</TableHead>
+                  <TableHead className="text-right">Debit</TableHead>
+                  <TableHead className="text-right">Credit</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {tu.lines.map((l) => (
+                  <TableRow key={l.lineNo}>
+                    <TableCell className="text-muted-foreground">{l.lineNo}</TableCell>
+                    <TableCell className="font-mono text-xs">{l.accountNumber || "—"}</TableCell>
+                    <TableCell>{l.accountName}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {l.qboQboId ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{l.memo}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {l.debit > 0 ? formatCurrency(l.debit) : "—"}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {l.credit > 0 ? formatCurrency(l.credit) : "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                <TableRow className="bg-gray-50/50 border-t-2">
+                  <TableCell colSpan={5} className="font-semibold text-right">Totals</TableCell>
+                  <TableCell className="text-right tabular-nums font-semibold">
+                    {formatCurrency(totals.debit)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums font-semibold">
+                    {formatCurrency(totals.credit)}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+          {Math.abs(totals.debit - totals.credit) > 0.005 && (
+            <p className="text-xs text-rose-600 mt-1">
+              ⚠ JE is out of balance by{" "}
+              {formatCurrency(Math.abs(totals.debit - totals.credit))}
+            </p>
+          )}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Balances are already at their point-in-time values — no entry needed
+          this month.
+        </p>
+      )}
+
+      {tu.unbilledBalanceOrders.length > 0 && (
+        <div>
+          <button
+            onClick={() => setShowOrders((v) => !v)}
+            className="flex items-center gap-1.5 text-xs font-medium text-emerald-800 hover:text-emerald-900"
+          >
+            {showOrders ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            {showOrders ? "Hide" : "Show"} orders in the Unbilled Receivable balance (
+            {tu.unbilledBalanceOrders.length})
+          </button>
+          {showOrders && (
+            <div className="mt-2 overflow-x-auto rounded-md border bg-white">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Order #</TableHead>
+                    <TableHead>Customer</TableHead>
+                    <TableHead>Rental Period</TableHead>
+                    <TableHead className="text-right">Order Total</TableHead>
+                    <TableHead className="text-right">Already Billed</TableHead>
+                    <TableHead className="text-right">Unbilled Remainder</TableHead>
+                    <TableHead className="text-right">Earned Through {tu.asOfDate}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {tu.unbilledBalanceOrders.map((o) => (
+                    <TableRow key={o.orderNumber}>
+                      <TableCell className="font-mono text-xs">{o.orderNumber}</TableCell>
+                      <TableCell className="text-sm">{o.customer}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {o.rentalStart} → {o.rentalEnd}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-xs">
+                        {formatCurrency(o.orderTotal)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-xs">
+                        {formatCurrency(o.billedAgainst)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-xs">
+                        {formatCurrency(o.unbilledRemainder)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-xs font-medium">
+                        {formatCurrency(o.earnedThroughEOM)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          <p className="text-[11px] text-muted-foreground mt-1">
+            Old orders that never billed stay in this balance until invoiced or
+            written off — review anything long past its rental end date.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

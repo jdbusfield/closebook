@@ -91,6 +91,11 @@ export async function POST(request: Request) {
 
   const periodStart = new Date(Date.UTC(periodYear, periodMonth - 1, 1));
   const periodEnd = new Date(Date.UTC(periodYear, periodMonth, 0));
+  // Last day of the PRIOR month — the true-up JE reverses the prior
+  // month-end balances and rebooks the current ones in a single entry.
+  const priorEnd = new Date(Date.UTC(periodYear, periodMonth - 1, 0));
+  const priorYear = periodMonth === 1 ? periodYear - 1 : periodYear;
+  const priorMonth = periodMonth === 1 ? 12 : periodMonth - 1;
   // Pull anything invoiced up to 3 months after the period (catches late bills)
   // and with a BillingEndDate at least as late as the period start (to catch
   // rentals that span into the period).
@@ -101,11 +106,12 @@ export async function POST(request: Request) {
     new Date(Date.UTC(periodYear, periodMonth - 1, 1)),
   );
 
-  // Orders: pull a wider window so we can compute unbilled earned for any
-  // active order whose rental period overlaps the target month. The existing
-  // revenue-projection logic uses EstimatedStartDate/EstimatedStopDate.
+  // Orders: pull a wide window so the point-in-time unbilled balance
+  // catches old orders that finished months ago but still haven't been
+  // invoiced (they stay in the Unbilled Receivable balance until billed or
+  // written off). 18 months covers any realistic billing lag.
   const orderFromDate = formatRWDate(
-    new Date(Date.UTC(periodYear, periodMonth - 3, 1)),
+    new Date(Date.UTC(periodYear, periodMonth - 19, 1)),
   );
 
   const [byInvoiceDate, byBillingEnd, ordersRes] = await Promise.all([
@@ -173,7 +179,17 @@ export async function POST(request: Request) {
     const invDate = parseDate(inv.InvoiceDate);
     const invoicedInPeriod =
       invDate !== null && invDate >= periodStart && invDate <= periodEnd;
-    if (!rentalOverlaps && !invoicedInPeriod) continue;
+    // Balance relevance for the month-end true-up:
+    //   (c) billed on/before period end with rental days after period end
+    //       → open deferral in the Deferred Revenue balance
+    //   (d) billed after period end with rental days on/before period end
+    //       → accrued at month-end (incl. old rentals billed late)
+    const openDeferralAtEOM =
+      invDate !== null && invDate <= periodEnd && rentalEnd > periodEnd;
+    const accruedAtEOM =
+      invDate !== null && invDate > periodEnd && rentalStart <= periodEnd;
+    if (!rentalOverlaps && !invoicedInPeriod && !openDeferralAtEOM && !accruedAtEOM)
+      continue;
     overlapping.push(inv);
   }
 
@@ -208,7 +224,22 @@ export async function POST(request: Request) {
     }
   }
 
-  // 4. Convert to InvoiceForAccrual shape and run per-account calc
+  // 4. Convert to InvoiceForAccrual shape and run per-account calc.
+  //    Alongside the monthly FLOWS (legacy JEs), accumulate per-GL-account
+  //    point-in-time BALANCES at the prior and current month-end for the
+  //    true-up JE:
+  //      deferred = billed on/before the as-of date, not yet earned by it
+  //      accrued  = earned by the as-of date, billed after it
+  const balanceSplit = new Map<
+    string,
+    {
+      name: string;
+      accruedPrior: number;
+      deferredPrior: number;
+      accruedCurr: number;
+      deferredCurr: number;
+    }
+  >();
   const allLines: AccountAccrualLine[] = [];
   const invoiceDetails: Array<{
     invoiceNumber: string;
@@ -259,8 +290,51 @@ export async function POST(request: Request) {
       glLines,
     };
 
+    // Point-in-time balance contributions per revenue GL account
+    const invTotalDays = Math.max(
+      1,
+      Math.round((rentalEnd.getTime() - rentalStart.getTime()) / 86400000) + 1,
+    );
+    const earnedFrac = (asOf: Date): number => {
+      if (rentalStart > asOf) return 0;
+      const capped = Math.min(rentalEnd.getTime(), asOf.getTime());
+      const days = Math.round((capped - rentalStart.getTime()) / 86400000) + 1;
+      return Math.min(1, days / invTotalDays);
+    };
+    for (const line of glLines) {
+      if (!isRevenueAccount(line.glAccountNo, line.groupHeading)) continue;
+      const net = (line.credit ?? 0) - (line.debit ?? 0);
+      if (net === 0) continue;
+      let split = balanceSplit.get(line.glAccountNo);
+      if (!split) {
+        split = {
+          name: line.glAccountDescription,
+          accruedPrior: 0,
+          deferredPrior: 0,
+          accruedCurr: 0,
+          deferredCurr: 0,
+        };
+        balanceSplit.set(line.glAccountNo, split);
+      }
+      if (invoiceDate <= priorEnd) {
+        split.deferredPrior += net * (1 - earnedFrac(priorEnd));
+      } else {
+        split.accruedPrior += net * earnedFrac(priorEnd);
+      }
+      if (invoiceDate <= periodEnd) {
+        split.deferredCurr += net * (1 - earnedFrac(periodEnd));
+      } else {
+        split.accruedCurr += net * earnedFrac(periodEnd);
+      }
+    }
+
     const perLine = accrueInvoiceByAccount(forCalc, periodYear, periodMonth);
-    allLines.push(...perLine);
+    // Invoices pulled in only for their balance contribution (no rental days
+    // and no billing inside the period) produce all-zero flow lines — keep
+    // those out of the flow aggregates so the per-GL summary stays clean.
+    allLines.push(
+      ...perLine.filter((l) => l.earnedRevenue !== 0 || l.billedAmount !== 0),
+    );
 
     // Sum revenue credits (only actual revenue accounts — exclude AR, tax, etc.)
     const totalGross = glLines
@@ -380,6 +454,24 @@ export async function POST(request: Request) {
   }> = [];
   let unbilledEarnedGross = 0;
 
+  // Point-in-time unbilled balances: cumulative earned-through-EOM on the
+  // unbilled remainder of every non-terminal order with rental days on/before
+  // the as-of date — including orders that ended months ago and were never
+  // invoiced (they stay in the balance until billed or written off).
+  let unbilledGrossPriorBal = 0;
+  let unbilledGrossCurrBal = 0;
+  const unbilledBalanceOrders: Array<{
+    orderNumber: string;
+    customer: string;
+    description: string;
+    rentalStart: string;
+    rentalEnd: string;
+    orderTotal: number;
+    billedAgainst: number;
+    unbilledRemainder: number;
+    earnedThroughEOM: number;
+  }> = [];
+
   for (const ord of ordersRes.rows) {
     if (!matchesWarehouse(ord.Warehouse ?? ord.OfficeLocation ?? "", warehouseKeywords))
       continue;
@@ -391,7 +483,7 @@ export async function POST(request: Request) {
     const start = parseDate(startStr ?? null);
     const end = parseDate(stopStr ?? null);
     if (!start || !end) continue;
-    if (end < periodStart || start > periodEnd) continue;
+    if (start > periodEnd) continue; // no rental days by period end
 
     const orderTotal = toNum(ord.Total);
     if (orderTotal <= 0) continue;
@@ -399,11 +491,37 @@ export async function POST(request: Request) {
     const unbilledRemainder = Math.max(0, orderTotal - billedAgainst);
     if (unbilledRemainder <= 0) continue;
 
-    // Pro-rate the unbilled remainder to the target month by calendar days
     const totalDays = Math.max(
       1,
       Math.round((end.getTime() - start.getTime()) / 86400000) + 1,
     );
+
+    // Balance contributions (cumulative through each as-of date)
+    const fracThrough = (asOf: Date): number => {
+      if (start > asOf) return 0;
+      const capped = Math.min(end.getTime(), asOf.getTime());
+      const days = Math.round((capped - start.getTime()) / 86400000) + 1;
+      return Math.min(1, days / totalDays);
+    };
+    const earnedThroughEOM = round2(unbilledRemainder * fracThrough(periodEnd));
+    unbilledGrossPriorBal += round2(unbilledRemainder * fracThrough(priorEnd));
+    unbilledGrossCurrBal += earnedThroughEOM;
+    if (earnedThroughEOM > 0) {
+      unbilledBalanceOrders.push({
+        orderNumber: ord.OrderNumber,
+        customer: ord.Customer ?? "",
+        description: (ord as unknown as { Description?: string }).Description ?? "",
+        rentalStart: startStr ?? "",
+        rentalEnd: stopStr ?? "",
+        orderTotal: round2(orderTotal),
+        billedAgainst: round2(billedAgainst),
+        unbilledRemainder: round2(unbilledRemainder),
+        earnedThroughEOM,
+      });
+    }
+
+    // Monthly flow (legacy JEs): rental days inside the target month only
+    if (end < periodStart) continue;
     const overlapStartMs = Math.max(start.getTime(), periodStart.getTime());
     const overlapEndMs = Math.min(end.getTime(), periodEnd.getTime());
     const daysInMonth =
@@ -532,8 +650,13 @@ export async function POST(request: Request) {
     a.glAccountNo.localeCompare(b.glAccountNo),
   );
 
-  // 6. Match GL numbers to QBO accounts for this entity
-  const accountNumbers = totals.map((t) => t.glAccountNo).filter(Boolean);
+  // 6. Match GL numbers to QBO accounts for this entity (flow accounts plus
+  //    any account carrying a point-in-time balance)
+  const accountNumbers = Array.from(
+    new Set(
+      [...totals.map((t) => t.glAccountNo), ...balanceSplit.keys()].filter(Boolean),
+    ),
+  );
   const qboAccountMap: Record<string, { id: string; qbo_id: string | null; name: string }> = {};
   if (accountNumbers.length > 0) {
     const { data: qboAccounts } = await adminClient
@@ -641,10 +764,278 @@ export async function POST(request: Request) {
     deferral: je.deferral.map(withQbo),
   };
 
+  // 8. Month-end TRUE-UP JE. One entry that moves the four timing accounts
+  //    from their prior month-end balances to the new point-in-time balances,
+  //    with the offset to revenue. This single entry contains the reversal of
+  //    the prior month's balances — no separate reversing entry is needed and
+  //    it must NOT be set to auto-reverse.
+  //
+  //    Prior balances come from the snapshot saved when last month's report
+  //    was generated (i.e., what the accountant was told to post). Falling
+  //    back to recomputing the prior month from live RW data is only a rough
+  //    approximation: orders that were unbilled at the prior close and have
+  //    since been invoiced silently drop out of the recomputed balance.
+  const r4 = (n: number) => Math.round(n * 10000) / 10000;
+  const deferredCurrBal = round2(
+    r4(Array.from(balanceSplit.values()).reduce((s, v) => s + v.deferredCurr, 0)),
+  );
+  const accruedCurrBal = round2(
+    r4(Array.from(balanceSplit.values()).reduce((s, v) => s + v.accruedCurr, 0)),
+  );
+  const deferredPriorRecomputed = round2(
+    r4(Array.from(balanceSplit.values()).reduce((s, v) => s + v.deferredPrior, 0)),
+  );
+  const accruedPriorRecomputed = round2(
+    r4(Array.from(balanceSplit.values()).reduce((s, v) => s + v.accruedPrior, 0)),
+  );
+  const unbilledCurrBal = round2(unbilledGrossCurrBal);
+  const allowanceCurrBal = round2(unbilledCurrBal * (1 - realizationRate));
+  const unbilledPriorRecomputed = round2(unbilledGrossPriorBal);
+  const allowancePriorRecomputed = round2(unbilledPriorRecomputed * (1 - realizationRate));
+
+  type SnapshotSplitRow = { acct: string; name: string; accrued: number; deferred: number };
+  let priorSnapshotRow: {
+    deferred_balance: number;
+    accrued_balance: number;
+    unbilled_gross_balance: number;
+    allowance_balance: number;
+    revenue_split: unknown;
+  } | null = null;
+  let snapshotError: string | null = null;
+  {
+    const res = await adminClient
+      .from("entity_accrual_snapshots")
+      .select(
+        "deferred_balance, accrued_balance, unbilled_gross_balance, allowance_balance, revenue_split",
+      )
+      .eq("entity_id", entityId)
+      .eq("period_year", priorYear)
+      .eq("period_month", priorMonth)
+      .maybeSingle();
+    if (res.error) snapshotError = res.error.message;
+    else priorSnapshotRow = res.data;
+  }
+
+  const priorSource: "snapshot" | "recomputed" = priorSnapshotRow
+    ? "snapshot"
+    : "recomputed";
+  const priorBal = priorSnapshotRow
+    ? {
+        deferred: round2(Number(priorSnapshotRow.deferred_balance)),
+        accrued: round2(Number(priorSnapshotRow.accrued_balance)),
+        unbilledGross: round2(Number(priorSnapshotRow.unbilled_gross_balance)),
+        allowance: round2(Number(priorSnapshotRow.allowance_balance)),
+      }
+    : {
+        deferred: deferredPriorRecomputed,
+        accrued: accruedPriorRecomputed,
+        unbilledGross: unbilledPriorRecomputed,
+        allowance: allowancePriorRecomputed,
+      };
+
+  // Prior per-account revenue positions (accrued − deferred). From the
+  // snapshot when it carries a split; from the recompute otherwise. A
+  // snapshot without a split (e.g. the seeded July 2026 row, posted with a
+  // single revenue line) reverses its net position on the catch-all account.
+  let priorSplit: SnapshotSplitRow[] | null = null;
+  if (priorSnapshotRow) {
+    if (Array.isArray(priorSnapshotRow.revenue_split)) {
+      priorSplit = (priorSnapshotRow.revenue_split as SnapshotSplitRow[]).filter(
+        (r) => r && typeof r.acct === "string",
+      );
+    }
+  } else {
+    priorSplit = Array.from(balanceSplit.entries()).map(([acct, v]) => ({
+      acct,
+      name: v.name,
+      accrued: round2(r4(v.accruedPrior)),
+      deferred: round2(r4(v.deferredPrior)),
+    }));
+  }
+
+  // Save the CURRENT month's balances as the snapshot next month reverses
+  // from. Last generate wins — the accountant posts the last report sent.
+  const currSplit: SnapshotSplitRow[] = Array.from(balanceSplit.entries())
+    .map(([acct, v]) => ({
+      acct,
+      name: v.name,
+      accrued: round2(r4(v.accruedCurr)),
+      deferred: round2(r4(v.deferredCurr)),
+    }))
+    .filter((r) => r.accrued !== 0 || r.deferred !== 0);
+  let snapshotSaved = false;
+  if (!snapshotError) {
+    const up = await adminClient.from("entity_accrual_snapshots").upsert(
+      {
+        entity_id: entityId,
+        period_year: periodYear,
+        period_month: periodMonth,
+        deferred_balance: deferredCurrBal,
+        accrued_balance: accruedCurrBal,
+        unbilled_gross_balance: unbilledCurrBal,
+        allowance_balance: allowanceCurrBal,
+        realization_rate_used: realizationRate,
+        revenue_split: currSplit,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "entity_id,period_year,period_month" },
+    );
+    if (up.error) snapshotError = up.error.message;
+    else snapshotSaved = true;
+  }
+
+  // Assemble the JE lines
+  const periodLabel = `${String(periodMonth).padStart(2, "0")}/${periodYear}`;
+  const asOfDate = `${String(periodMonth).padStart(2, "0")}/${String(periodEnd.getUTCDate()).padStart(2, "0")}/${periodYear}`;
+  const priorLabel = `${String(priorMonth).padStart(2, "0")}/${priorYear}`;
+  const ratePct = Math.round(realizationRate * 1000) / 10;
+
+  type TrueUpLine = {
+    lineNo: number;
+    accountNumber: string;
+    accountName: string;
+    qboQboId: string | null;
+    debit: number;
+    credit: number;
+    memo: string;
+  };
+  const tuLines: TrueUpLine[] = [];
+  const pushTU = (
+    acct: { number: string; name: string; qboId: string | null },
+    signedCredit: number, // positive = credit, negative = debit
+    memo: string,
+  ) => {
+    const amt = round2(Math.abs(signedCredit));
+    if (amt < 0.005) return;
+    tuLines.push({
+      lineNo: 0,
+      accountNumber: acct.number,
+      accountName: acct.name,
+      qboQboId: acct.qboId,
+      debit: signedCredit < 0 ? amt : 0,
+      credit: signedCredit > 0 ? amt : 0,
+      memo,
+    });
+  };
+
+  // Balance-sheet lines: move each account from prior balance to target
+  pushTU(
+    { number: deferredRevAcct.number, name: deferredRevAcct.name, qboId: deferredRevAcct.qboId },
+    deferredCurrBal - priorBal.deferred, // liability: increase = credit
+    `Deferred Revenue to point-in-time balance ${deferredCurrBal.toFixed(2)} @ ${asOfDate}`,
+  );
+  pushTU(
+    { number: accruedRevAcct.number, name: accruedRevAcct.name, qboId: accruedRevAcct.qboId },
+    -(accruedCurrBal - priorBal.accrued), // asset: increase = debit
+    `Accrued Revenue to point-in-time balance ${accruedCurrBal.toFixed(2)} @ ${asOfDate}`,
+  );
+  pushTU(
+    { number: unbilledArAcct.number, name: unbilledArAcct.name, qboId: unbilledArAcct.qboId },
+    -(unbilledCurrBal - priorBal.unbilledGross), // asset: increase = debit
+    `Unbilled Receivable to gross balance ${unbilledCurrBal.toFixed(2)} @ ${asOfDate}`,
+  );
+  pushTU(
+    { number: allowanceAcct.number, name: allowanceAcct.name, qboId: allowanceAcct.qboId },
+    allowanceCurrBal - priorBal.allowance, // contra-asset: increase = credit
+    `Allowance to ${(100 - ratePct).toFixed(1)}% of gross unbilled @ ${asOfDate}`,
+  );
+
+  // Revenue lines: per-account change in net timing position
+  const priorPosByAcct = new Map<string, { name: string; pos: number }>();
+  for (const r of priorSplit ?? []) {
+    priorPosByAcct.set(r.acct, {
+      name: r.name,
+      pos: round2((r.accrued ?? 0) - (r.deferred ?? 0)),
+    });
+  }
+  const revAccts = new Set<string>([
+    ...Array.from(balanceSplit.keys()),
+    ...Array.from(priorPosByAcct.keys()),
+  ]);
+  for (const acct of Array.from(revAccts).sort()) {
+    const curr = balanceSplit.get(acct);
+    const currPos = curr ? round2(r4(curr.accruedCurr) - r4(curr.deferredCurr)) : 0;
+    const priorPos = priorPosByAcct.get(acct)?.pos ?? 0;
+    const delta = round2(currPos - priorPos);
+    if (Math.abs(delta) < 0.005) continue;
+    const name =
+      curr?.name ?? priorPosByAcct.get(acct)?.name ?? "Revenue";
+    pushTU(
+      {
+        number: acct,
+        name,
+        qboId: qboAccountMap[acct]?.qbo_id ?? null,
+      },
+      delta, // position up = revenue credit
+      `Net revenue timing change — ${periodLabel}`,
+    );
+  }
+  // Snapshot without a per-account split: reverse its whole net position on
+  // the catch-all account (the prior entry was posted with a single line).
+  if (priorSnapshotRow && !priorSplit) {
+    const priorNetPos = round2(priorBal.accrued - priorBal.deferred);
+    pushTU(
+      {
+        number: unbilledRevenueAcct.number,
+        name: unbilledRevenueAcct.name,
+        qboId: unbilledRevenueAcct.qboId,
+      },
+      -priorNetPos,
+      `Reversal of prior-month net revenue position (${priorLabel})`,
+    );
+  }
+
+  // Catch-all plug: balances the entry. Economically this is the change in
+  // net unbilled earned (gross − allowance) plus rounding cents.
+  {
+    const debits = round2(tuLines.reduce((s, l) => s + l.debit, 0));
+    const credits = round2(tuLines.reduce((s, l) => s + l.credit, 0));
+    const plug = round2(debits - credits);
+    pushTU(
+      {
+        number: unbilledRevenueAcct.number,
+        name: unbilledRevenueAcct.name,
+        qboId: unbilledRevenueAcct.qboId,
+      },
+      plug,
+      `Unbilled earned net change @ ${ratePct}% — ${periodLabel}`,
+    );
+  }
+  tuLines.forEach((l, i) => (l.lineNo = i + 1));
+
+  const netPos = (b: {
+    deferred: number;
+    accrued: number;
+    unbilledGross: number;
+    allowance: number;
+  }) => round2(b.accrued + b.unbilledGross - b.allowance - b.deferred);
+  const targetBal = {
+    deferred: deferredCurrBal,
+    accrued: accruedCurrBal,
+    unbilledGross: unbilledCurrBal,
+    allowance: allowanceCurrBal,
+  };
+
   return NextResponse.json({
     entityId,
     periodYear,
     periodMonth,
+    trueUp: {
+      asOfDate,
+      periodLabel,
+      priorPeriod: { year: priorYear, month: priorMonth, label: priorLabel },
+      priorSource,
+      prior: { ...priorBal, net: netPos(priorBal) },
+      target: { ...targetBal, net: netPos(targetBal) },
+      // + = revenue increase this month from the entry, − = decrease
+      revenueImpact: round2(netPos(targetBal) - netPos(priorBal)),
+      lines: tuLines,
+      snapshotSaved,
+      snapshotError,
+      unbilledBalanceOrders: unbilledBalanceOrders.sort(
+        (a, b) => b.earnedThroughEOM - a.earnedThroughEOM,
+      ),
+    },
     invoicesFetched: invoiceMap.size,
     invoicesOverlapping: overlapping.length,
     glDistSuccess: fetchResults.filter((r) => r.ok).length,
