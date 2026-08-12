@@ -864,7 +864,23 @@ export async function POST(request: Request) {
     }))
     .filter((r) => r.accrued !== 0 || r.deferred !== 0);
   let snapshotSaved = false;
+  let snapshotLocked = false;
   if (!snapshotError) {
+    // A row with a null revenue_split marks manually-posted balances (e.g.
+    // the seeded July 2026 corrective entry). Never overwrite those with
+    // recomputed numbers — the JE actually posted in QBO is the source of
+    // truth the next month must reverse from.
+    const existing = await adminClient
+      .from("entity_accrual_snapshots")
+      .select("id, revenue_split")
+      .eq("entity_id", entityId)
+      .eq("period_year", periodYear)
+      .eq("period_month", periodMonth)
+      .maybeSingle();
+    if (existing.error) snapshotError = existing.error.message;
+    else snapshotLocked = existing.data !== null && existing.data.revenue_split === null;
+  }
+  if (!snapshotError && !snapshotLocked) {
     const up = await adminClient.from("entity_accrual_snapshots").upsert(
       {
         entity_id: entityId,
@@ -1031,6 +1047,7 @@ export async function POST(request: Request) {
       revenueImpact: round2(netPos(targetBal) - netPos(priorBal)),
       lines: tuLines,
       snapshotSaved,
+      snapshotLocked,
       snapshotError,
       unbilledBalanceOrders: unbilledBalanceOrders.sort(
         (a, b) => b.earnedThroughEOM - a.earnedThroughEOM,
