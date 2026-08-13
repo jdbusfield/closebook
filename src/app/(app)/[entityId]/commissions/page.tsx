@@ -81,6 +81,7 @@ import {
 } from "@/lib/utils/dates";
 import { cn } from "@/lib/utils";
 import type { AccountClassification, ClassFilterMode } from "@/lib/types/database";
+import { SalesCommissionSection } from "@/components/commissions/sales-commission-section";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -165,9 +166,9 @@ interface ReportData {
   results: Record<string, { isPaid: boolean; paidAmount: number | null; commissionEarned: number }>;
 }
 
-// ── Page ───────────────────────────────────────────────────────────────
+// ── GL-based calculator (original) ─────────────────────────────────────
 
-export default function CommissionsPage() {
+function GlCommissionsSection() {
   const params = useParams();
   const entityId = params.entityId as string;
   const current = getCurrentPeriod();
@@ -2232,6 +2233,40 @@ export default function CommissionsPage() {
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ── Page: toggle between GL calculator and RW sales commissions ────────
+
+export default function CommissionsPage() {
+  const params = useParams();
+  const entityId = params.entityId as string;
+  const [mode, setMode] = useState<"gl" | "sales">("gl");
+
+  return (
+    <div className="space-y-6">
+      <div className="inline-flex rounded-lg border bg-muted/40 p-1 gap-1">
+        <Button
+          variant={mode === "gl" ? "default" : "ghost"}
+          size="sm"
+          onClick={() => setMode("gl")}
+        >
+          GL Calculator
+        </Button>
+        <Button
+          variant={mode === "sales" ? "default" : "ghost"}
+          size="sm"
+          onClick={() => setMode("sales")}
+        >
+          Sales Commissions (RentalWorks)
+        </Button>
+      </div>
+      {mode === "gl" ? (
+        <GlCommissionsSection />
+      ) : (
+        <SalesCommissionSection entityId={entityId} />
+      )}
     </div>
   );
 }

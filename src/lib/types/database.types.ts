@@ -6330,6 +6330,126 @@ export type Database = {
         }
         Relationships: []
       }
+      sales_commission_plans: {
+        Row: {
+          id: string
+          entity_id: string
+          salesperson_name: string
+          is_active: boolean
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          salesperson_name: string
+          is_active?: boolean
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          salesperson_name?: string
+          is_active?: boolean
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      sales_commission_rate_types: {
+        Row: {
+          id: string
+          plan_id: string
+          name: string
+          rate_percent: number
+          is_default: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          plan_id: string
+          name: string
+          rate_percent?: number
+          is_default?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          plan_id?: string
+          name?: string
+          rate_percent?: number
+          is_default?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      }
+      sales_commission_customer_assignments: {
+        Row: {
+          id: string
+          plan_id: string
+          rate_type_id: string
+          rw_customer_id: string
+          customer_name: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          plan_id: string
+          rate_type_id: string
+          rw_customer_id: string
+          customer_name: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          plan_id?: string
+          rate_type_id?: string
+          rw_customer_id?: string
+          customer_name?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      sales_commission_runs: {
+        Row: {
+          id: string
+          plan_id: string
+          period_year: number
+          period_month: number
+          total_revenue: number
+          total_commission: number
+          default_rate_percent: number | null
+          detail: Json | null
+          calculated_at: string
+        }
+        Insert: {
+          id?: string
+          plan_id: string
+          period_year: number
+          period_month: number
+          total_revenue?: number
+          total_commission?: number
+          default_rate_percent?: number | null
+          detail?: Json | null
+          calculated_at?: string
+        }
+        Update: {
+          id?: string
+          plan_id?: string
+          period_year?: number
+          period_month?: number
+          total_revenue?: number
+          total_commission?: number
+          default_rate_percent?: number | null
+          detail?: Json | null
+          calculated_at?: string
+        }
+        Relationships: []
+      }
       entity_accrual_snapshots: {
         Row: {
           id: string
