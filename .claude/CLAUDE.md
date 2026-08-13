@@ -64,6 +64,9 @@ Browse endpoints return **positional arrays**, NOT named objects. You MUST use `
 }
 ```
 
+## Browse Search Gotcha: One Date Condition Only
+Dual-condition date searches (e.g. InvoiceDate >= X AND InvoiceDate <= Y in the same request) are NOT honored — RW returns an unbounded set, which times out serverless functions. Use a single `>=` filter and apply the upper bound in code (see rental-accruals-v2 and sales-commissions).
+
 ## Working Browse Endpoints
 | Entity | Endpoint | Notes |
 |--------|----------|-------|
