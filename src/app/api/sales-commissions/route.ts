@@ -14,11 +14,17 @@ interface RWInvoiceRow {
   Status: string;
   Customer: string;
   CustomerId: string;
+  OrderNumber: string;
   InvoiceSubTotal: string;
   IsNoCharge: string;
   IsNonBillable: string;
   Warehouse?: string;
   OfficeLocation?: string;
+}
+
+interface RWOrderRow {
+  OrderNumber: string;
+  OrderDate: string;
 }
 
 interface RWCustomerRow {
@@ -399,16 +405,37 @@ export async function POST(request: Request) {
         let skippedCount = 0;
         let beforeStartCount = 0;
 
-        // Contract effective date: invoices dated before it never earn fees.
+        // Contract effective date, applied to ORDER placement: an invoice
+        // only earns fees if its order was placed on/after the start date,
+        // regardless of when it was invoiced (mirrors the termination
+        // clause, which keys entitlement to when bookings were placed).
+        // One browse of orders placed since the start date gives us the
+        // allowed set; anything not in it predates the contract.
         const startDate: string | null = plan.commission_start_date ?? null;
         const startMs = startDate
           ? Date.parse(`${startDate}T00:00:00Z`)
           : null;
+        let allowedOrders: Set<string> | null = null;
+        if (startMs !== null) {
+          const ordersRes = await rw.browseAllByMonthWindows<RWOrderRow>(
+            "order",
+            "OrderDate",
+            new Date(startMs),
+            { pagesize: 2000 },
+          );
+          allowedOrders = new Set(
+            ordersRes.rows.map((r) => String(r.OrderNumber)),
+          );
+        }
 
         for (const inv of invoicesRes.rows) {
-          if (startMs !== null) {
-            const invMs = Date.parse(inv.InvoiceDate);
-            if (!Number.isNaN(invMs) && invMs < startMs) {
+          if (startMs !== null && allowedOrders !== null) {
+            const orderNo = String(inv.OrderNumber || "");
+            // Invoices with no order (misc billing) fall back to invoice date.
+            const earns = orderNo
+              ? allowedOrders.has(orderNo)
+              : Date.parse(inv.InvoiceDate) >= startMs;
+            if (!earns) {
               beforeStartCount++;
               continue;
             }

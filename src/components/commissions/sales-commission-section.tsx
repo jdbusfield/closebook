@@ -436,7 +436,7 @@ export function SalesCommissionSection({
         subtitle:
           "Base = RentalWorks invoice subtotal (pre-tax), by invoice date" +
           (selectedPlan.commission_start_date
-            ? ` — commissions start ${selectedPlan.commission_start_date}`
+            ? ` — orders placed on/after ${selectedPlan.commission_start_date} only`
             : ""),
       },
       columns: [
@@ -893,8 +893,8 @@ export function SalesCommissionSection({
                       <>
                         {" · "}
                         {calcBeforeStart} invoice
-                        {calcBeforeStart === 1 ? "" : "s"} excluded (dated
-                        before the commission start date)
+                        {calcBeforeStart === 1 ? "" : "s"} excluded (order
+                        placed before the commission start date)
                       </>
                     )}
                   </div>
@@ -1023,8 +1023,9 @@ export function SalesCommissionSection({
                 onChange={(e) => setPlanStartDate(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                The contract&apos;s effective date. Invoices dated before it are
-                excluded from every calculation.
+                The contract&apos;s effective date. Only orders placed on or
+                after this date earn commission — invoices for older orders are
+                excluded no matter when they bill.
               </p>
             </div>
             <div className="space-y-2">
