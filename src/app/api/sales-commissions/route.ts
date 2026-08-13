@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { RentalWorksClient } from "@/lib/rentalworks/client";
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 // ── RW row shape (invoice browse) ──────────────────────────────────────
 
@@ -372,19 +372,54 @@ export async function POST(request: Request) {
           (assignments || []).map((a) => [String(a.rw_customer_id), a]),
         );
 
-        // One calendar month of invoices by InvoiceDate.
+        // One calendar month of invoices by InvoiceDate. Single >= filter
+        // only — RW browse mishandles dual-condition date searches (returns
+        // an unbounded set, which timed out the function); the proven
+        // pattern from rental-accruals-v2 is >= plus in-code upper bound.
         const periodStart = new Date(Date.UTC(periodYear, periodMonth - 1, 1));
-        const periodEnd = new Date(Date.UTC(periodYear, periodMonth, 0));
+        const periodStartMs = periodStart.getTime();
+        const nextMonthStartMs = Date.UTC(periodYear, periodMonth, 1);
+
+        const startDate: string | null = plan.commission_start_date ?? null;
+        const startMs = startDate
+          ? Date.parse(`${startDate}T00:00:00Z`)
+          : null;
+
         const rw = await getRWClient();
-        const invoicesRes = await rw.browseAll<RWInvoiceRow>("invoice", {
-          pagesize: 2000,
-          searchfields: ["InvoiceDate", "InvoiceDate"],
-          searchfieldoperators: [">=", "<="],
-          searchfieldvalues: [formatRWDate(periodStart), formatRWDate(periodEnd)],
-          searchfieldtypes: ["date", "date"],
-          orderby: "InvoiceDate",
-          orderbydirection: "asc",
-        });
+        const [invoicesRes, ordersRes] = await Promise.all([
+          rw.browseAll<RWInvoiceRow>("invoice", {
+            pagesize: 2000,
+            searchfields: ["InvoiceDate"],
+            searchfieldoperators: [">="],
+            searchfieldvalues: [formatRWDate(periodStart)],
+            searchfieldtypes: ["date"],
+            orderby: "InvoiceDate",
+            orderbydirection: "desc",
+          }),
+          // Orders placed since the start date — the allowed set for the
+          // order-placement cutoff. The windowed browse aligns to calendar
+          // months, so rows from earlier in the start month come back too;
+          // the >= filter below removes them.
+          startMs !== null
+            ? rw.browseAllByMonthWindows<RWOrderRow>(
+                "order",
+                "OrderDate",
+                new Date(startMs),
+                { pagesize: 2000 },
+              )
+            : Promise.resolve(null),
+        ]);
+        const allowedOrders: Set<string> | null =
+          ordersRes && startMs !== null
+            ? new Set(
+                ordersRes.rows
+                  .filter((r) => {
+                    const ms = Date.parse(r.OrderDate);
+                    return !Number.isNaN(ms) && ms >= startMs;
+                  })
+                  .map((r) => String(r.OrderNumber)),
+              )
+            : null;
 
         const warehouseKeywords: string[] =
           body.warehouseKeywords ?? DEFAULT_WAREHOUSE_KEYWORDS;
@@ -409,42 +444,29 @@ export async function POST(request: Request) {
         // only earns fees if its order was placed on/after the start date,
         // regardless of when it was invoiced (mirrors the termination
         // clause, which keys entitlement to when bookings were placed).
-        // One browse of orders placed since the start date gives us the
-        // allowed set; anything not in it predates the contract.
-        const startDate: string | null = plan.commission_start_date ?? null;
-        const startMs = startDate
-          ? Date.parse(`${startDate}T00:00:00Z`)
-          : null;
-        let allowedOrders: Set<string> | null = null;
-        if (startMs !== null) {
-          const ordersRes = await rw.browseAllByMonthWindows<RWOrderRow>(
-            "order",
-            "OrderDate",
-            new Date(startMs),
-            { pagesize: 2000 },
-          );
-          allowedOrders = new Set(
-            ordersRes.rows.map((r) => String(r.OrderNumber)),
-          );
-        }
-
         for (const inv of invoicesRes.rows) {
-          if (startMs !== null && allowedOrders !== null) {
-            const orderNo = String(inv.OrderNumber || "");
-            // Invoices with no order (misc billing) fall back to invoice date.
-            const earns = orderNo
-              ? allowedOrders.has(orderNo)
-              : Date.parse(inv.InvoiceDate) >= startMs;
-            if (!earns) {
-              beforeStartCount++;
-              continue;
-            }
+          // In-code month bound (upper end of the >= browse above).
+          const invMs = Date.parse(inv.InvoiceDate);
+          if (Number.isNaN(invMs) || invMs < periodStartMs || invMs >= nextMonthStartMs) {
+            continue;
           }
           const locationText = inv.OfficeLocation ?? inv.Warehouse ?? "";
           const isVersatile = locationText
             ? matchesWarehouse(locationText, warehouseKeywords)
             : (inv.InvoiceNumber || "").toUpperCase().startsWith("V");
           if (!isVersatile) continue;
+
+          if (startMs !== null && allowedOrders !== null) {
+            const orderNo = String(inv.OrderNumber || "");
+            // Invoices with no order (misc billing) fall back to invoice date.
+            const earns = orderNo
+              ? allowedOrders.has(orderNo)
+              : invMs >= startMs;
+            if (!earns) {
+              beforeStartCount++;
+              continue;
+            }
+          }
 
           const status = (inv.Status ?? "").toUpperCase();
           if (status === "VOID" || status === "VOIDED") {
