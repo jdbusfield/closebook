@@ -69,6 +69,7 @@ interface SalesPlan {
   salesperson_name: string;
   is_active: boolean;
   notes: string | null;
+  commission_start_date: string | null;
 }
 
 interface RateType {
@@ -166,6 +167,7 @@ export function SalesCommissionSection({
     revenue: number;
     commission: number;
   } | null>(null);
+  const [calcBeforeStart, setCalcBeforeStart] = useState(0);
   const [calcPeriodLabel, setCalcPeriodLabel] = useState("");
 
   // Plan dialog
@@ -173,6 +175,7 @@ export function SalesCommissionSection({
   const [editingPlan, setEditingPlan] = useState<SalesPlan | null>(null);
   const [planName, setPlanName] = useState("");
   const [planNotes, setPlanNotes] = useState("");
+  const [planStartDate, setPlanStartDate] = useState("");
   const [planSaving, setPlanSaving] = useState(false);
 
   // Rate dialog
@@ -225,6 +228,7 @@ export function SalesCommissionSection({
     setEditingPlan(plan);
     setPlanName(plan?.salesperson_name ?? "");
     setPlanNotes(plan?.notes ?? "");
+    setPlanStartDate(plan?.commission_start_date ?? "");
     setPlanDialogOpen(true);
   };
 
@@ -238,6 +242,7 @@ export function SalesCommissionSection({
         planId: editingPlan?.id,
         salespersonName: planName,
         notes: planNotes || null,
+        commissionStartDate: planStartDate || null,
       });
       toast.success(editingPlan ? "Salesperson updated" : "Salesperson added");
       setPlanDialogOpen(false);
@@ -404,6 +409,7 @@ export function SalesCommissionSection({
         revenue: data.totalRevenue,
         commission: data.totalCommission,
       });
+      setCalcBeforeStart(data.beforeStartCount ?? 0);
       setCalcPeriodLabel(`${MONTH_NAMES[periodMonth - 1]} ${periodYear}`);
       await loadConfig();
       toast.success(
@@ -427,7 +433,11 @@ export function SalesCommissionSection({
         entityName: entityName ?? "Versatile Studios",
         reportTitle: `Sales Commission — ${selectedPlan.salesperson_name}`,
         period: calcPeriodLabel,
-        subtitle: "Base = RentalWorks invoice subtotal (pre-tax), by invoice date",
+        subtitle:
+          "Base = RentalWorks invoice subtotal (pre-tax), by invoice date" +
+          (selectedPlan.commission_start_date
+            ? ` — commissions start ${selectedPlan.commission_start_date}`
+            : ""),
       },
       columns: [
         { header: "Customer", width: 42, value: (r: CalcRow) => r.customerName },
@@ -573,6 +583,14 @@ export function SalesCommissionSection({
                     </SelectContent>
                   </Select>
                 </div>
+                {selectedPlan?.commission_start_date && (
+                  <Badge variant="secondary">
+                    Commissions start{" "}
+                    {new Date(
+                      `${selectedPlan.commission_start_date}T12:00:00`,
+                    ).toLocaleDateString()}
+                  </Badge>
+                )}
                 {selectedPlan && (
                   <div className="flex items-center gap-1">
                     <Button
@@ -871,6 +889,14 @@ export function SalesCommissionSection({
                     <span className="font-medium text-foreground">
                       {formatCurrency(calcTotals.commission)} commission
                     </span>
+                    {calcBeforeStart > 0 && (
+                      <>
+                        {" · "}
+                        {calcBeforeStart} invoice
+                        {calcBeforeStart === 1 ? "" : "s"} excluded (dated
+                        before the commission start date)
+                      </>
+                    )}
                   </div>
                   <Table>
                     <TableHeader>
@@ -988,6 +1014,18 @@ export function SalesCommissionSection({
                 onChange={(e) => setPlanName(e.target.value)}
                 placeholder="Sean French"
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Commission start date (optional)</Label>
+              <Input
+                type="date"
+                value={planStartDate}
+                onChange={(e) => setPlanStartDate(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                The contract&apos;s effective date. Invoices dated before it are
+                excluded from every calculation.
+              </p>
             </div>
             <div className="space-y-2">
               <Label>Notes (optional)</Label>

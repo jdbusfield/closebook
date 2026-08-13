@@ -6337,6 +6337,7 @@ export type Database = {
           salesperson_name: string
           is_active: boolean
           notes: string | null
+          commission_start_date: string | null
           created_at: string
           updated_at: string
         }
@@ -6346,6 +6347,7 @@ export type Database = {
           salesperson_name: string
           is_active?: boolean
           notes?: string | null
+          commission_start_date?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -6355,6 +6357,7 @@ export type Database = {
           salesperson_name?: string
           is_active?: boolean
           notes?: string | null
+          commission_start_date?: string | null
           created_at?: string
           updated_at?: string
         }

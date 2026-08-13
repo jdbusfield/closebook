@@ -116,10 +116,16 @@ export async function POST(request: Request) {
       }
 
       case "upsert_plan": {
-        const { entityId, planId, salespersonName, notes, isActive } = body;
+        const { entityId, planId, salespersonName, notes, isActive, commissionStartDate } = body;
         if (!entityId || !salespersonName?.trim()) {
           return NextResponse.json(
             { error: "entityId and salespersonName are required" },
+            { status: 400 },
+          );
+        }
+        if (commissionStartDate && !/^\d{4}-\d{2}-\d{2}$/.test(commissionStartDate)) {
+          return NextResponse.json(
+            { error: "commissionStartDate must be YYYY-MM-DD" },
             { status: 400 },
           );
         }
@@ -131,6 +137,7 @@ export async function POST(request: Request) {
               salesperson_name: salespersonName.trim(),
               notes: notes ?? null,
               is_active: isActive ?? true,
+              commission_start_date: commissionStartDate || null,
               updated_at: new Date().toISOString(),
             })
             .eq("id", planId)
@@ -146,6 +153,7 @@ export async function POST(request: Request) {
             entity_id: entityId,
             salesperson_name: salespersonName.trim(),
             notes: notes ?? null,
+            commission_start_date: commissionStartDate || null,
           })
           .select()
           .single();
@@ -389,8 +397,22 @@ export async function POST(request: Request) {
         }
         const byCustomer = new Map<string, CustomerAgg>();
         let skippedCount = 0;
+        let beforeStartCount = 0;
+
+        // Contract effective date: invoices dated before it never earn fees.
+        const startDate: string | null = plan.commission_start_date ?? null;
+        const startMs = startDate
+          ? Date.parse(`${startDate}T00:00:00Z`)
+          : null;
 
         for (const inv of invoicesRes.rows) {
+          if (startMs !== null) {
+            const invMs = Date.parse(inv.InvoiceDate);
+            if (!Number.isNaN(invMs) && invMs < startMs) {
+              beforeStartCount++;
+              continue;
+            }
+          }
           const locationText = inv.OfficeLocation ?? inv.Warehouse ?? "";
           const isVersatile = locationText
             ? matchesWarehouse(locationText, warehouseKeywords)
@@ -487,6 +509,8 @@ export async function POST(request: Request) {
           totalRevenue,
           totalCommission,
           skippedCount,
+          beforeStartCount,
+          commissionStartDate: startDate,
           invoicesConsidered: invoicesRes.rows.length,
         });
       }
