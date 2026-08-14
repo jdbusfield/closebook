@@ -87,7 +87,7 @@ export interface DrawerCallbacks {
   ) => void;
   /** Save edits to the Event & contact fields (only the changed keys are sent).
    * Optional — when omitted the grid renders read-only. */
-  onSaveDetails?: (id: string, patch: Record<string, unknown>) => void;
+  onSaveDetails?: (id: string, patch: Record<string, unknown>) => void | Promise<void>;
   onAddTask: (id: string, title: string, kind?: InquiryTask["kind"]) => void;
   onToggleTask: (taskId: string, done: boolean) => void;
   onAddActivity: (id: string, type: InquiryActivity["type"], body: string) => void;
@@ -1444,7 +1444,12 @@ export function InquiryDrawer({
               </Section>
 
               <Section title="Email funnel">
-                <FunnelBlock inquiry={inquiry} entityId={entityId} actor={actor} />
+                <FunnelBlock
+                  inquiry={inquiry}
+                  entityId={entityId}
+                  actor={actor}
+                  onSaveDetails={callbacks.onSaveDetails}
+                />
               </Section>
 
               <Section title="Event & contact">

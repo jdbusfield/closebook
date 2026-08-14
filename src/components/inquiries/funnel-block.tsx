@@ -18,6 +18,7 @@ import {
   Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -63,16 +64,26 @@ export function FunnelBlock({
   inquiry,
   entityId,
   actor = "You",
+  onSaveDetails,
 }: {
   inquiry: Inquiry;
   entityId: string;
   actor?: string;
+  onSaveDetails?: (id: string, patch: Record<string, unknown>) => void | Promise<void>;
 }) {
   const fn = useFunnels(entityId);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [candidate, setCandidate] = useState<Funnel | null>(null);
   const [quoteId, setQuoteId] = useState<string | null>(null);
+  const [nameDraft, setNameDraft] = useState(inquiry.name ?? "");
   const [starting, setStarting] = useState(false);
+
+  // Seed the greeting name on every open (the drawer reuses one mounted
+  // instance across inquiry selections).
+  const openPicker = () => {
+    setNameDraft(inquiry.name ?? "");
+    setPickerOpen(true);
+  };
 
   const enrollment = fn.enrollmentFor(inquiry.id);
   const enrolledFunnel = enrollment
@@ -83,6 +94,12 @@ export function FunnelBlock({
   const start = async () => {
     if (!candidate) return;
     setStarting(true);
+    // Persist an edited name BEFORE enrolling — the day-0 send (and every cron
+    // send after it) reads the inquiry fresh from the DB.
+    const trimmed = nameDraft.trim();
+    if (onSaveDetails && trimmed && trimmed !== (inquiry.name ?? "").trim()) {
+      await onSaveDetails(inquiry.id, { name: trimmed });
+    }
     const ok = await fn.enroll(inquiry.id, candidate.id, actor, quoteId);
     setStarting(false);
     if (ok) {
@@ -153,7 +170,7 @@ export function FunnelBlock({
               variant="outline"
               size="sm"
               className="h-7 gap-1 text-xs"
-              onClick={() => setPickerOpen(true)}
+              onClick={openPicker}
             >
               <Zap className="size-3.5" /> Start another funnel
             </Button>
@@ -171,6 +188,9 @@ export function FunnelBlock({
           setCandidate={pickCandidate}
           quoteId={quoteId}
           setQuoteId={setQuoteId}
+          name={nameDraft}
+          setName={setNameDraft}
+          canEditName={!!onSaveDetails}
           onStart={start}
           starting={starting}
         />
@@ -200,7 +220,7 @@ export function FunnelBlock({
         variant="outline"
         size="sm"
         className="gap-1.5"
-        onClick={() => setPickerOpen(true)}
+        onClick={openPicker}
       >
         <Zap className="size-4 text-amber-500" /> Start a funnel
       </Button>
@@ -219,6 +239,9 @@ export function FunnelBlock({
         setCandidate={pickCandidate}
         quoteId={quoteId}
         setQuoteId={setQuoteId}
+        name={nameDraft}
+        setName={setNameDraft}
+        canEditName={!!onSaveDetails}
         onStart={start}
         starting={starting}
       />
@@ -235,6 +258,9 @@ function StartDialog({
   setCandidate,
   quoteId,
   setQuoteId,
+  name,
+  setName,
+  canEditName,
   onStart,
   starting,
 }: {
@@ -246,10 +272,16 @@ function StartDialog({
   setCandidate: (f: Funnel | null) => void;
   quoteId: string | null;
   setQuoteId: (id: string | null) => void;
+  name: string;
+  setName: (v: string) => void;
+  canEditName: boolean;
   onStart: () => void;
   starting: boolean;
 }) {
   const quotes: InquiryQuote[] = inquiry.quotes ?? [];
+  // The previews render with the (possibly edited) greeting name so what you
+  // see is exactly what sends.
+  const previewInquiry: Inquiry = { ...inquiry, name: name.trim() || inquiry.name };
   const candidateSteps = candidate ? fn.stepsFor(candidate.id) : [];
   const needsQuote = candidate ? usesQuote(candidateSteps) : false;
   const selectedQuote = quotes.find((q) => q.id === quoteId) ?? null;
@@ -325,6 +357,27 @@ function StartDialog({
               <ChevronLeft className="size-3.5" /> All funnels
             </button>
 
+            {/* Greeting name — fix a bad captured name before anything sends */}
+            {canEditName && (
+              <div className="rounded-lg border bg-muted/30 p-2.5">
+                <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                  Customer name — the emails open with &quot;Hi{" "}
+                  {(name.trim() || "there").split(/\s+/)[0]},&quot;
+                </label>
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Customer name"
+                  className="h-8"
+                />
+                {name.trim() !== (inquiry.name ?? "").trim() && name.trim() !== "" && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Saves to this inquiry when the funnel starts.
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Quote rider — shown when any step merges {quote} in */}
             {needsQuote &&
               (quotes.length > 0 ? (
@@ -372,7 +425,7 @@ function StartDialog({
                   subject: step.subject,
                   body: step.body,
                 };
-                const rendered = renderTemplate(tpl, inquiry, "", extra);
+                const rendered = renderTemplate(tpl, previewInquiry, "", extra);
                 const subject = anchor?.subject || rendered.subject || "(no subject)";
                 const isExpanded = expanded === null ? i === 0 : expanded === step.id;
                 return (
