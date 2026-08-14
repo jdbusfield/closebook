@@ -50,6 +50,7 @@ import {
   Pencil,
   Loader2,
   Download,
+  FileText,
   Search,
   UserPlus,
 } from "lucide-react";
@@ -60,6 +61,7 @@ import {
   downloadWorkbook,
   NUMBER_FORMATS,
 } from "@/lib/utils/excel";
+import { exportSalesCommissionPdf } from "./sales-commission-pdf";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -420,6 +422,21 @@ export function SalesCommissionSection({
     } finally {
       setCalculating(false);
     }
+  };
+
+  const exportPdf = async () => {
+    if (!calcRows || !calcTotals || !selectedPlan) return;
+    await exportSalesCommissionPdf({
+      entityName: entityName ?? "Versatile Studios",
+      salespersonName: selectedPlan.salesperson_name,
+      periodLabel: calcPeriodLabel,
+      commissionStartDate: selectedPlan.commission_start_date,
+      rows: calcRows,
+      totalRevenue: calcTotals.revenue,
+      totalCommission: calcTotals.commission,
+      beforeStartCount: calcBeforeStart,
+      filename: `${selectedPlan.salesperson_name.replace(/\s+/g, "_")}_Commission_Statement_${periodYear}-${String(periodMonth).padStart(2, "0")}`,
+    });
   };
 
   const exportExcel = async () => {
@@ -874,10 +891,16 @@ export function SalesCommissionSection({
                     Calculate
                   </Button>
                   {calcRows && (
-                    <Button variant="outline" onClick={exportExcel}>
-                      <Download className="mr-2 h-4 w-4" />
-                      Excel
-                    </Button>
+                    <>
+                      <Button variant="outline" onClick={exportPdf}>
+                        <FileText className="mr-2 h-4 w-4" />
+                        PDF
+                      </Button>
+                      <Button variant="outline" onClick={exportExcel}>
+                        <Download className="mr-2 h-4 w-4" />
+                        Excel
+                      </Button>
+                    </>
                   )}
                 </div>
               </CardHeader>
