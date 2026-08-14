@@ -76,13 +76,29 @@ export function FunnelBlock({
   const [candidate, setCandidate] = useState<Funnel | null>(null);
   const [quoteId, setQuoteId] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState(inquiry.name ?? "");
+  const [greetingDraft, setGreetingDraft] = useState("");
+  const [greetingEdited, setGreetingEdited] = useState(false);
   const [starting, setStarting] = useState(false);
 
-  // Seed the greeting name on every open (the drawer reuses one mounted
-  // instance across inquiry selections).
+  // Seed the drafts on every open (the drawer reuses one mounted instance
+  // across inquiry selections). An existing greeting override counts as
+  // "edited" so re-opening the dialog never clobbers it.
   const openPicker = () => {
     setNameDraft(inquiry.name ?? "");
+    setGreetingDraft(inquiry.greeting_name?.trim() ?? "");
+    setGreetingEdited(!!inquiry.greeting_name?.trim());
     setPickerOpen(true);
+  };
+
+  // Until the greeting is touched, it tracks the name's first word — the same
+  // default the send would use. Once touched, it's used verbatim.
+  const fallbackName = nameDraft.trim() || inquiry.name?.trim() || "";
+  const greeting = greetingEdited
+    ? greetingDraft
+    : fallbackName.split(/\s+/)[0] ?? "";
+  const setGreeting = (v: string) => {
+    setGreetingDraft(v);
+    setGreetingEdited(true);
   };
 
   const enrollment = fn.enrollmentFor(inquiry.id);
@@ -94,11 +110,23 @@ export function FunnelBlock({
   const start = async () => {
     if (!candidate) return;
     setStarting(true);
-    // Persist an edited name BEFORE enrolling — the day-0 send (and every cron
-    // send after it) reads the inquiry fresh from the DB.
-    const trimmed = nameDraft.trim();
-    if (onSaveDetails && trimmed && trimmed !== (inquiry.name ?? "").trim()) {
-      await onSaveDetails(inquiry.id, { name: trimmed });
+    // Persist name/greeting edits BEFORE enrolling — the day-0 send (and every
+    // cron send after it) reads the inquiry fresh from the DB.
+    if (onSaveDetails) {
+      const patch: Record<string, unknown> = {};
+      const trimmed = nameDraft.trim();
+      if (trimmed && trimmed !== (inquiry.name ?? "").trim()) patch.name = trimmed;
+      // Only store an override that actually differs from the first-word
+      // default; matching it again clears any override already on the row.
+      const wanted = greeting.trim();
+      const fallback = (trimmed || inquiry.name?.trim() || "").split(/\s+/)[0] ?? "";
+      const stored = inquiry.greeting_name?.trim() ?? "";
+      if (wanted && wanted !== fallback) {
+        if (wanted !== stored) patch.greeting_name = wanted;
+      } else if (stored) {
+        patch.greeting_name = null;
+      }
+      if (Object.keys(patch).length > 0) await onSaveDetails(inquiry.id, patch);
     }
     const ok = await fn.enroll(inquiry.id, candidate.id, actor, quoteId);
     setStarting(false);
@@ -190,6 +218,8 @@ export function FunnelBlock({
           setQuoteId={setQuoteId}
           name={nameDraft}
           setName={setNameDraft}
+          greeting={greeting}
+          setGreeting={setGreeting}
           canEditName={!!onSaveDetails}
           onStart={start}
           starting={starting}
@@ -241,6 +271,8 @@ export function FunnelBlock({
         setQuoteId={setQuoteId}
         name={nameDraft}
         setName={setNameDraft}
+        greeting={greeting}
+        setGreeting={setGreeting}
         canEditName={!!onSaveDetails}
         onStart={start}
         starting={starting}
@@ -260,6 +292,8 @@ function StartDialog({
   setQuoteId,
   name,
   setName,
+  greeting,
+  setGreeting,
   canEditName,
   onStart,
   starting,
@@ -274,14 +308,20 @@ function StartDialog({
   setQuoteId: (id: string | null) => void;
   name: string;
   setName: (v: string) => void;
+  greeting: string;
+  setGreeting: (v: string) => void;
   canEditName: boolean;
   onStart: () => void;
   starting: boolean;
 }) {
   const quotes: InquiryQuote[] = inquiry.quotes ?? [];
-  // The previews render with the (possibly edited) greeting name so what you
-  // see is exactly what sends.
-  const previewInquiry: Inquiry = { ...inquiry, name: name.trim() || inquiry.name };
+  // The previews render with the edited name and greeting, so what you read
+  // here is exactly what sends.
+  const previewInquiry: Inquiry = {
+    ...inquiry,
+    name: name.trim() || inquiry.name,
+    greeting_name: greeting.trim() || null,
+  };
   const candidateSteps = candidate ? fn.stepsFor(candidate.id) : [];
   const needsQuote = candidate ? usesQuote(candidateSteps) : false;
   const selectedQuote = quotes.find((q) => q.id === quoteId) ?? null;
@@ -357,24 +397,42 @@ function StartDialog({
               <ChevronLeft className="size-3.5" /> All funnels
             </button>
 
-            {/* Greeting name — fix a bad captured name before anything sends */}
+            {/* Name + greeting — fix a bad captured name, or a first name the
+                first-word default splits wrong ("La Trina"), before sending */}
             {canEditName && (
               <div className="rounded-lg border bg-muted/30 p-2.5">
-                <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                  Customer name — the emails open with &quot;Hi{" "}
-                  {(name.trim() || "there").split(/\s+/)[0]},&quot;
-                </label>
-                <Input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Customer name"
-                  className="h-8"
-                />
-                {name.trim() !== (inquiry.name ?? "").trim() && name.trim() !== "" && (
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    Saves to this inquiry when the funnel starts.
-                  </p>
-                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-medium text-muted-foreground">
+                      Customer name
+                    </span>
+                    <Input
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Full name"
+                      className="h-8"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-medium text-muted-foreground">
+                      Greeting
+                    </span>
+                    <Input
+                      value={greeting}
+                      onChange={(e) => setGreeting(e.target.value)}
+                      placeholder="First name"
+                      className="h-8"
+                    />
+                  </label>
+                </div>
+                <p className="mt-1.5 text-[11px] text-muted-foreground">
+                  Emails open with{" "}
+                  <span className="font-medium text-foreground">
+                    &quot;Hi {greeting.trim() || "there"},&quot;
+                  </span>{" "}
+                  — type it exactly, spaces and all. Saves to this inquiry when the
+                  funnel starts.
+                </p>
               </div>
             )}
 

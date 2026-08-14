@@ -541,6 +541,9 @@ export interface Inquiry {
   reference: string;
   status: string;
   name: string | null;
+  // Used verbatim in the "Hi ___," email greeting when set — for names the
+  // first-word default mangles (e.g. "La Trina"). Null → first word of `name`.
+  greeting_name?: string | null;
   email: string | null;
   phone: string | null;
   use_case: string | null;

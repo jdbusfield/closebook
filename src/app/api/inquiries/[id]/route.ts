@@ -31,6 +31,8 @@ const UpdateSchema = z.object({
   note_on_invoice: z.boolean().optional(),
   // Event & contact fields — editable from the inquiry drawer.
   name: z.string().max(256).optional().nullable(),
+  // Verbatim "Hi ___," greeting override for the {first} merge token.
+  greeting_name: z.string().max(128).optional().nullable(),
   email: z.string().max(256).optional().nullable(),
   phone: z.string().max(64).optional().nullable(),
   use_case: z.string().max(256).optional().nullable(),
@@ -87,7 +89,7 @@ export async function PATCH(
   if (embedEntity) query = query.eq("entity_id", embedEntity);
   const { data, error } = await query
     .select(
-      "id, status, internal_notes, rw_quote_number, rw_order_number, unit_id, estimated_value, billing_name, billing_address, document_note, note_on_quote, note_on_invoice, name, email, phone, use_case, start_date, end_date, duration, units, guests, location, attendant, source"
+      "id, status, internal_notes, rw_quote_number, rw_order_number, unit_id, estimated_value, billing_name, billing_address, document_note, note_on_quote, note_on_invoice, name, greeting_name, email, phone, use_case, start_date, end_date, duration, units, guests, location, attendant, source"
     )
     .maybeSingle();
 

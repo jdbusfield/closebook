@@ -307,6 +307,13 @@ function firstName(name: string | null): string {
   return name.trim().split(/\s+/)[0] || "there";
 }
 
+// What the {first} token renders: the inquiry's greeting override verbatim
+// when set, else the first word of the name. The override exists because
+// first-word splitting mangles multi-word first names ("La Trina" → "La").
+export function greetingName(inq: Pick<Inquiry, "name" | "greeting_name">): string {
+  return inq.greeting_name?.trim() || firstName(inq.name);
+}
+
 // A formatted recap of everything the customer submitted through the website —
 // the {details} merge token. Only includes fields that are actually present.
 export function buildDetailsBlock(inq: Inquiry): string {
@@ -349,7 +356,7 @@ export function renderTemplate(
 ): { subject?: string; body: string } {
   const brand = brandOf(inq);
   const map: Record<string, string> = {
-    first: firstName(inq.name),
+    first: greetingName(inq),
     company: brand.company,
     company_email: brand.email,
     company_phone: brand.phone,

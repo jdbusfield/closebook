@@ -74,6 +74,7 @@ export type Database = {
           source: string
           status: string
           name: string | null
+          greeting_name: string | null
           email: string | null
           phone: string | null
           use_case: string | null
@@ -116,6 +117,7 @@ export type Database = {
           source?: string
           status?: string
           name?: string | null
+          greeting_name?: string | null
           email?: string | null
           phone?: string | null
           use_case?: string | null
@@ -158,6 +160,7 @@ export type Database = {
           source?: string
           status?: string
           name?: string | null
+          greeting_name?: string | null
           email?: string | null
           phone?: string | null
           use_case?: string | null
