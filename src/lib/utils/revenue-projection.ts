@@ -38,6 +38,8 @@ export interface RWOrderRow {
   Warehouse: string;
   Status: string;
   Total: string;
+  NoCharge: string | boolean;
+  NoChargeReason: string;
 }
 
 export interface RWQuoteRow {
@@ -422,8 +424,13 @@ export function processRevenueData(
   // business). The prefix is the authoritative entity marker — warehouse
   // matching alone would let records from other entities through when they
   // happen to share a warehouse.
-  const vsOrders = rawOrders.filter((o) =>
-    startsWithAnyPrefix(o.OrderNumber, filter.orderPrefixes),
+  // No Charge orders never bill (e.g. Avon rentals already billed through
+  // CarsPlus, marked "BILLED VIA CARSPLUS RA ..."), but RW keeps their Total
+  // populated — exclude them or they inflate pipeline and unbilled earned.
+  const vsOrders = rawOrders.filter(
+    (o) =>
+      startsWithAnyPrefix(o.OrderNumber, filter.orderPrefixes) &&
+      String(o.NoCharge) !== "true",
   );
 
   const vsInvoices = rawInvoices.filter((inv) =>

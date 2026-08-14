@@ -477,6 +477,9 @@ export async function POST(request: Request) {
       continue;
     const status = (ord.Status ?? "").toUpperCase();
     if (TERMINAL_ORDER_STATUSES.has(status)) continue;
+    // No Charge orders never bill (e.g. already billed via CarsPlus) but keep
+    // their Total — excluding them stops phantom unbilled-earned accruals.
+    if (String(ord.NoCharge) === "true") continue;
 
     const startStr = (ord as unknown as { EstimatedStartDate?: string }).EstimatedStartDate;
     const stopStr = (ord as unknown as { EstimatedStopDate?: string }).EstimatedStopDate;
