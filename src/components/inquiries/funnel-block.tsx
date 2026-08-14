@@ -32,7 +32,11 @@ import {
   schedulePreview,
   type Funnel,
 } from "@/lib/inquiries/funnels";
-import { renderTemplate, type MessageTemplate } from "@/lib/inquiries/templates";
+import {
+  greetingName,
+  renderTemplate,
+  type MessageTemplate,
+} from "@/lib/inquiries/templates";
 import {
   needsOutreachStatus,
   fmtDate,
@@ -428,10 +432,10 @@ function StartDialog({
                 <p className="mt-1.5 text-[11px] text-muted-foreground">
                   Emails open with{" "}
                   <span className="font-medium text-foreground">
-                    &quot;Hi {greeting.trim() || "there"},&quot;
+                    &quot;Hi {greetingName(previewInquiry)},&quot;
                   </span>{" "}
-                  — type it exactly, spaces and all. Saves to this inquiry when the
-                  funnel starts.
+                  — type it exactly, spaces and all. Leave it empty to use the first
+                  word of the name. Saves to this inquiry when the funnel starts.
                 </p>
               </div>
             )}
