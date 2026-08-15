@@ -20,8 +20,8 @@ export interface RWInvoiceRow {
   InvoiceSubTotal: string;
   InvoiceTax: string;
   InvoiceDiscountTotal: string;
-  IsNoCharge: string;
-  IsNonBillable: string;
+  IsNoCharge: string | boolean;
+  IsNonBillable: string | boolean;
   Warehouse: string;
 }
 
@@ -427,14 +427,25 @@ export function processRevenueData(
   // No Charge orders never bill (e.g. Avon rentals already billed through
   // CarsPlus, marked "BILLED VIA CARSPLUS RA ..."), but RW keeps their Total
   // populated — exclude them or they inflate pipeline and unbilled earned.
+  const noChargeOrderNumbers = new Set<string>();
+  for (const o of rawOrders) {
+    if (String(o.NoCharge).toLowerCase() === "true" && o.OrderNumber) {
+      noChargeOrderNumbers.add(o.OrderNumber.trim().toUpperCase());
+    }
+  }
+
   const vsOrders = rawOrders.filter(
     (o) =>
       startsWithAnyPrefix(o.OrderNumber, filter.orderPrefixes) &&
-      String(o.NoCharge) !== "true",
+      !noChargeOrderNumbers.has((o.OrderNumber || "").trim().toUpperCase()),
   );
 
-  const vsInvoices = rawInvoices.filter((inv) =>
-    startsWithAnyPrefix(inv.InvoiceNumber, filter.invoicePrefixes),
+  // Invoices raised on a No Charge order before it was flagged are still
+  // duplicates of the CarsPlus billing — drop them with the order.
+  const vsInvoices = rawInvoices.filter(
+    (inv) =>
+      startsWithAnyPrefix(inv.InvoiceNumber, filter.invoicePrefixes) &&
+      !noChargeOrderNumbers.has((inv.OrderNumber || "").trim().toUpperCase()),
   );
 
   // Quotes: prefer a QuoteNumber prefix match; fall back to warehouse keywords
@@ -449,7 +460,9 @@ export function processRevenueData(
   const validInvoices = vsInvoices.filter((inv) => {
     const status = (inv.Status || "").toUpperCase();
     if (status === "VOID") return false;
-    if (inv.IsNoCharge === "true" || inv.IsNonBillable === "true") return false;
+    // RW browse returns these as JSON booleans, not strings — coerce before comparing
+    if (String(inv.IsNoCharge).toLowerCase() === "true") return false;
+    if (String(inv.IsNonBillable).toLowerCase() === "true") return false;
     return true;
   });
 

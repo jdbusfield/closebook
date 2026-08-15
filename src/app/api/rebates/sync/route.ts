@@ -24,8 +24,8 @@ interface RWInvoice {
   InvoiceSubTotal: string;
   InvoiceTax: string;
   InvoiceDiscountTotal: string;
-  IsNoCharge: string;
-  IsNonBillable: string;
+  IsNoCharge: string | boolean;
+  IsNonBillable: string | boolean;
 }
 
 interface RWInvoiceItem {
@@ -414,7 +414,9 @@ async function syncCustomerInvoices(
   const closedInvoices = invoices.filter((inv) => {
     const status = (inv.Status || "").toUpperCase();
     if (status !== "CLOSED" && status !== "PROCESSED" && status !== "APPROVED") return false;
-    if (inv.IsNoCharge === "true" || inv.IsNonBillable === "true") return false;
+    // RW browse returns these as JSON booleans, not strings — coerce before comparing
+    if (String(inv.IsNoCharge).toLowerCase() === "true") return false;
+    if (String(inv.IsNonBillable).toLowerCase() === "true") return false;
     return true;
   });
 
