@@ -55,6 +55,8 @@ interface BuildSheetOptions {
   statement: StatementData;
   includeBudget: boolean;
   includeYoY: boolean;
+  /** Anchor budget + prior-year comparisons to the Total column only. */
+  compareTotalOnly: boolean;
   varianceDisplay: "dollars" | "percentage";
   pageFooter: string;
 }
@@ -83,12 +85,20 @@ function buildColumns(opts: {
   periods: Period[];
   includeBudget: boolean;
   includeYoY: boolean;
+  compareTotalOnly?: boolean;
   varianceDisplay: "dollars" | "percentage";
 }): ColumnSpec[] {
-  const { periods, includeBudget, includeYoY, varianceDisplay } = opts;
+  const { periods, includeBudget, includeYoY, compareTotalOnly, varianceDisplay } = opts;
   const columns: ColumnSpec[] = [];
+  // Comparison basis mirrors the on-screen table: YoY compares the last
+  // non-total period and budget follows every period, unless compareTotalOnly
+  // anchors both to the Total column.
+  const totalPeriod = periods.find((p) => p.isTotal);
+  const totalOnly = !!compareTotalOnly && !!totalPeriod;
   const lastNonTotal = [...periods].reverse().find((p) => !p.isTotal);
-  const lastNonTotalKey = lastNonTotal?.key ?? "";
+  const lastNonTotalKey = totalOnly
+    ? totalPeriod!.key
+    : (lastNonTotal?.key ?? "");
 
   for (const p of periods) {
     columns.push({
@@ -99,7 +109,7 @@ function buildColumns(opts: {
       isTotalColumn: !!p.isTotal,
     });
 
-    if (includeBudget) {
+    if (includeBudget && (!totalOnly || p.isTotal)) {
       columns.push({
         header: "Budget",
         value: (line) => pickAmount(line.budgetAmounts?.[p.key]),
@@ -134,7 +144,7 @@ function buildColumns(opts: {
 
   if (includeYoY) {
     columns.push({
-      header: "Prior Year",
+      header: totalOnly ? "Prior Year Total" : "Prior Year",
       value: (line) => pickAmount(line.priorYearAmounts?.[lastNonTotalKey]),
       format: (line) => formatForLine(line),
       width: 14,
@@ -216,11 +226,18 @@ function addStatementSheet(wb: ExcelJS.Workbook, opts: BuildSheetOptions): Works
     statement,
     includeBudget,
     includeYoY,
+    compareTotalOnly,
     varianceDisplay,
     pageFooter,
   } = opts;
 
-  const columns = buildColumns({ periods, includeBudget, includeYoY, varianceDisplay });
+  const columns = buildColumns({
+    periods,
+    includeBudget,
+    includeYoY,
+    compareTotalOnly,
+    varianceDisplay,
+  });
   const totalCols = 1 + columns.length; // +1 for the label column
   const labelWidth = 52;
   const numericColCount = totalCols - 1;
@@ -707,6 +724,7 @@ export async function GET(request: Request) {
     const scope = searchParams.get("scope") ?? "organization";
     const includeBudget = searchParams.get("includeBudget") === "true";
     const includeYoY = searchParams.get("includeYoY") === "true";
+    const compareTotalOnly = searchParams.get("compareTotalOnly") === "true";
     const startYear = parseInt(searchParams.get("startYear") ?? "2025", 10);
     const startMonth = parseInt(searchParams.get("startMonth") ?? "1", 10);
     const endYear = parseInt(searchParams.get("endYear") ?? "2025", 10);
@@ -751,6 +769,7 @@ export async function GET(request: Request) {
       periods,
       includeBudget,
       includeYoY,
+      compareTotalOnly,
       varianceDisplay,
       pageFooter,
     };

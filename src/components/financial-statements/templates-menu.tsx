@@ -92,6 +92,7 @@ export interface FinancialModelTemplate {
   includeProForma: boolean;
   includeAllocations: boolean;
   includeTotal: boolean;
+  compareTotalOnly?: boolean;
   ebitdaOnly: boolean;
   varianceDisplay: "dollars" | "percentage";
   includeIncomeStatement: boolean;
@@ -117,6 +118,7 @@ export interface CurrentConfigSnapshot {
   includeProForma: boolean;
   includeAllocations: boolean;
   includeTotal: boolean;
+  compareTotalOnly?: boolean;
   ebitdaOnly: boolean;
   varianceDisplay: "dollars" | "percentage";
   activeTab: FinancialModelTab;
@@ -235,6 +237,7 @@ export function TemplatesMenu({
       includeProForma: current.includeProForma,
       includeAllocations: current.includeAllocations,
       includeTotal: current.includeTotal,
+      compareTotalOnly: !!current.compareTotalOnly,
       ebitdaOnly: current.ebitdaOnly,
       varianceDisplay: current.varianceDisplay,
       includeIncomeStatement: draftIncludeIS,

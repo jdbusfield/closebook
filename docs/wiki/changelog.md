@@ -43,6 +43,48 @@ short commit SHA in place of `[PR #<number>]`.
 
 ---
 
+## [main] - Financial Model: "Compare on Total only" checkbox - 2026-08-17
+
+**Author:** JD Busfield (jd@avonrents.com)
+**Type:** Feature
+**Related Issues:** N/A (pushed directly to `main`; no PR)
+
+### Summary
+On a month-by-month Financial Model view with a Total column, budget and
+prior-year comparisons were awkward: Budget / Var repeated after every month,
+and the Prior Year / YoY columns compared only the last month rather than the
+whole period. A new **Compare on Total only** checkbox (shown when Total is on
+and Budget and/or YoY Change is on) anchors both comparisons to the Total
+column, so the layout reads: months… → Total → Budget → Var → Prior Year Total
+→ YoY Change. Unchecked, the previous layout is unchanged.
+
+### Changes Made
+- `StatementTable` / `StatementCard` accept `compareTotalOnly`; budget columns
+  render only after the Total period and YoY compares against the Total
+  period's prior-year amounts (header reads "Prior Year Total").
+- `ConfigToolbar` shows the checkbox next to Total; wired on
+  `/reports/financial-model` and `/[entityId]/reports/financial-statements`.
+- XLSX export (`/api/financial-statements/export`) accepts `compareTotalOnly`.
+- Template PDF export places the budget triplet on the Total column only when
+  the template has the flag; the templates-print page passes it through.
+- Templates persist the flag in a new `compare_total_only` column (migration
+  `20260817_financial_model_templates_compare_total_only.sql`). Until the
+  migration is applied, the templates API drops that one column and retries so
+  template saves still succeed (the flag just isn't remembered).
+- Fixed pre-existing React "unique key" warnings in `StatementTable`
+  (fragments inside `periods.map`).
+
+### User Impact
+Anyone reading a monthly P&L with a Total column can now see budget and
+year-over-year comparisons for the period as a whole, next to the Total.
+
+### Migration Notes
+Run `supabase/migrations/20260817_financial_model_templates_compare_total_only.sql`
+in Studio so saved templates remember the checkbox.
+
+### Wiki Pages Updated
+- /settings/wiki/features
+
 ## [b0c8f3b] - Revenue projection: fix three unbilled-order blind spots - 2026-08-05
 
 **Author:** JD Busfield (jd@avonrents.com)

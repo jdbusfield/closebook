@@ -108,6 +108,7 @@ export default function FinancialModelPage() {
   const [attachProFormaToPrint, setAttachProFormaToPrint] = useState(false);
   const [includeAllocations, setIncludeAllocations] = useState(false);
   const [includeTotal, setIncludeTotal] = useState(false);
+  const [compareTotalOnly, setCompareTotalOnly] = useState(false);
   const [ebitdaOnly, setEbitdaOnly] = useState(false);
   const [varianceDisplay, setVarianceDisplay] = useState<VarianceDisplayMode>("dollars");
   const [activeTab, setActiveTab] = useState<StatementTab>("all");
@@ -305,6 +306,7 @@ export default function FinancialModelPage() {
       includeProForma: String(includeProForma),
       includeAllocations: String(includeAllocations),
       includeTotal: String(includeTotal),
+      compareTotalOnly: String(compareTotalOnly),
       varianceDisplay,
       statements,
     });
@@ -369,6 +371,7 @@ export default function FinancialModelPage() {
     setIncludeProForma(t.includeProForma);
     setIncludeAllocations(t.includeAllocations);
     setIncludeTotal(t.includeTotal);
+    setCompareTotalOnly(!!t.compareTotalOnly);
     setEbitdaOnly(t.ebitdaOnly);
     setVarianceDisplay(t.varianceDisplay);
     if (t.activeTab) setActiveTab(t.activeTab);
@@ -442,6 +445,7 @@ export default function FinancialModelPage() {
     endMonth,
     granularity,
     varianceDisplay,
+    compareTotalOnly,
     compactLabels: isAccountantView,
   };
 
@@ -581,6 +585,7 @@ export default function FinancialModelPage() {
               includeProForma,
               includeAllocations,
               includeTotal,
+              compareTotalOnly,
               ebitdaOnly,
               varianceDisplay,
               activeTab,
@@ -614,6 +619,7 @@ export default function FinancialModelPage() {
         includeFixedAssetSchedule={includeFixedAssetSchedule}
         ebitdaOnly={ebitdaOnly}
         includeTotal={includeTotal}
+        compareTotalOnly={compareTotalOnly}
         onStartYearChange={setStartYear}
         onStartMonthChange={setStartMonth}
         onEndYearChange={setEndYear}
@@ -634,6 +640,7 @@ export default function FinancialModelPage() {
         onIncludeFixedAssetScheduleChange={setIncludeFixedAssetSchedule}
         onEbitdaOnlyChange={setEbitdaOnly}
         onIncludeTotalChange={setIncludeTotal}
+        onCompareTotalOnlyChange={setCompareTotalOnly}
         varianceDisplay={varianceDisplay}
         onVarianceDisplayChange={setVarianceDisplay}
         onGenerate={generate}

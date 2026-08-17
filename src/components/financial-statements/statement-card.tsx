@@ -18,6 +18,8 @@ interface StatementCardProps {
   endMonth: number;
   granularity: Granularity;
   varianceDisplay?: VarianceDisplayMode;
+  /** Anchor budget + prior-year comparisons to the Total column only. */
+  compareTotalOnly?: boolean;
   pageBreak?: boolean;
   compactLabels?: boolean;
   onCellClick?: (
@@ -42,6 +44,7 @@ export function StatementCard({
   endMonth,
   granularity,
   varianceDisplay,
+  compareTotalOnly = false,
   pageBreak = false,
   compactLabels = false,
   onCellClick,
@@ -65,6 +68,7 @@ export function StatementCard({
             showBudget={showBudget}
             showYoY={showYoY}
             varianceDisplay={varianceDisplay}
+            compareTotalOnly={compareTotalOnly}
             compactLabels={compactLabels}
             onCellClick={onCellClick}
           />

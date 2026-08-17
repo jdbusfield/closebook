@@ -519,6 +519,7 @@ function StatementsTabSection({
           periods={data.periods}
           showBudget={template.includeBudget}
           showYoY={template.includeYoY}
+          compareTotalOnly={!!template.compareTotalOnly}
         />
       )}
       {showBS && (
@@ -529,6 +530,7 @@ function StatementsTabSection({
           periods={data.periods}
           showBudget={template.includeBudget}
           showYoY={template.includeYoY}
+          compareTotalOnly={!!template.compareTotalOnly}
           pageBreak
         />
       )}
@@ -540,6 +542,7 @@ function StatementsTabSection({
           periods={data.periods}
           showBudget={false}
           showYoY={template.includeYoY}
+          compareTotalOnly={!!template.compareTotalOnly}
           pageBreak
         />
       )}

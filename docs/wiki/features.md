@@ -23,6 +23,13 @@ treatment in the relevant sections.
   and a sequence-builder PDF export with title pages (PRs #98–#107). Year
   selectors run from 2017 onward (PR #76). Yearly views that don't end in
   December read "Year to Date through…" instead of "Year Ended" (PR #101).
+  When **Total** is on together with **Budget** and/or **YoY Change**, a
+  **Compare on Total only** checkbox appears: it moves the Budget / Var
+  columns and the Prior Year / YoY columns so they follow the Total column
+  only (e.g. Jan–Jul, Total, Budget, Var $, Prior Year Total, YoY Change)
+  instead of repeating Budget after every month and comparing YoY to the
+  last month. The XLSX export, template PDF, and saved templates honor it
+  (templates need migration `20260817_financial_model_templates_compare_total_only.sql`).
   A **Bridge** tab reconciles accountant-prepared vs management-prepared
   statements with seven named categories, tier-2 / tier-3 drill-down,
   XLSX + landscape print export, and an explicit cross-chart link

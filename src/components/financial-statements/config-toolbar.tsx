@@ -47,6 +47,7 @@ interface ConfigToolbarProps {
   includeFixedAssetSchedule?: boolean;
   ebitdaOnly?: boolean;
   includeTotal?: boolean;
+  compareTotalOnly?: boolean;
   onStartYearChange: (year: number) => void;
   onStartMonthChange: (month: number) => void;
   onEndYearChange: (year: number) => void;
@@ -61,6 +62,7 @@ interface ConfigToolbarProps {
   onIncludeFixedAssetScheduleChange?: (val: boolean) => void;
   onEbitdaOnlyChange?: (val: boolean) => void;
   onIncludeTotalChange?: (val: boolean) => void;
+  onCompareTotalOnlyChange?: (val: boolean) => void;
   varianceDisplay?: VarianceDisplayMode;
   onVarianceDisplayChange?: (mode: VarianceDisplayMode) => void;
   onGenerate?: () => void;
@@ -96,6 +98,7 @@ export function ConfigToolbar({
   includeFixedAssetSchedule,
   ebitdaOnly,
   includeTotal,
+  compareTotalOnly,
   onStartYearChange,
   onStartMonthChange,
   onEndYearChange,
@@ -110,6 +113,7 @@ export function ConfigToolbar({
   onIncludeFixedAssetScheduleChange,
   onEbitdaOnlyChange,
   onIncludeTotalChange,
+  onCompareTotalOnlyChange,
   varianceDisplay = "dollars",
   onVarianceDisplayChange,
   onGenerate,
@@ -316,6 +320,22 @@ export function ConfigToolbar({
             Total
           </label>
         )}
+        {onCompareTotalOnlyChange &&
+          includeTotal &&
+          (includeBudget || includeYoY) && (
+            <label
+              className="flex items-center gap-1.5 text-xs cursor-pointer text-muted-foreground"
+              title="Show the Budget and Prior Year comparisons against the Total column only, instead of after every period"
+            >
+              <Checkbox
+                checked={compareTotalOnly ?? false}
+                onCheckedChange={(checked) =>
+                  onCompareTotalOnlyChange(checked === true)
+                }
+              />
+              Compare on Total only
+            </label>
+          )}
         {(includeBudget || includeYoY) && onVarianceDisplayChange && (
           <div className="flex items-center gap-1 ml-2">
             <Label className="text-xs text-muted-foreground mr-1">Variance:</Label>

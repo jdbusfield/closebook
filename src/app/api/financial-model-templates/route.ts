@@ -26,6 +26,8 @@ export interface FinancialModelTemplate {
   includeProForma: boolean;
   includeAllocations: boolean;
   includeTotal: boolean;
+  /** Anchor budget + prior-year comparisons to the Total column only. */
+  compareTotalOnly: boolean;
   ebitdaOnly: boolean;
   varianceDisplay: "dollars" | "percentage";
   includeIncomeStatement: boolean;
@@ -67,6 +69,7 @@ function rowToTemplate(row: any): FinancialModelTemplate {
     includeProForma: !!row.include_pro_forma,
     includeAllocations: !!row.include_allocations,
     includeTotal: !!row.include_total,
+    compareTotalOnly: !!row.compare_total_only,
     ebitdaOnly: !!row.ebitda_only,
     varianceDisplay: row.variance_display,
     includeIncomeStatement: !!row.include_income_statement,
@@ -100,6 +103,7 @@ function templateToRow(t: Partial<FinancialModelTemplate>): Record<string, any> 
   if (t.includeProForma !== undefined) row.include_pro_forma = !!t.includeProForma;
   if (t.includeAllocations !== undefined) row.include_allocations = !!t.includeAllocations;
   if (t.includeTotal !== undefined) row.include_total = !!t.includeTotal;
+  if (t.compareTotalOnly !== undefined) row.compare_total_only = !!t.compareTotalOnly;
   if (t.ebitdaOnly !== undefined) row.ebitda_only = !!t.ebitdaOnly;
   if (t.varianceDisplay !== undefined) row.variance_display = t.varianceDisplay;
   if (t.includeIncomeStatement !== undefined) row.include_income_statement = !!t.includeIncomeStatement;
@@ -109,6 +113,20 @@ function templateToRow(t: Partial<FinancialModelTemplate>): Record<string, any> 
   if (t.activeTab !== undefined) row.active_tab = t.activeTab;
   if (t.displayOrder !== undefined) row.display_order = t.displayOrder;
   return row;
+}
+
+// Columns added after the table was first created. If the migration that adds
+// one of these hasn't been applied yet, PostgREST rejects the whole write with
+// a "column ... does not exist" error. Rather than fail the save, drop the
+// missing column and retry so the rest of the template still persists.
+const OPTIONAL_COLUMNS = ["compare_total_only"] as const;
+
+function missingOptionalColumn(errorMessage: string | undefined): string | null {
+  if (!errorMessage) return null;
+  for (const col of OPTIONAL_COLUMNS) {
+    if (errorMessage.includes(col)) return col;
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -196,18 +214,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
-  const row = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const row: Record<string, any> = {
     ...templateToRow(template),
     organization_id: organizationId,
     created_by: user.id,
   };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (admin as any)
+  let { data, error } = await (admin as any)
     .from("financial_model_templates")
     .insert(row)
     .select("*")
     .single();
+
+  const missingCol = missingOptionalColumn(error?.message);
+  if (error && missingCol && missingCol in row) {
+    delete row[missingCol];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ({ data, error } = await (admin as any)
+      .from("financial_model_templates")
+      .insert(row)
+      .select("*")
+      .single());
+  }
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -262,12 +292,34 @@ export async function PUT(request: Request) {
 
   const row = templateToRow(template);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (admin as any)
+  let { data, error } = await (admin as any)
     .from("financial_model_templates")
     .update(row)
     .eq("id", templateId)
     .select("*")
     .single();
+
+  const missingCol = missingOptionalColumn(error?.message);
+  if (error && missingCol && missingCol in row) {
+    delete row[missingCol];
+    if (Object.keys(row).length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ({ data, error } = await (admin as any)
+        .from("financial_model_templates")
+        .update(row)
+        .eq("id", templateId)
+        .select("*")
+        .single());
+    } else {
+      // Nothing left to write; return the current row unchanged.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ({ data, error } = await (admin as any)
+        .from("financial_model_templates")
+        .select("*")
+        .eq("id", templateId)
+        .single());
+    }
+  }
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

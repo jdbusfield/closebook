@@ -31,6 +31,7 @@ export default function FinancialStatementsPage() {
   const [includeBudget, setIncludeBudget] = useState(false);
   const [includeYoY, setIncludeYoY] = useState(false);
   const [includeTotal, setIncludeTotal] = useState(false);
+  const [compareTotalOnly, setCompareTotalOnly] = useState(false);
   const [ebitdaOnly, setEbitdaOnly] = useState(false);
   const [activeTab, setActiveTab] = useState<StatementTab>("all");
 
@@ -64,6 +65,7 @@ export default function FinancialStatementsPage() {
       includeBudget: String(includeBudget),
       includeYoY: String(includeYoY),
       includeTotal: String(includeTotal),
+      compareTotalOnly: String(compareTotalOnly),
       statements,
     });
     return `/api/financial-statements/export?${exportParams.toString()}`;
@@ -97,6 +99,7 @@ export default function FinancialStatementsPage() {
     endYear,
     endMonth,
     granularity,
+    compareTotalOnly,
   };
 
   return (
@@ -122,6 +125,7 @@ export default function FinancialStatementsPage() {
         includeYoY={includeYoY}
         ebitdaOnly={ebitdaOnly}
         includeTotal={includeTotal}
+        compareTotalOnly={compareTotalOnly}
         onStartYearChange={setStartYear}
         onStartMonthChange={setStartMonth}
         onEndYearChange={setEndYear}
@@ -131,6 +135,7 @@ export default function FinancialStatementsPage() {
         onIncludeYoYChange={setIncludeYoY}
         onEbitdaOnlyChange={setEbitdaOnly}
         onIncludeTotalChange={setIncludeTotal}
+        onCompareTotalOnlyChange={setCompareTotalOnly}
         onExport={handleExport}
         onExportAll={handleExportAll}
         onPrint={handlePrint}

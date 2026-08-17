@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { formatStatementAmount } from "./format-utils";
 import type { StatementData, Period, LineItem, VarianceDisplayMode } from "./types";
@@ -11,6 +11,12 @@ interface StatementTableProps {
   showBudget?: boolean;
   showYoY?: boolean;
   varianceDisplay?: VarianceDisplayMode;
+  /**
+   * When true (and a Total column is present), budget and prior-year
+   * comparisons are shown against the Total column only, instead of budget
+   * columns repeating after every period and YoY comparing the last period.
+   */
+  compareTotalOnly?: boolean;
   compactLabels?: boolean;
   onCellClick?: (
     line: LineItem,
@@ -27,6 +33,7 @@ export function StatementTable({
   showBudget = false,
   showYoY = false,
   varianceDisplay = "dollars",
+  compareTotalOnly = false,
   compactLabels = false,
   onCellClick,
 }: StatementTableProps) {
@@ -129,9 +136,17 @@ export function StatementTable({
     );
   }
 
-  // Last non-total period key for YoY comparison columns
+  // Comparison basis. By default YoY compares the last non-total period and
+  // budget columns follow every period. With compareTotalOnly (and a Total
+  // column present) both comparisons anchor to the Total column instead.
+  const totalPeriod = periods.find((p) => p.isTotal);
+  const totalOnly = compareTotalOnly && !!totalPeriod;
   const lastNonTotalPeriod = [...periods].reverse().find((p) => !p.isTotal);
-  const lastPeriodKey = lastNonTotalPeriod?.key ?? "";
+  const lastPeriodKey = totalOnly
+    ? totalPeriod!.key
+    : (lastNonTotalPeriod?.key ?? "");
+  const showBudgetFor = (period: Period) =>
+    showBudget && (!totalOnly || !!period.isTotal);
 
   // CSS class for total column visual separation
   const totalBorderClass = "border-l-2 border-border";
@@ -212,10 +227,12 @@ export function StatementTable({
     );
   }
 
-  // Total columns per period: 1 for actual, +1 for budget, +1 for variance
-  const colsPerPeriod = 1 + (showBudget ? 2 : 0);
+  // Total columns: label + 1 per period, +2 per budgeted period, +2 for YoY
+  const budgetedPeriodCount = showBudget
+    ? (totalOnly ? 1 : periods.length)
+    : 0;
   const totalCols =
-    1 + periods.length * colsPerPeriod + (showYoY ? 2 : 0);
+    1 + periods.length + budgetedPeriodCount * 2 + (showYoY ? 2 : 0);
 
   // Determine stripe index for alternating row colors
   let stripeIndex = 0;
@@ -244,9 +261,8 @@ export function StatementTable({
       const actualCls = [borderCls, drillCls].filter(Boolean).join(" ") || undefined;
 
       return (
-        <>
+        <Fragment key={period.key}>
           <td
-            key={period.key}
             className={actualCls}
             onClick={
               canDrill
@@ -263,7 +279,7 @@ export function StatementTable({
           >
             {renderAmount(line, period.key)}
           </td>
-          {showBudget && (
+          {showBudgetFor(period) && (
             <>
               <td
                 key={`${period.key}-budget`}
@@ -288,7 +304,7 @@ export function StatementTable({
               </td>
             </>
           )}
-        </>
+        </Fragment>
       );
     });
   }
@@ -300,14 +316,13 @@ export function StatementTable({
           <tr>
             <th className={compactLabels ? "min-w-[180px]" : "min-w-[280px]"}></th>
             {periods.map((period) => (
-              <>
+              <Fragment key={period.key}>
                 <th
-                  key={period.key}
                   className={`min-w-[110px]${period.isTotal ? ` ${totalBorderClass} font-bold` : ""}`}
                 >
                   {period.label}
                 </th>
-                {showBudget && (
+                {showBudgetFor(period) && (
                   <>
                     <th
                       key={`${period.key}-budget`}
@@ -323,11 +338,13 @@ export function StatementTable({
                     </th>
                   </>
                 )}
-              </>
+              </Fragment>
             ))}
             {showYoY && (
               <>
-                <th className="min-w-[120px]">Prior Year</th>
+                <th className="min-w-[120px]">
+                  {totalOnly ? "Prior Year Total" : "Prior Year"}
+                </th>
                 <th className="min-w-[120px]">
                   {varianceDisplay === "percentage" ? "YoY %" : "YoY Change"}
                 </th>
@@ -525,17 +542,17 @@ export function StatementTable({
                     const isOff = Math.abs(diff) >= 0.5;
                     const checkBorderCls = period.isTotal ? ` ${totalBorderClass}` : "";
                     return (
-                      <>
-                        <td key={period.key} className={`${isOff ? "text-red-600 font-medium" : "text-muted-foreground"}${checkBorderCls}`}>
+                      <Fragment key={period.key}>
+                        <td className={`${isOff ? "text-red-600 font-medium" : "text-muted-foreground"}${checkBorderCls}`}>
                           {isOff ? formatStatementAmount(diff, true) : "$\u2014"}
                         </td>
-                        {showBudget && (
+                        {showBudgetFor(period) && (
                           <>
                             <td key={`${period.key}-budget`}></td>
                             <td key={`${period.key}-var`}></td>
                           </>
                         )}
-                      </>
+                      </Fragment>
                     );
                   })}
                   {showYoY && (
@@ -571,17 +588,17 @@ export function StatementTable({
                     const isOff = Math.abs(diff) >= 0.5;
                     const checkBorderCls = period.isTotal ? ` ${totalBorderClass}` : "";
                     return (
-                      <>
-                        <td key={period.key} className={`${isOff ? "text-red-600 font-medium" : "text-muted-foreground"}${checkBorderCls}`}>
+                      <Fragment key={period.key}>
+                        <td className={`${isOff ? "text-red-600 font-medium" : "text-muted-foreground"}${checkBorderCls}`}>
                           {isOff ? formatStatementAmount(diff, true) : "$\u2014"}
                         </td>
-                        {showBudget && (
+                        {showBudgetFor(period) && (
                           <>
                             <td key={`${period.key}-budget`}></td>
                             <td key={`${period.key}-var`}></td>
                           </>
                         )}
-                      </>
+                      </Fragment>
                     );
                   })}
                   {showYoY && (

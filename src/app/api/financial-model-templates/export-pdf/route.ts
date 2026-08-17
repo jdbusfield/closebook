@@ -155,6 +155,8 @@ function filterForEbitdaOnly(statement: StatementData): StatementData {
 interface ColumnDef {
   key: string;
   label: string;
+  /** True for the synthetic Total column (period-keyed statements only). */
+  isTotal?: boolean;
 }
 
 function statementToRowsGeneric(
@@ -162,15 +164,19 @@ function statementToRowsGeneric(
   columns: ColumnDef[],
   includeBudget: boolean,
   varianceDisplay: "dollars" | "percentage",
-  periods?: Period[] // when present, enables budget/variance triplets
+  periods?: Period[], // when present, enables budget/variance triplets
+  compareTotalOnly = false // budget triplet on the Total column only
 ): {
   head: string[][];
   body: (string | { content: string; styles?: Record<string, unknown> })[][];
 } {
+  const hasTotalCol = columns.some((c) => c.isTotal);
+  const budgetFor = (c: ColumnDef) =>
+    includeBudget && !!periods && (!compareTotalOnly || !hasTotalCol || !!c.isTotal);
   const columnHeaders: string[] = ["Account"];
   for (const c of columns) {
     columnHeaders.push(c.label);
-    if (includeBudget && periods) {
+    if (budgetFor(c)) {
       columnHeaders.push("Budget");
       columnHeaders.push(varianceDisplay === "percentage" ? "Var %" : "Var $");
     }
@@ -203,7 +209,7 @@ function statementToRowsGeneric(
           fontStyle: emphasis === "normal" ? (isPct ? "italic" : "normal") : "bold",
         },
       });
-      if (includeBudget && periods) {
+      if (budgetFor(c)) {
         const b = line.budgetAmounts?.[c.key];
         row.push({
           content: isPct ? fmtPercent(b) : fmtAmount(b),
@@ -354,14 +360,19 @@ function renderStatementPage(
   statementTitle: string,
   periods: Period[],
   includeBudget: boolean,
-  varianceDisplay: "dollars" | "percentage"
+  varianceDisplay: "dollars" | "percentage",
+  compareTotalOnly = false
 ) {
   const columns: ColumnDef[] = periods.map((p) => ({
     key: p.key,
     label: p.label,
+    isTotal: !!p.isTotal,
   }));
-  const totalCols =
-    columns.length * (includeBudget ? 3 : 1) + 1;
+  const hasTotalCol = columns.some((c) => c.isTotal);
+  const budgetedCols = includeBudget
+    ? (compareTotalOnly && hasTotalCol ? 1 : columns.length)
+    : 0;
+  const totalCols = columns.length + budgetedCols * 2 + 1;
   addPageForColumns(ctx.pdf, totalCols);
 
   drawPageHeader(ctx, statementTitle);
@@ -371,7 +382,8 @@ function renderStatementPage(
     columns,
     includeBudget,
     varianceDisplay,
-    periods
+    periods,
+    compareTotalOnly
   );
 
   autoTable(ctx.pdf, {
@@ -767,7 +779,8 @@ async function renderTemplate(
         `${titlePrefix}Statement of Operations`,
         data.periods,
         !!template.include_budget,
-        varianceDisplay
+        varianceDisplay,
+        !!template.compare_total_only
       );
     }
     if (renderBS) {
