@@ -20,6 +20,7 @@ interface RWInvoiceRow {
   IsNonBillable: string;
   Warehouse?: string;
   OfficeLocation?: string;
+  CustomerNumber?: string;
 }
 
 interface RWOrderRow {
@@ -30,6 +31,7 @@ interface RWOrderRow {
 interface RWCustomerRow {
   CustomerId: string;
   Customer: string;
+  CustomerNumber?: string;
 }
 
 const DEFAULT_WAREHOUSE_KEYWORDS = ["VERSATILE", "CAHUENGA"];
@@ -326,6 +328,7 @@ export async function POST(request: Request) {
           customers: result.rows.map((r) => ({
             rwCustomerId: r.CustomerId,
             customerName: r.Customer,
+            customerNumber: r.CustomerNumber ?? null,
           })),
         });
       }
@@ -357,6 +360,7 @@ export async function POST(request: Request) {
             ttmInvoiceCount: number;
             lifetimeRevenue: number;
             lastInvoiceDate: string | null;
+            customerNumber: string | null;
           }
         > = {};
 
@@ -375,7 +379,11 @@ export async function POST(request: Request) {
           let ttmInvoiceCount = 0;
           let lifetimeRevenue = 0;
           let lastMs = -Infinity;
+          let customerNumber: string | null = null;
           for (const inv of res.rows) {
+            if (!customerNumber && inv.CustomerNumber) {
+              customerNumber = String(inv.CustomerNumber);
+            }
             const locationText = inv.OfficeLocation ?? inv.Warehouse ?? "";
             const isVersatile = locationText
               ? matchesWarehouse(locationText, warehouseKeywords)
@@ -400,6 +408,22 @@ export async function POST(request: Request) {
               }
             }
           }
+          if (!customerNumber) {
+            // Invoice rows may not carry the number; read the customer record.
+            try {
+              const cust = await rw.browse<RWCustomerRow>("customer", {
+                pagesize: 1,
+                searchfields: ["CustomerId"],
+                searchfieldoperators: ["="],
+                searchfieldvalues: [id],
+              });
+              customerNumber = cust.rows[0]?.CustomerNumber
+                ? String(cust.rows[0].CustomerNumber)
+                : null;
+            } catch {
+              customerNumber = null;
+            }
+          }
           revenue[id] = {
             ttmRevenue: Math.round(ttmRevenue * 100) / 100,
             ttmInvoiceCount,
@@ -407,6 +431,7 @@ export async function POST(request: Request) {
             lastInvoiceDate: Number.isFinite(lastMs)
               ? new Date(lastMs).toISOString().slice(0, 10)
               : null,
+            customerNumber,
           };
         };
 

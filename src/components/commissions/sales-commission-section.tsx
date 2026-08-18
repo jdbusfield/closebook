@@ -53,6 +53,8 @@ import {
   FileText,
   Search,
   UserPlus,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { formatCurrency, getCurrentPeriod } from "@/lib/utils/dates";
 import {
@@ -122,6 +124,7 @@ interface CalcRow {
 interface SearchResult {
   rwCustomerId: string;
   customerName: string;
+  customerNumber?: string | null;
 }
 
 interface CustomerRevenue {
@@ -129,7 +132,10 @@ interface CustomerRevenue {
   ttmInvoiceCount: number;
   lifetimeRevenue: number;
   lastInvoiceDate: string | null;
+  customerNumber: string | null;
 }
+
+const ASSIGNMENTS_PAGE_SIZE = 5;
 
 const compactUsd = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -205,12 +211,15 @@ export function SalesCommissionSection({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
-  // TTM Versatile revenue per RW customer id for the current search results
-  const [searchRevenue, setSearchRevenue] = useState<
+  // TTM Versatile revenue per RW customer id — shared cache for search
+  // results and the assignments table (RW is only asked once per customer).
+  const [revenueById, setRevenueById] = useState<
     Record<string, CustomerRevenue>
   >({});
   const [revenueLoading, setRevenueLoading] = useState(false);
   const searchSeq = useRef(0);
+  const revenueInflight = useRef<Set<string>>(new Set());
+  const [assignPage, setAssignPage] = useState(1);
   const [addRateTypeId, setAddRateTypeId] = useState<string>("");
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -242,6 +251,72 @@ export function SalesCommissionSection({
   const planAssignments = assignments.filter(
     (a) => a.plan_id === selectedPlanId,
   );
+
+  // Pull TTM revenue for every assigned customer not yet in the cache, ten
+  // at a time so rows fill in progressively.
+  const assignedIdsKey = planAssignments.map((a) => a.rw_customer_id).join("|");
+  useEffect(() => {
+    const missing = assignedIdsKey
+      .split("|")
+      .filter(
+        (id) => id && !revenueById[id] && !revenueInflight.current.has(id),
+      );
+    if (missing.length === 0) return;
+    missing.forEach((id) => revenueInflight.current.add(id));
+    let cancelled = false;
+    (async () => {
+      for (let i = 0; i < missing.length; i += 10) {
+        const chunk = missing.slice(i, i + 10);
+        try {
+          const rev = await api({
+            action: "customer_revenue",
+            rwCustomerIds: chunk,
+          });
+          if (!cancelled) {
+            setRevenueById((prev) => ({ ...prev, ...(rev.revenue ?? {}) }));
+          }
+        } catch {
+          /* leave those rows without revenue; retried on next config load */
+        } finally {
+          chunk.forEach((id) => revenueInflight.current.delete(id));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // revenueById is intentionally not a dependency: it changes as results
+    // land, and re-running here would only re-filter to the same missing set.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignedIdsKey]);
+
+  const assignRevenuePending = planAssignments.some(
+    (a) => !revenueById[a.rw_customer_id],
+  );
+  // Alphabetical while revenue is still loading (so rows don't reshuffle
+  // as each chunk lands), then highest revenue first.
+  const sortedAssignments = assignRevenuePending
+    ? [...planAssignments].sort((a, b) =>
+        a.customer_name.localeCompare(b.customer_name),
+      )
+    : [...planAssignments].sort(
+        (a, b) =>
+          (revenueById[b.rw_customer_id]?.ttmRevenue ?? 0) -
+            (revenueById[a.rw_customer_id]?.ttmRevenue ?? 0) ||
+          a.customer_name.localeCompare(b.customer_name),
+      );
+  const assignPageCount = Math.max(
+    1,
+    Math.ceil(sortedAssignments.length / ASSIGNMENTS_PAGE_SIZE),
+  );
+  const assignPageSafe = Math.min(assignPage, assignPageCount);
+  const pagedAssignments = sortedAssignments.slice(
+    (assignPageSafe - 1) * ASSIGNMENTS_PAGE_SIZE,
+    assignPageSafe * ASSIGNMENTS_PAGE_SIZE,
+  );
+  useEffect(() => {
+    setAssignPage(1);
+  }, [selectedPlanId]);
 
   // ── Plan CRUD ────────────────────────────────────────────────────────
 
@@ -344,7 +419,6 @@ export function SalesCommissionSection({
     const seq = ++searchSeq.current;
     if (query.trim().length < 2) {
       setSearchResults([]);
-      setSearchRevenue({});
       setRevenueLoading(false);
       return;
     }
@@ -355,18 +429,19 @@ export function SalesCommissionSection({
         if (seq !== searchSeq.current) return; // superseded by a newer search
         const customers: SearchResult[] = data.customers;
         setSearchResults(customers);
-        setSearchRevenue({});
-        if (customers.length > 0) {
+        const needed = customers
+          .map((c) => c.rwCustomerId)
+          .filter((id) => !revenueById[id]);
+        if (needed.length > 0) {
           // Revenue lookup runs after the names render — it hits RW once per
           // customer, so the list should not wait on it.
           setRevenueLoading(true);
           api({
             action: "customer_revenue",
-            rwCustomerIds: customers.map((c) => c.rwCustomerId),
+            rwCustomerIds: needed,
           })
             .then((rev) => {
-              if (seq !== searchSeq.current) return;
-              setSearchRevenue(rev.revenue ?? {});
+              setRevenueById((prev) => ({ ...prev, ...(rev.revenue ?? {}) }));
             })
             .catch(() => {
               /* revenue is a hint; leave the list usable without it */
@@ -402,7 +477,6 @@ export function SalesCommissionSection({
       searchSeq.current++;
       setSearchQuery("");
       setSearchResults([]);
-      setSearchRevenue({});
       setRevenueLoading(false);
       await loadConfig();
     } catch (err) {
@@ -806,7 +880,9 @@ export function SalesCommissionSection({
                         const already = planAssignments.some(
                           (a) => a.rw_customer_id === c.rwCustomerId,
                         );
-                        const rev = searchRevenue[c.rwCustomerId];
+                        const rev = revenueById[c.rwCustomerId];
+                        const custNo =
+                          c.customerNumber ?? rev?.customerNumber ?? null;
                         return (
                           <button
                             key={c.rwCustomerId}
@@ -815,6 +891,11 @@ export function SalesCommissionSection({
                           >
                             <span className="min-w-0 truncate">
                               {c.customerName}
+                              {custNo && (
+                                <span className="ml-1.5 text-xs text-muted-foreground">
+                                  #{custNo}
+                                </span>
+                              )}
                             </span>
                             <span className="flex shrink-0 items-center gap-2">
                               {rev ? (
@@ -853,6 +934,15 @@ export function SalesCommissionSection({
                     <TableHeader>
                       <TableRow>
                         <TableHead>Customer</TableHead>
+                        <TableHead className="w-[90px]">Cust #</TableHead>
+                        <TableHead className="w-[130px] text-right">
+                          <span
+                            title="Trailing 12 months of Versatile invoice subtotal (pre-tax)"
+                            className="cursor-help"
+                          >
+                            TTM Revenue
+                          </span>
+                        </TableHead>
                         <TableHead className="w-[190px]">Rate Type</TableHead>
                         <TableHead className="w-[50px]" />
                       </TableRow>
@@ -861,7 +951,7 @@ export function SalesCommissionSection({
                       {planAssignments.length === 0 && (
                         <TableRow>
                           <TableCell
-                            colSpan={3}
+                            colSpan={5}
                             className="text-center text-muted-foreground"
                           >
                             No customers pinned — everyone gets the default
@@ -869,9 +959,34 @@ export function SalesCommissionSection({
                           </TableCell>
                         </TableRow>
                       )}
-                      {planAssignments.map((a) => (
+                      {pagedAssignments.map((a) => {
+                        const rev = revenueById[a.rw_customer_id];
+                        return (
                         <TableRow key={a.id}>
-                          <TableCell>{a.customer_name}</TableCell>
+                          <TableCell className="font-medium">
+                            {a.customer_name}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground tabular-nums">
+                            {rev ? (
+                              rev.customerNumber ?? "—"
+                            ) : (
+                              <span className="text-xs">…</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {rev ? (
+                              <span
+                                title={`${rev.ttmInvoiceCount} invoice${rev.ttmInvoiceCount === 1 ? "" : "s"} TTM · lifetime ${compactUsd.format(rev.lifetimeRevenue)}${rev.lastInvoiceDate ? ` · last ${rev.lastInvoiceDate}` : ""}`}
+                                className="cursor-help"
+                              >
+                                {compactUsd.format(rev.ttmRevenue)}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">
+                                loading…
+                              </span>
+                            )}
+                          </TableCell>
                           <TableCell>
                             <Select
                               value={a.rate_type_id}
@@ -903,9 +1018,51 @@ export function SalesCommissionSection({
                             </Button>
                           </TableCell>
                         </TableRow>
-                      ))}
+                        );
+                      })}
                     </TableBody>
                   </Table>
+
+                  {sortedAssignments.length > 0 && (
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>
+                        {(assignPageSafe - 1) * ASSIGNMENTS_PAGE_SIZE + 1}–
+                        {Math.min(
+                          assignPageSafe * ASSIGNMENTS_PAGE_SIZE,
+                          sortedAssignments.length,
+                        )}{" "}
+                        of {sortedAssignments.length}
+                        {assignRevenuePending
+                          ? " · loading revenue, then sorting highest first"
+                          : " · highest TTM revenue first"}
+                      </span>
+                      {assignPageCount > 1 && (
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2"
+                            disabled={assignPageSafe <= 1}
+                            onClick={() => setAssignPage(assignPageSafe - 1)}
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </Button>
+                          <span className="px-1 tabular-nums">
+                            {assignPageSafe} / {assignPageCount}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2"
+                            disabled={assignPageSafe >= assignPageCount}
+                            onClick={() => setAssignPage(assignPageSafe + 1)}
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
