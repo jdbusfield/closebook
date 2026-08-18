@@ -330,6 +330,93 @@ export async function POST(request: Request) {
         });
       }
 
+      case "customer_revenue": {
+        // Trailing-12-month Versatile revenue per RW customer, on the same
+        // basis as the calculator (pre-tax InvoiceSubTotal, VOID/no-charge/
+        // non-billable skipped). Shown in the assignment search so the right
+        // RW account can be picked when several share a name.
+        const ids: string[] = Array.isArray(body.rwCustomerIds)
+          ? body.rwCustomerIds.map(String).filter(Boolean).slice(0, 20)
+          : [];
+        if (ids.length === 0) return NextResponse.json({ revenue: {} });
+
+        const warehouseKeywords: string[] =
+          body.warehouseKeywords ?? DEFAULT_WAREHOUSE_KEYWORDS;
+        const now = new Date();
+        const ttmStartMs = Date.UTC(
+          now.getUTCFullYear() - 1,
+          now.getUTCMonth(),
+          now.getUTCDate(),
+        );
+
+        const rw = await getRWClient();
+        const revenue: Record<
+          string,
+          {
+            ttmRevenue: number;
+            ttmInvoiceCount: number;
+            lifetimeRevenue: number;
+            lastInvoiceDate: string | null;
+          }
+        > = {};
+
+        const summarize = async (id: string) => {
+          // CustomerId equality only; the date bound is applied in code
+          // (RW browse mishandles multi-condition date searches).
+          const res = await rw.browseAll<RWInvoiceRow>("invoice", {
+            pagesize: 2000,
+            searchfields: ["CustomerId"],
+            searchfieldoperators: ["="],
+            searchfieldvalues: [id],
+            orderby: "InvoiceDate",
+            orderbydirection: "desc",
+          });
+          let ttmRevenue = 0;
+          let ttmInvoiceCount = 0;
+          let lifetimeRevenue = 0;
+          let lastMs = -Infinity;
+          for (const inv of res.rows) {
+            const locationText = inv.OfficeLocation ?? inv.Warehouse ?? "";
+            const isVersatile = locationText
+              ? matchesWarehouse(locationText, warehouseKeywords)
+              : (inv.InvoiceNumber || "").toUpperCase().startsWith("V");
+            if (!isVersatile) continue;
+            const status = (inv.Status ?? "").toUpperCase();
+            if (status === "VOID" || status === "VOIDED") continue;
+            if (
+              String(inv.IsNoCharge ?? "").toLowerCase() === "true" ||
+              String(inv.IsNonBillable ?? "").toLowerCase() === "true"
+            ) {
+              continue;
+            }
+            const subtotal = parseFloat(inv.InvoiceSubTotal || "0") || 0;
+            const invMs = Date.parse(inv.InvoiceDate);
+            lifetimeRevenue += subtotal;
+            if (!Number.isNaN(invMs)) {
+              if (invMs > lastMs) lastMs = invMs;
+              if (invMs >= ttmStartMs) {
+                ttmRevenue += subtotal;
+                ttmInvoiceCount++;
+              }
+            }
+          }
+          revenue[id] = {
+            ttmRevenue: Math.round(ttmRevenue * 100) / 100,
+            ttmInvoiceCount,
+            lifetimeRevenue: Math.round(lifetimeRevenue * 100) / 100,
+            lastInvoiceDate: Number.isFinite(lastMs)
+              ? new Date(lastMs).toISOString().slice(0, 10)
+              : null,
+          };
+        };
+
+        // Batches of 5 — RW's observed safe concurrency.
+        for (let i = 0; i < ids.length; i += 5) {
+          await Promise.all(ids.slice(i, i + 5).map(summarize));
+        }
+        return NextResponse.json({ revenue });
+      }
+
       case "calculate": {
         const { planId, periodYear, periodMonth } = body;
         if (!planId || !periodYear || !periodMonth) {

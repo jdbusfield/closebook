@@ -124,6 +124,19 @@ interface SearchResult {
   customerName: string;
 }
 
+interface CustomerRevenue {
+  ttmRevenue: number;
+  ttmInvoiceCount: number;
+  lifetimeRevenue: number;
+  lastInvoiceDate: string | null;
+}
+
+const compactUsd = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -192,6 +205,12 @@ export function SalesCommissionSection({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  // TTM Versatile revenue per RW customer id for the current search results
+  const [searchRevenue, setSearchRevenue] = useState<
+    Record<string, CustomerRevenue>
+  >({});
+  const [revenueLoading, setRevenueLoading] = useState(false);
+  const searchSeq = useRef(0);
   const [addRateTypeId, setAddRateTypeId] = useState<string>("");
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -322,19 +341,44 @@ export function SalesCommissionSection({
   const runSearch = (query: string) => {
     setSearchQuery(query);
     if (searchTimer.current) clearTimeout(searchTimer.current);
+    const seq = ++searchSeq.current;
     if (query.trim().length < 2) {
       setSearchResults([]);
+      setSearchRevenue({});
+      setRevenueLoading(false);
       return;
     }
     searchTimer.current = setTimeout(async () => {
       setSearching(true);
       try {
         const data = await api({ action: "search_rw_customers", query });
-        setSearchResults(data.customers);
+        if (seq !== searchSeq.current) return; // superseded by a newer search
+        const customers: SearchResult[] = data.customers;
+        setSearchResults(customers);
+        setSearchRevenue({});
+        if (customers.length > 0) {
+          // Revenue lookup runs after the names render — it hits RW once per
+          // customer, so the list should not wait on it.
+          setRevenueLoading(true);
+          api({
+            action: "customer_revenue",
+            rwCustomerIds: customers.map((c) => c.rwCustomerId),
+          })
+            .then((rev) => {
+              if (seq !== searchSeq.current) return;
+              setSearchRevenue(rev.revenue ?? {});
+            })
+            .catch(() => {
+              /* revenue is a hint; leave the list usable without it */
+            })
+            .finally(() => {
+              if (seq === searchSeq.current) setRevenueLoading(false);
+            });
+        }
       } catch {
-        setSearchResults([]);
+        if (seq === searchSeq.current) setSearchResults([]);
       } finally {
-        setSearching(false);
+        if (seq === searchSeq.current) setSearching(false);
       }
     }, 350);
   };
@@ -355,8 +399,11 @@ export function SalesCommissionSection({
         customerName: customer.customerName,
       });
       toast.success(`${customer.customerName} assigned`);
+      searchSeq.current++;
       setSearchQuery("");
       setSearchResults([]);
+      setSearchRevenue({});
+      setRevenueLoading(false);
       await loadConfig();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Assign failed");
@@ -759,18 +806,43 @@ export function SalesCommissionSection({
                         const already = planAssignments.some(
                           (a) => a.rw_customer_id === c.rwCustomerId,
                         );
+                        const rev = searchRevenue[c.rwCustomerId];
                         return (
                           <button
                             key={c.rwCustomerId}
-                            className="flex w-full items-center justify-between p-2.5 text-sm hover:bg-muted text-left"
+                            className="flex w-full items-center justify-between gap-3 p-2.5 text-sm hover:bg-muted text-left"
                             onClick={() => assignCustomer(c)}
                           >
-                            <span>{c.customerName}</span>
-                            {already ? (
-                              <Badge variant="outline">assigned</Badge>
-                            ) : (
-                              <UserPlus className="h-4 w-4 text-muted-foreground" />
-                            )}
+                            <span className="min-w-0 truncate">
+                              {c.customerName}
+                            </span>
+                            <span className="flex shrink-0 items-center gap-2">
+                              {rev ? (
+                                <span
+                                  className="text-right text-xs tabular-nums text-muted-foreground"
+                                  title={`Trailing 12 months, Versatile only, pre-tax. Lifetime ${compactUsd.format(rev.lifetimeRevenue)}${rev.lastInvoiceDate ? `, last invoice ${rev.lastInvoiceDate}` : ""}`}
+                                >
+                                  <span className="font-medium text-foreground">
+                                    {compactUsd.format(rev.ttmRevenue)}
+                                  </span>{" "}
+                                  TTM
+                                  {rev.ttmInvoiceCount > 0
+                                    ? ` · ${rev.ttmInvoiceCount} inv`
+                                    : rev.lastInvoiceDate
+                                      ? ` · last ${rev.lastInvoiceDate.slice(0, 7)}`
+                                      : " · no invoices"}
+                                </span>
+                              ) : revenueLoading ? (
+                                <span className="text-xs text-muted-foreground">
+                                  revenue…
+                                </span>
+                              ) : null}
+                              {already ? (
+                                <Badge variant="outline">assigned</Badge>
+                              ) : (
+                                <UserPlus className="h-4 w-4 text-muted-foreground" />
+                              )}
+                            </span>
                           </button>
                         );
                       })}
