@@ -553,6 +553,10 @@ export function SalesCommissionSection({
       periodLabel: calcPeriodLabel,
       commissionStartDate: selectedPlan.commission_start_date,
       defaultRateTypeName: defaultRate?.name ?? null,
+      rateTypes: planRates.map((rt) => ({
+        name: rt.name,
+        ratePercent: Number(rt.rate_percent),
+      })),
       rows: calcRows,
       totalRevenue: calcTotals.revenue,
       totalCommission: calcTotals.commission,

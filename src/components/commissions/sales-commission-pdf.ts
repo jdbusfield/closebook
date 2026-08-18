@@ -48,6 +48,8 @@ export interface CommissionPdfInput {
   commissionStartDate: string | null; // YYYY-MM-DD
   /** Name of the plan's default (catch-all) rate type; its group prints last. */
   defaultRateTypeName?: string | null;
+  /** All rate types on the plan; sections print even when a rate had no invoices. */
+  rateTypes?: { name: string; ratePercent: number }[];
   rows: CommissionPdfRow[];
   totalRevenue: number;
   totalCommission: number;
@@ -152,6 +154,9 @@ export async function exportSalesCommissionPdf(
     string,
     { name: string; ratePercent: number; rows: CommissionPdfRow[] }
   >();
+  for (const rt of input.rateTypes ?? []) {
+    groupMap.set(rt.name, { name: rt.name, ratePercent: rt.ratePercent, rows: [] });
+  }
   for (const r of input.rows) {
     const g = groupMap.get(r.rateTypeName) ?? {
       name: r.rateTypeName,
@@ -194,6 +199,15 @@ export async function exportSalesCommissionPdf(
         String(r.invoiceCount),
         money(r.revenue),
         money(r.commission),
+      ]);
+    }
+    if (rows.length === 0) {
+      summaryBody.push([
+        {
+          content: "No invoices at this rate for the period",
+          colSpan: 6,
+          styles: { textColor: MUTED_TEXT, fontStyle: "italic" },
+        },
       ]);
     }
     if (groups.length > 1) {
