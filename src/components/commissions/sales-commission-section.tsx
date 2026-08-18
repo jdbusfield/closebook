@@ -552,6 +552,7 @@ export function SalesCommissionSection({
       salespersonName: selectedPlan.salesperson_name,
       periodLabel: calcPeriodLabel,
       commissionStartDate: selectedPlan.commission_start_date,
+      defaultRateTypeName: defaultRate?.name ?? null,
       rows: calcRows,
       totalRevenue: calcTotals.revenue,
       totalCommission: calcTotals.commission,
