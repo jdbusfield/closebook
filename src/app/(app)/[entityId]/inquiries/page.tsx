@@ -32,6 +32,7 @@ import {
   isReservationRequest,
   contactOverdue,
   lastContactedAt,
+  VERSATILE_ENTITY_ID,
 } from "@/lib/inquiries/shared";
 
 function firstOpenTask(inq: Inquiry) {
@@ -288,14 +289,20 @@ export default function InquiriesPipelinePage() {
       ) : (
         <div className="flex flex-1 gap-3 overflow-x-auto pb-2">
           {STAGES.map((stage) => {
-            // Deals overdue for outreach float to the top of their column,
-            // most-neglected first (never-contacted above everything); the
-            // rest keep their fetched order (sort is stable).
+            // Versatile (JD, Aug 18): every column strictly newest inquiry
+            // first, by when it was received. HDR keeps its follow-up
+            // ordering: deals overdue for outreach float to the top of their
+            // column, most-neglected first (never-contacted above
+            // everything); the rest keep their fetched order (sort is stable).
+            const newestFirst = entityId === VERSATILE_ENTITY_ID;
             const needsFollowUp = (i: Inquiry) =>
               needsOutreachStatus(i.status) && contactOverdue(i);
+            const receivedMs = (i: Inquiry) =>
+              parseDate(i.created_at)?.getTime() ?? 0;
             const items = data.inquiries
               .filter((i) => i.status === stage.key && matchesSource(i))
               .sort((a, b) => {
+                if (newestFirst) return receivedMs(b) - receivedMs(a);
                 const an = needsFollowUp(a);
                 const bn = needsFollowUp(b);
                 if (an !== bn) return an ? -1 : 1;
