@@ -14,6 +14,13 @@ const STATUS_STYLES: Record<InquiryStatus, string> = {
   returned: "bg-slate-100 text-slate-700 hover:bg-slate-100",
   completed: "bg-green-100 text-green-800 hover:bg-green-100",
   lost: "bg-gray-200 text-gray-700 hover:bg-gray-200",
+  // Cold outreach lane
+  not_contacted: "bg-slate-100 text-slate-700 hover:bg-slate-100",
+  email1: "bg-blue-100 text-blue-800 hover:bg-blue-100",
+  replied: "bg-cyan-100 text-cyan-800 hover:bg-cyan-100",
+  talking: "bg-amber-100 text-amber-800 hover:bg-amber-100",
+  preferred: "bg-green-100 text-green-800 hover:bg-green-100",
+  dead: "bg-gray-200 text-gray-700 hover:bg-gray-200",
 };
 
 export function StatusBadge({ status }: { status: string }) {

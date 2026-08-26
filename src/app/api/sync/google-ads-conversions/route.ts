@@ -44,6 +44,7 @@ export async function GET(request: Request) {
       "id, reference, email, phone, gclid, estimated_value, conversion_value, conversion_currency, last_activity_at, updated_at"
     )
     .eq("entity_id", HDR_ENTITY_ID)
+    .eq("lane", "inbound")
     .in("conversion_status", ["pending", "failed"])
     .order("updated_at", { ascending: true })
     .limit(BATCH_LIMIT);

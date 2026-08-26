@@ -29,6 +29,7 @@ import {
   Settings,
   Clapperboard,
   Inbox,
+  Send,
   Handshake,
 } from "lucide-react";
 
@@ -114,6 +115,8 @@ export function getOrgNavGroups(): NavGroup[] {
 // here rather than imported so nav-config stays free of the inquiries lib's
 // server-only dependencies.
 const SILVERCO_ENTITY_ID = "b664a9c1-3817-4df4-9261-f51b3403a5de";
+// Hollywood Depot Rentals — same duplication rationale as above.
+const HDR_ENTITY_ID = "7529580d-3b44-4a9b-91f4-bc2db25f5211";
 
 export function getEntityNavGroups(entityId: string): NavGroup[] {
   const prefix = `/${entityId}`;
@@ -157,6 +160,18 @@ export function getEntityNavGroups(entityId: string): NavGroup[] {
               : []),
           ],
         },
+        // Joe's preferred-vendor outreach pipeline — HDR only, and kept apart
+        // from Inquiries so cold cards never enter the inbound funnels.
+        ...(entityId === HDR_ENTITY_ID
+          ? [
+              {
+                title: "Cold outreach",
+                href: `${prefix}/cold-outreach`,
+                icon: Send,
+                feature: "inquiries" as const,
+              },
+            ]
+          : []),
       ],
     },
     {

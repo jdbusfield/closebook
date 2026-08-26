@@ -97,11 +97,24 @@ export const INQUIRY_STATUSES = [
   "returned",
   "completed",
   "lost",
+  // Cold outreach lane (lane='cold') — see COLD_STAGES. Distinct keys so no
+  // inbound status filter can ever pick up a cold card.
+  "not_contacted",
+  "email1",
+  "replied",
+  "talking",
+  "preferred",
+  "dead",
 ] as const;
 
 export type InquiryStatus = (typeof INQUIRY_STATUSES)[number];
 
-export type StageKind = "open" | "booked" | "lost" | "completed";
+// Which pipeline a rental_inquiries row belongs to. 'inbound' = a customer
+// asked us (the Inquiries tab); 'cold' = we reached out to a prospective
+// preferred vendor (the Cold outreach tab). Set at creation, never changes.
+export type InquiryLane = "inbound" | "cold";
+
+export type StageKind = "open" | "booked" | "lost" | "completed" | "cold";
 
 export interface Stage {
   key: InquiryStatus;
@@ -150,13 +163,69 @@ export const COMPLETED_STAGE: Stage = {
   color: "#16a34a",
 };
 
+// ---------------------------------------------------------------------------
+// Cold outreach lane
+// ---------------------------------------------------------------------------
+// Joe's vendor-outreach pipeline. No quote / follow-up-round / booked stages —
+// those are inbound rental stages. Dead is the terminal state and, like Lost,
+// requires a reason (stored in lost_reason).
+export const COLD_STAGES: Stage[] = [
+  { key: "not_contacted", label: "Not contacted", kind: "cold", color: "#64748b" },
+  { key: "email1", label: "Email 1 sent", kind: "cold", color: "#2845F0" },
+  { key: "replied", label: "Replied", kind: "cold", color: "#0891b2" },
+  { key: "talking", label: "Talking", kind: "cold", color: "#d97706" },
+  { key: "preferred", label: "Preferred vendor", kind: "cold", color: "#16a34a" },
+];
+
+export const DEAD_STAGE: Stage = {
+  key: "dead",
+  label: "Dead",
+  kind: "cold",
+  color: "#94a3b8",
+};
+
+export const COLD_STATUSES: InquiryStatus[] = [...COLD_STAGES, DEAD_STAGE].map((s) => s.key);
+
+// Cold stages where captured mail should still attach to the card (everything
+// but Dead — a preferred vendor keeps corresponding).
+export const COLD_OPEN_STATUSES: InquiryStatus[] = COLD_STAGES.map((s) => s.key);
+
+export function isColdStatus(s: string): boolean {
+  return COLD_STATUSES.includes(s as InquiryStatus);
+}
+
+export const DEAD_REASONS = [
+  "No response",
+  "Not a fit",
+  "Already has a vendor",
+  "Out of area",
+  "Asked to stop",
+] as const;
+
+export const COLD_VERTICALS = [
+  "Event producer",
+  "Brand / marketing team",
+  "Venue",
+  "Caterer",
+  "Country club",
+  "Property / estate",
+  "Other",
+] as const;
+
+export const COLD_SOURCES = ["Research list", "Referral", "Inbound-but-moved", "Other"] as const;
+
+export const COLD_SEQUENCES = ["Email 1", "Email 2", "Stopped"] as const;
+
 // Lookup including the off-board terminal states, so a StagePill can render any status.
 export const STAGE_BY_KEY: Record<InquiryStatus, Stage> = Object.fromEntries(
-  [...STAGES, LOST_STAGE, COMPLETED_STAGE].map((s) => [s.key, s])
+  [...STAGES, LOST_STAGE, COMPLETED_STAGE, ...COLD_STAGES, DEAD_STAGE].map((s) => [s.key, s])
 ) as Record<InquiryStatus, Stage>;
 
 export const STATUS_LABELS: Record<InquiryStatus, string> = Object.fromEntries(
-  [...STAGES, LOST_STAGE, COMPLETED_STAGE].map((s) => [s.key, s.label])
+  [...STAGES, LOST_STAGE, COMPLETED_STAGE, ...COLD_STAGES, DEAD_STAGE].map((s) => [
+    s.key,
+    s.label,
+  ])
 ) as Record<InquiryStatus, string>;
 
 // Preset reasons offered when marking a quote lost. "Other" is handled in the UI
@@ -540,6 +609,18 @@ export interface Inquiry {
   id: string;
   reference: string;
   status: string;
+  // 'inbound' (Inquiries tab) or 'cold' (Cold outreach tab). Rows are loaded
+  // per lane, so a view only ever sees one kind.
+  lane?: InquiryLane;
+  // Cold-outreach-only fields (null on inbound rows).
+  company?: string | null;
+  contact_title?: string | null;
+  website?: string | null;
+  vertical?: string | null;
+  outreach_source?: string | null;
+  sequence?: string | null;
+  last_touch_at?: string | null;
+  next_follow_up?: string | null;
   name: string | null;
   // Used verbatim in the "Hi ___," email greeting when set — for names the
   // first-word default mangles (e.g. "La Trina"). Null → first word of `name`.
