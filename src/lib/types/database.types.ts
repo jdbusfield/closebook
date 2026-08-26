@@ -118,6 +118,12 @@ export type Database = {
           conversion_currency: string
           conversion_uploaded_at: string | null
           conversion_error: string | null
+          fbclid: string | null
+          fbc: string | null
+          fbp: string | null
+          meta_conversion_status: string
+          meta_conversion_uploaded_at: string | null
+          meta_conversion_error: string | null
         }
         Insert: {
           id?: string
@@ -170,6 +176,12 @@ export type Database = {
           conversion_currency?: string
           conversion_uploaded_at?: string | null
           conversion_error?: string | null
+          fbclid?: string | null
+          fbc?: string | null
+          fbp?: string | null
+          meta_conversion_status?: string
+          meta_conversion_uploaded_at?: string | null
+          meta_conversion_error?: string | null
         }
         Update: {
           id?: string
@@ -222,6 +234,12 @@ export type Database = {
           conversion_currency?: string
           conversion_uploaded_at?: string | null
           conversion_error?: string | null
+          fbclid?: string | null
+          fbc?: string | null
+          fbp?: string | null
+          meta_conversion_status?: string
+          meta_conversion_uploaded_at?: string | null
+          meta_conversion_error?: string | null
         }
         Relationships: []
       }

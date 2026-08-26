@@ -39,6 +39,11 @@ const PayloadSchema = z.object({
   // Google Ads click id, when the visit originated from an ad click. Stored on
   // the inquiry so the won-rental conversion can be matched to the click.
   gclid: z.string().optional().nullable(),
+  // Meta (Facebook/Instagram) attribution, same idea: fbclid is the raw click
+  // id, fbc/fbp are the Meta cookie formats the Conversions API matches on.
+  fbclid: z.string().optional().nullable(),
+  fbc: z.string().optional().nullable(),
+  fbp: z.string().optional().nullable(),
   // --- Reservation-only fields (priced /reserve submissions) ----------------
   days: z.number().int().optional().nullable(),
   zip: z.string().optional().nullable(),
@@ -139,9 +144,12 @@ export async function POST(request: Request) {
         guests: parsed.guests ?? null,
         location,
         notes: parsed.notes ?? null,
-        // Only write gclid when present so a later re-ingest without one can't
-        // wipe a click id captured on the first submission.
+        // Only write click ids when present so a later re-ingest without one
+        // can't wipe a value captured on the first submission.
         ...(parsed.gclid ? { gclid: parsed.gclid } : {}),
+        ...(parsed.fbclid ? { fbclid: parsed.fbclid } : {}),
+        ...(parsed.fbc ? { fbc: parsed.fbc } : {}),
+        ...(parsed.fbp ? { fbp: parsed.fbp } : {}),
         ...(isReservation
           ? { deposit: parsed.deposit ?? null, estimated_value: estimatedValue }
           : {}),
