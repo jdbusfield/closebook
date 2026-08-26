@@ -95,7 +95,6 @@ for (const s of SEEDS) {
     status: "not_contacted",
     outreach_source: "Research list",
     last_activity_at: new Date().toISOString(),
-    created_by: "seed-cold-outreach",
     ...s,
   };
   let ok = false;

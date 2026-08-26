@@ -62,7 +62,6 @@ export async function POST(request: Request) {
   let createdBy: string | null = null;
   if (embedEntity) {
     entityId = embedEntity;
-    createdBy = "embed";
   } else {
     const supabase = await createClient();
     const {
@@ -77,7 +76,7 @@ export async function POST(request: Request) {
       .eq("id", entityId)
       .maybeSingle();
     if (!entity) return NextResponse.json({ error: "Not found or not permitted" }, { status: 404 });
-    createdBy = user.email ?? user.id;
+    createdBy = user.id; // created_by is a uuid column
   }
 
   const admin = createAdminClient();
