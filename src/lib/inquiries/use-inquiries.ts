@@ -18,11 +18,12 @@ import {
   type InquiryMessage,
   type InquiryQuote,
   type InquiryStatus,
+  type InquiryLane,
   STATUS_LABELS,
 } from "@/lib/inquiries/shared";
 
 const INQUIRY_COLUMNS =
-  "id, reference, status, name, greeting_name, email, phone, use_case, start_date, end_date, duration, units, attendant, guests, location, notes, request_type, deposit, billing_name, billing_address, document_note, note_on_quote, note_on_invoice, internal_notes, lost_reason, rw_quote_number, rw_order_number, source, unit_id, estimated_value, gclid, last_activity_at, created_at";
+  "id, reference, status, lane, name, greeting_name, email, phone, use_case, start_date, end_date, duration, units, attendant, guests, location, notes, request_type, deposit, billing_name, billing_address, document_note, note_on_quote, note_on_invoice, internal_notes, lost_reason, rw_quote_number, rw_order_number, source, unit_id, estimated_value, gclid, company, contact_title, website, vertical, outreach_source, sequence, last_touch_at, next_follow_up, last_activity_at, created_at";
 
 const QUOTE_COLUMNS =
   "id, inquiry_id, quote_number, status, lines, subtotal, tax_rate, tax, total, valid_until, terms, accepted_at, created_by, created_at, updated_at";
@@ -68,7 +69,10 @@ function isoDateInDays(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function useInquiries(entityId: string): UseInquiries {
+// Every view loads exactly one lane: the Inquiries views (and the embeds) get
+// inbound rows, the Cold outreach board gets cold rows. Nothing else in the
+// module needs to know the other lane exists.
+export function useInquiries(entityId: string, lane: InquiryLane = "inbound"): UseInquiries {
   const embed = useEmbed();
   const isEmbed = !!embed?.embedKey;
   const embedKey = embed?.embedKey;
@@ -127,6 +131,7 @@ export function useInquiries(entityId: string): UseInquiries {
           .from("rental_inquiries")
           .select(INQUIRY_COLUMNS)
           .eq("entity_id", eid)
+          .eq("lane", lane)
           .order("last_activity_at", { ascending: false })
           .limit(1000),
         supabase
@@ -204,7 +209,7 @@ export function useInquiries(entityId: string): UseInquiries {
     }));
     setInquiries(assembled);
     setLoading(false);
-  }, [isEmbed, eid, embedPost]);
+  }, [isEmbed, eid, lane, embedPost]);
 
   useEffect(() => {
     load();

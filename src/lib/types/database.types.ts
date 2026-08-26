@@ -99,6 +99,15 @@ export type Database = {
           estimated_value: number | null
           internal_notes: string | null
           lost_reason: string | null
+          lane: string
+          company: string | null
+          contact_title: string | null
+          website: string | null
+          vertical: string | null
+          outreach_source: string | null
+          sequence: string | null
+          last_touch_at: string | null
+          next_follow_up: string | null
           last_activity_at: string | null
           created_by: string | null
           created_at: string
@@ -142,6 +151,15 @@ export type Database = {
           estimated_value?: number | null
           internal_notes?: string | null
           lost_reason?: string | null
+          lane?: string
+          company?: string | null
+          contact_title?: string | null
+          website?: string | null
+          vertical?: string | null
+          outreach_source?: string | null
+          sequence?: string | null
+          last_touch_at?: string | null
+          next_follow_up?: string | null
           last_activity_at?: string | null
           created_by?: string | null
           created_at?: string
@@ -185,6 +203,15 @@ export type Database = {
           estimated_value?: number | null
           internal_notes?: string | null
           lost_reason?: string | null
+          lane?: string
+          company?: string | null
+          contact_title?: string | null
+          website?: string | null
+          vertical?: string | null
+          outreach_source?: string | null
+          sequence?: string | null
+          last_touch_at?: string | null
+          next_follow_up?: string | null
           last_activity_at?: string | null
           created_by?: string | null
           created_at?: string

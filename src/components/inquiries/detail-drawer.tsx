@@ -1146,7 +1146,7 @@ type TimelineEntry =
 // customer's on the left (muted). Shows the full body with the quoted reply
 // history and forwarded headers stripped; the bubble's side/colour identifies
 // the sender, so no From/To/subject clutter.
-function EmailBubble({
+export function EmailBubble({
   message,
   customerEmail,
   customerName,
@@ -1214,7 +1214,7 @@ function EmailBubble({
 }
 
 // A logged note/call/quote, shown as a centered "system" line between bubbles.
-function ActivityChip({
+export function ActivityChip({
   activity,
   onDelete,
 }: {

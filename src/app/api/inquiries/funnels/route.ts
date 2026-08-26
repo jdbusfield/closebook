@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     if (embedEntityId) {
       const { data } = await admin
         .from("rental_inquiries")
-        .select("id, entity_id, status, email")
+        .select("id, entity_id, status, email, lane")
         .eq("id", inquiryId)
         .eq("entity_id", embedEntityId)
         .maybeSingle();
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     const supabase = await createClient();
     const { data } = await supabase
       .from("rental_inquiries")
-      .select("id, entity_id, status, email")
+      .select("id, entity_id, status, email, lane")
       .eq("id", inquiryId)
       .maybeSingle();
     return data;
@@ -99,6 +99,13 @@ export async function POST(request: Request) {
       }
       const inquiry = await loadInquiry(inquiryId);
       if (!inquiry) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      // Cold-outreach cards are never auto-emailed — Joe sends by hand.
+      if (inquiry.lane === "cold") {
+        return NextResponse.json(
+          { error: "Email funnels are not available on cold-outreach cards" },
+          { status: 400 }
+        );
+      }
       if (!inquiry.email) {
         return NextResponse.json(
           { error: "This inquiry has no email address on file" },

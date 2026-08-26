@@ -45,6 +45,18 @@ const UpdateSchema = z.object({
   attendant: z.string().max(128).optional().nullable(),
   // source is NOT NULL in the schema — string only.
   source: z.string().max(128).optional(),
+  // Cold-outreach card fields (lane='cold'). `lane` itself is set at creation
+  // and deliberately not patchable.
+  company: z.string().max(256).optional().nullable(),
+  contact_title: z.string().max(128).optional().nullable(),
+  website: z.string().max(512).optional().nullable(),
+  vertical: z.string().max(64).optional().nullable(),
+  outreach_source: z.string().max(64).optional().nullable(),
+  sequence: z.string().max(32).optional().nullable(),
+  last_touch_at: z.string().max(10).optional().nullable(),
+  next_follow_up: z.string().max(10).optional().nullable(),
+  // Free-form prospect notes (the website form's message on inbound rows).
+  notes: z.string().max(10_000).optional().nullable(),
 });
 
 export async function PATCH(
@@ -89,7 +101,7 @@ export async function PATCH(
   if (embedEntity) query = query.eq("entity_id", embedEntity);
   const { data, error } = await query
     .select(
-      "id, status, internal_notes, rw_quote_number, rw_order_number, unit_id, estimated_value, billing_name, billing_address, document_note, note_on_quote, note_on_invoice, name, greeting_name, email, phone, use_case, start_date, end_date, duration, units, guests, location, attendant, source"
+      "id, status, lane, lost_reason, internal_notes, rw_quote_number, rw_order_number, unit_id, estimated_value, billing_name, billing_address, document_note, note_on_quote, note_on_invoice, name, greeting_name, email, phone, use_case, start_date, end_date, duration, units, guests, location, attendant, source, notes, company, contact_title, website, vertical, outreach_source, sequence, last_touch_at, next_follow_up"
     )
     .maybeSingle();
 

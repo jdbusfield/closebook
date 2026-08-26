@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   BOOKED_STATUSES,
+  COLD_OPEN_STATUSES,
   HDR_ENTITY_ID,
   OPEN_INQUIRY_STATUSES,
   STAFF_EMAIL_DOMAINS,
@@ -81,7 +82,8 @@ function isStaff(addr: string | null): boolean {
   return !!d && STAFF_EMAIL_DOMAINS.has(d);
 }
 
-type InquiryRow = { id: string; email: string | null; status: string };
+type InquiryRow = { id: string; email: string | null; status: string; lane: string };
+const INQUIRY_MATCH_COLUMNS = "id, email, status, lane";
 
 /**
  * Record one normalized email against the HDR rental-inquiry pipeline.
@@ -163,7 +165,7 @@ export async function ingestEmailMessage(
     if (reference) {
       const { data } = await supabase
         .from("rental_inquiries")
-        .select("id, email, status")
+        .select(INQUIRY_MATCH_COLUMNS)
         .eq("entity_id", tryEntity)
         .eq("reference", reference)
         .maybeSingle();
@@ -182,7 +184,7 @@ export async function ingestEmailMessage(
       if (sibling?.inquiry_id) {
         const { data } = await supabase
           .from("rental_inquiries")
-          .select("id, email, status")
+          .select(INQUIRY_MATCH_COLUMNS)
           .eq("entity_id", tryEntity)
           .eq("id", sibling.inquiry_id)
           .maybeSingle();
@@ -193,17 +195,18 @@ export async function ingestEmailMessage(
     if (!inquiry && participants.length > 0) {
       // Direct, case-insensitive lookup per external participant — open deals
       // first, then booked ones (a customer emailing about a confirmed rental
-      // still belongs on that deal). No recency cap: an old-but-open inquiry
-      // must still match.
+      // still belongs on that deal), then live cold-outreach cards (a contact
+      // with both an open inquiry and a cold card is a customer first). No
+      // recency cap: an old-but-open inquiry must still match.
       const externals = [...new Set(participants.filter((p) => !isStaff(p)))];
-      outer: for (const statuses of [OPEN_INQUIRY_STATUSES, BOOKED_STATUSES]) {
+      outer: for (const statuses of [OPEN_INQUIRY_STATUSES, BOOKED_STATUSES, COLD_OPEN_STATUSES]) {
         for (const addr of externals) {
           // ilike = case-insensitive equality here, so escape its wildcards
           // (emails legitimately contain "_").
           const pattern = addr.replace(/[\\%_]/g, "\\$&");
           const { data } = await supabase
             .from("rental_inquiries")
-            .select("id, email, status")
+            .select(INQUIRY_MATCH_COLUMNS)
             .eq("entity_id", tryEntity)
             .in("status", statuses)
             .ilike("email", pattern)
@@ -340,7 +343,7 @@ export async function ingestEmailMessage(
   if (inquiry) {
     await supabase
       .from("rental_inquiries")
-      .update({ last_activity_at: nowIso })
+      .update({ last_activity_at: nowIso, ...coldTouchPatch(inquiry, direction) })
       .eq("id", inquiry.id);
   }
 
@@ -351,4 +354,28 @@ export async function ingestEmailMessage(
     direction,
     deduped: false,
   };
+}
+
+// Cold-outreach cards advance on captured mail so Joe doesn't hand-move every
+// card: our first send moves Not contacted → Email 1 sent, the prospect's first
+// reply moves Not contacted / Email 1 sent → Replied, and either direction
+// stamps Last touch. Later stages (Talking, Preferred vendor, Dead) are Joe's
+// judgement and are never touched. Nothing here applies to inbound rows.
+function coldTouchPatch(
+  inquiry: InquiryRow,
+  direction: Direction
+): { last_touch_at: string; status?: string } | Record<string, never> {
+  if (inquiry.lane !== "cold") return {};
+  const patch: { last_touch_at: string; status?: string } = {
+    last_touch_at: new Date().toISOString().slice(0, 10),
+  };
+  if (direction === "outbound" && inquiry.status === "not_contacted") {
+    patch.status = "email1";
+  } else if (
+    direction === "inbound" &&
+    (inquiry.status === "not_contacted" || inquiry.status === "email1")
+  ) {
+    patch.status = "replied";
+  }
+  return patch;
 }
