@@ -890,16 +890,21 @@ export function lastCorrespondence(
     const iso = messageDate(m);
     offer(messageSide(m, inq.email), parseTimestamp(iso), iso);
   }
+  const cold = inq.lane === "cold";
   for (const a of inq.activity || []) {
     // A logged "inquiry" represents the customer reaching out; everything else we
-    // log is our own action.
+    // log is our own action. On cold cards only logged calls/emails count —
+    // notes and stage moves aren't contact.
+    if (cold && a.type !== "call" && a.type !== "email") continue;
     offer(a.type === "inquiry" ? "customer" : "us", parseTimestamp(a.occurred_at), a.occurred_at);
   }
 
   if (latestBy) return { by: latestBy, at: latestIso };
 
   // No genuine correspondence at all — infer from the stage whose court the ball
-  // is in.
+  // is in. Cold cards have no such inference: until someone actually writes,
+  // nobody has had the last word.
+  if (cold) return null;
   if (inq.status === "lost") return null;
   const hasIntake = (inq.messages || []).length > 0 || (inq.activity || []).length > 0;
   if (inq.status === "new") {
