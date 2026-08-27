@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useEmbed } from "@/lib/inquiries/embed-context";
 import { toast } from "sonner";
+import { apiErrorMessage } from "@/lib/inquiries/api-error";
 import type { Funnel, FunnelStep, FunnelEnrollment } from "@/lib/inquiries/funnels";
 
 const FUNNEL_COLUMNS = "id, name, description, archived, sort_order";
@@ -77,7 +78,7 @@ export function useFunnels(entityId: string): UseFunnels {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `Request failed (HTTP ${res.status})`);
+        throw new Error(apiErrorMessage(err, res.status));
       }
       return res.json();
     },
@@ -96,7 +97,7 @@ export function useFunnels(entityId: string): UseFunnels {
         body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Request failed (HTTP ${res.status})`);
+      if (!res.ok) throw new Error(apiErrorMessage(data, res.status));
       return data;
     },
     [isEmbed, embedKey]

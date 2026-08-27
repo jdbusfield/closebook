@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useEmbed } from "@/lib/inquiries/embed-context";
 import { toast } from "sonner";
+import { apiErrorMessage } from "@/lib/inquiries/api-error";
 import {
   type Inquiry,
   type InquiryTask,
@@ -101,7 +102,7 @@ export function useInquiries(entityId: string, lane: InquiryLane = "inbound"): U
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `Request failed (HTTP ${res.status})`);
+        throw new Error(apiErrorMessage(err, res.status));
       }
       return res.json();
     },
@@ -228,7 +229,7 @@ export function useInquiries(entityId: string, lane: InquiryLane = "inbound"): U
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || err.detail || `Save failed (HTTP ${res.status})`);
+        throw new Error(apiErrorMessage(err, res.status, "Save failed"));
       }
       return true;
     },
@@ -580,7 +581,7 @@ export function useInquiries(entityId: string, lane: InquiryLane = "inbound"): U
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || "Delete failed");
+          throw new Error(apiErrorMessage(err, res.status, "Delete failed"));
         }
         toast.success("Inquiry deleted");
         setInquiries((prev) => prev.filter((i) => i.id !== id));
