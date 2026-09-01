@@ -15,6 +15,8 @@ import {
   LastContacted,
   CorrespondenceBadge,
   GoogleAdBadge,
+  MetaAdBadge,
+  ChatGPTAdBadge,
   BrandBadge,
 } from "@/components/inquiries/atoms";
 import {
@@ -142,10 +144,12 @@ function DealCard({
           </span>
         </div>
       )}
-      {(inq.gclid || inq.source === "hollywooddepot") && (
+      {(inq.gclid || inq.fbclid || inq.oppref || inq.source === "hollywooddepot") && (
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <BrandBadge source={inq.source} />
           <GoogleAdBadge gclid={inq.gclid} />
+          <MetaAdBadge fbclid={inq.fbclid} />
+          <ChatGPTAdBadge oppref={inq.oppref} />
         </div>
       )}
       <div className="mt-1.5 flex items-center justify-between gap-2">

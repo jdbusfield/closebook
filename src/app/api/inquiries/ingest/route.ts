@@ -44,6 +44,9 @@ const PayloadSchema = z.object({
   fbclid: z.string().optional().nullable(),
   fbc: z.string().optional().nullable(),
   fbp: z.string().optional().nullable(),
+  // OpenAI (ChatGPT Ads) click id, same idea: passed to the OpenAI Conversions
+  // API for click matching when the deal books.
+  oppref: z.string().optional().nullable(),
   // --- Reservation-only fields (priced /reserve submissions) ----------------
   days: z.number().int().optional().nullable(),
   zip: z.string().optional().nullable(),
@@ -150,6 +153,7 @@ export async function POST(request: Request) {
         ...(parsed.fbclid ? { fbclid: parsed.fbclid } : {}),
         ...(parsed.fbc ? { fbc: parsed.fbc } : {}),
         ...(parsed.fbp ? { fbp: parsed.fbp } : {}),
+        ...(parsed.oppref ? { oppref: parsed.oppref } : {}),
         ...(isReservation
           ? { deposit: parsed.deposit ?? null, estimated_value: estimatedValue }
           : {}),

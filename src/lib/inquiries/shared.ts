@@ -662,6 +662,8 @@ export interface Inquiry {
   unit_id: string | null;
   estimated_value: number | null;
   gclid: string | null;
+  fbclid: string | null;
+  oppref: string | null;
   last_activity_at: string | null;
   created_at: string;
   tasks?: InquiryTask[];

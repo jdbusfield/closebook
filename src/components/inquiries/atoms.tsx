@@ -15,6 +15,8 @@ import {
   ArrowDownLeft,
   MousePointerClick,
   Clapperboard,
+  Megaphone,
+  MessageSquareText,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -115,6 +117,47 @@ export function GoogleAdBadge({
       title="This lead arrived from a Google ad click — won bookings are attributed back to Google Ads."
     >
       <MousePointerClick className="size-3" /> Google Ad
+    </span>
+  );
+}
+
+// Marks a lead that arrived via a Meta (Facebook/Instagram) ad click (we
+// captured an fbclid on the site). Won bookings are reported back to the Meta
+// Conversions API.
+export function MetaAdBadge({
+  fbclid,
+  className = "",
+}: {
+  fbclid: string | null | undefined;
+  className?: string;
+}) {
+  if (!fbclid) return null;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 ${className}`}
+      title="This lead arrived from a Meta (Facebook/Instagram) ad click — won bookings are attributed back to Meta."
+    >
+      <Megaphone className="size-3" /> Meta Ad
+    </span>
+  );
+}
+
+// Marks a lead that arrived via a ChatGPT ad click (we captured an oppref on
+// the site). Surfaces OpenAI Ads as the paid source at a glance.
+export function ChatGPTAdBadge({
+  oppref,
+  className = "",
+}: {
+  oppref: string | null | undefined;
+  className?: string;
+}) {
+  if (!oppref) return null;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-teal-100 px-2 py-0.5 text-[11px] font-medium text-teal-700 dark:bg-teal-950 dark:text-teal-300 ${className}`}
+      title="This lead arrived from a ChatGPT ad click — conversions are reported back to OpenAI Ads."
+    >
+      <MessageSquareText className="size-3" /> ChatGPT Ad
     </span>
   );
 }

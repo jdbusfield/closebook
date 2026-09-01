@@ -124,6 +124,7 @@ export type Database = {
           meta_conversion_status: string
           meta_conversion_uploaded_at: string | null
           meta_conversion_error: string | null
+          oppref: string | null
         }
         Insert: {
           id?: string
@@ -182,6 +183,7 @@ export type Database = {
           meta_conversion_status?: string
           meta_conversion_uploaded_at?: string | null
           meta_conversion_error?: string | null
+          oppref?: string | null
         }
         Update: {
           id?: string
@@ -240,6 +242,7 @@ export type Database = {
           meta_conversion_status?: string
           meta_conversion_uploaded_at?: string | null
           meta_conversion_error?: string | null
+          oppref?: string | null
         }
         Relationships: []
       }
