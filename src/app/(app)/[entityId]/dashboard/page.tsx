@@ -20,7 +20,7 @@ import {
   FileText,
   TableProperties,
 } from "lucide-react";
-import { getCurrentPeriod, getPeriodLabel } from "@/lib/utils/dates";
+import { getCurrentPeriod, getPeriodLabel, getReportingPeriod } from "@/lib/utils/dates";
 import { LastMonthPerformance } from "@/components/dashboard/last-month-performance";
 import { ThisMonthProjection } from "@/components/dashboard/this-month-projection";
 import { DriftAlertBanner } from "@/components/dashboard/drift-alerts";
@@ -108,6 +108,8 @@ export default async function EntityDashboardPage({
   if (!entity) notFound();
 
   const { year: currentYear, month: currentMonth } = getCurrentPeriod();
+  // Trailing-12 hero holds the prior month back until the 20th (close in progress).
+  const { year: reportingYear, month: reportingMonth } = getReportingPeriod();
 
   return (
     <div className="space-y-6">
@@ -127,8 +129,8 @@ export default async function EntityDashboardPage({
       <FinancialOverview
         scope="entity"
         entityId={entityId}
-        currentYear={currentYear}
-        currentMonth={currentMonth}
+        currentYear={reportingYear}
+        currentMonth={reportingMonth}
       />
 
       {/* Financial Performance Section */}

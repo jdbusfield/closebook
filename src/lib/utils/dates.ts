@@ -31,6 +31,29 @@ export function getCurrentPeriod(): { year: number; month: number } {
   return { year: now.getFullYear(), month: now.getMonth() + 1 };
 }
 
+/**
+ * Day of the month on which the prior month's close is treated as published.
+ * Before this day, trailing-12 views end two months back so an unfinished
+ * close never shows up in dashboard financials.
+ */
+export const REPORTING_CUTOVER_DAY = 20;
+
+/**
+ * The period that dashboard financials treat as "current" for trailing-12
+ * windows. Until the 20th of the month the prior month's close is still in
+ * progress, so this returns the prior period; on or after the 20th it returns
+ * the actual current period. Trailing-12 ranges end one month before the
+ * returned period.
+ */
+export function getReportingPeriod(now: Date = new Date()): {
+  year: number;
+  month: number;
+} {
+  const current = { year: now.getFullYear(), month: now.getMonth() + 1 };
+  if (now.getDate() >= REPORTING_CUTOVER_DAY) return current;
+  return getPriorPeriod(current.year, current.month);
+}
+
 export function getPriorPeriod(
   year: number,
   month: number
