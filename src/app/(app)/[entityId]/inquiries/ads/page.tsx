@@ -6,6 +6,7 @@ import { useAdPlatform } from "@/lib/inquiries/use-ad-platform";
 import { useAdSpend } from "@/lib/inquiries/use-ad-spend";
 import { SectionTabs } from "@/components/inquiries/section-tabs";
 import { AdsReport } from "@/components/inquiries/ads-report";
+import { EmailHealth } from "@/components/inquiries/email-health";
 import { isOpenStatus } from "@/lib/inquiries/shared";
 
 // Ads tab: spend and results for every paid platform, joined to the pipeline.
@@ -31,6 +32,8 @@ export default function InquiriesAdsPage() {
       ) : (
         <AdsReport inquiries={data.inquiries} ads={ads} manualSpend={manual.rows} entityId={entityId} />
       )}
+      {/* Email deliverability: renders nothing for entities without a mapped sending domain. */}
+      <EmailHealth entityId={entityId} />
     </div>
   );
 }

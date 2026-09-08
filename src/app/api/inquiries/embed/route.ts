@@ -2,6 +2,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { HDR_ENTITY_ID } from "@/lib/inquiries/shared";
 import { resolveEmbedEntity } from "@/lib/inquiries/embed-auth";
+import { buildEmailHealth } from "@/lib/email-health/report";
 import type { Database } from "@/lib/types/database.types";
 import { AD_DATA_START, AD_ROW_COLUMNS, AD_RUN_COLUMNS } from "@/lib/ads/columns";
 
@@ -190,6 +191,11 @@ export async function POST(request: Request) {
         .eq("entity_id", entityId)
         .order("month", { ascending: false });
       return NextResponse.json({ rows: data ?? [] });
+    }
+
+    case "email_health": {
+      // Email deliverability report for the Ads tab (see lib/email-health).
+      return NextResponse.json(await buildEmailHealth(entityId));
     }
 
     case "list_ad_platform": {
