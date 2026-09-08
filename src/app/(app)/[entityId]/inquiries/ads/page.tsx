@@ -3,6 +3,7 @@
 import { useParams } from "next/navigation";
 import { useInquiries } from "@/lib/inquiries/use-inquiries";
 import { useAdPlatform } from "@/lib/inquiries/use-ad-platform";
+import { useAdSpend } from "@/lib/inquiries/use-ad-spend";
 import { SectionTabs } from "@/components/inquiries/section-tabs";
 import { AdsReport } from "@/components/inquiries/ads-report";
 import { isOpenStatus } from "@/lib/inquiries/shared";
@@ -13,6 +14,7 @@ export default function InquiriesAdsPage() {
   const entityId = params.entityId as string;
   const data = useInquiries(entityId);
   const ads = useAdPlatform(entityId);
+  const manual = useAdSpend(entityId);
   const openCount = data.inquiries.filter((i) => isOpenStatus(i.status)).length;
 
   return (
@@ -27,7 +29,7 @@ export default function InquiriesAdsPage() {
       {data.loading || ads.loading ? (
         <div className="py-12 text-center text-sm text-muted-foreground">Loading ad data…</div>
       ) : (
-        <AdsReport inquiries={data.inquiries} ads={ads} />
+        <AdsReport inquiries={data.inquiries} ads={ads} manualSpend={manual.rows} />
       )}
     </div>
   );

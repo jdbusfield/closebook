@@ -30,6 +30,7 @@ import {
   isOpenStatus,
 } from "@/lib/inquiries/shared";
 import type { AdDailyRow, AdSyncRun, LeadAttribution, UseAdPlatform } from "@/lib/inquiries/use-ad-platform";
+import type { AdSpendRow } from "@/lib/inquiries/use-ad-spend";
 
 type Platform = "meta" | "google" | "chatgpt";
 const PLATFORMS: Platform[] = ["meta", "google", "chatgpt"];
@@ -128,6 +129,8 @@ interface PlatformStats {
   booked: number;
   bookedValue: number;
   hasSpend: boolean;
+  /** Spend came from the hand-entered monthly figure, not a platform sync. */
+  manualSpend: boolean;
 }
 
 function statsFor(platform: Platform, rows: AdDailyRow[], leads: Inquiry[]): PlatformStats {
@@ -153,7 +156,41 @@ function statsFor(platform: Platform, rows: AdDailyRow[], leads: Inquiry[]): Pla
     booked: bookedRows.length,
     bookedValue: bookedRows.reduce((s, i) => s + (i.estimated_value || 0), 0),
     hasSpend: mine.length > 0,
+    manualSpend: false,
   };
+}
+
+function daysInMonth(y: number, m: number): number {
+  return new Date(y, m, 0).getDate();
+}
+
+/**
+ * Hand-entered monthly spend, prorated to the days of the window that fall in
+ * months with no synced rows for the platform. Before the platform sync went
+ * live the monthly figure was the only record, so it stands in (labelled) for
+ * history rather than showing $0.
+ */
+function manualSpendInWindow(
+  manual: AdSpendRow[],
+  syncedMonths: Set<string>,
+  since: string,
+  until: string
+): number {
+  let total = 0;
+  for (const r of manual) {
+    const m = r.month.slice(0, 7);
+    if (syncedMonths.has(m) || !(r.amount > 0)) continue;
+    const [y, mo] = m.split("-").map(Number);
+    const dim = daysInMonth(y, mo);
+    const mStart = `${m}-01`;
+    const mEnd = `${m}-${String(dim).padStart(2, "0")}`;
+    const lo = since > mStart ? since : mStart;
+    const hi = until < mEnd ? until : mEnd;
+    if (lo > hi) continue;
+    const days = Math.round((new Date(hi + "T00:00:00").getTime() - new Date(lo + "T00:00:00").getTime()) / 86400000) + 1;
+    total += (r.amount * days) / dim;
+  }
+  return Math.round(total * 100) / 100;
 }
 
 /* ------------------------------------------------------------------ */
@@ -180,7 +217,17 @@ function PlatformCard({ s, total }: { s: PlatformStats; total?: boolean }) {
         {inactive && <span className="text-xs text-muted-foreground">no data in this window</span>}
       </div>
       <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
-        <Stat label="Spend" value={fmtMoney(s.spend)} foot={s.hasSpend ? `${fmtInt(s.clicks)} clicks` : "not synced"} />
+        <Stat
+          label="Spend"
+          value={fmtMoney(s.spend)}
+          foot={
+            s.manualSpend
+              ? "hand-entered monthly figure, prorated"
+              : s.hasSpend
+                ? `${fmtInt(s.clicks)} clicks`
+                : "not synced"
+          }
+        />
         <Stat
           label="Leads"
           value={s.leads.length}
@@ -324,7 +371,16 @@ function RunLine({ platform, run }: { platform: Platform; run: AdSyncRun | undef
 
 /* ------------------------------------------------------------------ */
 
-export function AdsReport({ inquiries, ads }: { inquiries: Inquiry[]; ads: UseAdPlatform }) {
+export function AdsReport({
+  inquiries,
+  ads,
+  manualSpend = [],
+}: {
+  inquiries: Inquiry[];
+  ads: UseAdPlatform;
+  /** Hand-entered monthly spend (Google before the sync existed). */
+  manualSpend?: AdSpendRow[];
+}) {
   const [preset, setPreset] = useState<PresetKey>("30d");
   const { since, until } = useMemo(() => windowFor(preset), [preset]);
 
@@ -342,7 +398,22 @@ export function AdsReport({ inquiries, ads }: { inquiries: Inquiry[]; ads: UseAd
   );
   const attribution = useMemo(() => new Map(ads.attribution.map((a) => [a.id, a])), [ads.attribution]);
 
-  const stats = useMemo(() => PLATFORMS.map((p) => statsFor(p, rows, leads)), [rows, leads]);
+  const stats = useMemo(() => {
+    const base = PLATFORMS.map((p) => statsFor(p, rows, leads));
+    // Google ran alone before the platform sync went live, so the hand-entered
+    // monthly figure is Google spend for any month with no synced Google rows.
+    const g = base.find((x) => x.platform === "google");
+    if (g && manualSpend.length) {
+      const syncedMonths = new Set(rows.filter((r) => r.platform === "google").map((r) => r.date.slice(0, 7)));
+      const extra = manualSpendInWindow(manualSpend, syncedMonths, since, until);
+      if (extra > 0) {
+        g.spend += extra;
+        g.hasSpend = true;
+        g.manualSpend = true;
+      }
+    }
+    return base;
+  }, [rows, leads, manualSpend, since, until]);
   const total = useMemo<PlatformStats>(() => {
     const bookedRows = leads.filter(isWon);
     const outOfArea = leads.filter(isOutOfArea).length;
@@ -360,7 +431,8 @@ export function AdsReport({ inquiries, ads }: { inquiries: Inquiry[]; ads: UseAd
       open: leads.filter((i) => isOpenStatus(i.status)).length,
       booked: bookedRows.length,
       bookedValue: bookedRows.reduce((s, i) => s + (i.estimated_value || 0), 0),
-      hasSpend: rows.length > 0,
+      hasSpend: rows.length > 0 || stats.some((x) => x.hasSpend),
+      manualSpend: stats.some((x) => x.manualSpend),
     };
   }, [stats, leads, rows]);
 
