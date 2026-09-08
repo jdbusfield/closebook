@@ -133,7 +133,8 @@ export async function fetchGoogleDaily(
         {
           method: "POST",
           headers,
-          body: JSON.stringify({ query, pageSize: 10000, ...(pageToken ? { pageToken } : {}) }),
+          // page_size is fixed at 10,000 server-side; sending it is rejected (PAGE_SIZE_NOT_SUPPORTED).
+          body: JSON.stringify({ query, ...(pageToken ? { pageToken } : {}) }),
         }
       );
       const text = await resp.text();
