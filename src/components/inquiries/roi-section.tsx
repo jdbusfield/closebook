@@ -20,6 +20,31 @@ import {
   fmtMoney,
 } from "@/lib/inquiries/shared";
 import type { AdSpendRow } from "@/lib/inquiries/use-ad-spend";
+import type { AdDailyRow } from "@/lib/inquiries/use-ad-platform";
+
+/**
+ * Hand-entered monthly spend overridden by synced platform spend wherever a
+ * month has synced rows (Meta + Google + ChatGPT summed). Months without any
+ * synced data keep the manual figure so history before the sync still works.
+ */
+export function mergeSyncedSpend(manual: AdSpendRow[], synced: AdDailyRow[]): AdSpendRow[] {
+  const byMonth = new Map<string, number>();
+  for (const r of synced) {
+    const m = `${r.date.slice(0, 7)}-01`;
+    byMonth.set(m, (byMonth.get(m) ?? 0) + Number(r.spend || 0));
+  }
+  if (byMonth.size === 0) return manual;
+  const out: AdSpendRow[] = manual.map((r) => {
+    const s = byMonth.get(`${r.month.slice(0, 7)}-01`);
+    return s == null ? r : { ...r, amount: Math.round(s * 100) / 100, notes: "synced from ad platforms" };
+  });
+  for (const [month, amount] of byMonth) {
+    if (!out.some((r) => r.month.slice(0, 7) === month.slice(0, 7))) {
+      out.push({ id: `synced:${month}`, month, amount: Math.round(amount * 100) / 100, notes: "synced from ad platforms" });
+    }
+  }
+  return out.sort((a, b) => b.month.localeCompare(a.month));
+}
 
 const ALL_STAGES = [...STAGES, COMPLETED_STAGE, LOST_STAGE];
 
@@ -52,6 +77,12 @@ function monthLabel(iso: string): string {
     month: "short",
     year: "numeric",
   });
+}
+
+// A lead that arrived from any paid click: Google (gclid), Meta (fbclid) or
+// ChatGPT (oppref).
+function isPaidLead(i: Inquiry): boolean {
+  return !!(i.gclid || i.fbclid || i.oppref);
 }
 
 // A won deal for ROI purposes: committed or fully closed out.
@@ -137,7 +168,7 @@ function buildRoi(
     months.push({
       month: m,
       leads: rows.length,
-      adsLeads: rows.filter((i) => !!i.gclid).length,
+      adsLeads: rows.filter(isPaidLead).length,
       wonRev: rows.filter(isWon).reduce((s, i) => s + (i.estimated_value || 0), 0),
       openRev: rows
         .filter((i) => isOpenStatus(i.status))
@@ -150,7 +181,7 @@ function buildRoi(
     fromMonth,
     byStage,
     leads: cohort.length,
-    adsLeads: cohort.filter((i) => !!i.gclid).length,
+    adsLeads: cohort.filter(isPaidLead).length,
     spend: spendInWindow.reduce((s, r) => s + (r.amount || 0), 0),
     spendMissing: spendInWindow.length === 0,
     wonRev: cohort.filter(isWon).reduce((s, i) => s + (i.estimated_value || 0), 0),
@@ -269,7 +300,7 @@ export function RoiSection({
         <Stat
           label="Leads in"
           value={String(m.leads)}
-          foot={`${m.adsLeads} from Google Ads`}
+          foot={`${m.adsLeads} from paid ads (Google, Meta, ChatGPT)`}
         />
         <Stat
           label="Ad spend"

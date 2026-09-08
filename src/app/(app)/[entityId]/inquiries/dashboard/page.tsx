@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import { useInquiries } from "@/lib/inquiries/use-inquiries";
 import { useAdSpend } from "@/lib/inquiries/use-ad-spend";
+import { useAdPlatform } from "@/lib/inquiries/use-ad-platform";
+import { mergeSyncedSpend } from "@/components/inquiries/roi-section";
 import { RoiSection } from "@/components/inquiries/roi-section";
 import { SectionTabs } from "@/components/inquiries/section-tabs";
 import { InquiryDrawer, type DrawerCallbacks } from "@/components/inquiries/detail-drawer";
@@ -61,6 +63,12 @@ export default function InquiriesDashboardPage() {
   const entityId = params.entityId as string;
   const data = useInquiries(entityId);
   const adSpend = useAdSpend(entityId);
+  const adPlatform = useAdPlatform(entityId);
+  // Months with synced platform spend override the hand-entered figure.
+  const spendRows = useMemo(
+    () => mergeSyncedSpend(adSpend.rows, adPlatform.rows),
+    [adSpend.rows, adPlatform.rows]
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const callbacks: DrawerCallbacks = {
@@ -258,7 +266,7 @@ export default function InquiriesDashboardPage() {
           {/* Marketing ROI — stage revenue vs ad spend over time. */}
           <RoiSection
             inquiries={data.inquiries}
-            spendRows={adSpend.rows}
+            spendRows={spendRows}
             onSaveSpend={adSpend.save}
           />
 

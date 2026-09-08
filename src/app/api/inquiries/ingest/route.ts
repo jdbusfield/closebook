@@ -47,6 +47,14 @@ const PayloadSchema = z.object({
   // OpenAI (ChatGPT Ads) click id, same idea: passed to the OpenAI Conversions
   // API for click matching when the deal books.
   oppref: z.string().optional().nullable(),
+  // Campaign-level attribution off the landing URL (utm_content is set per
+  // ad on the Meta side). Written best-effort after the main upsert.
+  utm_source: z.string().optional().nullable(),
+  utm_medium: z.string().optional().nullable(),
+  utm_campaign: z.string().optional().nullable(),
+  utm_content: z.string().optional().nullable(),
+  utm_term: z.string().optional().nullable(),
+  landing_path: z.string().optional().nullable(),
   // --- Reservation-only fields (priced /reserve submissions) ----------------
   days: z.number().int().optional().nullable(),
   zip: z.string().optional().nullable(),
@@ -163,6 +171,22 @@ export async function POST(request: Request) {
     )
     .select("id")
     .single();
+
+  // Campaign attribution rides in a separate best-effort update so a lead is
+  // never lost if the utm_* columns are missing (migration 20260908 not yet
+  // applied) or a value is oversized.
+  const utm = {
+    ...(parsed.utm_source ? { utm_source: parsed.utm_source.slice(0, 200) } : {}),
+    ...(parsed.utm_medium ? { utm_medium: parsed.utm_medium.slice(0, 200) } : {}),
+    ...(parsed.utm_campaign ? { utm_campaign: parsed.utm_campaign.slice(0, 200) } : {}),
+    ...(parsed.utm_content ? { utm_content: parsed.utm_content.slice(0, 200) } : {}),
+    ...(parsed.utm_term ? { utm_term: parsed.utm_term.slice(0, 200) } : {}),
+    ...(parsed.landing_path ? { landing_path: parsed.landing_path.slice(0, 500) } : {}),
+  };
+  if (!upsertErr && inquiry?.id && Object.keys(utm).length) {
+    const { error: utmError } = await supabase.from("rental_inquiries").update(utm).eq("id", inquiry.id);
+    if (utmError) console.warn("[ingest] utm attribution not saved:", utmError.message);
+  }
 
   if (upsertErr || !inquiry) {
     console.error("[inquiries/ingest] upsert failed", upsertErr);

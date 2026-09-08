@@ -125,6 +125,12 @@ export type Database = {
           meta_conversion_uploaded_at: string | null
           meta_conversion_error: string | null
           oppref: string | null
+          utm_source: string | null
+          utm_medium: string | null
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_term: string | null
+          landing_path: string | null
         }
         Insert: {
           id?: string
@@ -184,6 +190,12 @@ export type Database = {
           meta_conversion_uploaded_at?: string | null
           meta_conversion_error?: string | null
           oppref?: string | null
+          utm_source?: string | null
+          utm_medium?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_term?: string | null
+          landing_path?: string | null
         }
         Update: {
           id?: string
@@ -243,6 +255,12 @@ export type Database = {
           meta_conversion_uploaded_at?: string | null
           meta_conversion_error?: string | null
           oppref?: string | null
+          utm_source?: string | null
+          utm_medium?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_term?: string | null
+          landing_path?: string | null
         }
         Relationships: []
       }
@@ -330,6 +348,111 @@ export type Database = {
           sent_at?: string | null
           received_at?: string | null
           created_at?: string
+        }
+        Relationships: []
+      }
+      ad_platform_daily: {
+        Row: {
+          id: string
+          entity_id: string
+          platform: string
+          date: string
+          campaign_id: string
+          campaign_name: string | null
+          adset_id: string
+          adset_name: string | null
+          ad_id: string
+          ad_name: string | null
+          spend: number
+          impressions: number
+          clicks: number
+          reach: number | null
+          platform_conversions: number | null
+          currency: string
+          raw: Json | null
+          synced_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          platform: string
+          date: string
+          campaign_id?: string
+          campaign_name?: string | null
+          adset_id?: string
+          adset_name?: string | null
+          ad_id?: string
+          ad_name?: string | null
+          spend?: number
+          impressions?: number
+          clicks?: number
+          reach?: number | null
+          platform_conversions?: number | null
+          currency?: string
+          raw?: Json | null
+          synced_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          platform?: string
+          date?: string
+          campaign_id?: string
+          campaign_name?: string | null
+          adset_id?: string
+          adset_name?: string | null
+          ad_id?: string
+          ad_name?: string | null
+          spend?: number
+          impressions?: number
+          clicks?: number
+          reach?: number | null
+          platform_conversions?: number | null
+          currency?: string
+          raw?: Json | null
+          synced_at?: string
+        }
+        Relationships: []
+      }
+      ad_platform_sync_runs: {
+        Row: {
+          id: string
+          entity_id: string
+          platform: string
+          started_at: string
+          finished_at: string | null
+          ok: boolean
+          since: string | null
+          until: string | null
+          rows_upserted: number
+          error: string | null
+          detail: Json | null
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          platform: string
+          started_at?: string
+          finished_at?: string | null
+          ok?: boolean
+          since?: string | null
+          until?: string | null
+          rows_upserted?: number
+          error?: string | null
+          detail?: Json | null
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          platform?: string
+          started_at?: string
+          finished_at?: string | null
+          ok?: boolean
+          since?: string | null
+          until?: string | null
+          rows_upserted?: number
+          error?: string | null
+          detail?: Json | null
         }
         Relationships: []
       }

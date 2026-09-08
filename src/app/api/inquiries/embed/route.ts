@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { HDR_ENTITY_ID } from "@/lib/inquiries/shared";
 import { resolveEmbedEntity } from "@/lib/inquiries/embed-auth";
 import type { Database } from "@/lib/types/database.types";
+import { AD_DATA_START, AD_ROW_COLUMNS, AD_RUN_COLUMNS } from "@/lib/inquiries/use-ad-platform";
 
 export const runtime = "nodejs";
 
@@ -189,6 +190,39 @@ export async function POST(request: Request) {
         .eq("entity_id", entityId)
         .order("month", { ascending: false });
       return NextResponse.json({ rows: data ?? [] });
+    }
+
+    case "list_ad_platform": {
+      // Synced ad-platform rows + sync history + per-lead campaign attribution
+      // for the Ads tab. Tolerates the tables not existing yet (migration
+      // 20260908): the page shows `unavailable` instead of crashing.
+      const [r, s, a] = await Promise.all([
+        admin
+          .from("ad_platform_daily")
+          .select(AD_ROW_COLUMNS)
+          .eq("entity_id", entityId)
+          .gte("date", AD_DATA_START)
+          .order("date", { ascending: true })
+          .range(0, 9999),
+        admin
+          .from("ad_platform_sync_runs")
+          .select(AD_RUN_COLUMNS)
+          .eq("entity_id", entityId)
+          .order("started_at", { ascending: false })
+          .limit(30),
+        admin
+          .from("rental_inquiries")
+          .select("id, utm_source, utm_campaign, utm_content")
+          .eq("entity_id", entityId)
+          .gte("created_at", AD_DATA_START)
+          .range(0, 9999),
+      ]);
+      return NextResponse.json({
+        rows: r.error ? [] : (r.data ?? []),
+        runs: s.error ? [] : (s.data ?? []),
+        attribution: a.error ? [] : (a.data ?? []),
+        unavailable: r.error ? r.error.message : null,
+      });
     }
 
     // --- Writes (each forced/verified to HDR) -------------------------------

@@ -664,6 +664,13 @@ export interface Inquiry {
   gclid: string | null;
   fbclid: string | null;
   oppref: string | null;
+  // Campaign attribution (migration 20260908). Optional: the CRM lists do not
+  // select these; the Ads tab loads them separately.
+  utm_source?: string | null;
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
+  utm_content?: string | null;
+  utm_term?: string | null;
   last_activity_at: string | null;
   created_at: string;
   tasks?: InquiryTask[];
