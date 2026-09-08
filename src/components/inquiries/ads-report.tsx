@@ -101,8 +101,13 @@ function norm(s: string | null | undefined): string {
   return (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+// Whole dollars: a cost-per figure with cents reads as false precision.
 function per(spend: number, n: number): string {
-  return n > 0 && spend > 0 ? fmtMoney(spend / n) : "—";
+  return n > 0 && spend > 0 ? fmtMoney(Math.round(spend / n)) : "—";
+}
+
+function money(n: number): string {
+  return fmtMoney(Math.round(n * 100) / 100);
 }
 
 function pct(n: number, d: number): string {
@@ -220,7 +225,7 @@ function PlatformCard({ s, total }: { s: PlatformStats; total?: boolean }) {
       <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
         <Stat
           label="Spend"
-          value={fmtMoney(s.spend)}
+          value={money(s.spend)}
           foot={
             s.manualSpend
               ? "hand-entered monthly figure, prorated"
@@ -244,7 +249,7 @@ function PlatformCard({ s, total }: { s: PlatformStats; total?: boolean }) {
         />
         <Stat label="Cost / usable" value={per(s.spend, s.usable)} />
         <Stat label="Open" value={s.open} foot={`${s.lost} lost`} />
-        <Stat label="Booked" value={s.booked} foot={s.booked ? fmtMoney(s.bookedValue) : undefined} />
+        <Stat label="Booked" value={s.booked} foot={s.booked ? money(s.bookedValue) : undefined} />
         <Stat label="Cost / booking" value={per(s.spend, s.booked)} />
       </div>
     </div>
@@ -637,7 +642,7 @@ export function AdsReport({
                         )}
                         <div className="pl-3">{l.ad_name || (l.ad_id ? `Ad ${l.ad_id}` : "Campaign total")}</div>
                       </td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums">{fmtMoney(l.spend)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums">{money(l.spend)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums">{fmtInt(l.impressions)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums">{fmtInt(l.clicks)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums">{pct(l.clicks, l.impressions)}</td>
