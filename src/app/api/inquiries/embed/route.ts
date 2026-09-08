@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { HDR_ENTITY_ID } from "@/lib/inquiries/shared";
 import { resolveEmbedEntity } from "@/lib/inquiries/embed-auth";
 import type { Database } from "@/lib/types/database.types";
-import { AD_DATA_START, AD_ROW_COLUMNS, AD_RUN_COLUMNS } from "@/lib/inquiries/use-ad-platform";
+import { AD_DATA_START, AD_ROW_COLUMNS, AD_RUN_COLUMNS } from "@/lib/ads/columns";
 
 export const runtime = "nodejs";
 

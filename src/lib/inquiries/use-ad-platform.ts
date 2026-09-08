@@ -13,7 +13,8 @@ import { createClient } from "@/lib/supabase/client";
 import { useEmbed } from "@/lib/inquiries/embed-context";
 import { toast } from "sonner";
 
-export const AD_DATA_START = "2026-08-01";
+import { AD_DATA_START, AD_ROW_COLUMNS, AD_RUN_COLUMNS } from "@/lib/ads/columns";
+export { AD_DATA_START, AD_ROW_COLUMNS, AD_RUN_COLUMNS };
 
 export interface AdDailyRow {
   platform: "meta" | "google" | "chatgpt";
@@ -61,10 +62,6 @@ export interface UseAdPlatform {
   canSync: boolean;
 }
 
-export const AD_ROW_COLUMNS =
-  "platform, date, campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name, spend, impressions, clicks, reach, platform_conversions";
-export const AD_RUN_COLUMNS =
-  "platform, started_at, finished_at, ok, since, until, rows_upserted, error";
 
 function missingTableMessage(msg: string | undefined): string | null {
   if (!msg) return null;
