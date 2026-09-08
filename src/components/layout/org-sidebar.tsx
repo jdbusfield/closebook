@@ -21,6 +21,7 @@ import { SidebarUserFooter } from "./sidebar-user-footer";
 import { OrgSummaryCard } from "./org-summary-card";
 import { getOrgNavGroups } from "./nav-config";
 import type { OrgSummary } from "@/lib/db/queries/org-summary";
+import type { MemberAccess } from "@/lib/access/modules";
 
 interface Entity {
   id: string;
@@ -38,9 +39,10 @@ interface OrgSidebarProps {
   };
   entities: Entity[];
   orgSummary: OrgSummary;
+  access?: MemberAccess | null;
 }
 
-export function OrgSidebar({ user, entities, orgSummary }: OrgSidebarProps) {
+export function OrgSidebar({ user, entities, orgSummary, access }: OrgSidebarProps) {
   const navGroups = getOrgNavGroups();
 
   return (
@@ -84,7 +86,7 @@ export function OrgSidebar({ user, entities, orgSummary }: OrgSidebarProps) {
 
       <SidebarContent>
         {navGroups.map((group) => (
-          <SidebarNavSection key={group.label} group={group} />
+          <SidebarNavSection key={group.label} group={group} access={access} />
         ))}
       </SidebarContent>
 

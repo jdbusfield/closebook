@@ -20,6 +20,7 @@ import {
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
 import type { NavGroup, NavItem, EntityFeatureFlag } from "./nav-config";
+import { canOpenModule, type MemberAccess } from "@/lib/access/modules";
 
 function isActive(pathname: string, href: string): boolean {
   if (pathname === href) return true;
@@ -29,14 +30,17 @@ function isActive(pathname: string, href: string): boolean {
 interface SidebarNavSectionProps {
   group: NavGroup;
   enabledFeatures?: Set<EntityFeatureFlag>;
+  access?: MemberAccess | null;
 }
 
 export function SidebarNavSection({
   group,
   enabledFeatures,
+  access,
 }: SidebarNavSectionProps) {
   const pathname = usePathname();
   const items = group.items.filter((item) => {
+    if (!canOpenModule(access, item.module)) return false;
     if (!item.feature) return true;
     return enabledFeatures?.has(item.feature) ?? false;
   });

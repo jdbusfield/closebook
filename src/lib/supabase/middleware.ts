@@ -1,5 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { canOpenModule, defaultHrefFor, moduleForPath } from "@/lib/access/modules";
+import { parseAccessRow } from "@/lib/access/parse";
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -58,6 +60,44 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);
+  }
+
+  // Module allowlist: a member restricted to certain modules is bounced off
+  // any page outside them. Entity restrictions are enforced by RLS.
+  if (user && !isAuthRoute && !isApiRoute && !isEmbedRoute) {
+    const pathname = request.nextUrl.pathname;
+    const moduleKey = moduleForPath(pathname);
+    if (moduleKey) {
+      const { data: row } = await supabase
+        .from("organization_members")
+        .select("*")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (row) {
+        const access = parseAccessRow(row as Record<string, unknown>);
+        if (!canOpenModule(access, moduleKey)) {
+          let entityIds = access.entityIds ?? [];
+          if (entityIds.length === 0) {
+            const { data: entities } = await supabase
+              .from("entities")
+              .select("id")
+              .eq("is_active", true)
+              .order("name")
+              .limit(1);
+            entityIds = (entities ?? []).map((e) => e.id as string);
+          }
+          const target = defaultHrefFor(access, entityIds);
+          if (target !== pathname) {
+            const url = request.nextUrl.clone();
+            url.pathname = target;
+            url.search = "";
+            return NextResponse.redirect(url);
+          }
+        }
+      }
+    }
   }
 
   return supabaseResponse;

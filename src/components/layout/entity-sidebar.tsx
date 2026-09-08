@@ -19,6 +19,7 @@ import { EntitySwitcher } from "./entity-switcher";
 import { SidebarNavSection } from "./sidebar-nav-section";
 import { SidebarUserFooter } from "./sidebar-user-footer";
 import { getEntityNavGroups, getEntityFeatures } from "./nav-config";
+import type { MemberAccess } from "@/lib/access/modules";
 
 interface Entity {
   id: string;
@@ -36,6 +37,7 @@ interface EntitySidebarProps {
   };
   entities: Entity[];
   entityId: string;
+  access?: MemberAccess | null;
 }
 
 const ENTITY_LOGOS: Record<string, { src: string; alt: string }> = {
@@ -58,7 +60,7 @@ const MONTH_LABELS = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-export function EntitySidebar({ user, entities, entityId }: EntitySidebarProps) {
+export function EntitySidebar({ user, entities, entityId, access }: EntitySidebarProps) {
   const currentEntity = entities.find((e) => e.id === entityId);
   const entityLogo = currentEntity ? ENTITY_LOGOS[currentEntity.name] : null;
   const enabledFeatures = getEntityFeatures(currentEntity?.name);
@@ -119,6 +121,7 @@ export function EntitySidebar({ user, entities, entityId }: EntitySidebarProps) 
             key={group.label}
             group={group}
             enabledFeatures={enabledFeatures}
+            access={access}
           />
         ))}
       </SidebarContent>

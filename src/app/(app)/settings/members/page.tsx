@@ -58,11 +58,20 @@ import { UserPlus, MoreHorizontal, Clock, X, Copy, Check } from "lucide-react";
 import type { UserRole } from "@/lib/types/database";
 import { getRoleLabel } from "@/lib/utils/permissions";
 import { EntityAccessSection } from "./entity-access";
+import {
+  AccessPicker,
+  describeAccess,
+  FULL_ACCESS,
+  type AccessValue,
+  type AccessEntity,
+} from "./access-picker";
 
 interface Member {
   id: string;
   user_id: string;
   role: UserRole;
+  modules?: string[] | null;
+  entity_ids?: string[] | null;
   profiles: {
     id: string;
     full_name: string;
@@ -94,6 +103,7 @@ export default function MembersPage() {
   const [inviteLastName, setInviteLastName] = useState("");
   const [invitePassword, setInvitePassword] = useState("");
   const [inviteRole, setInviteRole] = useState<UserRole>("preparer");
+  const [inviteAccess, setInviteAccess] = useState<AccessValue>(FULL_ACCESS);
   const [inviting, setInviting] = useState(false);
   const [inviteLink, setInviteLink] = useState("");
   const [linkCopied, setLinkCopied] = useState(false);
@@ -103,6 +113,13 @@ export default function MembersPage() {
   const [roleTarget, setRoleTarget] = useState<Member | null>(null);
   const [newRole, setNewRole] = useState<UserRole>("preparer");
   const [changingRole, setChangingRole] = useState(false);
+
+  // Access scope dialog
+  const [accessDialogOpen, setAccessDialogOpen] = useState(false);
+  const [accessTarget, setAccessTarget] = useState<Member | null>(null);
+  const [accessDraft, setAccessDraft] = useState<AccessValue>(FULL_ACCESS);
+  const [savingAccess, setSavingAccess] = useState(false);
+  const [entities, setEntities] = useState<AccessEntity[]>([]);
 
   // Remove dialog
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
@@ -130,14 +147,24 @@ export default function MembersPage() {
     setCurrentUserRole(membership.role as UserRole);
     setOrgId(membership.organization_id);
 
-    // Load members
+    // Load members (select * so modules/entity_ids come through once migrated)
     const { data: membersData } = await supabase
       .from("organization_members")
-      .select("id, user_id, role, profiles(id, full_name, avatar_url)")
+      .select("*, profiles(id, full_name, avatar_url)")
       .eq("organization_id", membership.organization_id)
       .order("created_at");
 
     setMembers((membersData as unknown as Member[]) ?? []);
+
+    // Entities for the access picker
+    const { data: entitiesData } = await supabase
+      .from("entities")
+      .select("id, name")
+      .eq("organization_id", membership.organization_id)
+      .eq("is_active", true)
+      .order("name");
+
+    setEntities((entitiesData as AccessEntity[]) ?? []);
 
     // Load pending invites
     const { data: invitesData } = await supabase
@@ -172,6 +199,8 @@ export default function MembersPage() {
           lastName: inviteLastName,
           password: invitePassword,
           role: inviteRole,
+          modules: inviteAccess.modules,
+          entityIds: inviteAccess.entityIds,
         }),
       });
 
@@ -189,6 +218,7 @@ export default function MembersPage() {
       setInviteFirstName("");
       setInviteLastName("");
       setInvitePassword("");
+      setInviteAccess(FULL_ACCESS);
       loadData();
     } catch {
       toast.error("Failed to create user");
@@ -241,6 +271,45 @@ export default function MembersPage() {
       toast.error("Failed to change role");
     } finally {
       setChangingRole(false);
+    }
+  }
+
+  function memberAccess(member: Member): AccessValue {
+    return {
+      modules: member.modules ?? null,
+      entityIds: member.entity_ids ?? null,
+    };
+  }
+
+  async function handleSaveAccess() {
+    if (!accessTarget) return;
+    setSavingAccess(true);
+
+    try {
+      const res = await fetch("/api/members", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          memberId: accessTarget.id,
+          modules: accessDraft.modules,
+          entityIds: accessDraft.entityIds,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast.error(data.error || "Failed to update access");
+        return;
+      }
+
+      toast.success("Access updated");
+      setAccessDialogOpen(false);
+      loadData();
+    } catch {
+      toast.error("Failed to update access");
+    } finally {
+      setSavingAccess(false);
     }
   }
 
@@ -387,6 +456,19 @@ export default function MembersPage() {
                   {inviting ? "Creating..." : "Create Account"}
                 </Button>
               </div>
+              <div className="rounded-md border p-4 space-y-1">
+                <p className="text-sm font-medium">Access</p>
+                <p className="text-xs text-muted-foreground pb-2">
+                  Choose which entities and modules this person can open. Leave both on All for full access.
+                </p>
+                <AccessPicker
+                  value={inviteAccess}
+                  onChange={setInviteAccess}
+                  entities={entities}
+                  disabled={inviteRole === "admin"}
+                  idPrefix="invite"
+                />
+              </div>
               {inviteLink && (
                 <div className="rounded-md border bg-muted/50 p-3 space-y-2">
                   <p className="text-sm font-medium">Invite Link</p>
@@ -503,6 +585,7 @@ export default function MembersPage() {
                 <TableRow>
                   <TableHead>Member</TableHead>
                   <TableHead>Role</TableHead>
+                  <TableHead>Access</TableHead>
                   {isAdmin && <TableHead className="w-[80px]">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
@@ -536,6 +619,22 @@ export default function MembersPage() {
                           {getRoleLabel(member.role)}
                         </Badge>
                       </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const summary = describeAccess(
+                            member.role === "admin" ? FULL_ACCESS : memberAccess(member),
+                            entities
+                          );
+                          return summary.restricted ? (
+                            <div className="text-sm leading-tight">
+                              <div>{summary.entities}</div>
+                              <div className="text-muted-foreground">{summary.modules}</div>
+                            </div>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">Everything</span>
+                          );
+                        })()}
+                      </TableCell>
                       {isAdmin && (
                         <TableCell>
                           <DropdownMenu>
@@ -557,6 +656,16 @@ export default function MembersPage() {
                                 }}
                               >
                                 Change Role
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                disabled={member.role === "admin"}
+                                onClick={() => {
+                                  setAccessTarget(member);
+                                  setAccessDraft(memberAccess(member));
+                                  setAccessDialogOpen(true);
+                                }}
+                              >
+                                Edit Access
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 className="text-destructive"
@@ -614,6 +723,7 @@ export default function MembersPage() {
                   <SelectItem value="controller">Controller</SelectItem>
                   <SelectItem value="reviewer">Reviewer</SelectItem>
                   <SelectItem value="preparer">Preparer</SelectItem>
+                  <SelectItem value="viewer">Viewer</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -627,6 +737,35 @@ export default function MembersPage() {
             </Button>
             <Button onClick={handleRoleChange} disabled={changingRole}>
               {changingRole ? "Updating..." : "Update Role"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Access Scope Dialog */}
+      <Dialog open={accessDialogOpen} onOpenChange={setAccessDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Access</DialogTitle>
+            <DialogDescription>
+              Entities and modules {accessTarget?.profiles?.full_name ?? "this member"} can open.
+              Their role ({accessTarget ? getRoleLabel(accessTarget.role) : ""}) still decides what they can edit.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <AccessPicker
+              value={accessDraft}
+              onChange={setAccessDraft}
+              entities={entities}
+              idPrefix="edit"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAccessDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveAccess} disabled={savingAccess}>
+              {savingAccess ? "Saving..." : "Save Access"}
             </Button>
           </DialogFooter>
         </DialogContent>

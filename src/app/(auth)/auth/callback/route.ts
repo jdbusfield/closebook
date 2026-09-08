@@ -64,6 +64,8 @@ async function processPendingInvites(userId: string, email: string): Promise<boo
           organization_id: invite.organization_id,
           user_id: userId,
           role: invite.role,
+          ...(invite.modules ? { modules: invite.modules } : {}),
+          ...(invite.entity_ids ? { entity_ids: invite.entity_ids } : {}),
         });
       }
 

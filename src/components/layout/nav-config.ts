@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import type { ModuleKey } from "@/lib/access/modules";
 import {
   LayoutDashboard,
   CheckSquare,
@@ -39,6 +40,8 @@ export interface NavItem {
   title: string;
   href: string;
   icon: LucideIcon;
+  /** Access-scope module that owns this item (see lib/access/modules.ts). */
+  module?: ModuleKey;
   feature?: EntityFeatureFlag;
   children?: NavSubItem[];
 }
@@ -58,18 +61,18 @@ export function getOrgNavGroups(): NavGroup[] {
     {
       label: "Consolidated Reporting",
       items: [
-        { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-        { title: "Close Dashboard", href: "/close-dashboard", icon: CheckSquare },
-        { title: "Financial Model", href: "/reports/financial-model", icon: FileText },
-        { title: "Monthly Summary", href: "/monthly-summary", icon: ClipboardList },
-        { title: "Debt Dashboard", href: "/debt", icon: Landmark },
-        { title: "Rental Assets", href: "/rental-assets", icon: Car },
-        { title: "TB Variance", href: "/tb-variance", icon: AlertTriangle },
-        { title: "IC Eliminations", href: "/ic-eliminations", icon: ArrowLeftRight },
-        { title: "Payroll", href: "/payroll", icon: Users },
-        { title: "Real Estate", href: "/real-estate", icon: Building },
-        { title: "QBO Sync", href: "/sync", icon: RefreshCw },
-        { title: "Diligence", href: "/diligence", icon: Handshake },
+        { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard, module: "org_dashboard" },
+        { title: "Close Dashboard", href: "/close-dashboard", icon: CheckSquare, module: "close_dashboard" },
+        { title: "Financial Model", href: "/reports/financial-model", icon: FileText, module: "financial_model" },
+        { title: "Monthly Summary", href: "/monthly-summary", icon: ClipboardList, module: "monthly_summary" },
+        { title: "Debt Dashboard", href: "/debt", icon: Landmark, module: "debt_dashboard" },
+        { title: "Rental Assets", href: "/rental-assets", icon: Car, module: "rental_assets_dashboard" },
+        { title: "TB Variance", href: "/tb-variance", icon: AlertTriangle, module: "tb_variance" },
+        { title: "IC Eliminations", href: "/ic-eliminations", icon: ArrowLeftRight, module: "ic_eliminations" },
+        { title: "Payroll", href: "/payroll", icon: Users, module: "payroll" },
+        { title: "Real Estate", href: "/real-estate", icon: Building, module: "real_estate" },
+        { title: "QBO Sync", href: "/sync", icon: RefreshCw, module: "qbo_sync" },
+        { title: "Diligence", href: "/diligence", icon: Handshake, module: "diligence" },
       ],
     },
     {
@@ -79,6 +82,7 @@ export function getOrgNavGroups(): NavGroup[] {
           title: "CRM",
           href: "/crm",
           icon: Clapperboard,
+          module: "crm",
           children: [
             { title: "Dashboard", href: "/crm" },
             { title: "Clients & Productions", href: "/crm/clients" },
@@ -98,13 +102,13 @@ export function getOrgNavGroups(): NavGroup[] {
     {
       label: "Administration",
       items: [
-        { title: "Master GL", href: "/settings/master-gl", icon: LibraryBig },
-        { title: "Reporting Entities", href: "/settings/reporting-entities", icon: Layers },
-        { title: "Close Templates", href: "/settings/templates/tasks", icon: CheckSquare },
-        { title: "Members", href: "/settings/members", icon: Users },
-        { title: "Audit Log", href: "/settings/audit-log", icon: History },
-        { title: "Wiki", href: "/settings/wiki", icon: BookOpen },
-        { title: "Organization", href: "/settings", icon: Building2 },
+        { title: "Master GL", href: "/settings/master-gl", icon: LibraryBig, module: "administration" },
+        { title: "Reporting Entities", href: "/settings/reporting-entities", icon: Layers, module: "administration" },
+        { title: "Close Templates", href: "/settings/templates/tasks", icon: CheckSquare, module: "administration" },
+        { title: "Members", href: "/settings/members", icon: Users, module: "administration" },
+        { title: "Audit Log", href: "/settings/audit-log", icon: History, module: "administration" },
+        { title: "Wiki", href: "/settings/wiki", icon: BookOpen, module: "administration" },
+        { title: "Organization", href: "/settings", icon: Building2, module: "administration" },
       ],
     },
   ];
@@ -124,18 +128,18 @@ export function getEntityNavGroups(entityId: string): NavGroup[] {
     {
       label: "Overview",
       items: [
-        { title: "Dashboard", href: `${prefix}/dashboard`, icon: LayoutDashboard },
-        { title: "Close Management", href: `${prefix}/close`, icon: CheckSquare },
-        { title: "Reports & KPIs", href: `${prefix}/reports`, icon: BarChart3 },
-        { title: "Budget", href: `${prefix}/reports/budget`, icon: Wallet },
+        { title: "Dashboard", href: `${prefix}/dashboard`, icon: LayoutDashboard, module: "entity_dashboard" },
+        { title: "Close Management", href: `${prefix}/close`, icon: CheckSquare, module: "close" },
+        { title: "Reports & KPIs", href: `${prefix}/reports`, icon: BarChart3, module: "reports" },
+        { title: "Budget", href: `${prefix}/reports/budget`, icon: Wallet, module: "reports" },
       ],
     },
     {
       label: "Accounting",
       items: [
-        { title: "Chart of Accounts", href: `${prefix}/accounts`, icon: BookOpenCheck },
-        { title: "Trial Balance", href: `${prefix}/trial-balance`, icon: Scale },
-        { title: "Schedules", href: `${prefix}/schedules`, icon: TableProperties },
+        { title: "Chart of Accounts", href: `${prefix}/accounts`, icon: BookOpenCheck, module: "accounts" },
+        { title: "Trial Balance", href: `${prefix}/trial-balance`, icon: Scale, module: "trial_balance" },
+        { title: "Schedules", href: `${prefix}/schedules`, icon: TableProperties, module: "schedules" },
       ],
     },
     {
@@ -145,6 +149,7 @@ export function getEntityNavGroups(entityId: string): NavGroup[] {
           title: "Inquiries",
           href: `${prefix}/inquiries`,
           icon: Inbox,
+          module: "inquiries",
           feature: "inquiries",
           children: [
             { title: "Dashboard", href: `${prefix}/inquiries/dashboard` },
@@ -168,6 +173,7 @@ export function getEntityNavGroups(entityId: string): NavGroup[] {
                 title: "Cold outreach",
                 href: `${prefix}/cold-outreach`,
                 icon: Send,
+                module: "inquiries" as const,
                 feature: "inquiries" as const,
               },
             ]
@@ -177,10 +183,10 @@ export function getEntityNavGroups(entityId: string): NavGroup[] {
     {
       label: "Resources",
       items: [
-        { title: "Rental Assets", href: `${prefix}/assets`, icon: Car },
-        { title: "Debt Schedule", href: `${prefix}/debt`, icon: Landmark },
-        { title: "Real Estate", href: `${prefix}/real-estate`, icon: Building },
-        { title: "Insurance", href: `${prefix}/insurance`, icon: Shield },
+        { title: "Rental Assets", href: `${prefix}/assets`, icon: Car, module: "assets" },
+        { title: "Debt Schedule", href: `${prefix}/debt`, icon: Landmark, module: "debt" },
+        { title: "Real Estate", href: `${prefix}/real-estate`, icon: Building, module: "real_estate" },
+        { title: "Insurance", href: `${prefix}/insurance`, icon: Shield, module: "insurance" },
       ],
     },
     {
@@ -190,24 +196,27 @@ export function getEntityNavGroups(entityId: string): NavGroup[] {
           title: "Employees",
           href: `${prefix}/employees`,
           icon: Users,
+          module: "payroll",
           children: [
             { title: "Roster", href: `${prefix}/employees` },
             { title: "Payroll Accruals", href: `${prefix}/employees/accruals` },
             { title: "Details", href: `${prefix}/employees/details` },
           ],
         },
-        { title: "Revenue Accruals", href: `${prefix}/revenue`, icon: Receipt },
-        { title: "Commissions", href: `${prefix}/commissions`, icon: Percent },
+        { title: "Revenue Accruals", href: `${prefix}/revenue`, icon: Receipt, module: "revenue_accruals" },
+        { title: "Commissions", href: `${prefix}/commissions`, icon: Percent, module: "commissions" },
         {
           title: "Rebate Tracker",
           href: `${prefix}/rebates`,
           icon: HandCoins,
+          module: "rebates",
           feature: "rebates",
         },
         {
           title: "Revenue Projection",
           href: `${prefix}/revenue-projection`,
           icon: TrendingUp,
+          module: "revenue_projection",
           feature: "revenue_projection",
         },
       ],
@@ -215,7 +224,7 @@ export function getEntityNavGroups(entityId: string): NavGroup[] {
     {
       label: "Entity Settings",
       items: [
-        { title: "Settings", href: `${prefix}/settings`, icon: Settings },
+        { title: "Settings", href: `${prefix}/settings`, icon: Settings, module: "entity_settings" },
       ],
     },
   ];

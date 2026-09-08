@@ -2095,6 +2095,8 @@ export type Database = {
           accepted_at: string | null
           created_at: string
           updated_at: string
+          modules: string[] | null
+          entity_ids: string[] | null
         }
         Insert: {
           id?: string
@@ -2108,6 +2110,8 @@ export type Database = {
           accepted_at?: string | null
           created_at?: string
           updated_at?: string
+          modules?: string[] | null
+          entity_ids?: string[] | null
         }
         Update: {
           id?: string
@@ -2121,6 +2125,8 @@ export type Database = {
           accepted_at?: string | null
           created_at?: string
           updated_at?: string
+          modules?: string[] | null
+          entity_ids?: string[] | null
         }
         Relationships: []
       }
@@ -2131,6 +2137,8 @@ export type Database = {
           user_id: string
           role: string
           created_at: string
+          modules: string[] | null
+          entity_ids: string[] | null
         }
         Insert: {
           id?: string
@@ -2138,6 +2146,8 @@ export type Database = {
           user_id: string
           role: string
           created_at?: string
+          modules?: string[] | null
+          entity_ids?: string[] | null
         }
         Update: {
           id?: string
@@ -2145,6 +2155,8 @@ export type Database = {
           user_id?: string
           role?: string
           created_at?: string
+          modules?: string[] | null
+          entity_ids?: string[] | null
         }
         Relationships: []
       }

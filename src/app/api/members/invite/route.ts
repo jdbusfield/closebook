@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logAuditEvent } from "@/lib/utils/audit";
 import type { UserRole } from "@/lib/types/database";
+import { validateScopes } from "@/lib/access/validate";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -26,12 +27,14 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json();
-  const { email, firstName, lastName, password, role } = body as {
+  const { email, firstName, lastName, password, role, modules, entityIds } = body as {
     email: string;
     firstName: string;
     lastName: string;
     password: string;
     role: UserRole;
+    modules?: string[] | null;
+    entityIds?: string[] | null;
   };
 
   if (!email || !firstName || !lastName || !password || !role) {
@@ -56,6 +59,20 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const orgId = membership.organization_id;
   const fullName = `${firstName} ${lastName}`;
+
+  // Access scopes (entities + modules). Admins always see everything.
+  const scopes = await validateScopes(admin, orgId, {
+    modules: role === "admin" ? null : modules,
+    entityIds: role === "admin" ? null : entityIds,
+  });
+  if (!scopes.ok) {
+    return NextResponse.json({ error: scopes.error }, { status: 400 });
+  }
+  // Only send the columns when a restriction is set, so this route keeps
+  // working before the 20260908_member_access_scopes migration is applied.
+  const scopeColumns: Record<string, string[]> = {};
+  if (scopes.columns.modules) scopeColumns.modules = scopes.columns.modules;
+  if (scopes.columns.entity_ids) scopeColumns.entity_ids = scopes.columns.entity_ids;
 
   // Check if email is already a member
   const { data: authUsers } = await admin.auth.admin.listUsers();
@@ -148,6 +165,7 @@ export async function POST(request: Request) {
       organization_id: orgId,
       user_id: userId,
       role,
+      ...scopeColumns,
     });
 
   if (memberError) {
@@ -166,6 +184,7 @@ export async function POST(request: Request) {
       role,
       invited_by: user.id,
       status: "pending",
+      ...scopeColumns,
     })
     .select()
     .single();
@@ -182,7 +201,7 @@ export async function POST(request: Request) {
     userId: user.id,
     action: "create",
     resourceType: "organization_member",
-    newValues: { email, role, fullName, method: "direct_create" },
+    newValues: { email, role, fullName, method: "direct_create", ...scopeColumns },
     request,
   });
 

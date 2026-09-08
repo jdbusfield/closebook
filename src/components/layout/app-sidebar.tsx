@@ -5,6 +5,7 @@ import { OrgSidebar } from "./org-sidebar";
 import { EntitySidebar } from "./entity-sidebar";
 import { detectEntityId } from "@/lib/utils/entity-context";
 import type { OrgSummary } from "@/lib/db/queries/org-summary";
+import type { MemberAccess } from "@/lib/access/modules";
 
 interface Entity {
   id: string;
@@ -22,15 +23,16 @@ interface AppSidebarProps {
   };
   entities: Entity[];
   orgSummary: OrgSummary;
+  access: MemberAccess | null;
 }
 
-export function AppSidebar({ user, entities, orgSummary }: AppSidebarProps) {
+export function AppSidebar({ user, entities, orgSummary, access }: AppSidebarProps) {
   const pathname = usePathname();
   const entityId = detectEntityId(pathname);
 
   if (entityId) {
-    return <EntitySidebar user={user} entities={entities} entityId={entityId} />;
+    return <EntitySidebar user={user} entities={entities} entityId={entityId} access={access} />;
   }
 
-  return <OrgSidebar user={user} entities={entities} orgSummary={orgSummary} />;
+  return <OrgSidebar user={user} entities={entities} orgSummary={orgSummary} access={access} />;
 }

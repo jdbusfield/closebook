@@ -3,11 +3,13 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logAuditEvent } from "@/lib/utils/audit";
 import type { UserRole } from "@/lib/types/database";
+import { validateScopes } from "@/lib/access/validate";
 
 /**
  * PATCH /api/members
- * Change a member's role.
- * Body: { memberId: string, role: UserRole }
+ * Change a member's role and/or access scopes.
+ * Body: { memberId: string, role?: UserRole, modules?: string[] | null, entityIds?: string[] | null }
+ * modules/entityIds: omit = unchanged, null or [] = everything.
  */
 export async function PATCH(request: Request) {
   const supabase = await createClient();
@@ -30,16 +32,23 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const { memberId, role } = (await request.json()) as {
+  const { memberId, role, modules, entityIds } = (await request.json()) as {
     memberId: string;
-    role: UserRole;
+    role?: UserRole;
+    modules?: string[] | null;
+    entityIds?: string[] | null;
   };
 
-  if (!memberId || !role) {
+  if (!memberId || (!role && modules === undefined && entityIds === undefined)) {
     return NextResponse.json(
-      { error: "memberId and role are required" },
+      { error: "memberId and at least one of role, modules, entityIds are required" },
       { status: 400 }
     );
+  }
+
+  const validRoles: UserRole[] = ["admin", "controller", "preparer", "reviewer", "viewer"];
+  if (role && !validRoles.includes(role)) {
+    return NextResponse.json({ error: "Invalid role" }, { status: 400 });
   }
 
   const admin = createAdminClient();
@@ -61,7 +70,7 @@ export async function PATCH(request: Request) {
   }
 
   // Prevent demoting the last admin
-  if (target.role === "admin" && role !== "admin") {
+  if (role && target.role === "admin" && role !== "admin") {
     const { count } = await admin
       .from("organization_members")
       .select("id", { count: "exact", head: true })
@@ -76,23 +85,41 @@ export async function PATCH(request: Request) {
     }
   }
 
+  const effectiveRole = role ?? (target.role as UserRole);
+  const scopes = await validateScopes(admin, orgId, {
+    // Admins always see everything.
+    modules: effectiveRole === "admin" ? null : modules,
+    entityIds: effectiveRole === "admin" ? null : entityIds,
+  });
+  if (!scopes.ok) {
+    return NextResponse.json({ error: scopes.error }, { status: 400 });
+  }
+
+  const update: Record<string, unknown> = { ...scopes.columns };
+  if (role) update.role = role;
+
   const { error } = await admin
     .from("organization_members")
-    .update({ role })
+    .update(update)
     .eq("id", memberId);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  const targetRow = target as unknown as Record<string, unknown>;
   logAuditEvent({
     organizationId: orgId,
     userId: user.id,
     action: "update",
     resourceType: "organization_member",
     resourceId: memberId,
-    oldValues: { role: target.role },
-    newValues: { role },
+    oldValues: {
+      role: target.role,
+      modules: targetRow.modules ?? null,
+      entity_ids: targetRow.entity_ids ?? null,
+    },
+    newValues: update,
     request,
   });
 

@@ -40,6 +40,8 @@ export async function POST() {
         organization_id: invite.organization_id,
         user_id: user.id,
         role: invite.role,
+        ...(invite.modules ? { modules: invite.modules } : {}),
+        ...(invite.entity_ids ? { entity_ids: invite.entity_ids } : {}),
       });
     }
 
