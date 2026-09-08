@@ -1056,6 +1056,8 @@ export type Database = {
           action: string
           resource_type: string
           resource_id: string | null
+          resource_key: string | null
+          resource_label: string | null
           old_values: Json | null
           new_values: Json | null
           ip_address: string | null
@@ -1070,6 +1072,8 @@ export type Database = {
           action: string
           resource_type: string
           resource_id?: string | null
+          resource_key?: string | null
+          resource_label?: string | null
           old_values?: Json | null
           new_values?: Json | null
           ip_address?: string | null
@@ -1084,6 +1088,8 @@ export type Database = {
           action?: string
           resource_type?: string
           resource_id?: string | null
+          resource_key?: string | null
+          resource_label?: string | null
           old_values?: Json | null
           new_values?: Json | null
           ip_address?: string | null

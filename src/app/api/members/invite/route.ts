@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { logAuditEvent } from "@/lib/utils/audit";
 import type { UserRole } from "@/lib/types/database";
 import { validateScopes } from "@/lib/access/validate";
 
@@ -195,15 +194,6 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-
-  logAuditEvent({
-    organizationId: orgId,
-    userId: user.id,
-    action: "create",
-    resourceType: "organization_member",
-    newValues: { email, role, fullName, method: "direct_create", ...scopeColumns },
-    request,
-  });
 
   const origin = request.headers.get("origin") || "https://closebook.vercel.app";
   const inviteLink = `${origin}/invite/${invite.token}`;

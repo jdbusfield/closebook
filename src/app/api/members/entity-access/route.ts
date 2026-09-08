@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasMinRole } from "@/lib/utils/permissions";
-import { logAuditEvent } from "@/lib/utils/audit";
 import type { UserRole } from "@/lib/types/database";
 
 /**
@@ -128,16 +127,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  logAuditEvent({
-    organizationId: membership.organization_id,
-    entityId,
-    userId: user.id,
-    action: "update",
-    resourceType: "organization_member",
-    newValues: { target_user_id: userId, entity_name: entity.name, role },
-    request,
-  });
-
   return NextResponse.json(data);
 }
 
@@ -190,16 +179,6 @@ export async function DELETE(request: Request) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-
-  logAuditEvent({
-    organizationId: membership.organization_id,
-    entityId,
-    userId: user.id,
-    action: "delete",
-    resourceType: "organization_member",
-    newValues: { target_user_id: userId, override_removed: true },
-    request,
-  });
 
   return NextResponse.json({ success: true });
 }

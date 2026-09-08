@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { logAuditEvent } from "@/lib/utils/audit";
 import type { CloseStatus } from "@/lib/types/database";
 
 // ---------------------------------------------------------------------------
@@ -175,26 +174,6 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-
-  logAuditEvent({
-    organizationId: period.entity_id
-      ? (
-          await admin
-            .from("entities")
-            .select("organization_id")
-            .eq("id", period.entity_id)
-            .single()
-        ).data?.organization_id ?? ""
-      : "",
-    entityId: period.entity_id,
-    userId: user.id,
-    action: "transition",
-    resourceType: "close_period",
-    resourceId: periodId,
-    oldValues: { status: currentStatus },
-    newValues: { status: targetStatus },
-    request,
-  });
 
   return NextResponse.json({
     success: true,

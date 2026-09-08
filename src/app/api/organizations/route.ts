@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { logAuditEvent } from "@/lib/utils/audit";
 
 export async function POST(request: Request) {
   // Verify the user is authenticated
@@ -65,16 +64,6 @@ export async function POST(request: Request) {
     );
   }
 
-  logAuditEvent({
-    organizationId: org.id,
-    userId: user.id,
-    action: "create",
-    resourceType: "organization",
-    resourceId: org.id,
-    newValues: { name: name.trim(), slug },
-    request,
-  });
-
   return NextResponse.json({ organization: org });
 }
 
@@ -114,12 +103,6 @@ export async function DELETE(request: Request) {
     );
   }
 
-  // Fetch org name before delete for audit
-  const { data: orgData } = await admin
-    .from("organizations")
-    .select("name")
-    .eq("id", organizationId)
-    .single();
 
   // Delete the organization (cascades to entities, members, etc.)
   const { error } = await admin
@@ -134,16 +117,6 @@ export async function DELETE(request: Request) {
       { status: 500 }
     );
   }
-
-  logAuditEvent({
-    organizationId,
-    userId: user.id,
-    action: "delete",
-    resourceType: "organization",
-    resourceId: organizationId,
-    oldValues: { name: orgData?.name },
-    request,
-  });
 
   return NextResponse.json({ success: true });
 }

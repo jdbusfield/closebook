@@ -31,12 +31,17 @@ export async function GET(request: NextRequest) {
     100,
     Math.max(1, parseInt(searchParams.get("pageSize") ?? "50"))
   );
-  const userId = searchParams.get("userId");
-  const resourceType = searchParams.get("resourceType");
-  const action = searchParams.get("action");
-  const entityId = searchParams.get("entityId");
-  const startDate = searchParams.get("startDate");
-  const endDate = searchParams.get("endDate");
+  const pick = (key: string) => {
+    const value = searchParams.get(key)?.trim() ?? "";
+    return value && value !== "all" ? value : null;
+  };
+  const userId = pick("userId");
+  const resourceType = pick("resourceType");
+  const action = pick("action");
+  const entityId = pick("entityId");
+  const startDate = pick("startDate");
+  const endDate = pick("endDate");
+  const q = pick("q");
 
   const admin = createAdminClient();
   let query = admin
@@ -50,7 +55,15 @@ export async function GET(request: NextRequest) {
   if (action) query = query.eq("action", action);
   if (entityId) query = query.eq("entity_id", entityId);
   if (startDate) query = query.gte("created_at", startDate);
-  if (endDate) query = query.lte("created_at", endDate);
+  if (endDate) query = query.lte("created_at", `${endDate}T23:59:59.999Z`);
+  if (q) {
+    const safe = q.replace(/[%_,()]/g, " ").trim();
+    if (safe) {
+      query = query.or(
+        `resource_label.ilike.%${safe}%,resource_key.ilike.%${safe}%`
+      );
+    }
+  }
 
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;

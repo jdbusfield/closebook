@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { logAuditEvent } from "@/lib/utils/audit";
 
 export async function DELETE(request: Request) {
   const supabase = await createClient();
@@ -66,17 +65,6 @@ export async function DELETE(request: Request) {
       { status: 500 }
     );
   }
-
-  logAuditEvent({
-    organizationId: entity.organization_id,
-    entityId,
-    userId: user.id,
-    action: "delete",
-    resourceType: "entity",
-    resourceId: entityId,
-    oldValues: { name: entity.name },
-    request,
-  });
 
   return NextResponse.json({ success: true });
 }
