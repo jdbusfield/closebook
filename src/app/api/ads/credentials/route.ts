@@ -37,6 +37,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "entityId, platform and value are required" }, { status: 400 });
   }
   if (value.length > 4000) return NextResponse.json({ error: "Token looks too long" }, { status: 400 });
+  // Catch a wrong clipboard (a file path, a sentence) before it overwrites a
+  // working token. Platform tokens are one unbroken run of URL-safe characters.
+  if (!/^[A-Za-z0-9_\-.:|]+$/.test(value) || value.length < 20) {
+    return NextResponse.json(
+      { error: "That doesn't look like a token (it has spaces, slashes or is too short). Copy the key again and paste it." },
+      { status: 400 }
+    );
+  }
+  if (platform === "chatgpt" && !value.startsWith("sk-")) {
+    return NextResponse.json({ error: "A ChatGPT Ads API key starts with sk-. Copy it again from ads.openai.com." }, { status: 400 });
+  }
 
   const { data: entity } = await supabase.from("entities").select("id").eq("id", entityId).maybeSingle();
   if (!entity) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
