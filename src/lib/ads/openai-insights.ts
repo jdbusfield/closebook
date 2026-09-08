@@ -28,7 +28,7 @@ function rowDate(r: Rec): string | null {
   const id = str(r.id) ?? "";
   const m = id.match(/start=(\d+)/);
   if (m) return new Date(Number(m[1]) * 1000).toISOString().slice(0, 10);
-  for (const k of ["date", "day", "start_date", "start"]) {
+  for (const k of ["date", "day", "start_date", "start", "start_time"]) {
     const v = r[k];
     if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
     if (typeof v === "number") return new Date(v * 1000).toISOString().slice(0, 10);
@@ -50,13 +50,31 @@ export async function fetchOpenAIDaily(since: string, until: string): Promise<Fe
     "time_ranges[]",
     JSON.stringify({ type: "unix_range", start: String(start), end: String(end) })
   );
+  // Without an explicit field list the ad-level response carries only
+  // impressions. Verified Sep 8 2026: these names return spend, clicks, ctr
+  // and the campaign / ad group / ad ids and names as flat keys.
+  for (const f of [
+    "ad.id",
+    "ad.name",
+    "ad.spend",
+    "ad.clicks",
+    "ad.impressions",
+    "ad.ctr",
+    "campaign.id",
+    "campaign.name",
+    "ad_group.id",
+    "ad_group.name",
+    "metadata.readable_time",
+  ]) {
+    params.append("fields[]", f);
+  }
 
   const rows: DailyRow[] = [];
   let url: string | null = `${BASE}/ad_account/insights?${params}`;
   let pages = 0;
   const sampleKeys: string[] = [];
   while (url && pages < 50) {
-    const resp = await fetch(url, { headers: { Authorization: `Bearer ${key}` } });
+    const resp = await fetch(url, { headers: { Authorization: `Bearer ${key}`, Accept: "application/json" } });
     const text = await resp.text();
     if (!resp.ok) throw new Error(`OpenAI Ads insights HTTP ${resp.status}: ${text.slice(0, 600)}`);
     const json = JSON.parse(text) as {
