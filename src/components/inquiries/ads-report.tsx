@@ -407,10 +407,24 @@ function TokenPaste({
   );
 }
 
-function RunLine({ platform, run }: { platform: Platform; run: AdSyncRun | undefined }) {
+function RunLine({
+  platform,
+  run,
+  dataThrough,
+}: {
+  platform: Platform;
+  run: AdSyncRun | undefined;
+  /** Latest synced day for the platform, when any rows exist. */
+  dataThrough?: string;
+}) {
+  // Meta is refreshed by hand until its API token exists: rows are present
+  // but the nightly pull fails. Lead with the date the data runs through.
+  const manual = !!dataThrough && !!run && !run.ok;
   return (
     <div className="flex items-start gap-2 text-xs">
-      {!run ? (
+      {manual ? (
+        <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
+      ) : !run ? (
         <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
       ) : run.ok ? (
         <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
@@ -419,7 +433,12 @@ function RunLine({ platform, run }: { platform: Platform; run: AdSyncRun | undef
       )}
       <div className="min-w-0">
         <span className="font-medium">{PLATFORM_LABEL[platform]}</span>{" "}
-        {!run ? (
+        {manual ? (
+          <span className="text-muted-foreground">
+            refreshed by hand, data through {dataThrough}. Automatic pull is off until a token with
+            ads_read exists.
+          </span>
+        ) : !run ? (
           <span className="text-muted-foreground">never synced</span>
         ) : run.ok ? (
           <span className="text-muted-foreground">
@@ -532,6 +551,11 @@ export function AdsReport({
   const hasUtm = ads.attribution.some((a) => a.utm_content || a.utm_campaign);
 
   const lastRun = (p: Platform) => ads.runs.find((r) => r.platform === p);
+  const latestDate = (p: Platform) => {
+    let d: string | undefined;
+    for (const r of ads.rows) if (r.platform === p && (!d || r.date > d)) d = r.date;
+    return d;
+  };
   const recentLeads = useMemo(
     () => [...leads].sort((a, b) => b.created_at.localeCompare(a.created_at)),
     [leads]
@@ -795,7 +819,7 @@ export function AdsReport({
         <div className="space-y-1.5">
           {PLATFORMS.map((p) => (
             <div key={p}>
-              <RunLine platform={p} run={lastRun(p)} />
+              <RunLine platform={p} run={lastRun(p)} dataThrough={latestDate(p)} />
               {ads.canSync && entityId && p !== "google" && (
                 <TokenPaste platform={p} entityId={entityId} onDone={ads.reload} since="2026-06-01" />
               )}
