@@ -22,6 +22,7 @@ import {
   YAxis,
 } from "recharts";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { StagePill, GoogleAdBadge, MetaAdBadge, ChatGPTAdBadge } from "@/components/inquiries/atoms";
 import {
   type Inquiry,
@@ -342,6 +343,69 @@ function buildAdTable(rows: AdDailyRow[], leads: Inquiry[], attribution: Map<str
 }
 
 /* ------------------------------------------------------------------ */
+
+// Paste a platform token (Meta system-user token, ChatGPT Ads API key). It is
+// stored server-side and a sync runs at once so the Data sources line shows
+// whether it worked. The value is never shown again.
+function TokenPaste({
+  platform,
+  entityId,
+  onDone,
+  since,
+}: {
+  platform: Platform;
+  entityId: string;
+  onDone: () => Promise<void>;
+  since: string;
+}) {
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const label = platform === "meta" ? "Meta system user token" : "ChatGPT Ads API key";
+  const submit = async () => {
+    if (!value.trim()) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/ads/credentials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entityId, platform, value: value.trim(), since }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      const r = (json.results ?? [])[0] as { ok?: boolean; rows?: number; error?: string } | undefined;
+      if (r?.ok) toast.success(`${PLATFORM_LABEL[platform]} connected: ${r.rows} rows pulled since ${since}`);
+      else toast.error(`${PLATFORM_LABEL[platform]} token saved but the pull failed: ${r?.error ?? "unknown"}`);
+      setValue("");
+      await onDone();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save token");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form
+      className="mt-1 flex flex-wrap items-center gap-2 pl-5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        submit();
+      }}
+    >
+      <input
+        type="password"
+        autoComplete="off"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder={`Paste ${label}`}
+        aria-label={label}
+        className="h-8 w-72 max-w-full rounded-md border bg-background px-2 text-xs"
+      />
+      <Button type="submit" size="sm" variant="outline" disabled={busy || !value.trim()}>
+        {busy ? "Saving and pulling" : "Save and pull history"}
+      </Button>
+    </form>
+  );
+}
 
 function RunLine({ platform, run }: { platform: Platform; run: AdSyncRun | undefined }) {
   return (
@@ -730,7 +794,12 @@ export function AdsReport({
         <h2 className="mb-2 font-semibold">Data sources</h2>
         <div className="space-y-1.5">
           {PLATFORMS.map((p) => (
-            <RunLine key={p} platform={p} run={lastRun(p)} />
+            <div key={p}>
+              <RunLine platform={p} run={lastRun(p)} />
+              {ads.canSync && entityId && p !== "google" && (
+                <TokenPaste platform={p} entityId={entityId} onDone={ads.reload} since="2026-06-01" />
+              )}
+            </div>
           ))}
         </div>
         {ads.canSync && entityId && (

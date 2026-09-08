@@ -60,6 +60,8 @@ export interface UseAdPlatform {
   /** In-app only (needs a session). Runs the platform pulls and reloads. */
   syncNow: (opts?: { since?: string }) => Promise<void>;
   canSync: boolean;
+  /** Re-read rows, runs and attribution without syncing. */
+  reload: () => Promise<void>;
 }
 
 
@@ -188,5 +190,5 @@ export function useAdPlatform(entityId: string): UseAdPlatform {
     [isEmbed, eid, load]
   );
 
-  return { rows, runs, attribution, loading, unavailable, syncing, syncNow, canSync: !isEmbed };
+  return { rows, runs, attribution, loading, unavailable, syncing, syncNow, canSync: !isEmbed, reload: load };
 }

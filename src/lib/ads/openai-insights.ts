@@ -7,11 +7,13 @@
 // under Settings). The key scopes the account, so no account id is sent.
 
 import { num, type DailyRow, type FetchResult } from "./platforms";
+import { getStoredCredential } from "./credentials";
 
 const BASE = "https://api.ads.openai.com/v1";
 
-export function openaiAdsKey(): string | null {
-  return process.env.OPENAI_ADS_API_KEY?.trim() || null;
+// Precedence: OPENAI_ADS_API_KEY env, then the key pasted on the Ads tab.
+export async function openaiAdsKey(): Promise<string | null> {
+  return process.env.OPENAI_ADS_API_KEY?.trim() || (await getStoredCredential("chatgpt", "api_key")) || null;
 }
 
 type Rec = Record<string, unknown>;
@@ -38,8 +40,8 @@ function rowDate(r: Rec): string | null {
 }
 
 export async function fetchOpenAIDaily(since: string, until: string): Promise<FetchResult> {
-  const key = openaiAdsKey();
-  if (!key) throw new Error("OPENAI_ADS_API_KEY is not set (ads.openai.com > Settings > API keys)");
+  const key = await openaiAdsKey();
+  if (!key) throw new Error("No ChatGPT Ads API key yet. Create one at ads.openai.com > Settings > API keys and paste it on the Ads tab.");
 
   const start = Math.floor(new Date(since + "T00:00:00Z").getTime() / 1000);
   const end = Math.floor(new Date(until + "T00:00:00Z").getTime() / 1000) + 86400;

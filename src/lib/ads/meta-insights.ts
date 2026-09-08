@@ -10,12 +10,16 @@
 // run records the exact Graph error when it does not.
 
 import { num, type DailyRow, type FetchResult } from "./platforms";
+import { getStoredCredential } from "./credentials";
 
 const GRAPH_VERSION = "v21.0";
 
-export function metaInsightsToken(): string | null {
+// Precedence: META_ADS_ACCESS_TOKEN env, then the token pasted on the Ads
+// tab (ad_platform_credentials), then the Conversions API token.
+export async function metaInsightsToken(): Promise<string | null> {
   return (
     process.env.META_ADS_ACCESS_TOKEN?.trim() ||
+    (await getStoredCredential("meta", "access_token")) ||
     process.env.META_CAPI_ACCESS_TOKEN?.trim() ||
     null
   );
@@ -67,8 +71,8 @@ export async function fetchMetaDaily(
   since: string,
   until: string
 ): Promise<FetchResult> {
-  const token = metaInsightsToken();
-  if (!token) throw new Error("META_ADS_ACCESS_TOKEN (or META_CAPI_ACCESS_TOKEN) is not set");
+  const token = await metaInsightsToken();
+  if (!token) throw new Error("No Meta access token yet. Paste a system user token with ads_read on the Ads tab.");
 
   const fields = [
     "campaign_id",
