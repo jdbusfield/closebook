@@ -7,7 +7,8 @@
 // (fbclid = Meta, gclid = Google, oppref = ChatGPT). Platform-reported
 // conversions are shown for comparison but the CRM numbers are the truth.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { RefreshCw, AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
 import {
   Bar,
@@ -375,13 +376,27 @@ export function AdsReport({
   inquiries,
   ads,
   manualSpend = [],
+  entityId,
 }: {
   inquiries: Inquiry[];
   ads: UseAdPlatform;
   /** Hand-entered monthly spend (Google before the sync existed). */
   manualSpend?: AdSpendRow[];
+  entityId?: string;
 }) {
   const [preset, setPreset] = useState<PresetKey>("30d");
+  const search = useSearchParams();
+  const googleFlag = search?.get("google");
+  const googleDetail = search?.get("detail");
+  // After a successful Google sign-in the callback lands here; pull the
+  // history right away so the chart fills without another click.
+  const [autoSynced, setAutoSynced] = useState(false);
+  useEffect(() => {
+    if (googleFlag === "connected" && ads.canSync && !autoSynced && !ads.loading) {
+      setAutoSynced(true);
+      ads.syncNow({ since: "2026-06-01" });
+    }
+  }, [googleFlag, ads, autoSynced]);
   const { since, until } = useMemo(() => windowFor(preset), [preset]);
 
   const rows = useMemo(() => ads.rows.filter((r) => r.date >= since && r.date <= until), [ads.rows, since, until]);
@@ -498,6 +513,18 @@ export function AdsReport({
         <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
           <div>{ads.unavailable}</div>
+        </div>
+      )}
+      {googleFlag === "connected" && (
+        <div className="flex items-start gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+          <div>Google Ads connected. Pulling history since Jun 1, 2026.</div>
+        </div>
+      )}
+      {(googleFlag === "failed" || googleFlag === "denied") && (
+        <div className="flex items-start gap-2 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
+          <XCircle className="mt-0.5 size-4 shrink-0" />
+          <div>Google Ads sign-in {googleFlag}. {googleDetail}</div>
         </div>
       )}
 
@@ -701,6 +728,16 @@ export function AdsReport({
             <RunLine key={p} platform={p} run={lastRun(p)} />
           ))}
         </div>
+        {ads.canSync && entityId && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" asChild>
+              <a href={`/api/ads/google-oauth/start?entityId=${entityId}`}>Connect Google Ads</a>
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Signs in with Google once and keeps the reporting token in Closebook. Re-run any time.
+            </span>
+          </div>
+        )}
         <p className="mt-3 text-xs text-muted-foreground">
           Spend syncs every morning at 4:30 AM Pacific and re-pulls the last 7 days. Leads, stages and
           values come straight from the pipeline. A lead counts for a platform when the website captured

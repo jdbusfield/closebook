@@ -13,6 +13,7 @@
 // when the scope or developer token is the problem.
 
 import { num, type DailyRow, type FetchResult } from "./platforms";
+import { getStoredCredential } from "./credentials";
 
 // Newest first. A version Google has retired answers 404, so we fall through
 // to the next one. Pin with GOOGLE_ADS_API_VERSION once known.
@@ -27,11 +28,16 @@ interface GoogleCfg {
   loginCustomerId?: string;
 }
 
-export function getGoogleAdsReportingConfig(): GoogleCfg | null {
+// Refresh token precedence: GOOGLE_ADS_REPORTING_REFRESH_TOKEN env, then the
+// token stored by "Connect Google Ads" on the Ads tab, then the Data Manager
+// token (which lacks the adwords scope and fails with a clear message).
+export async function getGoogleAdsReportingConfig(): Promise<GoogleCfg | null> {
   const clientId = process.env.GOOGLE_ADS_CLIENT_ID?.trim();
   const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET?.trim();
   const refreshToken = (
-    process.env.GOOGLE_ADS_REPORTING_REFRESH_TOKEN || process.env.GOOGLE_ADS_REFRESH_TOKEN
+    process.env.GOOGLE_ADS_REPORTING_REFRESH_TOKEN?.trim() ||
+    (await getStoredCredential("google", "refresh_token")) ||
+    process.env.GOOGLE_ADS_REFRESH_TOKEN
   )?.trim();
   const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN?.trim();
   const customerId = process.env.GOOGLE_ADS_CUSTOMER_ID?.trim().replace(/-/g, "");
@@ -89,7 +95,7 @@ export async function fetchGoogleDaily(
   since: string,
   until: string
 ): Promise<FetchResult> {
-  const cfg = getGoogleAdsReportingConfig();
+  const cfg = await getGoogleAdsReportingConfig();
   if (!cfg) {
     throw new Error(
       "Google Ads reporting is not configured: needs GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET, GOOGLE_ADS_REPORTING_REFRESH_TOKEN (adwords scope), GOOGLE_ADS_DEVELOPER_TOKEN, GOOGLE_ADS_CUSTOMER_ID"
@@ -98,7 +104,7 @@ export async function fetchGoogleDaily(
   const { token, scope } = await accessToken(cfg);
   if (scope && !scope.includes("adwords")) {
     throw new Error(
-      `The Google refresh token has scope "${scope}" but Google Ads reporting needs https://www.googleapis.com/auth/adwords. Mint a second refresh token with that scope (docs/ads-reporting-runbook.md) and store it as GOOGLE_ADS_REPORTING_REFRESH_TOKEN.`
+      `The Google refresh token has scope "${scope}" but Google Ads reporting needs https://www.googleapis.com/auth/adwords. Press "Connect Google Ads" on the Ads tab and approve the sign-in (docs/ads-reporting-runbook.md).`
     );
   }
 

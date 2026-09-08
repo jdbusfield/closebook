@@ -29,7 +29,7 @@ export default function InquiriesAdsPage() {
       {data.loading || ads.loading ? (
         <div className="py-12 text-center text-sm text-muted-foreground">Loading ad data…</div>
       ) : (
-        <AdsReport inquiries={data.inquiries} ads={ads} manualSpend={manual.rows} />
+        <AdsReport inquiries={data.inquiries} ads={ads} manualSpend={manual.rows} entityId={entityId} />
       )}
     </div>
   );

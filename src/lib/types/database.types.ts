@@ -351,6 +351,39 @@ export type Database = {
         }
         Relationships: []
       }
+      ad_platform_credentials: {
+        Row: {
+          id: string
+          platform: string
+          key: string
+          value: string
+          granted_scope: string | null
+          account_hint: string | null
+          connected_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          platform: string
+          key: string
+          value: string
+          granted_scope?: string | null
+          account_hint?: string | null
+          connected_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          platform?: string
+          key?: string
+          value?: string
+          granted_scope?: string | null
+          account_hint?: string | null
+          connected_by?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       ad_platform_daily: {
         Row: {
           id: string

@@ -52,6 +52,14 @@ CRM numbers are the ones to act on.
   `META_ADS_ACCESS_TOKEN`.
 
 ### Google Ads
+- Easiest: press **Connect Google Ads** at the bottom of the Ads tab (signed in
+  to Closebook). It runs Google's consent screen for the adwords scope with
+  the OAuth client Closebook already holds and stores the refresh token in
+  `ad_platform_credentials` (migration `20260908_ad_platform_credentials.sql`,
+  service role only). Then it pulls history since Jun 1 automatically.
+  Requires `https://closebook.vercel.app/api/ads/google-oauth/callback` on
+  the OAuth client's authorized redirect URIs (Google Cloud Console →
+  APIs & Services → Credentials → the "Closebook Ads" web client).
 - Reuses `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`,
   `GOOGLE_ADS_CUSTOMER_ID` (Avon Rents 568-735-7869),
   `GOOGLE_ADS_LOGIN_CUSTOMER_ID` (MT Studio MCC 578-696-4100) and
