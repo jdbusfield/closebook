@@ -374,13 +374,28 @@ export function GLAccountAccrualSection({ entityId }: { entityId: string }) {
           periodMonth: month,
         }),
       });
-      const json = await res.json();
-      if (!res.ok) {
-        toast.error(json.error ?? "Failed to load GL accrual data");
+      // A gateway timeout or platform error comes back as plain text, not
+      // JSON. Read the body once and say what happened instead of leaking
+      // a JSON parse error.
+      const raw = await res.text();
+      let json: Record<string, unknown> | null = null;
+      try {
+        json = JSON.parse(raw);
+      } catch {
+        json = null;
+      }
+      if (!res.ok || !json) {
+        const serverMsg = typeof json?.error === "string" ? json.error : null;
+        toast.error(
+          serverMsg ??
+            (res.status === 504
+              ? "The report timed out pulling RentalWorks data. Try again in a minute."
+              : `Failed to load GL accrual data (HTTP ${res.status})`),
+        );
         return;
       }
-      setData(json);
-      if (json.message) toast.info(json.message);
+      setData(json as unknown as ApiResponse);
+      if (typeof json.message === "string") toast.info(json.message);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Network error");
     } finally {
