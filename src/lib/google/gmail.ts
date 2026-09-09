@@ -50,6 +50,14 @@ function clientFor(mailbox: string): JWT {
 /** Thrown when Gmail returns 404 on history.list — the cursor is too old. */
 export class HistoryGoneError extends Error {}
 
+/**
+ * Thrown when Gmail answers 429 (per-user rate limit or "Too many concurrent
+ * requests for user"). Callers must NOT turn this into a retry: the mailbox
+ * lock is shared by every client of the account (the reservations dashboard
+ * reads the same inbox), and hammering it keeps the lock held.
+ */
+export class GmailRateLimitError extends Error {}
+
 async function gapi<T>(
   mailbox: string,
   path: string,
@@ -69,6 +77,9 @@ async function gapi<T>(
     const detail = await res.text().catch(() => "");
     if (res.status === 404) {
       throw new HistoryGoneError(`Gmail 404 ${path}: ${detail.slice(0, 200)}`);
+    }
+    if (res.status === 429) {
+      throw new GmailRateLimitError(`Gmail 429 ${path}: ${detail.slice(0, 200)}`);
     }
     throw new Error(`Gmail API ${res.status} ${path}: ${detail.slice(0, 300)}`);
   }

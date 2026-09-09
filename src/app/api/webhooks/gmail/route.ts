@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { verifyPushToken } from "@/lib/google/gmail";
+import { GmailRateLimitError, verifyPushToken } from "@/lib/google/gmail";
 import { isWatchedMailbox, reconcileMailbox } from "@/lib/google/gmail-sync";
 
 export const runtime = "nodejs";
@@ -20,6 +20,12 @@ export const maxDuration = 60;
 // Always ACK with 200 once authenticated (even on dedupe/skip) so Pub/Sub does
 // not redeliver forever. Return 5xx only on a genuine transient failure that a
 // retry could fix.
+//
+// A Gmail 429 is NOT one of those: Pub/Sub's immediate redelivery turned every
+// 429 into a self-sustaining storm (~300 pushes/min, all 429 -> 500 -> retry)
+// that held the mailbox's concurrency lock and took the reservations dashboard
+// down with it (Sep 9 2026). We ack those. The cursor is not advanced on
+// failure, so the next push (or the daily cron) resumes from the same point.
 // ============================================================================
 
 interface PubSubEnvelope {
@@ -81,6 +87,11 @@ export async function POST(request: Request) {
     const counts = await reconcileMailbox(mailbox, historyId);
     return NextResponse.json({ ok: true, mailbox, ...counts });
   } catch (err) {
+    if (err instanceof GmailRateLimitError) {
+      // Ack so Pub/Sub backs off; retrying now only feeds the throttle.
+      console.warn("[webhooks/gmail] rate-limited, deferring", mailbox, err.message);
+      return NextResponse.json({ ok: false, deferred: "rate-limited", mailbox });
+    }
     // Transient (token mint, Gmail 5xx) — let Pub/Sub retry.
     console.error("[webhooks/gmail] reconcile failed", mailbox, err);
     return NextResponse.json({ error: "Sync failed" }, { status: 500 });

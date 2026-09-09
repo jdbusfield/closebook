@@ -143,11 +143,37 @@ export async function backfillMailbox(
  *   start capturing from the next change (can't backfill before a known point).
  * - Cursor too old (Gmail 404s history.list): reset to latest and move on.
  */
-export async function reconcileMailbox(
+type ReconcileResult = SyncCounts & { reset?: boolean; firstSeen?: boolean };
+
+// Gmail publishes one push per mailbox change, so a burst of mail arrives as a
+// burst of pushes within the same second. Each would run the same history.list
+// from the same cursor; running them concurrently is what trips Gmail's
+// "Too many concurrent requests for user" lock. Pushes that land while a
+// reconcile for that mailbox is already in flight (on this instance) just
+// share its result — the next push re-reads history from the stored cursor,
+// so nothing is skipped.
+const inflight = new Map<string, Promise<ReconcileResult>>();
+
+export function reconcileMailbox(
   mailbox: string,
   latestHistoryId: string,
   extra?: { watchExpiration?: string }
-): Promise<SyncCounts & { reset?: boolean; firstSeen?: boolean }> {
+): Promise<ReconcileResult> {
+  const key = mailbox.trim().toLowerCase();
+  const running = inflight.get(key);
+  if (running) return running;
+  const run = reconcileMailboxNow(mailbox, latestHistoryId, extra).finally(() => {
+    if (inflight.get(key) === run) inflight.delete(key);
+  });
+  inflight.set(key, run);
+  return run;
+}
+
+async function reconcileMailboxNow(
+  mailbox: string,
+  latestHistoryId: string,
+  extra?: { watchExpiration?: string }
+): Promise<ReconcileResult> {
   const supabase = createAdminClient();
   const key = mailbox.trim().toLowerCase();
   const nowIso = new Date().toISOString();
