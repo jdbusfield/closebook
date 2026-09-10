@@ -47,6 +47,7 @@ export interface CachedInvoice {
   tax_amount: number;
   discount_amount: number;
   equipment_type: string;
+  equipment_type_override?: string | null;
   is_manually_excluded: boolean;
   manual_exclusion_reason: string | null;
 }
@@ -418,8 +419,9 @@ export function calculateCustomerRebates(
       : inv.discount_amount || 0;
     const effectiveDiscount = Math.max(0, invoiceDiscount - excludedDiscount);
 
-    // Equipment type
-    const equipType = inv.equipment_type as EquipmentType;
+    // Equipment type: a manual override set in the UI wins over the type the
+    // sync classified from the order description.
+    const equipType = (inv.equipment_type_override || inv.equipment_type) as EquipmentType;
 
     // Tier lookup based on cumulative revenue BEFORE this invoice. An
     // adjustment reverses at its base invoice's tier and rate so the pair

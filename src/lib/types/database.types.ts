@@ -4990,6 +4990,7 @@ export type Database = {
           cumulative_rebate: number | null
           quarter: string | null
           is_manually_excluded: boolean
+          equipment_type_override: string | null
           manual_exclusion_reason: string | null
           synced_at: string
           created_at: string
@@ -5029,6 +5030,7 @@ export type Database = {
           cumulative_rebate?: number | null
           quarter?: string | null
           is_manually_excluded?: boolean
+          equipment_type_override?: string | null
           manual_exclusion_reason?: string | null
           synced_at?: string
           created_at?: string
@@ -5068,6 +5070,7 @@ export type Database = {
           cumulative_rebate?: number | null
           quarter?: string | null
           is_manually_excluded?: boolean
+          equipment_type_override?: string | null
           manual_exclusion_reason?: string | null
           synced_at?: string
           created_at?: string

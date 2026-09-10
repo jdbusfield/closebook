@@ -393,6 +393,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true });
     }
 
+    case "set_equipment_type_override": {
+      const { invoiceId, equipmentType } = body;
+      const allowed = ["pro_supplies", "vehicle", "grip_lighting", "studio"];
+      if (equipmentType != null && !allowed.includes(equipmentType)) {
+        return NextResponse.json({ error: "Invalid equipment type" }, { status: 400 });
+      }
+      const { error } = await admin
+        .from("rebate_invoices")
+        .update({ equipment_type_override: equipmentType ?? null })
+        .eq("id", invoiceId);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ success: true });
+    }
+
     case "delete_invoice": {
       const { invoiceId } = body;
       if (!invoiceId) {

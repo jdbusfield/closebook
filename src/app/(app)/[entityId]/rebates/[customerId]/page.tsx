@@ -13,6 +13,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -79,6 +86,7 @@ interface RebateInvoice {
   order_number: string | null;
   order_description: string | null;
   equipment_type: string;
+  equipment_type_override: string | null;
   list_total: number;
   gross_total: number;
   sub_total: number;
@@ -414,6 +422,36 @@ export default function CustomerDetailPage({
       }
     } catch {
       toast.error("Failed to toggle exclusion");
+    }
+  };
+
+  // Manual equipment-type override. "auto" clears it back to the type the sync
+  // classified. Recalculates the customer straight away so the rate follows.
+  const handleEquipmentTypeChange = async (invoice: RebateInvoice, value: string) => {
+    const equipmentType = value === "auto" ? null : value;
+    try {
+      const res = await apiFetch("/api/rebates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "set_equipment_type_override",
+          invoiceId: invoice.id,
+          equipmentType,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        toast.error(data.error || "Failed to set equipment type");
+        return;
+      }
+      toast.success(
+        equipmentType
+          ? `${invoice.invoice_number} set to ${getEquipmentLabel(equipmentType as EquipmentType)}`
+          : `${invoice.invoice_number} back to automatic type`,
+      );
+      await handleCalculate();
+    } catch {
+      toast.error("Failed to set equipment type");
     }
   };
 
@@ -1652,12 +1690,32 @@ export default function CustomerDetailPage({
                           <TableCell className="max-w-[200px] truncate">
                             {inv.deal || inv.order_description || "—"}
                           </TableCell>
-                          <TableCell>
-                            <Badge variant="secondary">
-                              {getEquipmentLabel(
-                                inv.equipment_type as EquipmentType,
-                              )}
-                            </Badge>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <Select
+                              value={inv.equipment_type_override || "auto"}
+                              onValueChange={(v) => handleEquipmentTypeChange(inv, v)}
+                            >
+                              <SelectTrigger
+                                className={`h-7 w-[132px] text-xs ${inv.equipment_type_override ? "border-amber-400 bg-amber-50 dark:bg-amber-950/30" : ""}`}
+                                title={
+                                  inv.equipment_type_override
+                                    ? `Manually set. Sync classified it as ${getEquipmentLabel(inv.equipment_type as EquipmentType)}.`
+                                    : "Classified from the order description. Pick a type to override."
+                                }
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="auto">
+                                  {getEquipmentLabel(inv.equipment_type as EquipmentType)} (auto)
+                                </SelectItem>
+                                {(["pro_supplies", "vehicle", "grip_lighting", "studio"] as const).map((t) => (
+                                  <SelectItem key={t} value={t}>
+                                    {getEquipmentLabel(t)}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </TableCell>
                           <TableCell className="text-right">
                             {formatCurrency(inv.gross_total)}
