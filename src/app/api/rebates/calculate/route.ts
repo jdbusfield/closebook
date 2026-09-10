@@ -206,13 +206,14 @@ async function calculateForCustomer(
 
     // Update item exclusion flags
     for (const excl of r.excluded_items) {
-      if (excl.reason === "loss_damage") {
-        // Mark all L&D items on this invoice as excluded (F = forfeited/L&D, L = legacy)
+      if (excl.reason === "loss_damage" || excl.reason === "category") {
+        // Mark every non-rental line on this invoice as excluded
+        // (S = sales, M = misc, F = forfeited/L&D, L = legacy L&D)
         await admin
           .from("rebate_invoice_items")
           .update({ is_excluded: true })
           .eq("rebate_invoice_id", r.invoice_id)
-          .in("record_type", ["F", "L"]);
+          .in("record_type", ["S", "M", "F", "L"]);
       } else {
         await admin
           .from("rebate_invoice_items")

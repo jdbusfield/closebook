@@ -65,7 +65,17 @@ export interface ExcludedItemDetail {
   iCode: string;
   description: string | null;
   amount: number;
-  reason: "icode" | "loss_damage";
+  reason: "icode" | "loss_damage" | "category";
+}
+
+// Record types that never earn rebate, whatever the I-code. Rental ("R") is
+// the only rebatable category; Sales, Miscellaneous and Loss & Damage lines
+// come straight off the base. The UI groups and badges lines by these same
+// keys, so the formula and the badges agree.
+export const NON_REBATABLE_RECORD_TYPES = new Set(["S", "M", "F", "L"]);
+
+export function isNonRebatableRecordType(rt: string | null | undefined): boolean {
+  return rt != null && NON_REBATABLE_RECORD_TYPES.has(rt);
 }
 
 export interface RebateCalculationResult {
@@ -354,9 +364,10 @@ export function calculateCustomerRebates(
     let excludedTotal = 0;        // sum of excluded items at extended (post-discount), for display
     let excludedGrossTotal = 0;   // sum of excluded items at gross (extended + discount), for the formula
     let excludedDiscount = 0;
-    // L&D items are universally taxed at Versatile, so they show up in both
-    // excludedGrossTotal AND in the back-calculated taxableSales. Track them
-    // separately so the formula can avoid the double-subtraction.
+    // Sales, Misc and L&D lines are the taxed lines at Versatile, so they show
+    // up in both excludedGrossTotal AND in the back-calculated taxableSales.
+    // Track them separately so the formula can avoid the double-subtraction.
+    // (I-code exclusions on rental lines are untaxed and stay out of this.)
     let excludedTaxableTotal = 0;
     const excludedItems: ExcludedItemDetail[] = [];
     const items = invoiceItemsMap.get(inv.id) || [];
@@ -364,31 +375,33 @@ export function calculateCustomerRebates(
       const amt = Number(item.extended) || 0;
       const disc = Number(item.discount_amount) || 0;
       const gross = amt + disc;
+      const rt = item.record_type;
 
-      // Exclude loss & damage items (record_type "F" = forfeited/L&D, or "L" legacy)
-      if (item.record_type === "F" || item.record_type === "L") {
-        excludedTotal += amt;
-        excludedGrossTotal += gross;
-        excludedTaxableTotal += gross;
-        excludedDiscount += disc;
-        excludedItems.push({
-          iCode: item.i_code || "L&D",
-          description: item.description,
-          amount: amt,
-          reason: "loss_damage",
-        });
+      let reason: ExcludedItemDetail["reason"] | null = null;
+      if (rt === "F" || rt === "L") {
+        // Loss & damage (record_type "F" = forfeited/L&D, or "L" legacy)
+        reason = "loss_damage";
       } else if (item.i_code && excludedICodes.has(item.i_code.trim())) {
         // Exclude by I-Code
-        excludedTotal += amt;
-        excludedGrossTotal += gross;
-        excludedDiscount += disc;
-        excludedItems.push({
-          iCode: item.i_code,
-          description: item.description,
-          amount: amt,
-          reason: "icode",
-        });
+        reason = "icode";
+      } else if (rt === "S" || rt === "M") {
+        // Sales and Miscellaneous lines never earn rebate. Before this the
+        // formula relied on the tax back-calculation to drop them, which
+        // silently kept them in the base on zero-tax invoices (V301349 LDW).
+        reason = "category";
       }
+      if (!reason) continue;
+
+      excludedTotal += amt;
+      excludedGrossTotal += gross;
+      excludedDiscount += disc;
+      if (isNonRebatableRecordType(rt)) excludedTaxableTotal += gross;
+      excludedItems.push({
+        iCode: item.i_code || (reason === "loss_damage" ? "L&D" : "—"),
+        description: item.description,
+        amount: amt,
+        reason,
+      });
     }
 
     // Adjustment leg? Header totals are negated but line items are cached
