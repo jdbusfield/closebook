@@ -28,7 +28,9 @@ import {
   type ProposedJELine,
 } from "@/lib/utils/revenue-calc-by-account";
 
-export const maxDuration = 120;
+// Three RentalWorks browses run in parallel; the 18-month order pull is the
+// long pole even when windowed by month, so leave generous headroom.
+export const maxDuration = 300;
 
 /**
  * POST /api/qbo/rental-accruals-v2
@@ -110,9 +112,7 @@ export async function POST(request: Request) {
   // catches old orders that finished months ago but still haven't been
   // invoiced (they stay in the Unbilled Receivable balance until billed or
   // written off). 18 months covers any realistic billing lag.
-  const orderFromDate = formatRWDate(
-    new Date(Date.UTC(periodYear, periodMonth - 19, 1)),
-  );
+  const orderFromDate = new Date(periodYear, periodMonth - 19, 1);
 
   const [byInvoiceDate, byBillingEnd, ordersRes] = await Promise.all([
     rw.browseAll<RWInvoiceRowWithLocation>("invoice", {
@@ -133,12 +133,12 @@ export async function POST(request: Request) {
       orderby: "BillingEndDate",
       orderbydirection: "desc",
     }),
-    rw.browseAll<RWOrderRowWithLocation>("order", {
+    // Month-windowed: one wide 18-month order browse took ~4 minutes on
+    // RW (browse time scales with row count), which blew the function cap
+    // and surfaced as a 504 in the report. Parallel month windows keep
+    // each call small.
+    rw.browseAllByMonthWindows<RWOrderRowWithLocation>("order", "OrderDate", orderFromDate, {
       pagesize: 2000,
-      searchfields: ["OrderDate"],
-      searchfieldoperators: [">="],
-      searchfieldvalues: [orderFromDate],
-      searchfieldtypes: ["date"],
       orderby: "OrderDate",
       orderbydirection: "desc",
     }),

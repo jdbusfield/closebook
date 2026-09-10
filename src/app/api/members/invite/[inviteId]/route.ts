@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { logAuditEvent } from "@/lib/utils/audit";
 
 export async function DELETE(
   request: Request,
@@ -54,17 +53,6 @@ export async function DELETE(
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-
-  logAuditEvent({
-    organizationId: membership.organization_id,
-    userId: user.id,
-    action: "delete",
-    resourceType: "organization_member",
-    resourceId: inviteId,
-    oldValues: { email: invite.email, role: invite.role, status: "pending" },
-    newValues: { status: "cancelled" },
-    request,
-  });
 
   return NextResponse.json({ success: true });
 }

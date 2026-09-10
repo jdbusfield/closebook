@@ -45,6 +45,7 @@ import {
   ACTION_LABELS,
   RESOURCE_TYPE_LABELS,
   describeAuditEvent,
+  resourceTypeLabel,
 } from "@/lib/utils/audit-labels";
 import type { UserRole } from "@/lib/types/database";
 
@@ -56,6 +57,8 @@ interface AuditEntry {
   action: string;
   resource_type: string;
   resource_id: string | null;
+  resource_key: string | null;
+  resource_label: string | null;
   old_values: Record<string, unknown> | null;
   new_values: Record<string, unknown> | null;
   ip_address: string | null;
@@ -99,12 +102,16 @@ export default function AuditLogPage() {
   const [filterEntity, setFilterEntity] = useState("");
   const [filterStartDate, setFilterStartDate] = useState("");
   const [filterEndDate, setFilterEndDate] = useState("");
+  const [filterQuery, setFilterQuery] = useState("");
 
   // Filter options
   const [members, setMembers] = useState<Member[]>([]);
   const [entities, setEntities] = useState<Entity[]>([]);
 
   const supabase = createClient();
+  const resourceTypeOptions = Object.entries(RESOURCE_TYPE_LABELS).sort((a, b) =>
+    a[1].localeCompare(b[1])
+  );
 
   // Load filter options
   useEffect(() => {
@@ -145,12 +152,14 @@ export default function AuditLogPage() {
     async (page = 1) => {
       setLoading(true);
       const params = new URLSearchParams({ page: String(page), pageSize: "50" });
-      if (filterUser) params.set("userId", filterUser);
-      if (filterResourceType) params.set("resourceType", filterResourceType);
-      if (filterAction) params.set("action", filterAction);
-      if (filterEntity) params.set("entityId", filterEntity);
+      const chosen = (value: string) => value && value !== "all";
+      if (chosen(filterUser)) params.set("userId", filterUser);
+      if (chosen(filterResourceType)) params.set("resourceType", filterResourceType);
+      if (chosen(filterAction)) params.set("action", filterAction);
+      if (chosen(filterEntity)) params.set("entityId", filterEntity);
       if (filterStartDate) params.set("startDate", filterStartDate);
       if (filterEndDate) params.set("endDate", filterEndDate);
+      if (filterQuery.trim()) params.set("q", filterQuery.trim());
 
       const res = await fetch(`/api/audit-log?${params}`);
       if (res.ok) {
@@ -160,7 +169,7 @@ export default function AuditLogPage() {
       }
       setLoading(false);
     },
-    [filterUser, filterResourceType, filterAction, filterEntity, filterStartDate, filterEndDate]
+    [filterUser, filterResourceType, filterAction, filterEntity, filterStartDate, filterEndDate, filterQuery]
   );
 
   useEffect(() => {
@@ -190,7 +199,7 @@ export default function AuditLogPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Audit Log</h1>
         <p className="text-muted-foreground">
-          View a history of changes made across your organization
+          Every record added, edited, or deleted, with who did it and when
         </p>
       </div>
 
@@ -228,7 +237,7 @@ export default function AuditLogPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All types</SelectItem>
-                    {Object.entries(RESOURCE_TYPE_LABELS).map(([key, label]) => (
+                    {resourceTypeOptions.map(([key, label]) => (
                       <SelectItem key={key} value={key}>
                         {label}
                       </SelectItem>
@@ -284,6 +293,14 @@ export default function AuditLogPage() {
                   onChange={(e) => setFilterEndDate(e.target.value)}
                 />
               </div>
+              <div className="space-y-2 col-span-2 md:col-span-3 lg:col-span-6">
+                <Label>Search</Label>
+                <Input
+                  placeholder="Name, number, or id of the record"
+                  value={filterQuery}
+                  onChange={(e) => setFilterQuery(e.target.value)}
+                />
+              </div>
             </div>
             <div className="mt-4 flex gap-2">
               <Button type="submit" size="sm">
@@ -301,6 +318,7 @@ export default function AuditLogPage() {
                   setFilterEntity("");
                   setFilterStartDate("");
                   setFilterEndDate("");
+                  setFilterQuery("");
                 }}
               >
                 Clear
@@ -356,7 +374,7 @@ export default function AuditLogPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[180px]">Timestamp</TableHead>
+                  <TableHead className="w-[200px]">Timestamp</TableHead>
                   <TableHead className="w-[150px]">User</TableHead>
                   <TableHead className="w-[100px]">Action</TableHead>
                   <TableHead className="w-[150px]">Resource</TableHead>
@@ -378,7 +396,7 @@ export default function AuditLogPage() {
                       <CollapsibleTrigger asChild>
                         <TableRow className="cursor-pointer hover:bg-muted/50">
                           <TableCell className="text-sm text-muted-foreground">
-                            {format(new Date(entry.created_at), "MMM d, yyyy h:mm a")}
+                            {format(new Date(entry.created_at), "MMM d, yyyy h:mm:ss a")}
                           </TableCell>
                           <TableCell className="text-sm">
                             {entry.profiles?.full_name ?? "System"}
@@ -389,15 +407,15 @@ export default function AuditLogPage() {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-sm">
-                            {RESOURCE_TYPE_LABELS[entry.resource_type] ??
-                              entry.resource_type}
+                            {resourceTypeLabel(entry.resource_type)}
                           </TableCell>
                           <TableCell className="text-sm">
                             {describeAuditEvent(
                               entry.action,
                               entry.resource_type,
                               entry.new_values,
-                              entry.old_values
+                              entry.old_values,
+                              entry.resource_label
                             )}
                           </TableCell>
                           <TableCell>

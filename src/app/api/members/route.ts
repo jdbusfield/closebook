@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { logAuditEvent } from "@/lib/utils/audit";
 import type { UserRole } from "@/lib/types/database";
 import { validateScopes } from "@/lib/access/validate";
 
@@ -107,22 +106,6 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const targetRow = target as unknown as Record<string, unknown>;
-  logAuditEvent({
-    organizationId: orgId,
-    userId: user.id,
-    action: "update",
-    resourceType: "organization_member",
-    resourceId: memberId,
-    oldValues: {
-      role: target.role,
-      modules: targetRow.modules ?? null,
-      entity_ids: targetRow.entity_ids ?? null,
-    },
-    newValues: update,
-    request,
-  });
-
   return NextResponse.json({ success: true });
 }
 
@@ -219,21 +202,6 @@ export async function DELETE(request: Request) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-
-  const profileData = target.profiles as unknown as { full_name: string } | null;
-
-  logAuditEvent({
-    organizationId: orgId,
-    userId: user.id,
-    action: "delete",
-    resourceType: "organization_member",
-    resourceId: memberId,
-    oldValues: {
-      name: profileData?.full_name,
-      role: target.role,
-    },
-    request,
-  });
 
   return NextResponse.json({ success: true });
 }
