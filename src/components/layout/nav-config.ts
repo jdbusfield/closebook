@@ -21,6 +21,7 @@ import {
   FileText,
   ClipboardList,
   Wallet,
+  Truck,
   Layers,
   HandCoins,
   ArrowLeftRight,
@@ -73,6 +74,8 @@ export function getOrgNavGroups(): NavGroup[] {
         { title: "Real Estate", href: "/real-estate", icon: Building, module: "real_estate" },
         { title: "QBO Sync", href: "/sync", icon: RefreshCw, module: "qbo_sync" },
         { title: "Diligence", href: "/diligence", icon: Handshake, module: "diligence" },
+        { title: "Budget", href: "/budget", icon: Wallet, module: "budgeting" },
+        { title: "Capex Plan", href: "/capex-plan", icon: Truck, module: "capex_plan" },
       ],
     },
     {
