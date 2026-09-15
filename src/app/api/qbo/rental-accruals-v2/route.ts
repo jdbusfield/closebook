@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { RentalWorksClient, type RWGLDistributionRow } from "@/lib/rentalworks/client";
-import type { RWInvoiceRow, RWOrderRow } from "@/lib/utils/revenue-projection";
+import {
+  getRevenueFilterForEntity,
+  startsWithAnyPrefix,
+  type RWInvoiceRow,
+  type RWOrderRow,
+} from "@/lib/utils/revenue-projection";
 
 // RW invoice browse returns OfficeLocation ("VERSATILE - CAHUENGA") and
 // WarehouseId ("A0001HBB"), but no plain "Warehouse" field. Keep a local
@@ -46,7 +51,7 @@ export const maxDuration = 300;
  *   5. Matching GL account numbers against the entity's synced QBO chart of
  *      accounts so a downstream JE post can reference QBO account IDs
  *
- * Body: { entityId, periodYear, periodMonth, warehouseKeywords? }
+ * Body: { entityId, periodYear, periodMonth }
  *
  * This is preview-only. It does NOT write to Supabase or post to QBO.
  */
@@ -65,10 +70,6 @@ export async function POST(request: Request) {
     periodYear?: number;
     periodMonth?: number;
   };
-  const warehouseKeywords: string[] = Array.isArray(body.warehouseKeywords)
-    ? body.warehouseKeywords
-    : ["VERSATILE", "CAHUENGA"];
-
   if (!entityId || !periodYear || !periodMonth) {
     return NextResponse.json(
       { error: "entityId, periodYear, and periodMonth are required" },
@@ -84,6 +85,24 @@ export async function POST(request: Request) {
   }
 
   const adminClient = createAdminClient();
+
+  // Scope RW records to this entity by the prefix on their number ("V" for
+  // Versatile, "AS"/"AC" for Silverco), the same rule the revenue projection
+  // uses. Matching on OfficeLocation keywords was the old bug: Silverco's
+  // Avon Cahuenga records matched "CAHUENGA" and landed in Versatile's
+  // balances (Aug 2026: $13.0K accrued, $17.6K unbilled, $2.4K deferred).
+  const { data: entityRow } = await adminClient
+    .from("entities")
+    .select("name")
+    .eq("id", entityId)
+    .single();
+  const entityFilter = getRevenueFilterForEntity(
+    (entityRow as { name?: string } | null)?.name,
+  );
+  const invoiceInScope = (inv: { InvoiceNumber?: string }) =>
+    startsWithAnyPrefix(inv.InvoiceNumber, entityFilter.invoicePrefixes);
+  const orderInScope = (ord: { OrderNumber?: string }) =>
+    startsWithAnyPrefix(ord.OrderNumber, entityFilter.orderPrefixes);
 
   // 1. Pull invoices from RW. We widen the search window to catch invoices
   //    whose rental period overlaps the target month even if they were
@@ -150,7 +169,7 @@ export async function POST(request: Request) {
     if (!invoiceMap.has(r.InvoiceId)) invoiceMap.set(r.InvoiceId, r);
   }
 
-  // 2. Filter to target warehouse + relevant to target month.
+  // 2. Filter to this entity + relevant to target month.
   //    Assumption: ALL RW invoices flow through to QB on InvoiceDate, so
   //    status doesn't matter for the billed offset. Skip only VOID and
   //    no-charge/non-billable lines.
@@ -165,8 +184,7 @@ export async function POST(request: Request) {
   //    deferral JE was short by the full prepaid/late-billed amount.
   const overlapping: RWInvoiceRowWithLocation[] = [];
   for (const inv of invoiceMap.values()) {
-    const locationText = inv.OfficeLocation ?? inv.Warehouse ?? "";
-    if (!matchesWarehouse(locationText, warehouseKeywords)) continue;
+    if (!invoiceInScope(inv)) continue;
     const status = (inv.Status ?? "").toUpperCase();
     if (status === "VOID" || status === "VOIDED") continue;
     const isNoCharge = String(inv.IsNoCharge ?? "").toLowerCase() === "true";
@@ -425,8 +443,7 @@ export async function POST(request: Request) {
   const orderBilledMap = new Map<string, number>();
   const invByOrder = new Map<string, RWInvoiceRowWithLocation[]>();
   for (const inv of invoiceMap.values()) {
-    const locText = inv.OfficeLocation ?? inv.Warehouse ?? "";
-    if (!matchesWarehouse(locText, warehouseKeywords)) continue;
+    if (!invoiceInScope(inv)) continue;
     const status = (inv.Status ?? "").toUpperCase();
     if (status === "VOID" || status === "VOIDED") continue;
     if (inv.OrderNumber) {
@@ -473,8 +490,7 @@ export async function POST(request: Request) {
   }> = [];
 
   for (const ord of ordersRes.rows) {
-    if (!matchesWarehouse(ord.Warehouse ?? ord.OfficeLocation ?? "", warehouseKeywords))
-      continue;
+    if (!orderInScope(ord)) continue;
     const status = (ord.Status ?? "").toUpperCase();
     if (TERMINAL_ORDER_STATUSES.has(status)) continue;
     // No Charge orders never bill (e.g. already billed via CarsPlus) but keep
@@ -1135,14 +1151,6 @@ function toNum(v: unknown): number {
   return 0;
 }
 
-function matchesWarehouse(
-  warehouse: string | undefined | null,
-  keywords: string[],
-): boolean {
-  if (!warehouse) return false;
-  const w = String(warehouse).toUpperCase();
-  return keywords.some((k) => w.includes(k.toUpperCase()));
-}
 
 /**
  * Only true revenue GL accounts (4xxxx in a standard US chart of accounts).
