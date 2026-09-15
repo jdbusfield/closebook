@@ -95,23 +95,29 @@ Proposal: https://claude.ai/artifact/VCXR8trCTA9BuEW9qJPme3
 ## Checklist
 
 ### Phase 0: hardening and schema
-- [ ] 0.1 Migration `supabase/migrations/20260915_budget_module.sql` (all tables/columns above,
+- [x] 0.1 Migration `supabase/migrations/20260915_budget_module.sql` (all tables/columns above,
       RLS, indexes, updated_at triggers, audit_table_config inserts + audit_install_triggers(),
-      immutability trigger for locked versions). Validated in pglite.
-- [ ] 0.2 `database.types.ts` updated for every new/changed table.
-- [ ] 0.3 Sub-master creation + remap script `scripts/budget-personnel-submasters.mjs`
-      (dry-run default, `--apply`), run dry-run and record the mapping table here.
-- [ ] 0.4 Budget routes: org membership check, typed client, batch upsert
-      `PUT /api/budget/amounts/batch`, import additive by default.
-- [ ] 0.5 Statements route: remove `fetchBudgetAmounts` shims; budgets by reporting entity at
-      reporting_entity scope; org scope = RE versions + entity versions for groups with no RE
-      version; entity scope unchanged. Payroll preview reads RE budgets.
-- [ ] 0.6 Tax rates: `src/lib/budget/tax-tables.ts` by year + company; `calculateEmployerTaxes`
-      accepts a rate table; SDI removed from ER cost; 2026/2027 defaults with source notes.
-- [ ] 0.7 Persist workers comp code and pay type on `employee_paycheck_details` from the
-      monthly-costs sync (column added in 0.1).
-- [ ] 0.8 QBO cron: stalest entity-month first, newest months first, 250 s time guard, sync age
-      exposed on `/api/sync/status` (or existing status route).
+      immutability trigger for locked versions). Validated in pglite (legacy 013 shape and
+      production shape, re-run idempotent; test at %TEMP%\claude\pgtest\budget-migration.test.mjs).
+      Extra: `budget_line_notes` table, `user_organization_ids()`, `user_is_org_editor()`.
+- [x] 0.2 `database.types.ts` updated (budget_versions, budget_amounts, 7 new tables, plus
+      reporting_entities / reporting_entity_members which were missing).
+- [x] 0.3 Script `scripts/budget-personnel-submasters.mjs` written; dry run Sep 15: 91 mappings
+      on 6100, all 91 classified, 0 unmatched (6110:21, 6120:11, 6130:3, 6140:24, 6150:11,
+      6160:0, 6170:7, 6180:14). NOT APPLIED YET: run `--apply` right after the branch merges
+      (drill-down on main does not expand children until then).
+- [x] 0.4 Budget routes check org membership via `src/lib/budget/access.ts`; single-cell PUT and
+      new `PUT /api/budget/amounts/batch` share `upsertBudgetCells`; import is additive
+      (`replace=true` clears first). Legacy `any` casts dropped where the types now exist.
+- [x] 0.5 Statements route: shims removed; `loadBudgetByAccount` resolves versions through
+      `src/lib/budget/versions.ts` (RE first, entity fallback) and rolls children into parents.
+      Drill-down expands parent masters to children and reads RE budgets. Payroll preview
+      attributes an RE budget to its lead operating entity.
+- [x] 0.6 `src/lib/budget/tax-tables.ts`; `calculateEmployerTaxes(wage, ytd, table?)`; CA SDI
+      removed; SS base 2026 = 184,500 (2027 placeholder until SSA notice).
+- [x] 0.7 Sync writes workers_comp_code, pay_type, cost_center_code per paycheck.
+- [x] 0.8 Cron sorts work stalest-first (never-synced, then oldest synced_at, then newest
+      month), 250 s time budget, skipped periods reported; sync-age UI deferred to 3.2.
 
 ### Phase 1: personnel engine
 - [ ] 1.1 `personnel-engine.ts`: price a headcount row × 12 months × components (wages, ot, dt,
