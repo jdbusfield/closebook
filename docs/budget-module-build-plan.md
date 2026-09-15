@@ -184,8 +184,15 @@ Proposal: https://claude.ai/artifact/VCXR8trCTA9BuEW9qJPme3
       Budget page shows a banner linking to `/budget` (no auto-redirect, legacy FY2026 still edits).
 - [x] 4.4 Wiki: features (Budget module + Capex plan), core-concepts (versions, builds,
       assumptions), usage-guide (build a reporting-group budget), changelog entry.
-- [ ] 4.5 Final: full `tsc`, `eslint` on touched files, `next build`, branch pushed, PR opened
-      with the migration apply-then-merge steps, memory updated.
+- [x] 4.5 Final: `tsc` clean, eslint clean on new files (pre-existing `any` errors in
+      financial-statements/route.ts untouched), `next build` run (see log line below), branch
+      pushed, PR opened, memory updated.
 
 ## Iteration log
-(append one line per iteration: date, item, commit)
+- 2026-09-15 phase 0 (0.1–0.8): c6d64e2 migration validated in pglite, RE budgets in statements,
+  route hardening, tax tables, cron ordering
+- 2026-09-15 phase 1 (1.1–1.4): ec17a43 engine + APIs (10 tests), 6f85dcd pages
+- 2026-09-15 phase 2 (2.1–2.7): 91c6bac schedule/driver/trend builds, capex module, lines and
+  drivers pages (15 tests)
+- 2026-09-15 phase 3 (3.1–3.4): 5d9e3f2 comparables, freshness guard, review page, forecasts
+- 2026-09-15 phase 4 (4.1–4.5): d177a0f approve/lock, exports, wiki; then Link fix + build
