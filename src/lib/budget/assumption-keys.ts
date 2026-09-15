@@ -57,6 +57,7 @@ export const ASSUMPTION_KEYS: AssumptionKeyDef[] = [
   { key: "maintenance_cost_per_unit_month", label: "Maintenance cost per unit per month", group: "cost", unit: "usd", defaultValue: 0, description: "Driver for maintenance lines when set; otherwise trend.", scopes: ["org", "reporting_entity", "asset_group"] },
   { key: "insurance_renewal_pct", label: "Insurance renewal increase", group: "cost", unit: "pct", defaultValue: 0, description: "Applied to policies renewing inside the budget year.", scopes: ["org", "reporting_entity"] },
   { key: "floating_rate_index", label: "Floating rate index", group: "cost", unit: "pct", defaultValue: 0, description: "Index used to reprice floating-rate debt; 0 keeps the schedule rate.", scopes: ["org"] },
+  { key: "allocations_roll_forward", label: "Roll intercompany allocations forward", group: "cost", unit: "ratio", defaultValue: 1, description: "1 = when no allocation rules exist for the budget year, repeat the prior year's rules month by month; 0 = budget none.", scopes: ["org"] },
 
   // Capex
   { key: "disposal_proceeds_pct_of_nbv", label: "Disposal proceeds as % of NBV", group: "capex", unit: "pct", defaultValue: 100, description: "Default when a disposal plan item has no expected proceeds.", scopes: ["org", "asset_group"] },

@@ -120,16 +120,23 @@ Proposal: https://claude.ai/artifact/VCXR8trCTA9BuEW9qJPme3
       month), 250 s time budget, skipped periods reported; sync-age UI deferred to 3.2.
 
 ### Phase 1: personnel engine
-- [ ] 1.1 `personnel-engine.ts`: price a headcount row × 12 months × components (wages, ot, dt,
-      meal, bonus, commission, ss, medicare, futa, sui, ett, benefits, match, life_disab, wc,
-      pto, fees, other) with cumulative-wage caps; unit tests in `src/lib/budget/__tests__`.
-- [ ] 1.2 Seeding: `POST /api/budget/headcount/seed` from live roster + 12 months of paycheck
-      lines classified by `payroll_earning_codes`; per-employee run rates; entity/class splits
-      from `employee_allocations`; reporting entity from entity membership.
-- [ ] 1.3 Recompute: `POST /api/budget/recompute` writes headcount builds to the 61x0 sub-masters
-      and syncs `budget_amounts`.
-- [ ] 1.4 Headcount page with grid, requisition dialog, side sheet (monthly components), and the
-      2026 → 2027 bridge (run rate, merit, hires, terms, benefit renewal, tax caps).
+- [x] 1.1 `personnel-engine.ts` (20 components, capped taxes on cumulative wages, merit month,
+      bonus accrual, renewal month, waiting period, recruiting, RE share) + `assumption-keys.ts`
+      catalog and `AssumptionSet`; 10 tests pass (`npm test`, tsx added as a dev dependency).
+- [x] 1.2 `personnel-seed.ts` + `POST /api/budget/headcount/seed` (preview/commit, overwrite):
+      live roster from both companies incl. future pay rates, twelve months of paycheck lines
+      classified via `payroll_earning_codes` (PTO/holiday/sick count as base), allocations as
+      of Jan 1, RE share from member entities; workers comp code falls back to
+      `payroll_pay_statements`. Untested against prod until the migration lands.
+- [x] 1.3 `recompute.ts`: `recomputePersonnel` (one build per row × sub-master × class) and
+      `syncLinesFromBuilds`; `POST /api/budget/recompute`. Falls back to 6100 if sub-masters
+      are missing. Also `/api/budget/versions` (list, create, clone), `/versions/[id]`,
+      `/headcount` CRUD, `/assumptions` GET/PUT.
+- [x] 1.4 Pages: `/budget` overview + create dialog, `/budget/[id]` shell with tabs and recompute,
+      `/assumptions` grid (org + per company + source notes), `/headcount` (seed dialog with
+      preview, add position, inline numeric edits, status/pay selects, side sheet with monthly
+      components, bridge card: trailing gross → merit → new → terminations → rate/hours/mix,
+      by-month component table).
 
 ### Phase 2: GL builds, drivers, capex
 - [ ] 2.1 Capex and disposal plan module: tables (0.1), API, `/capex-plan` page, `capex-engine.ts`

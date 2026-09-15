@@ -75,6 +75,7 @@ export function VersionShell({ versionId, children }: { versionId: string; child
   }, [versionId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- state is set after the fetch resolves
     reload();
   }, [reload]);
 
