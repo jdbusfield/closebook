@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { accessErrorResponse, getBudgetActor, requireVersionAccess } from "@/lib/budget/access";
+import { upsertBudgetCells } from "@/lib/budget/amounts";
 import * as XLSX from "xlsx";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- budget tables not yet in generated types
@@ -18,14 +19,7 @@ interface PreviewRow {
 // POST — import budget from XLSX (preview or commit mode) using Master GL accounts
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const actor = await getBudgetActor();
 
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
@@ -44,16 +38,11 @@ export async function POST(request: Request) {
     }
 
     const admin: AnyClient = createAdminClient();
+    const replace = formData.get("replace") === "true";
 
-    // Verify version exists and belongs to entity
-    const { data: version } = await admin
-      .from("budget_versions")
-      .select("id, entity_id, fiscal_year")
-      .eq("id", versionId)
-      .eq("entity_id", entityId)
-      .single();
-
-    if (!version) {
+    // Verify version exists, belongs to the entity, and the user may edit it
+    const owner = await requireVersionAccess(admin, actor, versionId, mode === "commit");
+    if (owner.entityId !== entityId) {
       return NextResponse.json(
         { error: "Budget version not found" },
         { status: 404 }
@@ -304,64 +293,56 @@ export async function POST(request: Request) {
       );
     }
 
-    // Delete existing amounts for this version (full replace)
-    await admin
-      .from("budget_amounts")
-      .delete()
-      .eq("budget_version_id", versionId);
-
-    // Build insert rows using master_account_id
-    const insertRows: Array<{
-      entity_id: string;
-      master_account_id: string;
-      budget_version_id: string;
-      period_year: number;
-      period_month: number;
-      amount: number;
-    }> = [];
-
-    for (const row of matchedRows) {
-      for (const [monthNum, amount] of Object.entries(row.months)) {
-        if (amount !== 0) {
-          insertRows.push({
-            entity_id: entityId,
-            master_account_id: row.masterAccountId!,
-            budget_version_id: versionId,
-            period_year: fiscalYear,
-            period_month: parseInt(monthNum),
-            amount,
-          });
-        }
+    // Additive by default: matched cells are upserted, other cells are kept.
+    // With replace=true the version is cleared first.
+    if (replace) {
+      const { error: delErr } = await admin
+        .from("budget_amounts")
+        .delete()
+        .eq("budget_version_id", versionId);
+      if (delErr) {
+        return NextResponse.json({ error: `Clear failed: ${delErr.message}` }, { status: 500 });
       }
     }
 
-    if (insertRows.length > 0) {
-      // Insert in batches of 500
-      const BATCH_SIZE = 500;
-      for (let i = 0; i < insertRows.length; i += BATCH_SIZE) {
-        const batch = insertRows.slice(i, i + BATCH_SIZE);
-        const { error } = await admin.from("budget_amounts").insert(batch);
-        if (error) {
-          return NextResponse.json(
-            { error: `Insert failed: ${error.message}` },
-            { status: 500 }
-          );
-        }
+    const cells: Array<{
+      masterAccountId: string;
+      classId: string | null;
+      periodYear: number;
+      periodMonth: number;
+      amount: number;
+      source: "import";
+    }> = [];
+    for (const row of matchedRows) {
+      for (const [monthNum, amount] of Object.entries(row.months)) {
+        cells.push({
+          masterAccountId: row.masterAccountId!,
+          classId: null,
+          periodYear: fiscalYear,
+          periodMonth: parseInt(monthNum),
+          amount,
+          source: "import",
+        });
       }
+    }
+
+    const result = await upsertBudgetCells(admin, owner, cells);
+    if (result.error) {
+      return NextResponse.json({ error: `Import failed: ${result.error}` }, { status: 500 });
     }
 
     return NextResponse.json({
       success: true,
       imported: {
         accounts: matchedRows.length,
-        amounts: insertRows.length,
+        amounts: result.upserted,
+        cleared: result.deleted,
+        replace,
       },
     });
   } catch (err) {
     console.error("POST /api/budgets/import error:", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Internal server error" },
-      { status: 500 }
-    );
+    const { body, status } = accessErrorResponse(err);
+    return NextResponse.json(body, { status });
   }
 }

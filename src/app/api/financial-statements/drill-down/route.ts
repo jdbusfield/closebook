@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getPeriodsInRange, type PeriodBucket } from "@/lib/utils/dates";
 import { fetchAllPaginated } from "@/lib/utils/paginated-fetch";
+import { fetchBudgetAmountRows, resolveActiveVersions } from "@/lib/budget/versions";
 import { resolveChartIdOrDefault } from "@/lib/master-charts/resolve";
 import {
   INCOME_STATEMENT_SECTIONS,
@@ -262,7 +263,29 @@ export async function GET(request: Request) {
     }
   }
 
-  // Collect all unique master account IDs
+  // Collect all unique master account IDs, then pull in children of any
+  // parent master (the statement shows the parent; mappings and budgets
+  // live on the children).
+  const targetMasterIds = [...new Set(drillTargets.flatMap((t) => t.masterAccountIds))];
+  if (targetMasterIds.length > 0) {
+    const { data: childMasters } = await admin
+      .from("master_accounts")
+      .select("id, parent_account_id")
+      .in("parent_account_id", targetMasterIds);
+    const childrenByParent = new Map<string, string[]>();
+    for (const c of (childMasters ?? []) as { id: string; parent_account_id: string }[]) {
+      const list = childrenByParent.get(c.parent_account_id) ?? [];
+      list.push(c.id);
+      childrenByParent.set(c.parent_account_id, list);
+    }
+    if (childrenByParent.size > 0) {
+      for (const t of drillTargets) {
+        t.masterAccountIds = [
+          ...new Set(t.masterAccountIds.flatMap((id) => [id, ...(childrenByParent.get(id) ?? [])])),
+        ];
+      }
+    }
+  }
   const allMasterAccountIds = [...new Set(drillTargets.flatMap((t) => t.masterAccountIds))];
 
   if (allMasterAccountIds.length === 0) {
@@ -374,49 +397,46 @@ export async function GET(request: Request) {
   }
 
   if (columnType === "budget") {
-    // Fetch budget data
-    // Get active budget versions for entities in scope
-    const { data: budgetVersions } = await admin
-      .from("budget_versions")
-      .select("id, entity_id")
-      .in("entity_id", scopeEntityIds)
-      .eq("is_active", true);
+    // Budget versions for the scope: reporting-entity versions first, entity
+    // versions as the fallback (src/lib/budget/versions.ts).
+    const versions = await resolveActiveVersions(admin, {
+      organizationId: resolvedOrgId,
+      years: uniqueYears,
+      scope: scope === "entity" ? "entity" : scope === "reporting_entity" ? "reporting_entity" : "organization",
+      entityId: scope === "entity" ? scopeEntityIds[0] : undefined,
+      reportingEntityId: scope === "reporting_entity" ? (reportingEntityId ?? undefined) : undefined,
+      entityIds: scopeEntityIds,
+    });
 
-    const versionIds = (budgetVersions ?? []).map((v: { id: string }) => v.id);
-    const entityToVersion = new Map<string, string>();
-    for (const v of budgetVersions ?? []) {
-      entityToVersion.set(v.entity_id, v.id);
-    }
+    if (versions.length > 0) {
+      const budgetAmounts = await fetchBudgetAmountRows(admin, versions.map((v) => v.id), {
+        years: uniqueYears,
+        months: uniqueMonthNums,
+        masterAccountIds: allMasterAccountIds,
+      });
 
-    if (versionIds.length > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const budgetAmounts = await fetchAllPaginated<any>((offset, limit) =>
-        (admin as any)
-          .from("budget_amounts")
-          .select("budget_version_id, account_id, period_year, period_month, amount")
-          .in("budget_version_id", versionIds)
-          .in("account_id", mappedAccountIds)
-          .in("period_year", uniqueYears)
-          .in("period_month", uniqueMonthNums)
-          .range(offset, offset + limit - 1)
-      );
-
-      // Build a version -> entity lookup
-      const versionToEntity = new Map<string, string>();
-      for (const v of budgetVersions ?? []) {
-        versionToEntity.set(v.id, v.entity_id);
+      // Owner label per version: the entity, or the reporting entity
+      const versionOwner = new Map<string, string>();
+      const reIds = versions.map((v) => v.reportingEntityId).filter((id): id is string => !!id);
+      if (reIds.length > 0) {
+        const { data: reRows } = await admin
+          .from("reporting_entities")
+          .select("id, name, code")
+          .in("id", reIds);
+        for (const re of (reRows ?? []) as { id: string; name: string; code: string }[]) {
+          entityMap.set(re.id, { name: re.name, code: re.code });
+        }
       }
+      for (const v of versions) versionOwner.set(v.id, v.entityId ?? v.reportingEntityId ?? "");
+      accountMap.set("budget", { name: "Budget", account_number: null });
 
-      // Aggregate budget amounts by (master_account_id, entity_id)
+      // Aggregate budget amounts by (master_account_id, owner)
       const budgetAgg = new Map<string, number>();
       for (const ba of budgetAmounts) {
         const key = `${ba.period_year}-${String(ba.period_month).padStart(2, "0")}`;
         if (!monthSet.has(key)) continue;
-
-        const mapping = accountToMapping.get(ba.account_id);
-        if (!mapping) continue;
-
-        const aggKey = `${mapping.master_account_id}|${mapping.entity_id}|${ba.account_id}`;
+        const ownerId = versionOwner.get(ba.budget_version_id) ?? "";
+        const aggKey = `${ba.master_account_id}|${ownerId}|budget`;
         budgetAgg.set(aggKey, (budgetAgg.get(aggKey) ?? 0) + Number(ba.amount));
       }
 

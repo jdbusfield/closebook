@@ -5,6 +5,13 @@ export const maxDuration = 300; // Syncing multiple entities × months needs ext
 
 const DELAY_BETWEEN_SYNCS_MS = 2000; // 2s stagger between sync calls to avoid rate limits
 
+/**
+ * Stop starting new period syncs after this much wall-clock time so the run
+ * ends with a summary instead of being killed by the platform at maxDuration.
+ * Whatever did not get synced is the stalest work tomorrow and runs first.
+ */
+const TIME_BUDGET_MS = 250_000;
+
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -42,7 +49,28 @@ async function readSyncStream(
   return lastEvent;
 }
 
+interface WorkItem {
+  entityId: string;
+  companyName: string | null;
+  year: number;
+  month: number;
+  /** trial_balances.synced_at for this entity-period, null when never synced */
+  syncedAt: string | null;
+}
+
+interface MonthResult {
+  year: number;
+  month: number;
+  success: boolean;
+  recordsSynced: number;
+  dataChanged: boolean;
+  error?: string;
+  skipped?: boolean;
+}
+
 export async function GET(request: Request) {
+  const startedAt = Date.now();
+
   // Verify cron secret
   const authHeader = request.headers.get("authorization");
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -75,114 +103,134 @@ export async function GET(request: Request) {
     return NextResponse.json({ message: "No connections to sync" });
   }
 
-  // Determine months to sync: previous December + January through current month
+  // Periods: previous December + January through current month
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1; // 1-indexed
   const monthsToSync = Array.from({ length: currentMonth }, (_, i) => i + 1);
-
-  // Also sync previous year's December (adjustments may still land there)
   const prevYear = currentYear - 1;
   const syncPrevDecember = true;
+
+  const periodsToSync: { year: number; month: number }[] = [];
+  if (syncPrevDecember) periodsToSync.push({ year: prevYear, month: 12 });
+  for (const month of monthsToSync) periodsToSync.push({ year: currentYear, month });
+
+  // Last sync time per entity-period, so the stalest work runs first. A run
+  // that gets cut off by the time budget leaves the rest for tomorrow.
+  const entityIds = connections.map((c) => c.entity_id);
+  const { data: tbRows } = await supabase
+    .from("trial_balances")
+    .select("entity_id, period_year, period_month, synced_at")
+    .in("entity_id", entityIds)
+    .in("period_year", [prevYear, currentYear]);
+  const syncedAt = new Map<string, string>();
+  for (const r of tbRows ?? []) {
+    const key = `${r.entity_id}|${r.period_year}|${r.period_month}`;
+    const prev = syncedAt.get(key);
+    if (!prev || (r.synced_at && r.synced_at > prev)) syncedAt.set(key, r.synced_at ?? "");
+  }
+
+  const work: WorkItem[] = [];
+  for (const conn of connections) {
+    for (const p of periodsToSync) {
+      work.push({
+        entityId: conn.entity_id,
+        companyName: conn.company_name,
+        year: p.year,
+        month: p.month,
+        syncedAt: syncedAt.get(`${conn.entity_id}|${p.year}|${p.month}`) ?? null,
+      });
+    }
+  }
+  // Never-synced first, then oldest sync first, then the newest month first.
+  work.sort((a, b) => {
+    if (a.syncedAt === null && b.syncedAt !== null) return -1;
+    if (a.syncedAt !== null && b.syncedAt === null) return 1;
+    if (a.syncedAt !== b.syncedAt) return (a.syncedAt ?? "") < (b.syncedAt ?? "") ? -1 : 1;
+    return b.year * 100 + b.month - (a.year * 100 + a.month);
+  });
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   const cronSecret = process.env.CRON_SECRET!;
 
-  const results: {
-    entityId: string;
-    companyName: string | null;
-    months: {
-      year: number;
-      month: number;
-      success: boolean;
-      recordsSynced: number;
-      dataChanged: boolean;
-      error?: string;
-    }[];
-  }[] = [];
-
-  // Build full list of periods to sync: previous Dec + current year months
-  const periodsToSync: { year: number; month: number }[] = [];
-  if (syncPrevDecember) {
-    periodsToSync.push({ year: prevYear, month: 12 });
-  }
-  for (const month of monthsToSync) {
-    periodsToSync.push({ year: currentYear, month });
-  }
-
-  // Process each entity sequentially (avoids token refresh race conditions
-  // within a single QBO realm). Months within an entity are also sequential
-  // since they share the same access token.
+  const resultsByEntity = new Map<string, { entityId: string; companyName: string | null; months: MonthResult[] }>();
   for (const conn of connections) {
-    const entityResult: (typeof results)[0] = {
-      entityId: conn.entity_id,
-      companyName: conn.company_name,
-      months: [],
-    };
+    resultsByEntity.set(conn.entity_id, { entityId: conn.entity_id, companyName: conn.company_name, months: [] });
+  }
 
-    for (const period of periodsToSync) {
-      try {
-        const response = await fetch(`${baseUrl}/api/qbo/sync`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-cron-secret": cronSecret,
-          },
-          body: JSON.stringify({
-            entityId: conn.entity_id,
-            syncType: "incremental",
-            periodYear: period.year,
-            periodMonth: period.month,
-          }),
-        });
+  let skipped = 0;
+  let timeBudgetHit = false;
 
-        const lastEvent = await readSyncStream(response);
-
-        entityResult.months.push({
-          year: period.year,
-          month: period.month,
-          success: !lastEvent.error,
-          recordsSynced: (lastEvent.recordsSynced as number) ?? 0,
-          dataChanged: (lastEvent.dataChanged as boolean) ?? false,
-          error: lastEvent.error ? String(lastEvent.error) : undefined,
-        });
-      } catch (err) {
-        entityResult.months.push({
-          year: period.year,
-          month: period.month,
-          success: false,
-          recordsSynced: 0,
-          dataChanged: false,
-          error: err instanceof Error ? err.message : "Unknown error",
-        });
-      }
-
-      // Stagger between syncs to stay well within QBO rate limits (100 req/min/realm)
-      await delay(DELAY_BETWEEN_SYNCS_MS);
+  for (const item of work) {
+    const entry = resultsByEntity.get(item.entityId)!;
+    if (Date.now() - startedAt > TIME_BUDGET_MS) {
+      timeBudgetHit = true;
+      skipped++;
+      entry.months.push({
+        year: item.year,
+        month: item.month,
+        success: false,
+        recordsSynced: 0,
+        dataChanged: false,
+        skipped: true,
+        error: "Skipped: time budget reached; runs first tomorrow",
+      });
+      continue;
     }
 
-    results.push(entityResult);
-
-    // Take drift snapshot for current year months
     try {
-      await fetch(`${baseUrl}/api/drift/snapshot`, {
+      const response = await fetch(`${baseUrl}/api/qbo/sync`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "x-cron-secret": cronSecret,
         },
         body: JSON.stringify({
-          entityId: conn.entity_id,
-          year: currentYear,
-          months: monthsToSync,
+          entityId: item.entityId,
+          syncType: "incremental",
+          periodYear: item.year,
+          periodMonth: item.month,
         }),
       });
-    } catch {
-      // Drift snapshot failure should not block the sync summary
+
+      const lastEvent = await readSyncStream(response);
+
+      entry.months.push({
+        year: item.year,
+        month: item.month,
+        success: !lastEvent.error,
+        recordsSynced: (lastEvent.recordsSynced as number) ?? 0,
+        dataChanged: (lastEvent.dataChanged as boolean) ?? false,
+        error: lastEvent.error ? String(lastEvent.error) : undefined,
+      });
+    } catch (err) {
+      entry.months.push({
+        year: item.year,
+        month: item.month,
+        success: false,
+        recordsSynced: 0,
+        dataChanged: false,
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
     }
 
-    // Take drift snapshot for previous December
-    if (syncPrevDecember) {
+    // Stagger between syncs to stay well within QBO rate limits (100 req/min/realm)
+    await delay(DELAY_BETWEEN_SYNCS_MS);
+  }
+
+  const results = [...resultsByEntity.values()];
+
+  // Drift snapshots for every entity that synced at least one period this run
+  for (const entityResult of results) {
+    const synced = entityResult.months.filter((m) => m.success);
+    if (synced.length === 0) continue;
+    const byYear = new Map<number, number[]>();
+    for (const m of synced) {
+      const list = byYear.get(m.year) ?? [];
+      list.push(m.month);
+      byYear.set(m.year, list);
+    }
+    for (const [year, months] of byYear) {
       try {
         await fetch(`${baseUrl}/api/drift/snapshot`, {
           method: "POST",
@@ -190,11 +238,7 @@ export async function GET(request: Request) {
             "Content-Type": "application/json",
             "x-cron-secret": cronSecret,
           },
-          body: JSON.stringify({
-            entityId: conn.entity_id,
-            year: prevYear,
-            months: [12],
-          }),
+          body: JSON.stringify({ entityId: entityResult.entityId, year, months }),
         });
       } catch {
         // Drift snapshot failure should not block the sync summary
@@ -236,7 +280,7 @@ export async function GET(request: Request) {
   }
 
   // Summary stats
-  const totalSyncs = results.reduce((sum, r) => sum + r.months.length, 0);
+  const totalSyncs = results.reduce((sum, r) => sum + r.months.filter((m) => !m.skipped).length, 0);
   const successfulSyncs = results.reduce(
     (sum, r) => sum + r.months.filter((m) => m.success).length,
     0
@@ -259,6 +303,9 @@ export async function GET(request: Request) {
     successfulSyncs,
     changedPeriods,
     totalRecords,
+    skipped,
+    timeBudgetHit,
+    elapsedMs: Date.now() - startedAt,
     results,
     rwRevenueSnapshot: rwSnapshotResult,
     rwInvoiceItemsSync,

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { accessErrorResponse, getBudgetActor, requireVersionAccess } from "@/lib/budget/access";
 import { fetchAllPaginated } from "@/lib/utils/paginated-fetch";
 import {
   INCOME_STATEMENT_SECTIONS,
@@ -45,14 +45,7 @@ interface ComputedLine {
 // GET — return structured budget data for a version using Master GL accounts
 export async function GET(request: Request) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const actor = await getBudgetActor();
 
     const { searchParams } = new URL(request.url);
     const versionId = searchParams.get("versionId");
@@ -66,6 +59,7 @@ export async function GET(request: Request) {
     }
 
     const admin: AnyClient = createAdminClient();
+    await requireVersionAccess(admin, actor, versionId, false);
 
     // Verify version exists
     const { data: version } = await admin
@@ -238,9 +232,7 @@ export async function GET(request: Request) {
     });
   } catch (err) {
     console.error("GET /api/budgets/view error:", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Internal server error" },
-      { status: 500 }
-    );
+    const { body, status } = accessErrorResponse(err);
+    return NextResponse.json(body, { status });
   }
 }

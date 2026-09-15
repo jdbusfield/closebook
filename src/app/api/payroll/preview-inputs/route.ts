@@ -1,23 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { ENTITY_ORDER } from "@/lib/paylocity/entities";
+import { PERSONNEL_PARENT_NUMBER, isPersonnelMaster } from "@/lib/budget/personnel-accounts";
+import { fetchBudgetAmountRows, resolveActiveVersions, type ResolvedVersion } from "@/lib/budget/versions";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
 /**
  * Revenue and Payroll BUDGET per entity for one month, from the budgeting
- * module: active budget_versions for the fiscal year → budget_amounts for the
- * month → master_accounts, where
- *   Revenue = classification='Revenue' AND account_type='Income'
- *     (the same rule as the financial statements "Revenue" section), and
- *   Payroll = classification='Expense' with a personnel/payroll-type name
- *     (the budget chart's "Personnel Costs" line; also matches
- *     payroll/salaries/wages lines on other charts).
- *
- * Mirrors the app's column fallback: live DB uses budget_amounts.master_account_id,
- * the original migration used account_id (mapped via master_account_mappings).
+ * module. Versions are resolved per reporting entity (entity versions as the
+ * fallback, see src/lib/budget/versions.ts); a reporting entity's budget is
+ * attributed to its lead operating entity (the first member in ENTITY_ORDER)
+ * because the preview report is keyed by operating entity.
+ *   Revenue = master classification 'Revenue' AND account_type 'Income'
+ *   Payroll = master 6100 and its 61x0 sub-masters (name fallback elsewhere)
  */
-const PAYROLL_ACCOUNT_NAME = /personnel|payroll|salar|wage/i;
-
 async function fetchBudgets(
   supabase: AdminClient,
   year: number,
@@ -27,91 +24,67 @@ async function fetchBudgets(
   const payrollBudgets: Record<string, number> = {};
   const result = { revenueBudgets, payrollBudgets };
   try {
-    const { data: versions, error: vErr } = await supabase
-      .from("budget_versions")
-      .select("id, entity_id")
-      .eq("is_active", true)
-      .eq("fiscal_year", year);
-    if (vErr || !versions || versions.length === 0) return result;
-    const versionEntity = new Map(versions.map((v) => [v.id, v.entity_id]));
-    const versionIds = versions.map((v) => v.id);
+    const { data: orgs } = await supabase.from("organizations").select("id");
+    const { data: reMembers } = await supabase
+      .from("reporting_entity_members")
+      .select("reporting_entity_id, entity_id");
+    const membersByRe = new Map<string, string[]>();
+    for (const m of reMembers ?? []) {
+      const list = membersByRe.get(m.reporting_entity_id) ?? [];
+      list.push(m.entity_id);
+      membersByRe.set(m.reporting_entity_id, list);
+    }
+    const { data: allEntities } = await supabase.from("entities").select("id");
+    const allEntityIds = (allEntities ?? []).map((e) => e.id);
 
-    // Revenue master accounts (main Revenue section: Income only)
-    const { data: revAccounts, error: rErr } = await supabase
-      .from("master_accounts")
-      .select("id")
-      .eq("classification", "Revenue")
-      .eq("account_type", "Income");
-    if (rErr || !revAccounts) return result;
-    const revenueIds = new Set(revAccounts.map((a) => a.id));
+    const versions: ResolvedVersion[] = [];
+    for (const org of orgs ?? []) {
+      versions.push(
+        ...(await resolveActiveVersions(supabase, {
+          organizationId: org.id,
+          years: [year],
+          scope: "organization",
+          entityIds: allEntityIds,
+        }))
+      );
+    }
+    if (versions.length === 0) return result;
 
-    // Payroll master accounts (expense lines named personnel/payroll/salaries/wages)
-    const { data: expAccounts, error: eErr } = await supabase
+    // Lead operating entity for an RE version
+    const leadEntity = (v: ResolvedVersion): string | null => {
+      if (v.entityId) return v.entityId;
+      const members = membersByRe.get(v.reportingEntityId ?? "") ?? [];
+      return ENTITY_ORDER.find((id) => members.includes(id)) ?? members[0] ?? null;
+    };
+    const versionEntity = new Map(versions.map((v) => [v.id, leadEntity(v)]));
+
+    const { data: masters } = await supabase
       .from("master_accounts")
-      .select("id, name")
-      .eq("classification", "Expense");
-    if (eErr || !expAccounts) return result;
+      .select("id, name, account_number, classification, account_type, parent_account_id");
+    const revenueIds = new Set(
+      (masters ?? [])
+        .filter((a) => a.classification === "Revenue" && a.account_type === "Income")
+        .map((a) => a.id)
+    );
+    const personnelParentIds = new Set(
+      (masters ?? []).filter((a) => a.account_number === PERSONNEL_PARENT_NUMBER).map((a) => a.id)
+    );
     const payrollIds = new Set(
-      expAccounts.filter((a) => PAYROLL_ACCOUNT_NAME.test(a.name ?? "")).map((a) => a.id)
+      (masters ?? [])
+        .filter((a) => a.classification === "Expense" && isPersonnelMaster(a, personnelParentIds))
+        .map((a) => a.id)
     );
 
-    // Try the live column name first, fall back to the original
-    interface BudgetAmountRow {
-      budget_version_id: string;
-      amount: number;
-      master_account_id?: string | null;
-      account_id?: string | null;
-    }
-    let rows: BudgetAmountRow[] = [];
-    let usedLegacy = false;
-    const primary = await supabase
-      .from("budget_amounts")
-      .select("budget_version_id, master_account_id, amount")
-      .in("budget_version_id", versionIds)
-      .eq("period_year", year)
-      .eq("period_month", month);
-    if (!primary.error) {
-      rows = (primary.data ?? []) as unknown as BudgetAmountRow[];
-    } else {
-      const legacy = await supabase
-        .from("budget_amounts")
-        .select("budget_version_id, account_id, amount")
-        .in("budget_version_id", versionIds)
-        .eq("period_year", year)
-        .eq("period_month", month);
-      if (legacy.error) return result;
-      rows = (legacy.data ?? []) as unknown as BudgetAmountRow[];
-      usedLegacy = true;
-    }
-
-    // Legacy path: entity account ids → master account ids
-    let entityToMaster: Map<string, string> | null = null;
-    if (usedLegacy) {
-      entityToMaster = new Map();
-      const pageSize = 1000;
-      let from = 0;
-      while (true) {
-        const { data: maps, error: mErr } = await supabase
-          .from("master_account_mappings")
-          .select("account_id, master_account_id")
-          .range(from, from + pageSize - 1);
-        if (mErr || !maps) break;
-        for (const m of maps) entityToMaster.set(m.account_id, m.master_account_id);
-        if (maps.length < pageSize) break;
-        from += pageSize;
-      }
-    }
-
+    const rows = await fetchBudgetAmountRows(supabase, versions.map((v) => v.id), {
+      years: [year],
+      months: [month],
+    });
     for (const row of rows) {
-      const masterId = usedLegacy
-        ? entityToMaster?.get(row.account_id ?? "") ?? null
-        : row.master_account_id ?? null;
-      if (!masterId) continue;
       const entityId = versionEntity.get(row.budget_version_id);
       if (!entityId) continue;
-      if (revenueIds.has(masterId)) {
+      if (revenueIds.has(row.master_account_id)) {
         revenueBudgets[entityId] = (revenueBudgets[entityId] ?? 0) + Number(row.amount ?? 0);
-      } else if (payrollIds.has(masterId)) {
+      } else if (payrollIds.has(row.master_account_id)) {
         payrollBudgets[entityId] = (payrollBudgets[entityId] ?? 0) + Number(row.amount ?? 0);
       }
     }

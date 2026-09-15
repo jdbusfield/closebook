@@ -78,6 +78,12 @@ export const RESOURCE_TYPE_LABELS: Record<string, string> = {
   financial_model_templates: "Financial Model Template",
   budget_versions: "Budget Version",
   budget_amounts: "Budget Amount",
+  budget_assumptions: "Budget Assumption",
+  budget_headcount: "Budget Headcount Row",
+  budget_builds: "Budget Build",
+  budget_line_notes: "Budget Line Note",
+  capex_plan_items: "Capex Plan Item",
+  disposal_plan_items: "Disposal Plan Item",
   drift_monitored_accounts: "Drift Monitored Account",
 
   // debt

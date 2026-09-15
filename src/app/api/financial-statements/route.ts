@@ -3,6 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getPeriodsInRange, type PeriodBucket } from "@/lib/utils/dates";
 import { fetchAllMappings, fetchAllPaginated } from "@/lib/utils/paginated-fetch";
+import {
+  resolveActiveVersions,
+  fetchBudgetAmountRows,
+  rollupBudgetToParents,
+  type BudgetAmountRow,
+} from "@/lib/budget/versions";
 import { resolveChartIdOrDefault } from "@/lib/master-charts/resolve";
 import { getExcludedFromBreakdownEntityIds } from "@/lib/db/queries/reporting-entity-exclusions";
 import {
@@ -238,116 +244,73 @@ function createPriorYearBuckets(buckets: PeriodBucket[]): PeriodBucket[] {
 // Helper: aggregate budget amounts into period buckets
 // ---------------------------------------------------------------------------
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-interface RawBudgetAmount {
-  master_account_id?: string;
-  account_id?: string;
-  period_month: number;
-  period_year: number;
-  amount: number;
+/**
+ * Aggregates budget rows (master account x month) into the statement's
+ * period buckets: master account id -> bucket key -> amount.
+ */
+function aggregateBudgetByBucket(
+  rows: BudgetAmountRow[],
+  buckets: PeriodBucket[],
+): Map<string, Record<string, number>> {
+  const byPeriod = new Map<string, Map<string, number>>();
+  for (const r of rows) {
+    if (!r.master_account_id) continue;
+    let periods = byPeriod.get(r.master_account_id);
+    if (!periods) {
+      periods = new Map();
+      byPeriod.set(r.master_account_id, periods);
+    }
+    const key = `${r.period_year}-${r.period_month}`;
+    periods.set(key, (periods.get(key) ?? 0) + Number(r.amount));
+  }
+  const result = new Map<string, Record<string, number>>();
+  for (const [masterId, periods] of byPeriod) {
+    const out: Record<string, number> = {};
+    for (const bucket of buckets) {
+      let sum = 0;
+      for (const m of bucket.months) sum += periods.get(`${m.year}-${m.month}`) ?? 0;
+      out[bucket.key] = sum;
+    }
+    result.set(masterId, out);
+  }
+  return result;
 }
 
 /**
- * Fetches budget amounts with fallback for column name.
- * The budget_amounts table may have either `master_account_id` (renamed)
- * or `account_id` (original migration). Try master_account_id first; if
- * the query errors, fall back to account_id.
+ * Budget for a scope: resolves the active versions (reporting-entity first,
+ * entity fallback), reads their amounts and buckets them. Children of a
+ * parent master are rolled into the parent so the budget lands on the line
+ * the statement displays.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function fetchBudgetAmounts(admin: any, versionIds: string[]): Promise<{
-  rows: RawBudgetAmount[];
-  column: "master_account_id" | "account_id";
-  error?: string;
-}> {
-  // Try master_account_id first (current schema after column rename)
-  // Paginate to avoid PostgREST row-limit truncation (versions × accounts × 12 months)
+async function loadBudgetByAccount(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: probe, error: err1 } = await (admin as any)
-    .from("budget_amounts")
-    .select("master_account_id", { count: "exact", head: true })
-    .in("budget_version_id", versionIds);
-
-  if (!err1) {
-    const rows1 = await fetchAllPaginated<RawBudgetAmount>((offset, limit) =>
-      (admin as any)
-        .from("budget_amounts")
-        .select("master_account_id, period_year, period_month, amount")
-        .in("budget_version_id", versionIds)
-        .range(offset, offset + limit - 1)
-    );
-    return { rows: rows1, column: "master_account_id" };
-  }
-
-  // Fallback: try account_id (original migration column name)
-  const rows2 = await fetchAllPaginated<RawBudgetAmount>((offset, limit) =>
-    (admin as any)
-      .from("budget_amounts")
-      .select("account_id, period_year, period_month, amount")
-      .in("budget_version_id", versionIds)
-      .range(offset, offset + limit - 1)
-  );
-
-  if (rows2.length > 0) {
-    return { rows: rows2, column: "account_id" };
-  }
-
-  return {
-    rows: [],
-    column: "master_account_id",
-    error: `master_account_id: ${err1?.message}; account_id fallback returned 0 rows`,
-  };
-}
-
-function aggregateBudgetByBucket(
-  budgetAmounts: RawBudgetAmount[],
-  buckets: PeriodBucket[],
-  column: "master_account_id" | "account_id",
-  /** Maps entity account_id -> master account_id (only needed when column is account_id) */
-  entityToMaster?: Map<string, string>
-): Map<string, Record<string, number>> {
-  // Index budget amounts by account key -> "year-month" -> amount
-  const budgetIndex = new Map<string, Map<string, number>>();
-  for (const ba of budgetAmounts) {
-    const accountKey = column === "master_account_id"
-      ? ba.master_account_id!
-      : ba.account_id!;
-    if (!accountKey) continue;
-
-    let byPeriod = budgetIndex.get(accountKey);
-    if (!byPeriod) {
-      byPeriod = new Map();
-      budgetIndex.set(accountKey, byPeriod);
-    }
-    const key = `${ba.period_year}-${ba.period_month}`;
-    byPeriod.set(key, (byPeriod.get(key) ?? 0) + Number(ba.amount));
-  }
-
-  // Aggregate by master account and bucket
-  const result = new Map<string, Record<string, number>>();
-
-  for (const [accountKey, periodAmounts] of budgetIndex) {
-    // If column is account_id, map entity account -> master account
-    const masterAccountId = column === "account_id" && entityToMaster
-      ? entityToMaster.get(accountKey)
-      : accountKey;
-    if (!masterAccountId) continue;
-
-    let masterBuckets = result.get(masterAccountId);
-    if (!masterBuckets) {
-      masterBuckets = {};
-      result.set(masterAccountId, masterBuckets);
-    }
-
-    for (const bucket of buckets) {
-      for (const m of bucket.months) {
-        const periodKey = `${m.year}-${m.month}`;
-        const val = periodAmounts.get(periodKey) ?? 0;
-        masterBuckets[bucket.key] = (masterBuckets[bucket.key] ?? 0) + val;
-      }
-    }
-  }
-
-  return result;
+  admin: any,
+  opts: {
+    organizationId: string;
+    scope: "entity" | "reporting_entity" | "organization";
+    entityId?: string;
+    reportingEntityId?: string;
+    entityIds?: string[];
+    buckets: PeriodBucket[];
+    accounts: AccountInfo[];
+    kind?: "budget" | "forecast";
+  },
+): Promise<Map<string, Record<string, number>> | undefined> {
+  const years = [...new Set(opts.buckets.flatMap((b) => b.months.map((m) => m.year)))];
+  const versions = await resolveActiveVersions(admin, {
+    organizationId: opts.organizationId,
+    years,
+    kind: opts.kind ?? "budget",
+    scope: opts.scope,
+    entityId: opts.entityId,
+    reportingEntityId: opts.reportingEntityId,
+    entityIds: opts.entityIds,
+  });
+  if (versions.length === 0) return undefined;
+  const rows = await fetchBudgetAmountRows(admin, versions.map((v) => v.id), { years });
+  if (rows.length === 0) return undefined;
+  const map = aggregateBudgetByBucket(rows, opts.buckets);
+  return rollupBudgetToParents(map, opts.accounts);
 }
 
 // ---------------------------------------------------------------------------
@@ -3317,11 +3280,15 @@ interface ConsolidatedStatementsParams {
   allMonths: Array<{ year: number; month: number }>;
   includeYoY: boolean;
   includeBudget: boolean;
+  /** Which active version kind the Budget column reads (default budget). */
+  budgetKind?: "budget" | "forecast";
   includeProForma: boolean;
   includeAllocations: boolean;
   includeFixedAssetSchedule: boolean;
   granularity: Granularity;
   scope: Scope;
+  /** Set for reporting_entity scope so the RE's own budget version is used. */
+  reportingEntityId?: string;
   startYear: number;
   startMonth: number;
   endYear: number;
@@ -3339,11 +3306,13 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     allMonths,
     includeYoY,
     includeBudget,
+    budgetKind,
     includeProForma,
     includeAllocations,
     includeFixedAssetSchedule,
     granularity,
     scope,
+    reportingEntityId,
     startYear,
     startMonth,
     endYear,
@@ -3980,44 +3949,19 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     }
   }
 
-  // Budget data
+  // Budget data: reporting-entity versions first, entity versions as fallback
   let consolidatedBudgetByAccount: Map<string, Record<string, number>> | undefined;
 
   if (includeBudget && entityIds.length > 0) {
-    const budgetYears = [
-      ...new Set(buckets.flatMap((b) => b.months.map((m) => m.year))),
-    ];
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: activeVersions } = await (admin as any)
-      .from("budget_versions")
-      .select("id, fiscal_year, entity_id")
-      .in("entity_id", entityIds)
-      .eq("is_active", true)
-      .in("fiscal_year", budgetYears);
-
-    const versionIds = (activeVersions ?? []).map(
-      (v: { id: string }) => v.id
-    );
-
-    if (versionIds.length > 0) {
-      const budgetResult = await fetchBudgetAmounts(admin, versionIds);
-
-      if (budgetResult.rows.length > 0) {
-        // Build entityToMaster mapping (needed if column is account_id)
-        const entityToMaster = new Map<string, string>();
-        for (const m of mappings ?? []) {
-          entityToMaster.set(m.account_id, m.master_account_id);
-        }
-
-        consolidatedBudgetByAccount = aggregateBudgetByBucket(
-          budgetResult.rows,
-          buckets,
-          budgetResult.column,
-          entityToMaster
-        );
-      }
-    }
+    consolidatedBudgetByAccount = await loadBudgetByAccount(admin, {
+      organizationId,
+      scope: scope === "reporting_entity" ? "reporting_entity" : "organization",
+      reportingEntityId,
+      entityIds,
+      buckets,
+      accounts: consolidatedAccounts,
+      kind: budgetKind,
+    });
   }
 
   // Roll children's amounts into their parent rows. No-op for charts that
@@ -4258,6 +4202,7 @@ export async function GET(request: Request) {
   const endMonth = parseInt(searchParams.get("endMonth") ?? "12");
   const granularity = (searchParams.get("granularity") ?? "monthly") as Granularity;
   const includeBudget = searchParams.get("includeBudget") === "true";
+  const budgetKind: "budget" | "forecast" = searchParams.get("budgetKind") === "forecast" ? "forecast" : "budget";
   const includeYoY = searchParams.get("includeYoY") === "true";
   const includeProForma = searchParams.get("includeProForma") === "true";
   const includeAllocations = searchParams.get("includeAllocations") === "true";
@@ -4580,42 +4525,14 @@ export async function GET(request: Request) {
     let budgetByAccount: Map<string, Record<string, number>> | undefined;
 
     if (includeBudget) {
-      // Determine which fiscal years we need budgets for
-      const budgetYears = [
-        ...new Set(buckets.flatMap((b) => b.months.map((m) => m.year))),
-      ];
-
-      // Find active budget versions for this entity in those years
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- budget tables not yet in generated types
-      const { data: activeVersions } = await (admin as any)
-        .from("budget_versions")
-        .select("id, fiscal_year")
-        .eq("entity_id", entityId!)
-        .eq("is_active", true)
-        .in("fiscal_year", budgetYears);
-
-      const versionIds = (activeVersions ?? []).map(
-        (v: { id: string }) => v.id
-      );
-
-      if (versionIds.length > 0) {
-        const budgetResult = await fetchBudgetAmounts(admin, versionIds);
-
-        if (budgetResult.rows.length > 0) {
-          // Build entityToMaster mapping (needed if column is account_id)
-          const entityToMaster = new Map<string, string>();
-          for (const m of mappings ?? []) {
-            entityToMaster.set(m.account_id, m.master_account_id);
-          }
-
-          budgetByAccount = aggregateBudgetByBucket(
-            budgetResult.rows,
-            buckets,
-            budgetResult.column,
-            entityToMaster
-          );
-        }
-      }
+      budgetByAccount = await loadBudgetByAccount(admin, {
+        organizationId: entity.organization_id,
+        scope: "entity",
+        entityId: entityId!,
+        buckets,
+        accounts: consolidatedAccounts,
+        kind: budgetKind,
+      });
     }
 
     // Roll children's amounts into their parent rows. No-op when no
@@ -4859,6 +4776,7 @@ export async function GET(request: Request) {
       allMonths,
       includeYoY,
       includeBudget,
+      budgetKind,
       includeProForma,
       includeAllocations,
       includeFixedAssetSchedule,
@@ -4977,10 +4895,12 @@ export async function GET(request: Request) {
       organizationId: reportingEntity.organization_id,
       chartId: reChartId,
       entityIds: memberEntityIds,
+      reportingEntityId: reportingEntityId!,
       buckets,
       allMonths,
       includeYoY,
       includeBudget,
+      budgetKind,
       includeProForma,
       includeAllocations,
       includeFixedAssetSchedule,

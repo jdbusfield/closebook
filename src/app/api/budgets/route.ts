@@ -1,21 +1,18 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- budget tables not yet in generated types
-type AnyClient = any;
+import {
+  accessErrorResponse,
+  assertOrgEditor,
+  assertOrgMember,
+  getBudgetActor,
+  organizationForEntity,
+  requireVersionAccess,
+} from "@/lib/budget/access";
 
 // GET — list budget versions for an entity
 export async function GET(request: Request) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const actor = await getBudgetActor();
 
     const { searchParams } = new URL(request.url);
     const entityId = searchParams.get("entityId");
@@ -27,7 +24,8 @@ export async function GET(request: Request) {
       );
     }
 
-    const admin: AnyClient = createAdminClient();
+    const admin = createAdminClient();
+    assertOrgMember(actor, await organizationForEntity(admin, entityId));
 
     const { data: versions, error } = await admin
       .from("budget_versions")
@@ -43,24 +41,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ versions: versions ?? [] });
   } catch (err) {
     console.error("GET /api/budgets error:", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Internal server error" },
-      { status: 500 }
-    );
+    const { body, status } = accessErrorResponse(err);
+    return NextResponse.json(body, { status });
   }
 }
 
-// POST — create a new budget version
+// POST — create a new budget version (legacy entity-owned)
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const actor = await getBudgetActor();
 
     const body = await request.json();
     const { entityId, name, fiscalYear, notes } = body;
@@ -72,16 +61,19 @@ export async function POST(request: Request) {
       );
     }
 
-    const admin: AnyClient = createAdminClient();
+    const admin = createAdminClient();
+    const organizationId = await organizationForEntity(admin, entityId);
+    assertOrgEditor(actor, organizationId);
 
     const { data: version, error } = await admin
       .from("budget_versions")
       .insert({
         entity_id: entityId,
+        organization_id: organizationId,
         name,
         fiscal_year: fiscalYear,
         notes: notes ?? null,
-        created_by: user.id,
+        created_by: actor.userId,
       })
       .select()
       .single();
@@ -94,24 +86,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ version });
   } catch (err) {
     console.error("POST /api/budgets error:", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Internal server error" },
-      { status: 500 }
-    );
+    const { body, status } = accessErrorResponse(err);
+    return NextResponse.json(body, { status });
   }
 }
 
 // PATCH — update a budget version (status, is_active, name, notes)
 export async function PATCH(request: Request) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const actor = await getBudgetActor();
 
     const body = await request.json();
     const { versionId, ...updates } = body;
@@ -123,24 +106,24 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const admin: AnyClient = createAdminClient();
+    const admin = createAdminClient();
+    // Status / active flips are allowed on a locked version; content is not.
+    const owner = await requireVersionAccess(admin, actor, versionId, false);
+    assertOrgEditor(actor, owner.organizationId);
 
-    // If setting is_active = true, deactivate other versions for same entity+year
+    // If setting is_active = true, deactivate the other versions of the same
+    // owner, year and kind.
     if (updates.is_active === true) {
-      const { data: version } = await (admin as any)
+      let q = admin
         .from("budget_versions")
-        .select("entity_id, fiscal_year")
-        .eq("id", versionId)
-        .single();
-
-      if (version) {
-        await (admin as any)
-          .from("budget_versions")
-          .update({ is_active: false })
-          .eq("entity_id", version.entity_id)
-          .eq("fiscal_year", version.fiscal_year)
-          .neq("id", versionId);
-      }
+        .update({ is_active: false })
+        .eq("fiscal_year", owner.fiscalYear)
+        .eq("kind", owner.kind)
+        .neq("id", versionId);
+      q = owner.reportingEntityId
+        ? q.eq("reporting_entity_id", owner.reportingEntityId)
+        : q.eq("entity_id", owner.entityId!);
+      await q;
     }
 
     const allowedFields: Record<string, unknown> = {};
@@ -163,24 +146,15 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ version: updated });
   } catch (err) {
     console.error("PATCH /api/budgets error:", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Internal server error" },
-      { status: 500 }
-    );
+    const { body, status } = accessErrorResponse(err);
+    return NextResponse.json(body, { status });
   }
 }
 
 // DELETE — delete a budget version and its amounts
 export async function DELETE(request: Request) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const actor = await getBudgetActor();
 
     const { searchParams } = new URL(request.url);
     const versionId = searchParams.get("versionId");
@@ -192,14 +166,10 @@ export async function DELETE(request: Request) {
       );
     }
 
-    const admin: AnyClient = createAdminClient();
+    const admin = createAdminClient();
+    await requireVersionAccess(admin, actor, versionId, true);
 
-    // Delete amounts first (cascade should handle it, but be explicit)
-    await admin
-      .from("budget_amounts")
-      .delete()
-      .eq("budget_version_id", versionId);
-
+    // Children cascade from the version row.
     const { error } = await admin
       .from("budget_versions")
       .delete()
@@ -212,9 +182,7 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("DELETE /api/budgets error:", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Internal server error" },
-      { status: 500 }
-    );
+    const { body, status } = accessErrorResponse(err);
+    return NextResponse.json(body, { status });
   }
 }

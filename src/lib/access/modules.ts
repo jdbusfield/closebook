@@ -37,6 +37,8 @@ export const MODULES: ModuleDef[] = [
   { key: "real_estate", label: "Real Estate", scope: "org", orgPaths: ["/real-estate"], entityPaths: ["/real-estate"] },
   { key: "qbo_sync", label: "QBO Sync", scope: "org", orgPaths: ["/sync"] },
   { key: "diligence", label: "Diligence", scope: "org", orgPaths: ["/diligence"] },
+  { key: "budgeting", label: "Budget", scope: "org", orgPaths: ["/budget"], hint: "Reporting-entity budgets, headcount plan, builds, review" },
+  { key: "capex_plan", label: "Capex & Disposal Plan", scope: "org", orgPaths: ["/capex-plan"], hint: "Planned purchases and disposals that feed the budget" },
   { key: "crm", label: "CRM", scope: "org", orgPaths: ["/crm"] },
   { key: "administration", label: "Administration", scope: "org", orgPaths: ["/settings"], hint: "Master GL, reporting entities, close templates, members, audit log, wiki" },
 
