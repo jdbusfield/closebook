@@ -232,7 +232,7 @@ function warehouseMatches(
 }
 
 /** True if `s`, trimmed, starts with any of the given prefixes (case-insensitive). */
-function startsWithAnyPrefix(
+export function startsWithAnyPrefix(
   s: string | undefined | null,
   prefixes: string[],
 ): boolean {
