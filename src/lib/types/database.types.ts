@@ -3771,36 +3771,63 @@ export type Database = {
       budget_versions: {
         Row: {
           id: string
-          entity_id: string
+          entity_id: string | null
+          reporting_entity_id: string | null
+          organization_id: string | null
           name: string
           fiscal_year: number
+          kind: string
+          base_version_id: string | null
+          chart_id: string | null
+          forecast_through_month: number | null
           status: string
           is_active: boolean
           notes: string | null
+          approved_at: string | null
+          approved_by: string | null
+          locked_at: string | null
           created_by: string | null
           created_at: string
           updated_at: string
         }
         Insert: {
           id?: string
-          entity_id: string
+          entity_id?: string | null
+          reporting_entity_id?: string | null
+          organization_id?: string | null
           name: string
           fiscal_year: number
+          kind?: string
+          base_version_id?: string | null
+          chart_id?: string | null
+          forecast_through_month?: number | null
           status?: string
           is_active?: boolean
           notes?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          locked_at?: string | null
           created_by?: string | null
           created_at?: string
           updated_at?: string
         }
         Update: {
           id?: string
-          entity_id?: string
+          entity_id?: string | null
+          reporting_entity_id?: string | null
+          organization_id?: string | null
           name?: string
           fiscal_year?: number
+          kind?: string
+          base_version_id?: string | null
+          chart_id?: string | null
+          forecast_through_month?: number | null
           status?: string
           is_active?: boolean
           notes?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          locked_at?: string | null
           created_by?: string | null
           created_at?: string
           updated_at?: string
@@ -3812,39 +3839,565 @@ export type Database = {
             referencedRelation: "entities"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "budget_versions_reporting_entity_id_fkey"
+            columns: ["reporting_entity_id"]
+            referencedRelation: "reporting_entities"
+            referencedColumns: ["id"]
+          },
         ]
       }
-      budget_amounts: {
+      budget_assumptions: {
         Row: {
           id: string
-          entity_id: string
-          master_account_id: string
           budget_version_id: string
-          period_year: number
-          period_month: number
-          amount: number
+          scope: string
+          scope_id: string | null
+          key: string
+          value: number | null
+          text_value: string | null
+          unit: string | null
+          effective_from: string | null
+          effective_to: string | null
+          source_note: string | null
+          created_by: string | null
           created_at: string
           updated_at: string
         }
         Insert: {
           id?: string
-          entity_id: string
-          master_account_id: string
           budget_version_id: string
-          period_year: number
-          period_month: number
-          amount?: number
+          scope?: string
+          scope_id?: string | null
+          key: string
+          value?: number | null
+          text_value?: string | null
+          unit?: string | null
+          effective_from?: string | null
+          effective_to?: string | null
+          source_note?: string | null
+          created_by?: string | null
           created_at?: string
           updated_at?: string
         }
         Update: {
           id?: string
-          entity_id?: string
+          budget_version_id?: string
+          scope?: string
+          scope_id?: string | null
+          key?: string
+          value?: number | null
+          text_value?: string | null
+          unit?: string | null
+          effective_from?: string | null
+          effective_to?: string | null
+          source_note?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_assumptions_budget_version_id_fkey"
+            columns: ["budget_version_id"]
+            referencedRelation: "budget_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      budget_headcount: {
+        Row: {
+          id: string
+          budget_version_id: string
+          reporting_entity_id: string | null
+          employee_id: string | null
+          paylocity_company_id: string | null
+          name: string
+          title: string | null
+          department: string | null
+          is_requisition: boolean
+          status: string
+          pay_type: string
+          base_rate: number | null
+          annual_salary: number | null
+          std_hours_week: number
+          fte_pct: number
+          start_month: number
+          end_month: number | null
+          merit_pct: number
+          merit_month: number | null
+          bonus_target: number
+          commission_annual: number
+          ot_pct: number
+          dt_pct: number
+          meal_pct: number
+          other_earnings_monthly: number
+          benefits_monthly: number
+          match_pct: number
+          life_disability_monthly: number
+          wc_class_code: string | null
+          pto_hours_per_period: number
+          other_costs_monthly: number
+          entity_allocations: Json
+          class_allocations: Json
+          seeded_from: Json | null
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          budget_version_id: string
+          reporting_entity_id?: string | null
+          employee_id?: string | null
+          paylocity_company_id?: string | null
+          name: string
+          title?: string | null
+          department?: string | null
+          is_requisition?: boolean
+          status?: string
+          pay_type?: string
+          base_rate?: number | null
+          annual_salary?: number | null
+          std_hours_week?: number
+          fte_pct?: number
+          start_month?: number
+          end_month?: number | null
+          merit_pct?: number
+          merit_month?: number | null
+          bonus_target?: number
+          commission_annual?: number
+          ot_pct?: number
+          dt_pct?: number
+          meal_pct?: number
+          other_earnings_monthly?: number
+          benefits_monthly?: number
+          match_pct?: number
+          life_disability_monthly?: number
+          wc_class_code?: string | null
+          pto_hours_per_period?: number
+          other_costs_monthly?: number
+          entity_allocations?: Json
+          class_allocations?: Json
+          seeded_from?: Json | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          budget_version_id?: string
+          reporting_entity_id?: string | null
+          employee_id?: string | null
+          paylocity_company_id?: string | null
+          name?: string
+          title?: string | null
+          department?: string | null
+          is_requisition?: boolean
+          status?: string
+          pay_type?: string
+          base_rate?: number | null
+          annual_salary?: number | null
+          std_hours_week?: number
+          fte_pct?: number
+          start_month?: number
+          end_month?: number | null
+          merit_pct?: number
+          merit_month?: number | null
+          bonus_target?: number
+          commission_annual?: number
+          ot_pct?: number
+          dt_pct?: number
+          meal_pct?: number
+          other_earnings_monthly?: number
+          benefits_monthly?: number
+          match_pct?: number
+          life_disability_monthly?: number
+          wc_class_code?: string | null
+          pto_hours_per_period?: number
+          other_costs_monthly?: number
+          entity_allocations?: Json
+          class_allocations?: Json
+          seeded_from?: Json | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_headcount_budget_version_id_fkey"
+            columns: ["budget_version_id"]
+            referencedRelation: "budget_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      budget_builds: {
+        Row: {
+          id: string
+          budget_version_id: string
+          reporting_entity_id: string | null
+          entity_id: string | null
+          master_account_id: string
+          qbo_class_id: string | null
+          class_key: string
+          build_type: string
+          source_table: string | null
+          source_id: string | null
+          component: string | null
+          label: string
+          amounts: Json
+          assumption_keys: string[]
+          is_computed: boolean
+          meta: Json | null
+          note: string | null
+          computed_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          budget_version_id: string
+          reporting_entity_id?: string | null
+          entity_id?: string | null
+          master_account_id: string
+          qbo_class_id?: string | null
+          build_type: string
+          source_table?: string | null
+          source_id?: string | null
+          component?: string | null
+          label: string
+          amounts?: Json
+          assumption_keys?: string[]
+          is_computed?: boolean
+          meta?: Json | null
+          note?: string | null
+          computed_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          budget_version_id?: string
+          reporting_entity_id?: string | null
+          entity_id?: string | null
+          master_account_id?: string
+          qbo_class_id?: string | null
+          build_type?: string
+          source_table?: string | null
+          source_id?: string | null
+          component?: string | null
+          label?: string
+          amounts?: Json
+          assumption_keys?: string[]
+          is_computed?: boolean
+          meta?: Json | null
+          note?: string | null
+          computed_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_builds_budget_version_id_fkey"
+            columns: ["budget_version_id"]
+            referencedRelation: "budget_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_builds_master_account_id_fkey"
+            columns: ["master_account_id"]
+            referencedRelation: "master_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      budget_line_notes: {
+        Row: {
+          id: string
+          budget_version_id: string
+          master_account_id: string
+          qbo_class_id: string | null
+          class_key: string
+          note: string | null
+          review_flag: string | null
+          updated_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          budget_version_id: string
+          master_account_id: string
+          qbo_class_id?: string | null
+          note?: string | null
+          review_flag?: string | null
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          budget_version_id?: string
+          master_account_id?: string
+          qbo_class_id?: string | null
+          note?: string | null
+          review_flag?: string | null
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_line_notes_budget_version_id_fkey"
+            columns: ["budget_version_id"]
+            referencedRelation: "budget_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      budget_version_snapshots: {
+        Row: {
+          id: string
+          budget_version_id: string
+          kind: string
+          payload: Json
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          budget_version_id: string
+          kind: string
+          payload: Json
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          budget_version_id?: string
+          kind?: string
+          payload?: Json
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_version_snapshots_budget_version_id_fkey"
+            columns: ["budget_version_id"]
+            referencedRelation: "budget_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      capex_plan_items: {
+        Row: {
+          id: string
+          organization_id: string
+          reporting_entity_id: string | null
+          entity_id: string | null
+          description: string
+          asset_group: string | null
+          vehicle_class: string | null
+          quantity: number
+          unit_cost: number
+          in_service_year: number
+          in_service_month: number
+          useful_life_months: number | null
+          salvage_pct: number | null
+          depreciation_method: string
+          funding: string
+          debt_rate: number | null
+          debt_term_months: number | null
+          debt_pct: number | null
+          status: string
+          fixed_asset_id: string | null
+          cost_account_id: string | null
+          notes: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          reporting_entity_id?: string | null
+          entity_id?: string | null
+          description: string
+          asset_group?: string | null
+          vehicle_class?: string | null
+          quantity?: number
+          unit_cost?: number
+          in_service_year: number
+          in_service_month: number
+          useful_life_months?: number | null
+          salvage_pct?: number | null
+          depreciation_method?: string
+          funding?: string
+          debt_rate?: number | null
+          debt_term_months?: number | null
+          debt_pct?: number | null
+          status?: string
+          fixed_asset_id?: string | null
+          cost_account_id?: string | null
+          notes?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          reporting_entity_id?: string | null
+          entity_id?: string | null
+          description?: string
+          asset_group?: string | null
+          vehicle_class?: string | null
+          quantity?: number
+          unit_cost?: number
+          in_service_year?: number
+          in_service_month?: number
+          useful_life_months?: number | null
+          salvage_pct?: number | null
+          depreciation_method?: string
+          funding?: string
+          debt_rate?: number | null
+          debt_term_months?: number | null
+          debt_pct?: number | null
+          status?: string
+          fixed_asset_id?: string | null
+          cost_account_id?: string | null
+          notes?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "capex_plan_items_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      disposal_plan_items: {
+        Row: {
+          id: string
+          organization_id: string
+          reporting_entity_id: string | null
+          entity_id: string | null
+          fixed_asset_id: string | null
+          description: string | null
+          asset_group: string | null
+          quantity: number
+          disposal_year: number
+          disposal_month: number
+          expected_proceeds: number
+          nbv_at_disposal: number | null
+          monthly_depreciation: number | null
+          status: string
+          notes: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          reporting_entity_id?: string | null
+          entity_id?: string | null
+          fixed_asset_id?: string | null
+          description?: string | null
+          asset_group?: string | null
+          quantity?: number
+          disposal_year: number
+          disposal_month: number
+          expected_proceeds?: number
+          nbv_at_disposal?: number | null
+          monthly_depreciation?: number | null
+          status?: string
+          notes?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          reporting_entity_id?: string | null
+          entity_id?: string | null
+          fixed_asset_id?: string | null
+          description?: string | null
+          asset_group?: string | null
+          quantity?: number
+          disposal_year?: number
+          disposal_month?: number
+          expected_proceeds?: number
+          nbv_at_disposal?: number | null
+          monthly_depreciation?: number | null
+          status?: string
+          notes?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "disposal_plan_items_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      budget_amounts: {
+        Row: {
+          id: string
+          entity_id: string | null
+          reporting_entity_id: string | null
+          chart_id: string | null
+          qbo_class_id: string | null
+          class_key: string
+          master_account_id: string
+          budget_version_id: string
+          period_year: number
+          period_month: number
+          amount: number
+          source: string
+          note: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id?: string | null
+          reporting_entity_id?: string | null
+          chart_id?: string | null
+          qbo_class_id?: string | null
+          master_account_id: string
+          budget_version_id: string
+          period_year: number
+          period_month: number
+          amount?: number
+          source?: string
+          note?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string | null
+          reporting_entity_id?: string | null
+          chart_id?: string | null
+          qbo_class_id?: string | null
           master_account_id?: string
           budget_version_id?: string
           period_year?: number
           period_month?: number
           amount?: number
+          source?: string
+          note?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -6785,6 +7338,80 @@ export type Database = {
           status?: string
         }
         Relationships: []
+      }
+      reporting_entities: {
+        Row: {
+          id: string
+          organization_id: string
+          name: string
+          code: string
+          is_active: boolean | null
+          exclude_from_breakdown: boolean | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          name: string
+          code: string
+          is_active?: boolean | null
+          exclude_from_breakdown?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          name?: string
+          code?: string
+          is_active?: boolean | null
+          exclude_from_breakdown?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reporting_entities_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reporting_entity_members: {
+        Row: {
+          id: string
+          reporting_entity_id: string
+          entity_id: string
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          reporting_entity_id: string
+          entity_id: string
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          reporting_entity_id?: string
+          entity_id?: string
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reporting_entity_members_reporting_entity_id_fkey"
+            columns: ["reporting_entity_id"]
+            referencedRelation: "reporting_entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reporting_entity_members_entity_id_fkey"
+            columns: ["entity_id"]
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       accrual_close_lines: {
         Row: {

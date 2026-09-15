@@ -488,6 +488,9 @@ export async function POST(request: NextRequest) {
                 er_taxes_estimated: erTaxes,
                 er_benefits: round(erBenefitsCheck),
                 er_benefit_detail: benefitDetail,
+                workers_comp_code: ps.workersCompCode ?? null,
+                pay_type: payType,
+                cost_center_code: costCenterCode,
                 detail_lines: checkDetails.map((d) => ({
                   detType: d.detType, detCode: d.detCode,
                   amount: d.amount, hours: d.hours, rate: d.rate,

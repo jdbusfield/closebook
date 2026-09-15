@@ -9,6 +9,11 @@
  * Tax accrual: per-employee, respecting annual wage base caps and YTD wages.
  */
 
+import {
+  employerTaxesOnWages,
+  getEmployerTaxTable,
+  type EmployerTaxTable,
+} from "@/lib/budget/tax-tables";
 import type { Employee, PayStatementSummary, PayStatementDetail } from "@/lib/paylocity/types";
 import {
   getOperatingEntityForCostCenter,
@@ -30,16 +35,19 @@ const CALENDAR_DAYS_PER_YEAR = 365;
 /** Default weekly hours for hourly employees */
 const DEFAULT_WEEKLY_HOURS = 40;
 
-// ─── Employer Payroll Tax Rates (2026) ───────────────────────────────
+// ─── Employer Payroll Tax Rates ──────────────────────────────────────
+//
+// Rates and wage bases live in src/lib/budget/tax-tables.ts by year (and
+// per Paylocity company for SUI). CA SDI is employee paid and is not an
+// employer cost. `TAX_RATES` stays exported for callers that only need the
+// current year's table in the old shape.
 
-export const TAX_RATES = {
-  FICA_SS: { rate: 0.062, cap: 176100, label: "FICA Social Security" },
-  MEDICARE: { rate: 0.0145, cap: Infinity, label: "Medicare" },
-  FUTA: { rate: 0.006, cap: 7000, label: "FUTA" },
-  CA_SUI: { rate: 0.034, cap: 7000, label: "CA SUI" },
-  CA_ETT: { rate: 0.001, cap: 7000, label: "CA ETT" },
-  CA_SDI: { rate: 0.011, cap: 145600, label: "CA SDI" },
-} as const;
+function currentYearTable(): EmployerTaxTable {
+  return getEmployerTaxTable(new Date().getFullYear());
+}
+
+export const TAX_RATES: Record<string, { rate: number; cap: number; label: string }> =
+  Object.fromEntries(currentYearTable().map((c) => [c.key, { rate: c.rate, cap: c.cap, label: c.label }]));
 
 // ─── Employer-Paid Benefits ──────────────────────────────────────────
 //
@@ -281,28 +289,10 @@ export function getAnnualComp(employee: Employee): number {
  */
 export function calculateEmployerTaxes(
   wageAmount: number,
-  ytdGrossWages: number
+  ytdGrossWages: number,
+  table: EmployerTaxTable = currentYearTable()
 ): { total: number; breakdown: Record<string, number> } {
-  const breakdown: Record<string, number> = {};
-  let total = 0;
-
-  for (const [key, { rate, cap, label }] of Object.entries(TAX_RATES)) {
-    let taxableWages: number;
-
-    if (cap === Infinity) {
-      taxableWages = wageAmount;
-    } else {
-      // How much of the cap is remaining after YTD wages
-      const remaining = Math.max(0, cap - ytdGrossWages);
-      taxableWages = Math.min(wageAmount, remaining);
-    }
-
-    const tax = round(taxableWages * rate);
-    breakdown[key] = tax;
-    total += tax;
-  }
-
-  return { total: round(total), breakdown };
+  return employerTaxesOnWages(wageAmount, ytdGrossWages, table);
 }
 
 // ─── Main Accrual Calculator ─────────────────────────────────────────
@@ -559,21 +549,14 @@ export function calculateAccruals(
  *
  * Components: FICA SS, Medicare, FUTA, CA SUI, CA ETT, CA SDI
  */
-export function estimateAnnualERTaxes(annualComp: number): {
+export function estimateAnnualERTaxes(
+  annualComp: number,
+  table: EmployerTaxTable = currentYearTable()
+): {
   total: number;
   breakdown: Record<string, number>;
 } {
-  const breakdown: Record<string, number> = {};
-  let total = 0;
-
-  for (const [key, { rate, cap }] of Object.entries(TAX_RATES)) {
-    const taxableWages = cap === Infinity ? annualComp : Math.min(annualComp, cap);
-    const tax = round(taxableWages * rate);
-    breakdown[key] = tax;
-    total += tax;
-  }
-
-  return { total: round(total), breakdown };
+  return employerTaxesOnWages(annualComp, 0, table);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────

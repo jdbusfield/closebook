@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import * as XLSX from "xlsx";
+import { accessErrorResponse, assertOrgMember, getBudgetActor } from "@/lib/budget/access";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -9,18 +9,11 @@ type AnyClient = any;
 // GET — download a pre-populated budget template XLSX using Master GL accounts
 export async function GET(request: Request) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const actor = await getBudgetActor();
 
     const { searchParams } = new URL(request.url);
     const entityId = searchParams.get("entityId");
-    const fiscalYear = searchParams.get("fiscalYear") ?? "2025";
+    const fiscalYear = searchParams.get("fiscalYear") ?? String(new Date().getFullYear() + 1);
 
     if (!entityId) {
       return NextResponse.json(
@@ -44,6 +37,7 @@ export async function GET(request: Request) {
         { status: 404 }
       );
     }
+    assertOrgMember(actor, entity.organization_id);
 
     // Budgets are management-only, so resolve the management chart and
     // scope the account list to it.
@@ -158,9 +152,7 @@ export async function GET(request: Request) {
     });
   } catch (err) {
     console.error("GET /api/budgets/template error:", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Internal server error" },
-      { status: 500 }
-    );
+    const { body, status } = accessErrorResponse(err);
+    return NextResponse.json(body, { status });
   }
 }
