@@ -395,6 +395,13 @@ export default function BudgetPage({
 
   return (
     <div className="space-y-6">
+      <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900 dark:bg-amber-950/30">
+        Budgets from FY2027 on are kept per reporting group with headcount, schedules and drivers.{" "}
+        <a href="/budget" className="font-medium underline underline-offset-4">
+          Open the Budget module
+        </a>
+        . This page still edits the legacy per-entity versions.
+      </div>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">

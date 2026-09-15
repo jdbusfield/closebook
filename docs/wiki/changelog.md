@@ -15,6 +15,57 @@ Closebook Wiki Maintainer agent after each PR is merged.
 The entry format is:
 
 ```
+## [feat/budget-module] - Budget module, capex plan, reporting-group budgets - 2026-09-15
+
+**Author:** JD Busfield with Claude
+**Type:** Feature
+**Related Issues:** N/A
+
+### Summary
+A driver-based budgeting module replaces the flat per-entity grid. Budgets are
+kept per reporting group, with a headcount plan priced down to employer taxes
+and soft costs, schedule and driver builds pulled from debt, leases,
+depreciation, insurance, allocations, the capex plan and fleet KPIs, trend
+builds for everything else, a review page with volatility bands and a
+stale-sync guard, forecast versions, approval with snapshots and locking, and
+XLSX exports. A capex and disposal plan module feeds depreciation, interest,
+gain or loss and fleet counts.
+
+### Changes Made
+- Migration `20260915_budget_module.sql`: reporting-entity ownership, class
+  dimension and provenance on amounts, `budget_builds`, `budget_assumptions`,
+  `budget_headcount`, `budget_line_notes`, `budget_version_snapshots`,
+  `capex_plan_items`, `disposal_plan_items`, locked-version trigger, RLS,
+  audit registration; captures the production `master_account_id` rename.
+- Financial statements and drill-down read budgets per reporting group with
+  entity fallback, roll child masters into parents, accept `budgetKind=forecast`.
+- Budget routes check organization membership; batch cell endpoint; additive
+  import; `/api/budget/*` (versions, headcount, seed, assumptions, builds,
+  lines, recompute, comparables, consolidated, approve, export);
+  `/api/capex-plan`.
+- Employer tax rates move to `src/lib/budget/tax-tables.ts` (CA SDI removed
+  from employer cost; Social Security base corrected).
+- Paycheck detail sync stores workers comp code, pay type and cost center.
+- Nightly QBO sync runs the stalest entity-months first under a time budget.
+- Pages: `/budget`, `/budget/[id]` (overview, assumptions, headcount, drivers,
+  lines, review), `/capex-plan`; module keys `budgeting` and `capex_plan`.
+- Unit tests: `npm test` (personnel engine, capex engine, trend stats,
+  allocation expansion).
+
+### User Impact
+Budget owners build FY2027 per reporting group with traceable builds and
+assumptions. The legacy entity Budget page keeps working for FY2026 versions.
+
+### Migration Notes
+Apply `supabase/migrations/20260915_budget_module.sql` in Supabase Studio
+before merging, then run `node scripts/budget-personnel-submasters.mjs --apply`
+to create the Personnel Costs sub-masters and remap the entity accounts.
+
+### Wiki Pages Updated
+- /settings/wiki/features
+- /settings/wiki/core-concepts
+- /settings/wiki/usage-guide
+
 ## [PR #<number>] - <Short Title> - <YYYY-MM-DD>
 
 **Author:** <author>

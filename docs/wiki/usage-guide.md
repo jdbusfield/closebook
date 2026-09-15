@@ -207,3 +207,28 @@ optional entity (PR #67) so the adjustment flows into that entity's
 equity rollup on the accountant chart. Toggle **Apply to Intercompany
 Eliminations, Net** (PR #61) to balance the source account against the
 synthetic IC line in one entry.
+
+## Build a reporting-group budget
+
+1. Open **Budget** and click **New version**. Pick the reporting group and
+   the fiscal year. To start from last year, choose it under **Copy from**.
+2. On **Assumptions**, enter what is known: the CA SUI rate per Paylocity
+   company from the EDD notice, the benefit renewal percentage and month,
+   workers comp rates by class code, payroll fees, growth and inflation. Blank
+   cells use the defaults shown in grey.
+3. On **Headcount**, click **Seed from Paylocity**, review the preview, and
+   seed. Add planned positions with **Add position**. Edit rates, merit,
+   overtime percentages or benefits inline; click a name for the monthly
+   breakdown.
+4. Keep the **Capex plan** current (purchases and disposals by month).
+5. On the version overview click **Recompute everything**. Check the
+   **Drivers** tab for what each schedule and driver produced.
+6. On **Lines**, fill the remaining lines: type, **Spread** an annual amount,
+   **Fill from** last year, or add named items. Save.
+7. On **Review**, work through the flagged lines and leave a note on each.
+8. **Approve and lock** from the overview. The Financial Model now reads this
+   version; the monthly summary picks it up automatically.
+
+Quarterly check-in: create a version of kind **Forecast**, copy from the
+approved budget, and set the month actuals run through. Months up to that
+month become actuals; recompute the rest.

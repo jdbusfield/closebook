@@ -361,3 +361,31 @@ so a line's `orderTotal − billedAgainstOrder` ties to its `unbilledRemainder`.
 > about orders that should be invoiced. Nothing here posts to the GL — the
 > entity's *Revenue Accruals* page (`/<entityId>/revenue`) is the separate
 > place where unbilled revenue is tracked for booking.
+
+## Budget versions, builds and assumptions
+
+A **budget version** belongs to one reporting group and one fiscal year
+(`budget_versions.reporting_entity_id`; legacy FY2026 versions belong to an
+entity instead). Its amounts live in `budget_amounts` at master account ×
+month, optionally × QBO class. Three layers sit underneath:
+
+- **Builds** (`budget_builds`): the detail beneath a line. Types are
+  `headcount`, `schedule`, `driver`, `trend`, `capex` and `manual`. Whenever a
+  line has any builds, the line equals their sum; a recompute rewrites the
+  computed types and never touches manual items.
+- **Assumptions** (`budget_assumptions`): version-scoped keys with an optional
+  scope (organization, reporting group, Paylocity company, class, asset group,
+  employee). Every build records the keys it used. The catalog is in
+  `src/lib/budget/assumption-keys.ts`; tax defaults per year come from
+  `src/lib/budget/tax-tables.ts`. CA SDI is employee paid and is not an
+  employer cost.
+- **Headcount** (`budget_headcount`): one row per position with pay, splits,
+  premiums and soft-cost inputs. The pricing engine is pure
+  (`src/lib/budget/personnel-engine.ts`) and applies wage-base caps on
+  cumulative calendar-year wages, so employer taxes are front-loaded.
+
+The Financial Model resolves budgets reporting group first and falls back to
+entity versions for years without one (`src/lib/budget/versions.ts`). Child
+masters roll into their parents for display. Approval writes snapshots to
+`budget_version_snapshots` and sets `locked_at`; a database trigger then
+rejects edits to the version's amounts, builds, headcount and assumptions.

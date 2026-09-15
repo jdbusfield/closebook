@@ -139,37 +139,51 @@ Proposal: https://claude.ai/artifact/VCXR8trCTA9BuEW9qJPme3
       by-month component table).
 
 ### Phase 2: GL builds, drivers, capex
-- [ ] 2.1 Capex and disposal plan module: tables (0.1), API, `/capex-plan` page, `capex-engine.ts`
-      (monthly capex cash, depreciation by asset group rules, disposal gain/loss vs NBV from
-      `fixed_assets`/`fixed_asset_depreciation`, fleet count by month).
-- [ ] 2.2 Schedule builds: debt (amortization + placeholders from capex debt funding), leases
-      (lease_payments + subleases), depreciation (existing schedule + capex), insurance
-      (payment schedules / annual premium ÷ 12 with renewal pct), allocation rules.
-- [ ] 2.3 Driver builds: rental revenue by reporting group from `rental_asset_kpis`
-      (fleet days × utilization × charged rate) with capex/disposal fleet deltas.
-- [ ] 2.4 Trend builds: 36-month actuals at RE scope via the statements engine; seasonality
-      index; growth/inflation keys; volatility band stored with the build.
-- [ ] 2.5 Manual list builds (named items with amount + months).
-- [ ] 2.6 Lines page: grid over sections, batch save, fill right, annual spread by seasonality,
-      clone prior year × pct, derived cells read-only with link to build, note per line.
-- [ ] 2.7 Drivers page listing every schedule/driver build with refresh + diff since last refresh.
+- [x] 2.1 Capex module: `capex-engine.ts` (pure, 3 tests), `/api/capex-plan` CRUD + monthly summary
+      per org and per RE, `/capex-plan` page (purchases, disposals, by-month table, dialogs).
+      Depreciation of planned units uses asset_depreciation_rules by group; disposals without a
+      monthly figure use the group average from existing assets.
+- [x] 2.2 `schedule-builds.ts`: debt (generateAmortizationSchedule + rate history, floating index
+      assumption), leases (lease_payments rows for the year, flat fallback; subleases → 4090),
+      depreciation (stored rows else generated; capex placeholders; disposal gain/loss → 7400 and
+      depreciation stops), insurance (annual/12 with renewal uplift after expiration; auto → 5010,
+      WC → 6160, other → 6300), allocations (direct rules for the year, else prior-year rules
+      rolled forward by month; reclass and cross-entity legs).
+- [x] 2.3 `driver-builds.ts`: asset-level KPIs (trailing 12 months to the latest upload) grouped by
+      the DBR reporting_group; units now + capex/disposal deltas × days × utilization by month
+      (+points) × revenue per rental day (+pct); Vehicle → 4000, Trailer → 4010.
+- [x] 2.4 `trend-builds.ts` + `actuals.ts` (monthly P&L per master from gl_balances YTD diffs):
+      36 months, seasonality bounded 0.25–3, trailing 12 (or 3 annualized), growth/inflation,
+      mean/stddev stored in meta. Only masters with no other build.
+- [x] 2.5 Manual builds via `/api/budget/builds` (POST/PATCH/DELETE) and the Lines page dialog.
+- [x] 2.6 `/budget/[id]/lines`: sections in statement order, children under parents, class rows,
+      derived cells read-only with a link to the builds, batch save, Spread (prior-year shape or
+      even), Fill →, Fill from prior year × pct, prior-year actual row toggle, computed margins.
+- [x] 2.7 `/budget/[id]/drivers`: builds grouped by type with per-group Refresh (scoped recompute),
+      expandable monthly detail and meta. Diff-since-last-refresh not built (computed_at shown).
 
 ### Phase 3: review and variance
-- [ ] 3.1 `comparables.ts` + `GET /api/budget/comparables`: prior 3 years by month, T3/T6/T12,
-      volatility band, last-year budget accuracy per master; RE scope.
-- [ ] 3.2 Stale-sync guard: per entity-month `trial_balances.synced_at` age + close status;
-      `comparable: boolean` per month in the comparables payload; shown on review page.
-- [ ] 3.3 Review page: budget vs PY vs T12 per line with bands, flags, notes; consolidated view.
-- [ ] 3.4 Forecast versions: clone budget as kind=forecast with actuals through month M,
-      builds re-run for remaining months; Financial Model reads active forecast when asked.
+- [x] 3.1 `comparables.ts` + `GET /api/budget/comparables`: 3 years by month, T3/T6 annualized,
+      T12, mean/stddev, prior-year budget vs actual (RE first, entity fallback), rolled to parents.
+- [x] 3.2 `loadFreshness`: per month of the prior year, oldest TB synced_at across member entities,
+      missing entities, close status per entity; `comparable` + `reason`; shown as a 12-tile strip.
+- [x] 3.3 `/budget/[id]/review`: budget vs PY/PY-1/PY-2/T3, band ± 1σ with aggressive/conservative
+      verdict (sign-aware for expenses), accuracy %, review flag select + note (budget_line_notes).
+      Consolidated view = `GET /api/budget/consolidated` (per RE + org without IC lines); used by
+      the consolidated XLSX export rather than a separate page.
+- [x] 3.4 Forecast: `POST /api/budget/versions` kind=forecast + forecastThroughMonth overwrites
+      months 1..M with actuals per master (source clone, note "actual"); statements route accepts
+      `budgetKind=forecast` (toolbar toggle not added; URL param only).
 
 ### Phase 4: approval, exports, wiki
-- [ ] 4.1 Approve: snapshot comparables + assumptions into `budget_version_snapshots`, set
-      active, lock (trigger blocks edits to amounts/builds/headcount of locked versions).
-- [ ] 4.2 XLSX export per reporting entity and consolidated (lines + headcount + builds sheets).
-- [ ] 4.3 Nav + module keys (`budgeting`, `capex_plan`), overview page, entity Budget page
-      redirects to the org module when the entity's group has an RE version.
-- [ ] 4.4 Wiki: features, core-concepts, usage-guide, changelog entries.
+- [x] 4.1 `POST /api/budget/approve` (controller/admin): snapshots comparables, assumptions, lines,
+      headcount; deactivates siblings; sets approved + active + locked_at (trigger then blocks edits).
+- [x] 4.2 `GET /api/budget/export?versionId=` (Lines matrix with PY column, Headcount, Builds) and
+      `?fiscalYear=&kind=` (one sheet per reporting group + Organization). Buttons on the overview.
+- [x] 4.3 Nav + module keys done in phase 1; overview has recompute/approve/export; the entity
+      Budget page shows a banner linking to `/budget` (no auto-redirect, legacy FY2026 still edits).
+- [x] 4.4 Wiki: features (Budget module + Capex plan), core-concepts (versions, builds,
+      assumptions), usage-guide (build a reporting-group budget), changelog entry.
 - [ ] 4.5 Final: full `tsc`, `eslint` on touched files, `next build`, branch pushed, PR opened
       with the migration apply-then-merge steps, memory updated.
 
