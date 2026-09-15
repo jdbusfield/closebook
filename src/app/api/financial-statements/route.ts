@@ -3280,6 +3280,8 @@ interface ConsolidatedStatementsParams {
   allMonths: Array<{ year: number; month: number }>;
   includeYoY: boolean;
   includeBudget: boolean;
+  /** Which active version kind the Budget column reads (default budget). */
+  budgetKind?: "budget" | "forecast";
   includeProForma: boolean;
   includeAllocations: boolean;
   includeFixedAssetSchedule: boolean;
@@ -3304,6 +3306,7 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
     allMonths,
     includeYoY,
     includeBudget,
+    budgetKind,
     includeProForma,
     includeAllocations,
     includeFixedAssetSchedule,
@@ -3957,6 +3960,7 @@ async function buildConsolidatedStatements(params: ConsolidatedStatementsParams)
       entityIds,
       buckets,
       accounts: consolidatedAccounts,
+      kind: budgetKind,
     });
   }
 
@@ -4198,6 +4202,7 @@ export async function GET(request: Request) {
   const endMonth = parseInt(searchParams.get("endMonth") ?? "12");
   const granularity = (searchParams.get("granularity") ?? "monthly") as Granularity;
   const includeBudget = searchParams.get("includeBudget") === "true";
+  const budgetKind: "budget" | "forecast" = searchParams.get("budgetKind") === "forecast" ? "forecast" : "budget";
   const includeYoY = searchParams.get("includeYoY") === "true";
   const includeProForma = searchParams.get("includeProForma") === "true";
   const includeAllocations = searchParams.get("includeAllocations") === "true";
@@ -4526,6 +4531,7 @@ export async function GET(request: Request) {
         entityId: entityId!,
         buckets,
         accounts: consolidatedAccounts,
+        kind: budgetKind,
       });
     }
 
@@ -4770,6 +4776,7 @@ export async function GET(request: Request) {
       allMonths,
       includeYoY,
       includeBudget,
+      budgetKind,
       includeProForma,
       includeAllocations,
       includeFixedAssetSchedule,
@@ -4893,6 +4900,7 @@ export async function GET(request: Request) {
       allMonths,
       includeYoY,
       includeBudget,
+      budgetKind,
       includeProForma,
       includeAllocations,
       includeFixedAssetSchedule,

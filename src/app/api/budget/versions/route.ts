@@ -9,6 +9,9 @@ import {
   requireVersionAccess,
 } from "@/lib/budget/access";
 import { fetchAllPaginated } from "@/lib/utils/paginated-fetch";
+import { loadMasters, loadMonthlyActuals } from "@/lib/budget/actuals";
+import { upsertBudgetCells, type BudgetCell } from "@/lib/budget/amounts";
+import { loadVersionOwner } from "@/lib/budget/access";
 
 /**
  * GET /api/budget/versions?organizationId=&fiscalYear=
@@ -146,7 +149,13 @@ export async function POST(request: Request) {
       });
     }
 
-    return NextResponse.json({ version, copied }, { status: 201 });
+    // Forecast: months through forecast_through_month become actuals
+    let actualsWritten = 0;
+    if (kind === "forecast" && Number(forecastThroughMonth ?? 0) > 0) {
+      actualsWritten = await overwriteWithActuals(admin, version.id, Number(forecastThroughMonth), reportingEntityId, chart?.id ?? null);
+    }
+
+    return NextResponse.json({ version, copied, actualsWritten }, { status: 201 });
   } catch (err) {
     console.error("POST /api/budget/versions error:", err);
     const { body, status } = accessErrorResponse(err);
@@ -229,4 +238,55 @@ async function copyVersionContents(
   counts.notes = notes.length;
 
   return counts;
+}
+
+/**
+ * Replaces months 1..M of a forecast version with actuals per master (from
+ * gl_balances through the mappings) so the rest of the year re-forecasts on
+ * top of what already happened. Class rows are cleared for those months.
+ */
+async function overwriteWithActuals(
+  admin: ReturnType<typeof createAdminClient>,
+  versionId: string,
+  throughMonth: number,
+  reportingEntityId: string,
+  chartId: string | null,
+): Promise<number> {
+  const owner = await loadVersionOwner(admin, versionId);
+  if (!owner) return 0;
+  const { data: members } = await admin.from("reporting_entity_members").select("entity_id").eq("reporting_entity_id", reportingEntityId);
+  const entityIds = (members ?? []).map((m) => m.entity_id);
+  let resolvedChart = chartId;
+  if (!resolvedChart) {
+    const { data: chart } = await admin.from("master_charts").select("id").eq("organization_id", owner.organizationId!).eq("kind", "management").maybeSingle();
+    resolvedChart = chart?.id ?? null;
+  }
+  if (!resolvedChart || entityIds.length === 0) return 0;
+  const masters = await loadMasters(admin, resolvedChart);
+  const actuals = await loadMonthlyActuals(admin, {
+    chartId: resolvedChart,
+    entityIds,
+    startYear: owner.fiscalYear,
+    startMonth: 1,
+    endYear: owner.fiscalYear,
+    endMonth: throughMonth,
+    masters,
+  });
+  // Clear every cell (all classes) for those months, then write actuals at the master level
+  await admin
+    .from("budget_amounts")
+    .delete()
+    .eq("budget_version_id", versionId)
+    .eq("period_year", owner.fiscalYear)
+    .lte("period_month", throughMonth);
+  const cells: BudgetCell[] = [];
+  for (const [masterId, series] of actuals.byMaster) {
+    for (let m = 1; m <= throughMonth; m++) {
+      const v = series.get(`${owner.fiscalYear}-${m}`);
+      if (v === undefined) continue;
+      cells.push({ masterAccountId: masterId, classId: null, periodYear: owner.fiscalYear, periodMonth: m, amount: Math.round(v * 100) / 100, source: "clone", note: "actual" });
+    }
+  }
+  const result = await upsertBudgetCells(admin, owner, cells);
+  return result.upserted;
 }
