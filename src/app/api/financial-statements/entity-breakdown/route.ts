@@ -1028,14 +1028,32 @@ export async function GET(request: Request) {
     }
   }
 
-  // Build accounts list
-  const consolidatedAccounts: AccountInfo[] = masterAccounts.map((ma) => ({
-    id: ma.id,
-    name: ma.name,
-    accountNumber: ma.account_number,
-    classification: ma.classification,
-    accountType: ma.account_type,
-  }));
+  // Roll child masters into their parent (the management chart's Personnel
+  // Costs sub-masters, the accountant chart's hierarchy) so the breakdown
+  // shows the same single line as the consolidated statement. Children are
+  // summed into the parent per column and dropped from the account list.
+  const childToParent = new Map<string, string>();
+  for (const ma of masterAccounts) if (ma.parent_account_id) childToParent.set(ma.id, ma.parent_account_id as string);
+  for (const [childId, parentId] of childToParent) {
+    const child = entityAmounts.get(childId);
+    if (!child) continue;
+    const parent = entityAmounts.get(parentId) ?? { netChange: {}, endingBalance: {} };
+    for (const [k, v] of Object.entries(child.netChange)) parent.netChange[k] = (parent.netChange[k] ?? 0) + v;
+    for (const [k, v] of Object.entries(child.endingBalance)) parent.endingBalance[k] = (parent.endingBalance[k] ?? 0) + v;
+    entityAmounts.set(parentId, parent);
+    entityAmounts.delete(childId);
+  }
+
+  // Build accounts list (children of a parent are not displayed)
+  const consolidatedAccounts: AccountInfo[] = masterAccounts
+    .filter((ma) => !ma.parent_account_id)
+    .map((ma) => ({
+      id: ma.id,
+      name: ma.name,
+      accountNumber: ma.account_number,
+      classification: ma.classification,
+      accountType: ma.account_type,
+    }));
   if (allocDueToFromUsed) {
     consolidatedAccounts.push({
       id: ALLOC_DUE_TO_FROM_ACCOUNT_ID,
