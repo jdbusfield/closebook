@@ -38,15 +38,26 @@ const GROUP_LABELS: Record<string, string> = {
   general: "General",
 };
 
-const UNIT_SUFFIX: Record<string, string> = {
-  pct: "%",
-  usd: "$",
-  rate_per_100: "per $100",
-  hours: "h",
-  month: "month",
-  count: "",
-  ratio: "x",
-};
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+function formatDefault(value: number, unit: string): string {
+  switch (unit) {
+    case "usd":
+      return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
+    case "pct":
+      return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(value)}%`;
+    case "rate_per_100":
+      return `${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(value)} per $100`;
+    case "hours":
+      return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value)} h`;
+    case "month":
+      return MONTH_NAMES[Math.max(1, Math.min(12, Math.round(value))) - 1] ?? String(value);
+    case "ratio":
+      return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value)}x`;
+    default:
+      return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value);
+  }
+}
 
 const COMPANIES = [
   { id: "132427", label: "Silverco (Paylocity 132427)" },
@@ -173,18 +184,17 @@ export default function BudgetAssumptionsPage({ params }: { params: Promise<{ ve
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[260px]">Assumption</TableHead>
-                  <TableHead className="w-[120px]">Default</TableHead>
-                  <TableHead className="w-[160px]">Organization</TableHead>
+                  <TableHead className="min-w-[280px]">Assumption</TableHead>
+                  <TableHead className="w-[130px] text-right">Default</TableHead>
+                  <TableHead className="w-[140px] text-right">Organization</TableHead>
                   {group === "payroll_tax" || group === "benefits" || group === "personnel"
-                    ? COMPANIES.map((c) => <TableHead key={c.id} className="w-[160px]">{c.label.split(" (")[0]}</TableHead>)
+                    ? COMPANIES.map((c) => <TableHead key={c.id} className="w-[140px] text-right">{c.label.split(" (")[0]}</TableHead>)
                     : null}
-                  <TableHead>Source note</TableHead>
+                  <TableHead className="min-w-[240px]">Source note</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {keys.map((k) => {
-                  const suffix = UNIT_SUFFIX[k.unit] ?? "";
                   const orgKey = cellKey("org", null, k.key);
                   const showCompany = k.scopes.includes("company");
                   return (
@@ -196,8 +206,8 @@ export default function BudgetAssumptionsPage({ params }: { params: Promise<{ ve
                           <div className="text-xs text-muted-foreground">Set per class code on the Headcount page (scope = class code).</div>
                         )}
                       </TableCell>
-                      <TableCell className="tabular-nums text-muted-foreground">
-                        {k.defaultValue} {suffix}
+                      <TableCell className="whitespace-nowrap text-right tabular-nums text-muted-foreground">
+                        {formatDefault(k.defaultValue, k.unit)}
                       </TableCell>
                       <TableCell>
                         <Input
@@ -208,7 +218,7 @@ export default function BudgetAssumptionsPage({ params }: { params: Promise<{ ve
                           value={currentValue("org", null, k.key)}
                           placeholder={String(k.defaultValue)}
                           onChange={(e) => setEdits((d) => ({ ...d, [orgKey]: { ...d[orgKey], value: e.target.value } }))}
-                          className="h-8 tabular-nums"
+                          className="h-8 text-right tabular-nums"
                         />
                       </TableCell>
                       {(group === "payroll_tax" || group === "benefits" || group === "personnel") &&
@@ -221,17 +231,17 @@ export default function BudgetAssumptionsPage({ params }: { params: Promise<{ ve
                                 step="any"
                                 disabled={readOnly}
                                 value={currentValue("company", c.id, k.key)}
-                                placeholder="org"
+                                placeholder="same as org"
                                 onChange={(e) =>
                                   setEdits((d) => ({
                                     ...d,
                                     [cellKey("company", c.id, k.key)]: { ...d[cellKey("company", c.id, k.key)], value: e.target.value },
                                   }))
                                 }
-                                className="h-8 tabular-nums"
+                                className="h-8 text-right tabular-nums"
                               />
                             ) : (
-                              <span className="text-xs text-muted-foreground">n/a</span>
+                              <span className="block text-right text-xs text-muted-foreground">org only</span>
                             )}
                           </TableCell>
                         ))}

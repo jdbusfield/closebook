@@ -24,15 +24,16 @@ export async function GET(request: Request) {
 
     // Year-specific defaults for the tax keys
     const tax = getEmployerTaxTable(owner.fiscalYear);
+    const pct = (rate: number) => Math.round(rate * 100 * 10000) / 10000; // 0.0145 -> 1.45
     const yearDefaults: Record<string, number> = {
       fica_wage_base: tax.find((t) => t.key === "FICA_SS")!.cap,
-      fica_rate: tax.find((t) => t.key === "FICA_SS")!.rate * 100,
-      medicare_rate: tax.find((t) => t.key === "MEDICARE")!.rate * 100,
-      futa_rate: tax.find((t) => t.key === "FUTA")!.rate * 100,
+      fica_rate: pct(tax.find((t) => t.key === "FICA_SS")!.rate),
+      medicare_rate: pct(tax.find((t) => t.key === "MEDICARE")!.rate),
+      futa_rate: pct(tax.find((t) => t.key === "FUTA")!.rate),
       futa_cap: tax.find((t) => t.key === "FUTA")!.cap,
-      sui_rate: tax.find((t) => t.key === "CA_SUI")!.rate * 100,
+      sui_rate: pct(tax.find((t) => t.key === "CA_SUI")!.rate),
       sui_cap: tax.find((t) => t.key === "CA_SUI")!.cap,
-      ett_rate: tax.find((t) => t.key === "CA_ETT")!.rate * 100,
+      ett_rate: pct(tax.find((t) => t.key === "CA_ETT")!.rate),
       ett_cap: tax.find((t) => t.key === "CA_ETT")!.cap,
     };
     const catalog = ASSUMPTION_KEYS.map((k) => ({ ...k, defaultValue: yearDefaults[k.key] ?? k.defaultValue }));
