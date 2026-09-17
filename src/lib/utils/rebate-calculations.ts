@@ -25,6 +25,10 @@ export interface RebateCustomerConfig {
   agreement_type: "commercial" | "freelancer";
   tax_rate: number;
   max_discount_percent: number | null;
+  // Date the rebate agreement took effect (ISO yyyy-mm-dd). Invoices dated
+  // before it are cached and shown, but earn no rebate and add nothing to the
+  // cumulative revenue that drives tier selection. Null = no cut-off.
+  effective_date?: string | null;
   tiers: RebateTier[];
 }
 
@@ -112,6 +116,37 @@ export interface RebateCalculationResult {
   cumulative_rebate: number;
   is_manually_excluded: boolean;
   manual_exclusion_reason: string | null;
+  // True when the invoice is dated before the customer's agreement took
+  // effect. Such invoices earn no rebate. Not persisted: the UI derives it
+  // from customer.effective_date with isBeforeAgreement().
+  is_before_agreement: boolean;
+}
+
+// ─── Agreement Effective Date ────────────────────────────────────────────────
+
+// The date the tracker uses to place an invoice in time: billing end date
+// first, invoice date as a fallback. Quarter assignment uses the same rule.
+export function getRebateInvoiceDate(inv: {
+  billing_end_date?: string | null;
+  invoice_date?: string | null;
+}): string | null {
+  return inv.billing_end_date || inv.invoice_date || null;
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}/;
+
+// An invoice is "before agreement" when the customer has an effective date
+// and the invoice's rebate date falls strictly before it. Invoices with no
+// usable date are left eligible rather than silently dropped. Dates are ISO
+// strings, so a plain string compare is a correct date compare.
+export function isBeforeAgreement(
+  effectiveDate: string | null | undefined,
+  inv: { billing_end_date?: string | null; invoice_date?: string | null },
+): boolean {
+  if (!effectiveDate || !ISO_DATE.test(effectiveDate)) return false;
+  const invDate = getRebateInvoiceDate(inv);
+  if (!invDate || !ISO_DATE.test(invDate)) return false;
+  return invDate.slice(0, 10) < effectiveDate.slice(0, 10);
 }
 
 // ─── Equipment Classification ────────────────────────────────────────────────
@@ -432,7 +467,11 @@ export function calculateCustomerRebates(
     const maxDiscRate = getTierMaxDisc(tier, equipType);
 
     // Quarter
-    const quarter = getQuarter(inv.billing_end_date || inv.invoice_date);
+    const quarter = getQuarter(getRebateInvoiceDate(inv));
+
+    // Agreement not yet in effect on this invoice's date? It still gets the
+    // full breakdown for display, but earns nothing below.
+    const beforeAgreement = isBeforeAgreement(customer.effective_date, inv);
 
     const calc = calculateCommercialInvoice({
       grossTotal: isAdjustment ? Math.abs(inv.gross_total) : inv.gross_total,
@@ -490,11 +529,16 @@ export function calculateCustomerRebates(
       cumulative_rebate: 0,
       is_manually_excluded: inv.is_manually_excluded,
       manual_exclusion_reason: inv.manual_exclusion_reason,
+      is_before_agreement: beforeAgreement,
     };
 
-    // Handle manual exclusion — a manually excluded base invoice earns no
-    // rebate, so its adjustment leg must not reverse anything either.
-    if (result.is_manually_excluded || (isAdjustment && baseResult?.is_manually_excluded)) {
+    // An invoice earns nothing when it is manually excluded or dated before
+    // the agreement took effect. A base invoice that earned nothing has no
+    // rebate for its adjustment leg to reverse, so the leg is zeroed too.
+    const baseEarnedNothing =
+      isAdjustment &&
+      (baseResult?.is_manually_excluded || baseResult?.is_before_agreement);
+    if (result.is_manually_excluded || result.is_before_agreement || baseEarnedNothing) {
       result.net_rebate = 0;
       result.gross_rebate = 0;
       result.remaining_rebate_pct = 0;

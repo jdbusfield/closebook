@@ -172,6 +172,7 @@ async function calculateForCustomer(
     agreement_type: customer.agreement_type as "commercial" | "freelancer",
     tax_rate: customer.tax_rate,
     max_discount_percent: customer.max_discount_percent,
+    effective_date: customer.effective_date ?? null,
     tiers: (tiers || []) as RebateTier[],
   };
 

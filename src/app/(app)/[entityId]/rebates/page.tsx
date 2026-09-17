@@ -1329,7 +1329,11 @@ export default function RebateTrackerPage({ entityId: entityIdProp, isEmbed, emb
                   value={formEffectiveDate}
                   onChange={(e) => setFormEffectiveDate(e.target.value)}
                   type="date"
+                  min="2000-01-01"
                 />
+                <p className="text-xs text-muted-foreground">
+                  The date the agreement was signed. Invoices dated before it earn no rebate.
+                </p>
               </div>
             </div>
 

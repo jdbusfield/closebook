@@ -184,6 +184,18 @@ export async function POST(request: Request) {
     case "upsert_customer": {
       const { entityId, customer, tiers: tierData, excludedICodes } = body;
 
+      // The effective date gates which invoices earn rebate, so a mistyped
+      // year (one customer was saved as 0006-09-04) must not slip through.
+      if (customer.effective_date) {
+        const m = /^(\d{4})-\d{2}-\d{2}$/.exec(String(customer.effective_date));
+        if (!m || Number(m[1]) < 2000) {
+          return NextResponse.json(
+            { error: "Effective date must be a real date (year 2000 or later)." },
+            { status: 400 },
+          );
+        }
+      }
+
       // Upsert customer
       const customerPayload = {
         entity_id: entityId,

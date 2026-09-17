@@ -73,6 +73,7 @@ import { toast } from "sonner";
 import {
   getEquipmentLabel,
   getCurrentQuarter,
+  isBeforeAgreement,
 } from "@/lib/utils/rebate-calculations";
 import type { EquipmentType } from "@/lib/types/database";
 
@@ -153,6 +154,7 @@ interface CustomerData {
   agreement_type: string;
   status: string;
   tax_rate: number;
+  effective_date: string | null;
 }
 
 interface TierData {
@@ -605,7 +607,11 @@ export default function CustomerDetailPage({
     const base = quarter === "all"
       ? invoices
       : invoices.filter((inv) => inv.quarter === quarter);
-    return base.filter((inv) => !inv.is_manually_excluded);
+    return base.filter(
+      (inv) =>
+        !inv.is_manually_excluded &&
+        !isBeforeAgreement(customer?.effective_date, inv),
+    );
   };
 
   const handleExport = async (quarter: string) => {
@@ -1299,6 +1305,15 @@ export default function CustomerDetailPage({
                   #{customer.rw_customer_number}
                 </Badge>
               )}
+              {customer.effective_date && (
+                <Badge
+                  variant="outline"
+                  className="text-muted-foreground"
+                  title="Invoices dated before this earn no rebate"
+                >
+                  Effective {customer.effective_date}
+                </Badge>
+              )}
             </div>
           </div>
         </div>
@@ -1659,7 +1674,9 @@ export default function CustomerDetailPage({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredInvoices.map((inv) => (
+                {filteredInvoices.map((inv) => {
+                  const beforeAgreement = isBeforeAgreement(customer.effective_date, inv);
+                  return (
                   <Collapsible key={inv.id} asChild>
                     <>
                       <CollapsibleTrigger asChild>
@@ -1667,7 +1684,9 @@ export default function CustomerDetailPage({
                           className={`cursor-pointer ${
                             inv.is_manually_excluded
                               ? "opacity-50 line-through"
-                              : ""
+                              : beforeAgreement
+                                ? "opacity-50"
+                                : ""
                           }`}
                           onClick={() => toggleInvoiceExpand(inv.id)}
                         >
@@ -1685,7 +1704,18 @@ export default function CustomerDetailPage({
                             {inv.billing_end_date || inv.invoice_date || "—"}
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline">{inv.quarter}</Badge>
+                            <div className="flex items-center gap-1">
+                              <Badge variant="outline">{inv.quarter}</Badge>
+                              {beforeAgreement && (
+                                <Badge
+                                  variant="outline"
+                                  className="border-amber-400 text-amber-700 dark:text-amber-300"
+                                  title={`Dated before the agreement took effect on ${customer.effective_date}. Earns no rebate.`}
+                                >
+                                  Before agreement
+                                </Badge>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="max-w-[200px] truncate">
                             {inv.deal || inv.order_description || "—"}
@@ -1788,6 +1818,13 @@ export default function CustomerDetailPage({
                                   {/* Calculation Breakdown Table */}
                                   <div className="w-80 shrink-0">
                                     <h4 className="text-sm font-medium mb-2">Calculation Breakdown</h4>
+                                    {beforeAgreement && (
+                                      <p className="mb-2 rounded-md border border-amber-400 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                                        This invoice is dated {inv.billing_end_date || inv.invoice_date}, before the
+                                        agreement took effect on {customer.effective_date}. It earns no rebate and
+                                        does not count toward the tier.
+                                      </p>
+                                    )}
                                     <div className="border rounded-md overflow-hidden text-sm">
                                       {(() => {
                                         const rows: { label: string; value: string; highlight?: "red" | "yellow" | "green" }[] = [
@@ -2021,7 +2058,8 @@ export default function CustomerDetailPage({
                       </CollapsibleContent>
                     </>
                   </Collapsible>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           )}
