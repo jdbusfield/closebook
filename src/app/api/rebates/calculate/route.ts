@@ -9,6 +9,7 @@ import {
   type CachedInvoiceItem,
   type RebateTier,
 } from "@/lib/utils/rebate-calculations";
+import { loadAllInvoiceItems } from "@/lib/utils/rebate-items";
 
 export async function POST(request: Request) {
   const embedKey = request.headers.get("x-embed-key");
@@ -119,12 +120,9 @@ async function calculateForCustomer(
     return { invoiceCount: 0, totalRebate: 0, totalRevenue: 0 };
   }
 
-  // Load invoice items
+  // Load invoice items (paged: a customer can have more than 1000 lines)
   const invoiceIds = invoices.map((inv) => inv.id);
-  const { data: items } = await admin
-    .from("rebate_invoice_items")
-    .select("*")
-    .in("rebate_invoice_id", invoiceIds);
+  const items = await loadAllInvoiceItems(admin, invoiceIds);
 
   // Build items map
   const itemsMap = new Map<string, CachedInvoiceItem[]>();

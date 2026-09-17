@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { loadAllInvoiceItems } from "@/lib/utils/rebate-items";
 
 export async function POST(request: Request) {
   let userId: string | null = null;
@@ -174,11 +175,8 @@ export async function POST(request: Request) {
       if (!Array.isArray(invoiceIds) || invoiceIds.length === 0) {
         return NextResponse.json({ items: [] });
       }
-      const { data } = await admin
-        .from("rebate_invoice_items")
-        .select("*")
-        .in("rebate_invoice_id", invoiceIds);
-      return NextResponse.json({ items: data || [] });
+      const items = await loadAllInvoiceItems(admin, invoiceIds);
+      return NextResponse.json({ items });
     }
 
     case "upsert_customer": {
