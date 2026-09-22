@@ -10,9 +10,11 @@ import {
 } from "@/lib/budget/access";
 import { effectiveAllocations, shareForEntities } from "@/lib/budget/allocation";
 import { planShape } from "@/lib/budget/plan-shape";
-import { loadAssumptions, loadMemberEntityIds, loadPlanRows, toEngineRow } from "@/lib/budget/recompute";
+import { loadAssumptions, loadMemberEntityIds, loadPlanRows, resolveVersionChartId, toEngineRow } from "@/lib/budget/recompute";
+import { lastCompleteYear, loadPersonnelActuals, type PersonnelActuals } from "@/lib/budget/personnel-actuals";
 import { AssumptionSet } from "@/lib/budget/assumption-keys";
-import { effectiveCompAdj, pricePosition, sumPositions, withoutCompAdj } from "@/lib/budget/personnel-engine";
+import { pricePosition, sumPositions } from "@/lib/budget/personnel-engine";
+import { baselineRow } from "@/lib/budget/baseline";
 
 const EDITABLE_FIELDS = new Set([
   "name", "title", "department", "is_requisition", "status", "pay_type", "base_rate", "annual_salary",
@@ -99,9 +101,13 @@ export async function GET(request: Request) {
       const reShare = memberEntityIds ? shareForEntities(allocs, memberEntityIds) : 1;
       const ctx = { year: fiscalYear, assumptions, reShare };
       const p = pricePosition(input, ctx);
-      if (effectiveCompAdj(input)) {
-        const b = pricePosition(withoutCompAdj(input), ctx);
+      // Baseline: the row as seeded, without its comp adjustment. Hand-added rows have none.
+      const base = baselineRow(r);
+      if (base) {
+        const b = pricePosition(toEngineRow(base), ctx);
         baselines[r.id] = { total: b.total, gross: GROSS_COMPONENTS.reduce((t, c) => t + (b.componentTotals[c] ?? 0), 0) };
+      } else {
+        baselines[r.id] = { total: 0, gross: 0 };
       }
       if (!memberEntityIds) {
         // Plan view: how the full cost splits across reporting groups
@@ -122,9 +128,25 @@ export async function GET(request: Request) {
     });
     const totals = sumPositions(priced);
 
+    // What the projection is up against: personnel cost booked in the last complete year
+    let actuals: PersonnelActuals | null = null;
+    try {
+      const actualEntityIds = memberEntityIds ? [...memberEntityIds] : shape.entities.map((e) => e.id);
+      let chartId: string | null = null;
+      if (version) chartId = await resolveVersionChartId(admin, version);
+      else if (organizationId) {
+        const { data: chart } = await admin.from("master_charts").select("id").eq("organization_id", organizationId).eq("kind", "management").maybeSingle();
+        chartId = chart?.id ?? null;
+      }
+      if (chartId) actuals = await loadPersonnelActuals(admin, { chartId, entityIds: actualEntityIds, year: lastCompleteYear(fiscalYear) });
+    } catch (err) {
+      console.error("headcount actuals failed:", err);
+    }
+
     return NextResponse.json({
       plan,
       version,
+      actuals,
       rows,
       priced,
       totals,
@@ -133,6 +155,7 @@ export async function GET(request: Request) {
       rowGroupTotals,
       unallocatedTotal: Math.round(unallocatedTotal * 100) / 100,
       meritDefault: { pct: assumptions.get("merit_pct_default"), month: assumptions.get("merit_month_default") },
+      assumptionRows: assumptions.toRows(),
       memberEntityIds: memberEntityIds ? [...memberEntityIds] : [],
       ...shape,
     });

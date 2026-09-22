@@ -5,6 +5,7 @@ import { AllocationResolver, type AllocationRow } from "@/lib/paylocity/allocati
 import { fetchAllPaginated } from "@/lib/utils/paginated-fetch";
 import { accessErrorResponse, getBudgetActor, requirePlanAccess } from "@/lib/budget/access";
 import { functionFromDepartment, locationFromDepartment } from "@/lib/budget/tagging";
+import { snapshotFields } from "@/lib/budget/baseline";
 import {
   deriveRunRates,
   seedRowForEmployee,
@@ -153,6 +154,27 @@ export async function POST(request: Request) {
     let updated = 0;
     for (const r of rows) {
       const key = `${r.paylocityCompanyId}:${r.employeeId}`;
+      // The seeded values are the baseline every later change is measured against
+      const fieldsForSnapshot = {
+        pay_type: r.payType,
+        base_rate: r.baseRate,
+        annual_salary: r.annualSalary,
+        amount_monthly: null,
+        std_hours_week: r.stdHoursWeek,
+        fte_pct: 100,
+        start_month: r.startMonth,
+        end_month: null,
+        bonus_target: r.bonusTarget,
+        commission_annual: r.commissionAnnual,
+        ot_pct: r.otPct,
+        dt_pct: r.dtPct,
+        meal_pct: r.mealPct,
+        benefits_monthly: r.benefitsMonthly,
+        match_pct: r.matchPct,
+        life_disability_monthly: 0,
+        pto_hours_per_period: 0,
+        other_costs_monthly: 0,
+      };
       const payload = {
         payroll_plan_id: plan.id,
         allocation_mode: "manual",
@@ -190,7 +212,7 @@ export async function POST(request: Request) {
         function_allocations: functionFromDepartment(r.department) ? [{ key: functionFromDepartment(r.department), pct: 100 }] : [],
         location_allocations: locationFromDepartment(r.department) ? [{ key: locationFromDepartment(r.department), pct: 100 }] : [],
         class_allocations: r.classAllocations,
-        seeded_from: { ...r.seededFrom, warnings: r.warnings },
+        seeded_from: { ...r.seededFrom, warnings: r.warnings, fields: snapshotFields(fieldsForSnapshot) },
       };
       const existingId = existingByKey.get(key);
       if (existingId) {
