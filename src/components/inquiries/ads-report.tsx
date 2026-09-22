@@ -4,8 +4,10 @@
 // what it produced in the CRM. Spend / impressions / clicks come from the
 // synced ad_platform_daily rows; leads, bookings and lost reasons come from
 // rental_inquiries, classified by the click id the website captured
-// (fbclid = Meta, gclid = Google, oppref = ChatGPT). Platform-reported
-// conversions are shown for comparison but the CRM numbers are the truth.
+// (fbclid = Meta, gclid = Google, oppref = ChatGPT). A lead holding clicks
+// from more than one platform counts once, for its latest click (last touch);
+// each earlier platform gets an assist. Platform-reported conversions are
+// shown for comparison but the CRM numbers are the truth.
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -23,7 +25,8 @@ import {
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { StagePill, GoogleAdBadge, MetaAdBadge, ChatGPTAdBadge } from "@/components/inquiries/atoms";
+import { StagePill, PaidSourceBadges } from "@/components/inquiries/atoms";
+import { assistTouches, lastTouch } from "@/lib/inquiries/paid-touch";
 import {
   type Inquiry,
   fmtMoney,
@@ -79,11 +82,14 @@ function windowFor(preset: PresetKey): { since: string; until: string } {
   return { since: iso(s), until };
 }
 
-export function paidSource(i: Pick<Inquiry, "gclid" | "fbclid" | "oppref">): Platform | null {
-  if (i.fbclid) return "meta";
-  if (i.gclid) return "google";
-  if (i.oppref) return "chatgpt";
-  return null;
+/** The platform a lead counts for: its latest paid click. */
+export function paidSource(i: Inquiry): Platform | null {
+  return lastTouch(i);
+}
+
+/** Platforms with an earlier click on the lead that didn't win it. */
+function assistedBy(i: Inquiry, platform: Platform): boolean {
+  return assistTouches(i).some((t) => t.platform === platform);
 }
 
 function isTestRow(i: Inquiry): boolean {
@@ -138,6 +144,10 @@ interface PlatformStats {
   hasSpend: boolean;
   /** Spend came from the hand-entered monthly figure, not a platform sync. */
   manualSpend: boolean;
+  /** Leads another platform won where this one had an earlier click. */
+  assists: number;
+  assistBooked: number;
+  assistBookedValue: number;
 }
 
 function statsFor(platform: Platform, rows: AdDailyRow[], leads: Inquiry[]): PlatformStats {
@@ -148,6 +158,8 @@ function statsFor(platform: Platform, rows: AdDailyRow[], leads: Inquiry[]): Pla
   const outOfArea = l.filter(isOutOfArea).length;
   const lost = l.filter((i) => i.status === "lost").length;
   const bookedRows = l.filter(isWon);
+  const assisted = leads.filter((i) => assistedBy(i, platform));
+  const assistWon = assisted.filter(isWon);
   return {
     platform,
     spend,
@@ -164,6 +176,9 @@ function statsFor(platform: Platform, rows: AdDailyRow[], leads: Inquiry[]): Pla
     bookedValue: bookedRows.reduce((s, i) => s + (i.estimated_value || 0), 0),
     hasSpend: mine.length > 0,
     manualSpend: false,
+    assists: assisted.length,
+    assistBooked: assistWon.length,
+    assistBookedValue: assistWon.reduce((s, i) => s + (i.estimated_value || 0), 0),
   };
 }
 
@@ -253,6 +268,21 @@ function PlatformCard({ s, total }: { s: PlatformStats; total?: boolean }) {
         <Stat label="Booked" value={s.booked} foot={s.booked ? money(s.bookedValue) : undefined} />
         <Stat label="Cost / booking" value={per(s.spend, s.booked)} />
       </div>
+      {!total && (
+        <div className="mt-3 border-t pt-2 text-xs text-muted-foreground">
+          {s.assists > 0 ? (
+            <>
+              <span className="font-medium text-foreground">
+                {s.assists} assist{s.assists === 1 ? "" : "s"}
+              </span>
+              {s.assistBooked > 0 ? `, ${s.assistBooked} booked (${money(s.assistBookedValue)})` : ""}. An earlier{" "}
+              {PLATFORM_LABEL[s.platform]} click on a lead another platform got last. Not in the counts above.
+            </>
+          ) : (
+            "No assists: no lead another platform got last had an earlier click here."
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -536,6 +566,9 @@ export function AdsReport({
       bookedValue: bookedRows.reduce((s, i) => s + (i.estimated_value || 0), 0),
       hasSpend: rows.length > 0 || stats.some((x) => x.hasSpend),
       manualSpend: stats.some((x) => x.manualSpend),
+      assists: 0,
+      assistBooked: 0,
+      assistBookedValue: 0,
     };
   }, [stats, leads, rows]);
 
@@ -786,9 +819,9 @@ export function AdsReport({
                       <td className="px-4 py-2 whitespace-nowrap">{fmtDate(i.created_at)}</td>
                       <td className="px-2 py-2 font-mono text-xs">{i.reference}</td>
                       <td className="px-2 py-2">
-                        <MetaAdBadge fbclid={i.fbclid} />
-                        <GoogleAdBadge gclid={i.fbclid ? null : i.gclid} />
-                        <ChatGPTAdBadge oppref={i.fbclid || i.gclid ? null : i.oppref} />
+                        <span className="inline-flex flex-wrap items-center gap-1">
+                          <PaidSourceBadges inquiry={i} />
+                        </span>
                       </td>
                       <td className="px-2 py-2">{i.use_case || "—"}</td>
                       <td className="px-2 py-2 whitespace-nowrap">{i.start_date ? fmtDate(i.start_date) : "—"}</td>
@@ -838,8 +871,9 @@ export function AdsReport({
         )}
         <p className="mt-3 text-xs text-muted-foreground">
           Spend syncs every morning at 4:30 AM Pacific and re-pulls the last 7 days. Leads, stages and
-          values come straight from the pipeline. A lead counts for a platform when the website captured
-          that platform&apos;s click id.
+          values come straight from the pipeline. A lead counts for the platform of its latest ad click
+          (last touch). When the same visitor clicked another platform&apos;s ad earlier, that platform
+          gets an assist instead.
         </p>
       </section>
     </div>

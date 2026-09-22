@@ -39,6 +39,10 @@ const PayloadSchema = z.object({
   // Google Ads click id, when the visit originated from an ad click. Stored on
   // the inquiry so the won-rental conversion can be matched to the click.
   gclid: z.string().optional().nullable(),
+  // When the website captured that gclid (ISO). A gclid carries no readable
+  // time, so this is how a Google click is ordered against Meta/ChatGPT
+  // clicks for last-touch attribution.
+  gclid_at: z.string().optional().nullable(),
   // Meta (Facebook/Instagram) attribution, same idea: fbclid is the raw click
   // id, fbc/fbp are the Meta cookie formats the Conversions API matches on.
   fbclid: z.string().optional().nullable(),
@@ -186,6 +190,17 @@ export async function POST(request: Request) {
   if (!upsertErr && inquiry?.id && Object.keys(utm).length) {
     const { error: utmError } = await supabase.from("rental_inquiries").update(utm).eq("id", inquiry.id);
     if (utmError) console.warn("[ingest] utm attribution not saved:", utmError.message);
+  }
+
+  // Google click time, best-effort for the same reason (migration 20260922).
+  // Written with its gclid only, so the pair always describes one click.
+  const gclidAtMs = parsed.gclid && parsed.gclid_at ? Date.parse(parsed.gclid_at) : NaN;
+  if (!upsertErr && inquiry?.id && Number.isFinite(gclidAtMs)) {
+    const { error: gclidAtError } = await supabase
+      .from("rental_inquiries")
+      .update({ gclid_at: new Date(gclidAtMs).toISOString() })
+      .eq("id", inquiry.id);
+    if (gclidAtError) console.warn("[ingest] gclid_at not saved:", gclidAtError.message);
   }
 
   if (upsertErr || !inquiry) {
