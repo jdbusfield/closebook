@@ -288,7 +288,8 @@ export function seedRowForEmployee(emp: Employee, ctx: SeedContext): SeedRow | n
     mealPct: rr ? pctOf(rr.meal) : 0,
     otherEarningsMonthly: rr ? round(rr.other / months) : 0,
     benefitsMonthly: rr ? round(rr.erHealth / months) : 0,
-    matchPct: rr && rr.gross > 0 ? round((rr.erMatch / rr.gross) * 100, 3) : 0,
+    // JD (Sep 2026): anyone who takes the 401(k) match is budgeted at 4%, not their trailing rate
+    matchPct: rr && rr.gross > 0 && rr.erMatch > 0 ? 4 : 0,
     wcClassCode: rr?.wcClassCode ?? ctx.wcCodes?.get(key) ?? null,
     entityAllocations,
     classAllocations,
