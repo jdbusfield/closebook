@@ -12,7 +12,13 @@ export interface PlanEntity {
 export async function planShape(admin: ReturnType<typeof createAdminClient>, organizationId: string) {
   const [{ data: entities }, { data: groups }, { data: members }] = await Promise.all([
     admin.from("entities").select("id, name, code, is_active").eq("organization_id", organizationId).order("name"),
-    admin.from("reporting_entities").select("id, name, code, is_active").eq("organization_id", organizationId).order("name"),
+    admin
+      .from("reporting_entities")
+      .select("id, name, code, is_active, exclude_from_breakdown")
+      .eq("organization_id", organizationId)
+      .order("name")
+      // Views such as "Avon Accountant View" repeat a group's members; only real groups get a share
+      .then((res) => ({ ...res, data: (res.data ?? []).filter((g) => !g.exclude_from_breakdown) })),
     admin.from("reporting_entity_members").select("reporting_entity_id, entity_id"),
   ]);
   const groupIds = new Set((groups ?? []).map((g) => g.id));
