@@ -18,6 +18,7 @@ import { fmtUsd, fmtPct, MONTH_ABBRS } from "@/lib/budget/format";
 import { COMPONENT_LABELS, COST_COMPONENTS, pricePosition, type CostComponent, type HeadcountRowInput, type PricedPosition } from "@/lib/budget/personnel-engine";
 import { AssumptionSet, type AssumptionRow } from "@/lib/budget/assumption-keys";
 import { readBaselineFields } from "@/lib/budget/baseline";
+import { PlanHistory } from "./plan-history";
 import { CLASSES, FUNCTIONS, GEOGRAPHY_BY_LOCATION, LOCATIONS, SPLIT_OPTIONS, primaryKey, readSplits, splitLabel, type TagSplit } from "@/lib/budget/tagging";
 import { effectiveAllocations, readEntityAllocations, type EntityAllocation } from "@/lib/budget/allocation";
 
@@ -530,6 +531,7 @@ export function HeadcountWorkspace({
   );
 
   const entityById = useMemo(() => new Map(entities.map((e) => [e.id, e])), [entities]);
+  const entityCodes = useMemo(() => new Map(entities.map((e) => [e.id, e.code])), [entities]);
 
   /** "AVON" or "AVON 75 / HDR 25"; by group: "Avon" or "Avon 75 / HDR 25". Revenue rows resolve to the shares. */
   const companyLabel = useCallback(
@@ -1071,6 +1073,8 @@ export function HeadcountWorkspace({
         </CardContent>
       </Card>
 
+      {isPlan && <PlanHistory planId={scope.planId} entityNames={entityCodes} />}
+
       {/* Side sheet: monthly components for one position */}
       <Sheet open={!!selectedRow} onOpenChange={(open) => { if (!open) setSelected(null); }}>
         <SheetContent className="overflow-y-auto sm:max-w-[760px]">
@@ -1188,6 +1192,12 @@ export function HeadcountWorkspace({
                     onBlur={(e) => { if (e.target.value !== (selectedRow.wc_class_code ?? "")) patch(selectedRow.id, { wc_class_code: e.target.value || null }); }}
                   />
                 </div>
+                {isPlan && (
+                  <div className="rounded-md border p-3">
+                    <div className="mb-1 text-xs text-muted-foreground">Changes to this person</div>
+                    <PlanHistory planId={scope.planId} rowId={selectedRow.id} entityNames={entityCodes} compact />
+                  </div>
+                )}
                 {selectedRow.seeded_from?.runRate && (
                   <div className="rounded-md border p-3 text-xs text-muted-foreground">
                     Seeded from {selectedRow.seeded_from.runRate.monthsCovered} months of paychecks: gross {fmtUsd(selectedRow.seeded_from.runRate.gross)}, employer health {fmtUsd(selectedRow.seeded_from.runRate.erHealth)}.
