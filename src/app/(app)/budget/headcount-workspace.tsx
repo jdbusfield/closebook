@@ -13,7 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Loader2, Plus, Download, RefreshCw, Trash2 } from "lucide-react";
+import { Loader2, Plus, Download, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { fmtUsd, fmtPct, MONTH_ABBRS } from "@/lib/budget/format";
 import { COMPONENT_LABELS, COST_COMPONENTS, type CostComponent, type PricedPosition } from "@/lib/budget/personnel-engine";
 import { CLASSES, FUNCTIONS, GEOGRAPHY_BY_LOCATION, LOCATIONS, SPLIT_OPTIONS, primaryKey, readSplits, splitLabel, type TagSplit } from "@/lib/budget/tagging";
@@ -203,6 +203,7 @@ export function HeadcountWorkspace({
   const [baselines, setBaselines] = useState<Record<string, { total: number; gross: number }>>({});
   const [meritDefault, setMeritDefault] = useState<{ pct: number; month: number }>({ pct: 0, month: 1 });
   const [showAdjustedOnly, setShowAdjustedOnly] = useState(false);
+  const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("name");
   const [entities, setEntities] = useState<PlanEntity[]>([]);
   const [reportingEntities, setReportingEntities] = useState<Array<{ id: string; name: string; code: string }>>([]);
@@ -478,7 +479,16 @@ export function HeadcountWorkspace({
     return { count, raises, cuts, net: raises + cuts, netGross: bridge.adjRaises + bridge.adjCuts };
   }, [rows, baselines, pricedById, bridge]);
 
-  const visibleRows = useMemo(() => (showAdjustedOnly ? rows.filter((r) => !!baselines[r.id]) : rows), [rows, baselines, showAdjustedOnly]);
+  // Search matches name, title, department and employee id; every word typed must match
+  const visibleRows = useMemo(() => {
+    const base = showAdjustedOnly ? rows.filter((r) => !!baselines[r.id]) : rows;
+    const terms = search.toLowerCase().split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return base;
+    return base.filter((r) => {
+      const hay = `${r.name} ${r.title ?? ""} ${r.department ?? ""} ${r.employee_id ?? ""}`.toLowerCase();
+      return terms.every((t) => hay.includes(t));
+    });
+  }, [rows, baselines, showAdjustedOnly, search]);
 
   // Class names already on rows that are not on the cheat sheet stay selectable
   const classOptions = useMemo(() => {
@@ -722,6 +732,27 @@ export function HeadcountWorkspace({
                     </button>
                   ))}
                 </div>
+                <div className="relative ml-2">
+                  <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Escape") setSearch(""); }}
+                    placeholder="Find a person"
+                    aria-label="Find a person by name, title or department"
+                    className="h-8 w-[200px] pl-7 pr-7 text-sm"
+                  />
+                  {search && (
+                    <button
+                      type="button"
+                      onClick={() => setSearch("")}
+                      aria-label="Clear search"
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
                 <span className="ml-2 text-muted-foreground">Show</span>
                 <Select value={showAdjustedOnly ? "adjusted" : "all"} onValueChange={(v) => setShowAdjustedOnly(v === "adjusted")}>
                   <SelectTrigger className="h-8 w-[150px]">
@@ -776,7 +807,9 @@ export function HeadcountWorkspace({
           {rows.length === 0 ? (
             <p className="text-sm text-muted-foreground">No positions yet. Seed from Paylocity or add a position.</p>
           ) : visibleRows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No adjustments yet. Click a value in the Adjustment column to add one.</p>
+            <p className="text-sm text-muted-foreground">
+              {search.trim() ? `Nobody matches "${search.trim()}".` : "No adjustments yet. Click a value in the Adjustment column to add one."}
+            </p>
           ) : (
             <Table>
               <TableHeader>
