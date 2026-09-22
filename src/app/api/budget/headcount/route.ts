@@ -8,7 +8,7 @@ import {
   toEngineRow,
   type HeadcountDbRow,
 } from "@/lib/budget/recompute";
-import { pricePosition, reportingEntityShare, sumPositions } from "@/lib/budget/personnel-engine";
+import { effectiveCompAdj, pricePosition, reportingEntityShare, sumPositions, withoutCompAdj } from "@/lib/budget/personnel-engine";
 
 const EDITABLE_FIELDS = new Set([
   "name", "title", "department", "is_requisition", "status", "pay_type", "base_rate", "annual_salary",
@@ -16,7 +16,11 @@ const EDITABLE_FIELDS = new Set([
   "commission_annual", "ot_pct", "dt_pct", "meal_pct", "other_earnings_monthly", "benefits_monthly",
   "match_pct", "life_disability_monthly", "wc_class_code", "pto_hours_per_period", "other_costs_monthly",
   "entity_allocations", "class_allocations", "notes", "reporting_entity_id",
+  "comp_adj_kind", "comp_adj_value", "comp_adj_month", "comp_adj_reason",
+  "amount_monthly", "amount_is_loaded", "open_role",
 ]);
+
+const GROSS_COMPONENTS = ["wages", "overtime", "doubletime", "meal", "bonus", "commission", "other_earnings"] as const;
 
 function pickEditable(body: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -50,10 +54,22 @@ export async function GET(request: Request) {
         .range(offset, offset + limit - 1),
     );
 
+    // Baseline = the same row priced without its adjustment (default merit still applies),
+    // so Change on the page is what the adjustment alone does to the year.
+    const baselines: Record<string, { total: number; gross: number }> = {};
     const priced = rows.map((r) => {
       const input = toEngineRow(r);
       const reShare = reportingEntityShare(input, memberEntityIds);
-      return pricePosition(input, { year: owner.fiscalYear, assumptions, reShare });
+      const ctx = { year: owner.fiscalYear, assumptions, reShare };
+      const p = pricePosition(input, ctx);
+      if (effectiveCompAdj(input)) {
+        const b = pricePosition(withoutCompAdj(input), ctx);
+        baselines[r.id] = {
+          total: b.total,
+          gross: GROSS_COMPONENTS.reduce((t, c) => t + (b.componentTotals[c] ?? 0), 0),
+        };
+      }
+      return p;
     });
     const totals = sumPositions(priced);
 
@@ -63,6 +79,8 @@ export async function GET(request: Request) {
       rows,
       priced,
       totals,
+      baselines,
+      meritDefault: { pct: assumptions.get("merit_pct_default"), month: assumptions.get("merit_month_default") },
     });
   } catch (err) {
     console.error("GET /api/budget/headcount error:", err);
@@ -71,32 +89,41 @@ export async function GET(request: Request) {
   }
 }
 
-/** POST: add a row (requisition or manual employee). Body: { versionId, ...fields } */
+/**
+ * POST: add a row (requisition or manual employee).
+ * Body: { versionId, ...fields }. An open role sends { open_role: true, title: <role>, count?: n }
+ * and gets named "Open role: <role>" (numbered when count > 1) until a person is filled in.
+ */
 export async function POST(request: Request) {
   try {
     const actor = await getBudgetActor();
     const body = await request.json();
     const versionId: string | undefined = body?.versionId;
     if (!versionId) return NextResponse.json({ error: "versionId is required" }, { status: 400 });
-    if (!body?.name) return NextResponse.json({ error: "name is required" }, { status: 400 });
+    const openRole = body?.open_role === true;
+    const role = typeof body?.title === "string" ? body.title.trim() : "";
+    if (!openRole && !body?.name) return NextResponse.json({ error: "name is required" }, { status: 400 });
+    if (openRole && !role) return NextResponse.json({ error: "Give the open role a title" }, { status: 400 });
+    const count = openRole ? Math.min(50, Math.max(1, Math.floor(Number(body.count ?? 1)) || 1)) : 1;
 
     const admin = createAdminClient();
     const owner = await requireVersionAccess(admin, actor, versionId, true);
     const fields = pickEditable(body);
-    const { data, error } = await admin
-      .from("budget_headcount")
-      .insert({
-        budget_version_id: owner.id,
-        reporting_entity_id: owner.reportingEntityId,
-        is_requisition: body.is_requisition ?? true,
-        status: body.status ?? (body.is_requisition === false ? "active" : "planned"),
-        ...fields,
-        name: String(body.name),
-      })
-      .select("*")
-      .single();
+    const base = {
+      budget_version_id: owner.id,
+      reporting_entity_id: owner.reportingEntityId,
+      is_requisition: body.is_requisition ?? true,
+      status: body.status ?? (body.is_requisition === false ? "active" : "planned"),
+      ...fields,
+    };
+    const inserts = Array.from({ length: count }, (_, i) => ({
+      ...base,
+      open_role: openRole,
+      name: openRole ? `Open role: ${role}${count > 1 ? ` (${i + 1})` : ""}` : String(body.name),
+    }));
+    const { data, error } = await admin.from("budget_headcount").insert(inserts).select("*");
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ row: data }, { status: 201 });
+    return NextResponse.json({ row: data?.[0] ?? null, rows: data ?? [], inserted: data?.length ?? 0 }, { status: 201 });
   } catch (err) {
     console.error("POST /api/budget/headcount error:", err);
     const { body, status } = accessErrorResponse(err);

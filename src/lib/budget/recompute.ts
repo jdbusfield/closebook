@@ -44,6 +44,13 @@ export interface HeadcountDbRow {
   end_month: number | null;
   merit_pct: number;
   merit_month: number | null;
+  comp_adj_kind?: string | null;
+  comp_adj_value?: number | null;
+  comp_adj_month?: number | null;
+  comp_adj_reason?: string | null;
+  amount_monthly?: number | null;
+  amount_is_loaded?: boolean | null;
+  open_role?: boolean | null;
   bonus_target: number;
   commission_annual: number;
   ot_pct: number;
@@ -73,9 +80,20 @@ export function toEngineRow(r: HeadcountDbRow): HeadcountRowInput {
     reportingEntityId: r.reporting_entity_id,
     isRequisition: !!r.is_requisition,
     status: (r.status as HeadcountRowInput["status"]) ?? "active",
-    payType: r.pay_type === "Salary" ? "Salary" : "Hourly",
+    payType: r.pay_type === "Salary" ? "Salary" : r.pay_type === "Amount" ? "Amount" : "Hourly",
     baseRate: r.base_rate == null ? null : Number(r.base_rate),
     annualSalary: r.annual_salary == null ? null : Number(r.annual_salary),
+    amountMonthly: r.amount_monthly == null ? null : Number(r.amount_monthly),
+    amountIsLoaded: r.amount_is_loaded !== false,
+    compAdj:
+      r.comp_adj_kind && r.comp_adj_value != null && Number(r.comp_adj_value) !== 0
+        ? {
+            kind: r.comp_adj_kind as "percent" | "amount" | "rate",
+            value: Number(r.comp_adj_value),
+            month: Number(r.comp_adj_month ?? 1),
+            reason: r.comp_adj_reason ?? null,
+          }
+        : null,
     stdHoursWeek: Number(r.std_hours_week ?? 40),
     ftePct: Number(r.fte_pct ?? 100),
     startMonth: Number(r.start_month ?? 1),

@@ -3926,6 +3926,13 @@ export type Database = {
           end_month: number | null
           merit_pct: number
           merit_month: number | null
+          comp_adj_kind: string | null
+          comp_adj_value: number | null
+          comp_adj_month: number | null
+          comp_adj_reason: string | null
+          amount_monthly: number | null
+          amount_is_loaded: boolean
+          open_role: boolean
           bonus_target: number
           commission_annual: number
           ot_pct: number
@@ -3965,6 +3972,13 @@ export type Database = {
           end_month?: number | null
           merit_pct?: number
           merit_month?: number | null
+          comp_adj_kind?: string | null
+          comp_adj_value?: number | null
+          comp_adj_month?: number | null
+          comp_adj_reason?: string | null
+          amount_monthly?: number | null
+          amount_is_loaded?: boolean
+          open_role?: boolean
           bonus_target?: number
           commission_annual?: number
           ot_pct?: number
@@ -4004,6 +4018,13 @@ export type Database = {
           end_month?: number | null
           merit_pct?: number
           merit_month?: number | null
+          comp_adj_kind?: string | null
+          comp_adj_value?: number | null
+          comp_adj_month?: number | null
+          comp_adj_reason?: string | null
+          amount_monthly?: number | null
+          amount_is_loaded?: boolean
+          open_role?: boolean
           bonus_target?: number
           commission_annual?: number
           ot_pct?: number

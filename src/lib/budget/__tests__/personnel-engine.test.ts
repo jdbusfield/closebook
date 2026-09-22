@@ -7,6 +7,7 @@ import {
   pricePosition,
   reportingEntityShare,
   sumPositions,
+  withoutCompAdj,
   type HeadcountRowInput,
 } from "../personnel-engine";
 
@@ -50,6 +51,66 @@ function row(overrides: Partial<HeadcountRowInput> = {}): HeadcountRowInput {
 const ctx = (rows: ConstructorParameters<typeof AssumptionSet>[0] = []) => ({
   year: 2027,
   assumptions: new AssumptionSet([{ scope: "org", scope_id: null, key: "wage_month_basis", value: 0 }, ...rows]),
+});
+
+test("comp adjustments: percent, amount and new rate replace the default merit from their month", () => {
+  const withDefaultMerit = ctx([
+    { scope: "org", scope_id: null, key: "merit_pct_default", value: 3 },
+    { scope: "org", scope_id: null, key: "merit_month_default", value: 1 },
+  ]);
+  const salary = row({ payType: "Salary", annualSalary: 120000, baseRate: null });
+  // No adjustment: default merit 3% all year
+  const plain = pricePosition(salary, withDefaultMerit);
+  assert.equal(plain.components.wages[0], 10300);
+
+  const pct = pricePosition({ ...salary, compAdj: { kind: "percent", value: 10, month: 4 } }, withDefaultMerit);
+  assert.equal(pct.components.wages[2], 10000); // before April: no default merit either
+  assert.equal(pct.components.wages[3], 11000);
+
+  const amt = pricePosition({ ...salary, compAdj: { kind: "amount", value: -12000, month: 1 } }, withDefaultMerit);
+  assert.equal(amt.components.wages[0], 9000);
+  assert.equal(amt.componentTotals.wages, 108000);
+
+  const rate = pricePosition({ ...salary, compAdj: { kind: "rate", value: 150000, month: 7 } }, withDefaultMerit);
+  assert.equal(rate.components.wages[5], 10000);
+  assert.equal(rate.components.wages[6], 12500);
+
+  const hourly = pricePosition(row({ compAdj: { kind: "amount", value: 1.5, month: 1 } }), ctx());
+  assert.equal(Math.round(hourly.components.wages[0]), Math.round((26.5 * 40 * 52) / 12));
+
+  // Baseline helper strips the adjustment so Change can be computed
+  const base = pricePosition(withoutCompAdj({ ...salary, compAdj: { kind: "percent", value: 10, month: 1 } }), withDefaultMerit);
+  assert.equal(base.components.wages[0], 10300);
+
+  // Legacy per-row merit reads as a percent adjustment
+  const legacy = pricePosition(row({ payType: "Salary", annualSalary: 120000, baseRate: null, meritPct: 5, meritMonth: 6 }), withDefaultMerit);
+  assert.equal(legacy.components.wages[4], 10000);
+  assert.equal(legacy.components.wages[5], 10500);
+});
+
+test("Amount pay type: whole cost lands on wages alone; wages only gets taxes and benefits", () => {
+  const loaded = pricePosition(
+    row({ isRequisition: true, payType: "Amount", amountMonthly: 6500, amountIsLoaded: true, baseRate: null, startMonth: 6, benefitsMonthly: 400, ptoHoursPerPeriod: 3 }),
+    ctx([{ scope: "org", scope_id: null, key: "recruiting_cost_per_hire", value: 1000 }]),
+  );
+  assert.equal(loaded.activeMonths, 7);
+  assert.equal(loaded.components.wages[5], 6500);
+  assert.equal(loaded.components.wages[4], 0);
+  assert.equal(loaded.componentTotals.wages, 45500);
+  assert.equal(loaded.componentTotals.fica_ss, 0);
+  assert.equal(loaded.componentTotals.benefits, 0);
+  assert.equal(loaded.componentTotals.pto, 0);
+  assert.equal(loaded.componentTotals.recruiting, 0);
+  assert.equal(loaded.total, 45500);
+
+  const wagesOnly = pricePosition(
+    row({ payType: "Amount", amountMonthly: 6500, amountIsLoaded: false, baseRate: null }),
+    ctx(),
+  );
+  assert.equal(wagesOnly.components.wages[0], 6500);
+  assert.equal(wagesOnly.components.fica_ss[0], 403);
+  assert.equal(wagesOnly.components.medicare[0], 94.25);
+  assert.ok(wagesOnly.total > 78000);
 });
 
 test("month weights follow working days by default and keep the year total", () => {
