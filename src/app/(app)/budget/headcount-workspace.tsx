@@ -496,9 +496,11 @@ export function HeadcountWorkspace({
 
   /** "AVON" or "AVON 75 / HDR 25"; by group: "Avon" or "Avon 75 / HDR 25". Revenue rows resolve to the shares. */
   const companyLabel = useCallback(
-    (r: HeadcountRow, byGroup = false): string => {
+    (r: HeadcountRow, byGroupArg = false): string => {
       const allocs = effectiveAllocations(r, revenueShares);
       if (allocs.length === 0) return "";
+      // Revenue shares are between reporting groups, so always read as groups
+      const byGroup = byGroupArg || (r as unknown as { allocation_mode?: string }).allocation_mode === "revenue";
       const parts = new Map<string, number>();
       for (const a of allocs) {
         const e = entityById.get(a.entity_id);
@@ -618,7 +620,7 @@ export function HeadcountWorkspace({
       )}
       {isPlan && revenueShares.length > 0 && (
         <p className="text-xs text-muted-foreground">
-          Revenue shares: {revenueShares.map((s) => `${entityById.get(s.entity_id)?.code ?? entityById.get(s.entity_id)?.name ?? "?"} ${fmtPct(s.pct)}`).join(", ")}. {revenueSharesAsOf}.
+          Revenue shares by reporting group: {revenueShares.map((s) => `${reportingEntities.find((g) => g.id === s.reporting_entity_id)?.name ?? entityById.get(s.entity_id)?.reportingEntityName ?? entityById.get(s.entity_id)?.code ?? "?"} ${fmtPct(s.pct)}`).join(", ")}. {revenueSharesAsOf}.
         </p>
       )}
 
@@ -1721,7 +1723,7 @@ function CompanyCell({
             ) : (
               <>
                 <div>Follows each company&apos;s share of trailing revenue:</div>
-                <div className="text-xs text-muted-foreground">{revenueShares.map((s) => `${nameOf(s.entity_id) || "?"} ${fmtPct(s.pct)}`).join(", ")}</div>
+                <div className="text-xs text-muted-foreground">{revenueShares.map((s) => `${entities.find((e) => e.id === s.entity_id)?.reportingEntityName ?? nameOf(s.entity_id) ?? "?"} ${fmtPct(s.pct)}`).join(", ")}</div>
               </>
             )}
           </div>
