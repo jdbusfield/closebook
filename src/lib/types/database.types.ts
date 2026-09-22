@@ -113,6 +113,7 @@ export type Database = {
           created_at: string
           updated_at: string
           gclid: string | null
+          gclid_at: string | null
           conversion_status: string
           conversion_value: number | null
           conversion_currency: string
@@ -178,6 +179,7 @@ export type Database = {
           created_at?: string
           updated_at?: string
           gclid?: string | null
+          gclid_at?: string | null
           conversion_status?: string
           conversion_value?: number | null
           conversion_currency?: string
@@ -243,6 +245,7 @@ export type Database = {
           created_at?: string
           updated_at?: string
           gclid?: string | null
+          gclid_at?: string | null
           conversion_status?: string
           conversion_value?: number | null
           conversion_currency?: string

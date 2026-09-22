@@ -664,6 +664,11 @@ export interface Inquiry {
   gclid: string | null;
   fbclid: string | null;
   oppref: string | null;
+  // Meta click cookie (fb.1.<capture ms>.<fbclid>) and when the website
+  // captured the gclid (migration 20260922). Used to order paid clicks; see
+  // lib/inquiries/paid-touch.ts.
+  fbc?: string | null;
+  gclid_at?: string | null;
   // Campaign attribution (migration 20260908). Optional: the CRM lists do not
   // select these; the Ads tab loads them separately.
   utm_source?: string | null;

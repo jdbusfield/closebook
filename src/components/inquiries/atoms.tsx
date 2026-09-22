@@ -37,6 +37,7 @@ import {
   contactOverdue,
   lastCorrespondence,
 } from "@/lib/inquiries/shared";
+import { type PaidPlatform, paidTouches } from "@/lib/inquiries/paid-touch";
 
 // Tint a hex color to a low-alpha background (e.g. "#2845F0" + 0.1).
 export function hexA(hex: string, a: number): string {
@@ -100,65 +101,78 @@ export function BrandBadge({
   );
 }
 
-// Marks a lead that arrived via a Google ad click (we captured a gclid on the
-// site). Drives Google Ads conversion attribution for won rentals; surfacing it
-// here lets a rep see at a glance which leads are paid-search sourced.
-export function GoogleAdBadge({
-  gclid,
-  className = "",
-}: {
-  gclid: string | null | undefined;
-  className?: string;
-}) {
-  if (!gclid) return null;
-  return (
-    <span
-      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:bg-blue-950 dark:text-blue-300 ${className}`}
-      title="This lead arrived from a Google ad click — won bookings are attributed back to Google Ads."
-    >
-      <MousePointerClick className="size-3" /> Google Ad
-    </span>
-  );
+// Paid-click source chips. The latest ad click is the lead's source and gets
+// the solid chip; earlier clicks on other platforms show as smaller outlined
+// "assist" chips (see lib/inquiries/paid-touch.ts for how clicks are ordered).
+// Won bookings are still reported to every platform whose click id we hold.
+const PAID_CHIP: Record<
+  PaidPlatform,
+  { label: string; icon: LucideIcon; solid: string; outline: string; name: string }
+> = {
+  google: {
+    label: "Google Ad",
+    name: "Google",
+    icon: MousePointerClick,
+    solid: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
+    outline: "border-blue-300 text-blue-700 dark:border-blue-800 dark:text-blue-300",
+  },
+  meta: {
+    label: "Meta Ad",
+    name: "Meta",
+    icon: Megaphone,
+    solid: "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300",
+    outline: "border-indigo-300 text-indigo-700 dark:border-indigo-800 dark:text-indigo-300",
+  },
+  chatgpt: {
+    label: "ChatGPT Ad",
+    name: "ChatGPT",
+    icon: MessageSquareText,
+    solid: "bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300",
+    outline: "border-teal-300 text-teal-700 dark:border-teal-800 dark:text-teal-300",
+  },
+};
+
+function clickDate(at: string | null): string {
+  if (!at) return "";
+  return ` on ${new Date(at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
 }
 
-// Marks a lead that arrived via a Meta (Facebook/Instagram) ad click (we
-// captured an fbclid on the site). Won bookings are reported back to the Meta
-// Conversions API.
-export function MetaAdBadge({
-  fbclid,
-  className = "",
+export function PaidSourceBadges({
+  inquiry,
+  assists = true,
 }: {
-  fbclid: string | null | undefined;
-  className?: string;
+  inquiry: Parameters<typeof paidTouches>[0];
+  /** Show the earlier-click assist chips too. */
+  assists?: boolean;
 }) {
-  if (!fbclid) return null;
+  const touches = paidTouches(inquiry);
+  if (!touches.length) return null;
+  const [main, ...rest] = touches;
+  const m = PAID_CHIP[main.platform];
+  const MainIcon = m.icon;
   return (
-    <span
-      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 ${className}`}
-      title="This lead arrived from a Meta (Facebook/Instagram) ad click — won bookings are attributed back to Meta."
-    >
-      <Megaphone className="size-3" /> Meta Ad
-    </span>
-  );
-}
-
-// Marks a lead that arrived via a ChatGPT ad click (we captured an oppref on
-// the site). Surfaces OpenAI Ads as the paid source at a glance.
-export function ChatGPTAdBadge({
-  oppref,
-  className = "",
-}: {
-  oppref: string | null | undefined;
-  className?: string;
-}) {
-  if (!oppref) return null;
-  return (
-    <span
-      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-teal-100 px-2 py-0.5 text-[11px] font-medium text-teal-700 dark:bg-teal-950 dark:text-teal-300 ${className}`}
-      title="This lead arrived from a ChatGPT ad click — conversions are reported back to OpenAI Ads."
-    >
-      <MessageSquareText className="size-3" /> ChatGPT Ad
-    </span>
+    <>
+      <span
+        className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${m.solid}`}
+        title={`Last ad click before this lead came in: ${m.name}${clickDate(main.at)}. This lead counts for ${m.name}.`}
+      >
+        <MainIcon className="size-3" /> {m.label}
+      </span>
+      {assists &&
+        rest.map((t) => {
+          const a = PAID_CHIP[t.platform];
+          const Icon = a.icon;
+          return (
+            <span
+              key={t.platform}
+              className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-1.5 py-px text-[10px] font-medium ${a.outline}`}
+              title={`Earlier ${a.name} ad click${clickDate(t.at)}. Counted as an assist, not as the source.`}
+            >
+              <Icon className="size-2.5" /> {a.name} Assist
+            </span>
+          );
+        })}
+    </>
   );
 }
 

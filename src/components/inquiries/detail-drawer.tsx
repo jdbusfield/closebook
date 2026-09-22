@@ -35,9 +35,7 @@ import {
   InquiryAvatar,
   DueBadge,
   ActivityIcon,
-  GoogleAdBadge,
-  MetaAdBadge,
-  ChatGPTAdBadge,
+  PaidSourceBadges,
   BrandBadge,
   hexA,
 } from "@/components/inquiries/atoms";
@@ -686,9 +684,7 @@ export function ContactGrid({
               {(inquiry.source && SOURCE_LABELS[inquiry.source]) || inquiry.source || "—"}
               {method && <span className="text-muted-foreground">· {method}</span>}
               <BrandBadge source={inquiry.source} />
-              <GoogleAdBadge gclid={inquiry.gclid} />
-              <MetaAdBadge fbclid={inquiry.fbclid} />
-              <ChatGPTAdBadge oppref={inquiry.oppref} />
+              <PaidSourceBadges inquiry={inquiry} />
             </span>
           }
         />
