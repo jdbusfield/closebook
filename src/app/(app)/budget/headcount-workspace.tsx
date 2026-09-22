@@ -219,7 +219,8 @@ export function HeadcountWorkspace({
   const [priced, setPriced] = useState<PricedPosition[]>([]);
   const [totals, setTotals] = useState<{ components: Record<CostComponent, number[]>; totalByMonth: number[]; total: number } | null>(null);
   const [memberEntityIds, setMemberEntityIds] = useState<string[]>([]);
-  const [baselines, setBaselines] = useState<Record<string, { total: number; gross: number }>>({});
+  const [baselines, setBaselines] = useState<Record<string, { total: number; gross: number; byMonth?: number[] }>>({});
+  const [showMonths, setShowMonths] = useState(false);
   const [meritDefault, setMeritDefault] = useState<{ pct: number; month: number }>({ pct: 0, month: 1 });
   const [showAdjustedOnly, setShowAdjustedOnly] = useState(false);
   const [search, setSearch] = useState("");
@@ -228,6 +229,7 @@ export function HeadcountWorkspace({
   const [reportingEntities, setReportingEntities] = useState<Array<{ id: string; name: string; code: string }>>([]);
   const [groupTotals, setGroupTotals] = useState<Record<string, number>>({});
   const [groupByMonth, setGroupByMonth] = useState<Record<string, number[]>>({});
+  const [groupActuals, setGroupActuals] = useState<Record<string, { year: number; byMonth: number[]; hasData: boolean[]; monthsWithData: number }>>({});
   const [unallocatedByMonth, setUnallocatedByMonth] = useState<number[]>([]);
   const [unallocatedTotal, setUnallocatedTotal] = useState(0);
   const [revenueShares, setRevenueShares] = useState<EntityAllocation[]>([]);
@@ -280,6 +282,7 @@ export function HeadcountWorkspace({
       setReportingEntities(data.reportingEntities ?? []);
       setGroupTotals(data.groupTotals ?? {});
       setGroupByMonth(data.groupByMonth ?? {});
+      setGroupActuals(data.groupActuals ?? {});
       setUnallocatedByMonth(data.unallocatedByMonth ?? []);
       setUnallocatedTotal(data.unallocatedTotal ?? 0);
       setRevenueShares(data.plan?.revenueShares ?? []);
@@ -792,14 +795,51 @@ export function HeadcountWorkspace({
                 {[...reportingEntities]
                   .map((g) => ({ ...g, series: groupByMonth[g.id] ?? new Array(12).fill(0), total: groupTotals[g.id] ?? 0 }))
                   .sort((a, b) => b.total - a.total)
-                  .map((g) => (
-                    <TableRow key={g.id}>
-                      <TableCell className="whitespace-nowrap font-medium">{g.name}</TableCell>
-                      {g.series.map((v, i) => <TableCell key={i} className="text-right tabular-nums">{fmtUsd(v)}</TableCell>)}
-                      <TableCell className="text-right font-medium tabular-nums">{fmtUsd(g.total)}</TableCell>
-                      <TableCell className="text-right tabular-nums text-muted-foreground">{totals.total > 0 ? fmtPct((g.total / totals.total) * 100) : ""}</TableCell>
-                    </TableRow>
-                  ))}
+                  .map((g) => {
+                    const ga = groupActuals[g.id];
+                    const booked = ga?.hasData ?? [];
+                    const actualToDate = ga ? ga.byMonth.reduce((t, v, i) => (booked[i] ? t + v : t), 0) : 0;
+                    const projSame = ga ? g.series.reduce((t, v, i) => (booked[i] ? t + v : t), 0) : 0;
+                    const totalPct = actualToDate ? ((projSame - actualToDate) / Math.abs(actualToDate)) * 100 : null;
+                    return (
+                      <Fragment key={g.id}>
+                        <TableRow className="border-t-2">
+                          <TableCell className="whitespace-nowrap font-medium">{g.name}</TableCell>
+                          {g.series.map((v, i) => <TableCell key={i} className="text-right tabular-nums">{fmtUsd(v)}</TableCell>)}
+                          <TableCell className="text-right font-medium tabular-nums">{fmtUsd(g.total)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">{totals.total > 0 ? fmtPct((g.total / totals.total) * 100) : ""}</TableCell>
+                        </TableRow>
+                        {ga && ga.monthsWithData > 0 && (
+                          <>
+                            <TableRow>
+                              <TableCell className="whitespace-nowrap pl-6 text-xs text-muted-foreground">{ga.year} actual, booked</TableCell>
+                              {ga.byMonth.map((v, i) => <TableCell key={i} className="text-right text-xs tabular-nums text-muted-foreground">{booked[i] ? fmtUsd(v) : ""}</TableCell>)}
+                              <TableCell className="text-right text-xs tabular-nums text-muted-foreground">{fmtUsd(actualToDate)}</TableCell>
+                              <TableCell />
+                            </TableRow>
+                            <TableRow>
+                              <TableCell className="whitespace-nowrap pl-6 text-xs">Change vs {ga.year}</TableCell>
+                              {g.series.map((v, i) => {
+                                if (!booked[i]) return <TableCell key={i} />;
+                                const base = ga.byMonth[i];
+                                if (!base) return <TableCell key={i} className="text-right text-xs text-muted-foreground">{v ? "new" : ""}</TableCell>;
+                                const pct = ((v - base) / Math.abs(base)) * 100;
+                                return (
+                                  <TableCell key={i} className={`text-right text-xs tabular-nums ${pct > 0 ? "text-red-700" : pct < 0 ? "text-emerald-700" : ""}`}>
+                                    {pct > 0 ? "+" : ""}{fmtPct(pct)}
+                                  </TableCell>
+                                );
+                              })}
+                              <TableCell className={`text-right text-xs font-medium tabular-nums ${(totalPct ?? 0) > 0 ? "text-red-700" : (totalPct ?? 0) < 0 ? "text-emerald-700" : ""}`}>
+                                {totalPct == null ? "" : `${totalPct > 0 ? "+" : ""}${fmtPct(totalPct)}`}
+                              </TableCell>
+                              <TableCell />
+                            </TableRow>
+                          </>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 {unallocatedTotal > 0 && (
                   <TableRow>
                     <TableCell className="whitespace-nowrap text-amber-600">Unallocated</TableCell>
@@ -868,6 +908,15 @@ export function HeadcountWorkspace({
                     </button>
                   )}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setShowMonths((v) => !v)}
+                  aria-pressed={showMonths}
+                  className={`ml-2 rounded-md border px-2.5 py-1.5 text-xs ${showMonths ? "bg-foreground font-medium text-background" : "text-muted-foreground hover:bg-muted/40"}`}
+                  title="Swap the input columns for each person's change by month"
+                >
+                  Change by month
+                </button>
                 <span className="ml-2 text-muted-foreground">Show</span>
                 <Select value={showAdjustedOnly ? "adjusted" : "all"} onValueChange={(v) => setShowAdjustedOnly(v === "adjusted")}>
                   <SelectTrigger className="h-8 w-[150px]">
@@ -939,7 +988,9 @@ export function HeadcountWorkspace({
                   <TableHead>Dept</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Pay</TableHead>
-                  {NUMERIC_FIELDS.map((f) => <TableHead key={f.key} className="whitespace-nowrap text-right">{f.label}</TableHead>)}
+                  {showMonths
+                    ? MONTH_ABBRS.map((m) => <TableHead key={m} className="text-right">{m}</TableHead>)
+                    : NUMERIC_FIELDS.map((f) => <TableHead key={f.key} className="whitespace-nowrap text-right">{f.label}</TableHead>)}
                   <TableHead className="text-right">Share</TableHead>
                   <TableHead className="text-right">Year total</TableHead>
                   <TableHead />
@@ -950,7 +1001,7 @@ export function HeadcountWorkspace({
                   <Fragment key={g.key}>
                     {g.label !== null && (
                       <TableRow className="bg-muted/40 hover:bg-muted/40">
-                        <TableCell colSpan={13 + NUMERIC_FIELDS.length} className="py-1.5 text-xs">
+                        <TableCell colSpan={13 + (showMonths ? 12 : NUMERIC_FIELDS.length)} className="py-1.5 text-xs">
                           <span className="font-medium">{g.label}</span>
                           <span className="ml-2 text-muted-foreground">{g.rows.length} {g.rows.length === 1 ? "position" : "positions"}</span>
                           <span className="ml-2 font-medium tabular-nums">{fmtUsd(g.total)}</span>
@@ -1041,18 +1092,27 @@ export function HeadcountWorkspace({
                           </SelectContent>
                         </Select>
                       </TableCell>
-                      {NUMERIC_FIELDS.map((f) => (
-                        <TableCell key={f.key} className="p-1">
-                          <NumberCell
-                            id={`hc-${r.id}-${f.key}`}
-                            value={r[f.key] as number | null}
-                            step={f.step}
-                            format={f.format}
-                            disabled={readOnly || savingId === r.id}
-                            onCommit={(v) => patch(r.id, { [f.key]: v } as Partial<HeadcountRow>)}
-                          />
-                        </TableCell>
-                      ))}
+                      {showMonths
+                        ? MONTH_ABBRS.map((m, i) => {
+                            const d = (p?.totalByMonth[i] ?? 0) - (baseline?.byMonth?.[i] ?? 0);
+                            return (
+                              <TableCell key={m} className={`whitespace-nowrap text-right text-xs tabular-nums ${d > 0 ? "text-red-700" : d < 0 ? "text-emerald-700" : "text-muted-foreground"}`}>
+                                {Math.abs(d) < 0.5 ? "$0" : fmtChange(d)}
+                              </TableCell>
+                            );
+                          })
+                        : NUMERIC_FIELDS.map((f) => (
+                            <TableCell key={f.key} className="p-1">
+                              <NumberCell
+                                id={`hc-${r.id}-${f.key}`}
+                                value={r[f.key] as number | null}
+                                step={f.step}
+                                format={f.format}
+                                disabled={readOnly || savingId === r.id}
+                                onCommit={(v) => patch(r.id, { [f.key]: v } as Partial<HeadcountRow>)}
+                              />
+                            </TableCell>
+                          ))}
                       <TableCell className="text-right tabular-nums">{p && !isPlan ? fmtPct(p.reShare * 100, 0) : ""}</TableCell>
                       <TableCell className="text-right font-medium tabular-nums">{p ? fmtUsd(p.total) : ""}</TableCell>
                       <TableCell>
@@ -1131,6 +1191,29 @@ export function HeadcountWorkspace({
                         {selectedPriced.totalByMonth.map((v, i) => <TableCell key={i} className="text-right text-xs tabular-nums">{fmtUsd(v)}</TableCell>)}
                         <TableCell className="text-right text-xs tabular-nums">{fmtUsd(selectedPriced.total)}</TableCell>
                       </TableRow>
+                      {baselines[selectedRow.id]?.byMonth && (
+                        <>
+                          <TableRow className="border-t-2">
+                            <TableCell className="whitespace-nowrap text-xs text-muted-foreground">As seeded</TableCell>
+                            {baselines[selectedRow.id].byMonth!.map((v, i) => <TableCell key={i} className="text-right text-xs tabular-nums text-muted-foreground">{fmtUsd(v)}</TableCell>)}
+                            <TableCell className="text-right text-xs tabular-nums text-muted-foreground">{fmtUsd(baselines[selectedRow.id].total)}</TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="text-xs">Change</TableCell>
+                            {selectedPriced.totalByMonth.map((v, i) => {
+                              const d = v - (baselines[selectedRow.id].byMonth![i] ?? 0);
+                              return (
+                                <TableCell key={i} className={`text-right text-xs tabular-nums ${d > 0 ? "text-red-700" : d < 0 ? "text-emerald-700" : "text-muted-foreground"}`}>
+                                  {Math.abs(d) < 0.5 ? "$0" : fmtChange(d)}
+                                </TableCell>
+                              );
+                            })}
+                            <TableCell className={`text-right text-xs font-medium tabular-nums ${selectedPriced.total - baselines[selectedRow.id].total > 0 ? "text-red-700" : selectedPriced.total - baselines[selectedRow.id].total < 0 ? "text-emerald-700" : "text-muted-foreground"}`}>
+                              {Math.abs(selectedPriced.total - baselines[selectedRow.id].total) < 0.5 ? "$0" : fmtChange(selectedPriced.total - baselines[selectedRow.id].total)}
+                            </TableCell>
+                          </TableRow>
+                        </>
+                      )}
                     </TableBody>
                   </Table>
                 </div>
