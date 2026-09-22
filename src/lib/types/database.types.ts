@@ -3933,6 +3933,8 @@ export type Database = {
           amount_monthly: number | null
           amount_is_loaded: boolean
           open_role: boolean
+          location_allocations: Json
+          function_allocations: Json
           bonus_target: number
           commission_annual: number
           ot_pct: number
@@ -3979,6 +3981,8 @@ export type Database = {
           amount_monthly?: number | null
           amount_is_loaded?: boolean
           open_role?: boolean
+          location_allocations?: Json
+          function_allocations?: Json
           bonus_target?: number
           commission_annual?: number
           ot_pct?: number
@@ -4025,6 +4029,8 @@ export type Database = {
           amount_monthly?: number | null
           amount_is_loaded?: boolean
           open_role?: boolean
+          location_allocations?: Json
+          function_allocations?: Json
           bonus_target?: number
           commission_annual?: number
           ot_pct?: number

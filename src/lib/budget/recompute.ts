@@ -50,6 +50,8 @@ export interface HeadcountDbRow {
   comp_adj_reason?: string | null;
   amount_monthly?: number | null;
   amount_is_loaded?: boolean | null;
+  location_allocations?: unknown;
+  function_allocations?: unknown;
   open_role?: boolean | null;
   bonus_target: number;
   commission_annual: number;

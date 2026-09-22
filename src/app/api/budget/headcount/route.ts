@@ -18,6 +18,7 @@ const EDITABLE_FIELDS = new Set([
   "entity_allocations", "class_allocations", "notes", "reporting_entity_id",
   "comp_adj_kind", "comp_adj_value", "comp_adj_month", "comp_adj_reason",
   "amount_monthly", "amount_is_loaded", "open_role",
+  "location_allocations", "function_allocations",
 ]);
 
 const GROSS_COMPONENTS = ["wages", "overtime", "doubletime", "meal", "bonus", "commission", "other_earnings"] as const;

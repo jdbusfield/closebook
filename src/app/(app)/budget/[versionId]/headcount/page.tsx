@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, use, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -16,6 +16,7 @@ import { Loader2, Plus, Download, RefreshCw, Trash2 } from "lucide-react";
 import { useBudgetVersion } from "../version-shell";
 import { fmtUsd, fmtPct, MONTH_ABBRS } from "@/lib/budget/format";
 import { COMPONENT_LABELS, COST_COMPONENTS, type CostComponent, type PricedPosition } from "@/lib/budget/personnel-engine";
+import { CLASSES, FUNCTIONS, GEOGRAPHY_BY_LOCATION, LOCATIONS, SPLIT_OPTIONS, primaryKey, readSplits, splitLabel, type TagSplit } from "@/lib/budget/tagging";
 
 interface HeadcountRow {
   id: string;
@@ -56,6 +57,8 @@ interface HeadcountRow {
   other_costs_monthly: number;
   entity_allocations: Array<{ entity_id: string; pct: number }>;
   class_allocations: Array<{ class: string; pct: number }>;
+  location_allocations: unknown;
+  function_allocations: unknown;
   seeded_from: { runRate?: { gross: number; monthsCovered: number; erHealth: number }; warnings?: string[] } | null;
   notes: string | null;
 }
@@ -112,6 +115,21 @@ function fmtChange(v: number, digits = 0): string {
   return v < 0 ? `-${abs}` : `+${abs}`;
 }
 
+type ViewMode = "name" | "salary" | "department" | "geography" | "location" | "function" | "class";
+const VIEW_MODES: Array<{ key: ViewMode; label: string }> = [
+  { key: "name", label: "Name" },
+  { key: "salary", label: "Salary" },
+  { key: "department", label: "Department" },
+  { key: "geography", label: "Geography" },
+  { key: "location", label: "Location" },
+  { key: "function", label: "Function" },
+  { key: "class", label: "Class" },
+];
+
+const rowLocation = (r: HeadcountRow) => readSplits(r.location_allocations);
+const rowClass = (r: HeadcountRow) => readSplits(r.class_allocations, "class");
+const rowFunction = (r: HeadcountRow) => readSplits(r.function_allocations);
+
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 /** Current pay in the row's unit, and how to print it. */
@@ -156,6 +174,7 @@ export default function BudgetHeadcountPage({ params }: { params: Promise<{ vers
   const [baselines, setBaselines] = useState<Record<string, { total: number; gross: number }>>({});
   const [meritDefault, setMeritDefault] = useState<{ pct: number; month: number }>({ pct: 0, month: 1 });
   const [showAdjustedOnly, setShowAdjustedOnly] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>("name");
   const [selected, setSelected] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
 
@@ -419,6 +438,54 @@ export default function BudgetHeadcountPage({ params }: { params: Promise<{ vers
 
   const visibleRows = useMemo(() => (showAdjustedOnly ? rows.filter((r) => !!baselines[r.id]) : rows), [rows, baselines, showAdjustedOnly]);
 
+  // Class names already on rows that are not on the cheat sheet stay selectable
+  const classOptions = useMemo(() => {
+    const extra = new Set<string>();
+    for (const r of rows) for (const s of rowClass(r)) if (!CLASSES.includes(s.key)) extra.add(s.key);
+    return [...CLASSES, ...extra];
+  }, [rows]);
+
+  const untagged = useMemo(
+    () => rows.filter((r) => r.status !== "excluded" && (rowLocation(r).length === 0 || rowClass(r).length === 0 || rowFunction(r).length === 0)).length,
+    [rows],
+  );
+
+  // The view: a flat list by name or salary, or groups with a subtotal
+  const groups = useMemo(() => {
+    const total = (r: HeadcountRow) => pricedById.get(r.id)?.total ?? 0;
+    const sum = (rs: HeadcountRow[]) => rs.reduce((t, r) => t + total(r), 0);
+    if (viewMode === "name") return [{ key: "all", label: null as string | null, rows: visibleRows, total: sum(visibleRows) }];
+    if (viewMode === "salary") {
+      const sorted = [...visibleRows].sort((a, b) => total(b) - total(a));
+      return [{ key: "all", label: null as string | null, rows: sorted, total: sum(sorted) }];
+    }
+    const keyOf = (r: HeadcountRow): string => {
+      if (viewMode === "department") return r.department?.trim() || "No department";
+      if (viewMode === "location") return primaryKey(rowLocation(r)) || "Not set";
+      if (viewMode === "geography") {
+        const l = primaryKey(rowLocation(r));
+        return l ? GEOGRAPHY_BY_LOCATION[l] ?? l : "Not set";
+      }
+      if (viewMode === "function") return primaryKey(rowFunction(r)) || "Not set";
+      return primaryKey(rowClass(r)) || "Not set";
+    };
+    const map = new Map<string, HeadcountRow[]>();
+    for (const r of visibleRows) {
+      const k = keyOf(r);
+      const list = map.get(k) ?? [];
+      list.push(r);
+      map.set(k, list);
+    }
+    return [...map.entries()]
+      .map(([k, rs]) => ({ key: k, label: k as string | null, rows: [...rs].sort((a, b) => total(b) - total(a)), total: sum(rs) }))
+      .sort((a, b) => (a.key === "Not set" ? 1 : b.key === "Not set" ? -1 : b.total - a.total));
+  }, [visibleRows, viewMode, pricedById]);
+
+  const saveTags = (id: string, field: "location_allocations" | "function_allocations" | "class_allocations", splits: TagSplit[]) => {
+    const stored = field === "class_allocations" ? splits.map((s) => ({ class: s.key, pct: s.pct })) : splits;
+    return patch(id, { [field]: stored } as unknown as Partial<HeadcountRow>);
+  };
+
   const selectedRow = selected ? rows.find((r) => r.id === selected) ?? null : null;
   const selectedPriced = selected ? pricedById.get(selected) ?? null : null;
 
@@ -527,12 +594,26 @@ export default function BudgetHeadcountPage({ params }: { params: Promise<{ vers
             <div className="space-y-1.5">
               <CardTitle>Positions</CardTitle>
               <CardDescription>
-                Edits save when you leave a cell. Adjustment is one pay change for the year: a raise, a cut or a new rate. Change is what that adjustment does to the full-year cost for this group. Share shows the part of the person allocated to this group.
+                Location, Class and Function are the three tags from the cheat sheet, set once per person; a split is 75/25 or 50/50. Edits save when you leave a cell. Adjustment is one pay change for the year. Change is what that adjustment does to the full-year cost for this group. Share shows the part of the person allocated to this group.
               </CardDescription>
             </div>
             {rows.length > 0 && (
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-muted-foreground">Show</span>
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="text-muted-foreground">View by</span>
+                <div className="flex overflow-hidden rounded-md border">
+                  {VIEW_MODES.map((m, i) => (
+                    <button
+                      key={m.key}
+                      type="button"
+                      onClick={() => setViewMode(m.key)}
+                      aria-pressed={viewMode === m.key}
+                      className={`px-2.5 py-1.5 text-xs ${i > 0 ? "border-l" : ""} ${viewMode === m.key ? "bg-foreground font-medium text-background" : "text-muted-foreground hover:bg-muted/40"}`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                <span className="ml-2 text-muted-foreground">Show</span>
                 <Select value={showAdjustedOnly ? "adjusted" : "all"} onValueChange={(v) => setShowAdjustedOnly(v === "adjusted")}>
                   <SelectTrigger className="h-8 w-[150px]">
                     <SelectValue />
@@ -549,6 +630,11 @@ export default function BudgetHeadcountPage({ params }: { params: Promise<{ vers
         <CardContent className="space-y-3 overflow-x-auto">
           {rows.length > 0 && (
             <div className="flex flex-wrap gap-x-6 gap-y-1 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+              {untagged > 0 && (
+                <span>
+                  <span className="text-muted-foreground">Missing a tag</span> <span className="ml-1 font-medium tabular-nums text-amber-600">{untagged}</span>
+                </span>
+              )}
               <span>
                 <span className="text-muted-foreground">Adjustments</span> <span className="ml-1 font-medium tabular-nums">{adjSummary.count}</span>
               </span>
@@ -574,6 +660,9 @@ export default function BudgetHeadcountPage({ params }: { params: Promise<{ vers
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Location</TableHead>
+                  <TableHead>Class</TableHead>
+                  <TableHead>Function</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Dept</TableHead>
                   <TableHead>Status</TableHead>
@@ -587,12 +676,34 @@ export default function BudgetHeadcountPage({ params }: { params: Promise<{ vers
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleRows.map((r) => {
+                {groups.map((g) => (
+                  <Fragment key={g.key}>
+                    {g.label !== null && (
+                      <TableRow className="bg-muted/40 hover:bg-muted/40">
+                        <TableCell colSpan={12 + NUMERIC_FIELDS.length} className="py-1.5 text-xs">
+                          <span className="font-medium">{g.label}</span>
+                          <span className="ml-2 text-muted-foreground">{g.rows.length} {g.rows.length === 1 ? "position" : "positions"}</span>
+                          <span className="ml-2 font-medium tabular-nums">{fmtUsd(g.total)}</span>
+                          {totals && totals.total > 0 && <span className="ml-1 text-muted-foreground">({fmtPct((g.total / totals.total) * 100)})</span>}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                {g.rows.map((r) => {
                   const p = pricedById.get(r.id);
                   const baseline = baselines[r.id];
                   const delta = p && baseline ? p.total - baseline.total : null;
+                  const tagsDisabled = readOnly || savingId === r.id;
                   return (
                     <TableRow key={r.id} className={r.status === "excluded" ? "opacity-50" : undefined}>
+                      <TableCell className="p-1">
+                        <TagCell label="Location" value={rowLocation(r)} options={[...LOCATIONS]} disabled={tagsDisabled} onSave={(s) => saveTags(r.id, "location_allocations", s)} />
+                      </TableCell>
+                      <TableCell className="p-1">
+                        <TagCell label="Class" value={rowClass(r)} options={classOptions} disabled={tagsDisabled} onSave={(s) => saveTags(r.id, "class_allocations", s)} />
+                      </TableCell>
+                      <TableCell className="p-1">
+                        <TagCell label="Function" value={rowFunction(r)} options={[...FUNCTIONS]} disabled={tagsDisabled} onSave={(s) => saveTags(r.id, "function_allocations", s)} />
+                      </TableCell>
                       <TableCell className="whitespace-nowrap">
                         <button type="button" className="text-left font-medium hover:underline" onClick={() => setSelected(r.id)}>
                           {r.name}
@@ -668,6 +779,8 @@ export default function BudgetHeadcountPage({ params }: { params: Promise<{ vers
                     </TableRow>
                   );
                 })}
+                  </Fragment>
+                ))}
               </TableBody>
             </Table>
           )}
@@ -1254,6 +1367,120 @@ function AdjustmentCell({
               Cancel
             </Button>
             <Button type="button" size="sm" onClick={save}>
+              Apply
+            </Button>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+/** One of the three tags: a primary pick with an optional 75/25 or 50/50 split. */
+function TagCell({
+  label,
+  value,
+  options,
+  disabled,
+  onSave,
+}: {
+  label: string;
+  value: TagSplit[];
+  options: string[];
+  disabled?: boolean;
+  onSave: (splits: TagSplit[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const sorted = [...value].sort((a, b) => b.pct - a.pct);
+  const [primary, setPrimary] = useState(sorted[0]?.key ?? "");
+  const [second, setSecond] = useState(sorted[1]?.key ?? "");
+  const [primaryPct, setPrimaryPct] = useState<number>(sorted[1] ? Math.round(sorted[0].pct) : 100);
+
+  const onOpenChange = (next: boolean) => {
+    if (next) {
+      const s = [...value].sort((a, b) => b.pct - a.pct);
+      setPrimary(s[0]?.key ?? "");
+      setSecond(s[1]?.key ?? "");
+      setPrimaryPct(s[1] ? Math.round(s[0].pct) : 100);
+    }
+    setOpen(next);
+  };
+
+  const text = splitLabel(value);
+  const apply = () => {
+    if (!primary) {
+      onSave([]);
+    } else if (second && second !== primary && primaryPct < 100) {
+      onSave([{ key: primary, pct: primaryPct }, { key: second, pct: 100 - primaryPct }]);
+    } else {
+      onSave([{ key: primary, pct: 100 }]);
+    }
+    setOpen(false);
+  };
+
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          className={`h-7 min-w-[110px] max-w-[190px] justify-start truncate px-2 text-xs font-normal ${text ? "" : "text-amber-600"}`}
+          title={text || `${label} not set`}
+        >
+          {text || "Set"}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[300px] space-y-3">
+        <div className="text-sm font-medium">{label}</div>
+        <div className="grid gap-1.5">
+          <Label className="text-xs text-muted-foreground">Pick one</Label>
+          <Select value={primary || "none"} onValueChange={(v) => setPrimary(v === "none" ? "" : v)}>
+            <SelectTrigger className="h-8 text-sm">
+              <SelectValue placeholder="Not set" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Not set</SelectItem>
+              {options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="grid gap-1.5">
+          <Label className="text-xs text-muted-foreground">Split with (only if it is at least a quarter of their week)</Label>
+          <Select value={second || "none"} onValueChange={(v) => { setSecond(v === "none" ? "" : v); if (v !== "none" && primaryPct === 100) setPrimaryPct(75); }} disabled={!primary}>
+            <SelectTrigger className="h-8 text-sm">
+              <SelectValue placeholder="No split" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No split</SelectItem>
+              {options.filter((o) => o !== primary).map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        {second && second !== primary && (
+          <div className="flex overflow-hidden rounded-md border">
+            {SPLIT_OPTIONS.map((o, i) => (
+              <button
+                key={o.pct}
+                type="button"
+                onClick={() => setPrimaryPct(o.pct)}
+                aria-pressed={primaryPct === o.pct}
+                className={`flex-1 py-1.5 text-xs ${i > 0 ? "border-l" : ""} ${primaryPct === o.pct ? "bg-foreground font-medium text-background" : "text-muted-foreground hover:bg-muted/40"}`}
+              >
+                {primary} {o.pct} / {second} {100 - o.pct}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center justify-between">
+          <button type="button" className="text-xs text-muted-foreground hover:underline" onClick={() => { onSave([]); setOpen(false); }}>
+            Clear
+          </button>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" size="sm" onClick={apply}>
               Apply
             </Button>
           </div>
