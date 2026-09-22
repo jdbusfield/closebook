@@ -91,7 +91,7 @@ export async function GET(request: Request) {
       ? allRows.filter((r) => shareForEntities(effectiveAllocations(r, revenueShares), memberEntityIds!) > 0)
       : allRows;
 
-    const baselines: Record<string, { total: number; gross: number }> = {};
+    const baselines: Record<string, { total: number; gross: number; byMonth: number[] }> = {};
     const groupTotals: Record<string, number> = {};
     const groupByMonth: Record<string, number[]> = {};
     const unallocatedByMonth: number[] = new Array(12).fill(0);
@@ -107,9 +107,9 @@ export async function GET(request: Request) {
       const base = baselineRow(r);
       if (base) {
         const b = pricePosition(toEngineRow(base), ctx);
-        baselines[r.id] = { total: b.total, gross: GROSS_COMPONENTS.reduce((t, c) => t + (b.componentTotals[c] ?? 0), 0) };
+        baselines[r.id] = { total: b.total, gross: GROSS_COMPONENTS.reduce((t, c) => t + (b.componentTotals[c] ?? 0), 0), byMonth: b.totalByMonth };
       } else {
-        baselines[r.id] = { total: 0, gross: 0 };
+        baselines[r.id] = { total: 0, gross: 0, byMonth: new Array(12).fill(0) };
       }
       if (!memberEntityIds) {
         // Plan view: how the full cost splits across reporting groups
@@ -137,6 +137,7 @@ export async function GET(request: Request) {
 
     // What the projection is up against: personnel cost booked in the last complete year
     let actuals: PersonnelActuals | null = null;
+    const groupActuals: Record<string, PersonnelActuals> = {};
     try {
       const actualEntityIds = memberEntityIds ? [...memberEntityIds] : shape.entities.map((e) => e.id);
       let chartId: string | null = null;
@@ -145,7 +146,17 @@ export async function GET(request: Request) {
         const { data: chart } = await admin.from("master_charts").select("id").eq("organization_id", organizationId).eq("kind", "management").maybeSingle();
         chartId = chart?.id ?? null;
       }
-      if (chartId) actuals = await loadPersonnelActuals(admin, { chartId, entityIds: actualEntityIds, year: comparisonYear(fiscalYear) });
+      if (chartId) {
+        actuals = await loadPersonnelActuals(admin, { chartId, entityIds: actualEntityIds, year: comparisonYear(fiscalYear) });
+        // Plan view: the same, per reporting group, for the By company card
+        if (!memberEntityIds) {
+          for (const g of shape.reportingEntities) {
+            const members = shape.membersByGroup[g.id] ?? [];
+            if (members.length === 0) continue;
+            groupActuals[g.id] = await loadPersonnelActuals(admin, { chartId, entityIds: members, year: comparisonYear(fiscalYear) });
+          }
+        }
+      }
     } catch (err) {
       console.error("headcount actuals failed:", err);
     }
@@ -154,6 +165,7 @@ export async function GET(request: Request) {
       plan,
       version,
       actuals,
+      groupActuals,
       rows,
       priced,
       totals,
