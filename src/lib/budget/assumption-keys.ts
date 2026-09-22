@@ -100,6 +100,14 @@ export class AssumptionSet {
     return ASSUMPTION_KEY_MAP.get(key)?.defaultValue ?? 0;
   }
 
+  /** The rows this set was built from, so a client can rebuild it. */
+  toRows(): AssumptionRow[] {
+    return [...this.rows.entries()].map(([k, value]) => {
+      const [scope, scopeId, key] = k.split("|");
+      return { scope, scope_id: scopeId || null, key, value } as AssumptionRow;
+    });
+  }
+
   has(key: string, scope = "org", scopeId: string | null = null): boolean {
     return this.rows.has(`${scope}|${scopeId ?? ""}|${key}`);
   }

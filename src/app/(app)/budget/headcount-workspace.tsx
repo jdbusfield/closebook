@@ -15,7 +15,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Loader2, Plus, Download, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { fmtUsd, fmtPct, MONTH_ABBRS } from "@/lib/budget/format";
-import { COMPONENT_LABELS, COST_COMPONENTS, type CostComponent, type PricedPosition } from "@/lib/budget/personnel-engine";
+import { COMPONENT_LABELS, COST_COMPONENTS, pricePosition, type CostComponent, type HeadcountRowInput, type PricedPosition } from "@/lib/budget/personnel-engine";
+import { AssumptionSet, type AssumptionRow } from "@/lib/budget/assumption-keys";
+import { readBaselineFields } from "@/lib/budget/baseline";
 import { CLASSES, FUNCTIONS, GEOGRAPHY_BY_LOCATION, LOCATIONS, SPLIT_OPTIONS, primaryKey, readSplits, splitLabel, type TagSplit } from "@/lib/budget/tagging";
 import { effectiveAllocations, readEntityAllocations, type EntityAllocation } from "@/lib/budget/allocation";
 
@@ -86,25 +88,41 @@ interface SeedPreviewRow {
   warnings: string[];
 }
 
-const NUMERIC_FIELDS: Array<{ key: keyof HeadcountRow; label: string; step?: string; width?: string }> = [
-  { key: "base_rate", label: "Rate / h", step: "0.01" },
-  { key: "annual_salary", label: "Salary", step: "1" },
-  { key: "amount_monthly", label: "Amount / mo", step: "1" },
-  { key: "std_hours_week", label: "Hrs / wk", step: "0.5" },
-  { key: "fte_pct", label: "FTE %", step: "1" },
-  { key: "start_month", label: "Start", step: "1" },
-  { key: "end_month", label: "End", step: "1" },
-  { key: "bonus_target", label: "Bonus", step: "1" },
-  { key: "commission_annual", label: "Commission", step: "1" },
-  { key: "ot_pct", label: "OT %", step: "0.1" },
-  { key: "dt_pct", label: "DT %", step: "0.1" },
-  { key: "meal_pct", label: "Meal %", step: "0.1" },
-  { key: "benefits_monthly", label: "Benefits / mo", step: "1" },
-  { key: "match_pct", label: "Match %", step: "0.1" },
-  { key: "life_disability_monthly", label: "Life+dis / mo", step: "1" },
-  { key: "pto_hours_per_period", label: "PTO h / per", step: "0.01" },
-  { key: "other_costs_monthly", label: "Other / mo", step: "1" },
+/** How a cell reads when it is not being edited. */
+type CellFormat = "usd" | "usd2" | "pct" | "count" | "hours";
+
+const NUMERIC_FIELDS: Array<{ key: keyof HeadcountRow; label: string; step?: string; format: CellFormat }> = [
+  { key: "base_rate", label: "Rate / h", step: "0.01", format: "usd2" },
+  { key: "annual_salary", label: "Salary", step: "1", format: "usd" },
+  { key: "amount_monthly", label: "Amount / mo", step: "1", format: "usd" },
+  { key: "std_hours_week", label: "Hrs / wk", step: "0.5", format: "hours" },
+  { key: "fte_pct", label: "FTE %", step: "1", format: "pct" },
+  { key: "start_month", label: "Start", step: "1", format: "count" },
+  { key: "end_month", label: "End", step: "1", format: "count" },
+  { key: "bonus_target", label: "Bonus", step: "1", format: "usd" },
+  { key: "commission_annual", label: "Commission", step: "1", format: "usd" },
+  { key: "ot_pct", label: "OT %", step: "0.1", format: "pct" },
+  { key: "dt_pct", label: "DT %", step: "0.1", format: "pct" },
+  { key: "meal_pct", label: "Meal %", step: "0.1", format: "pct" },
+  { key: "benefits_monthly", label: "Benefits / mo", step: "1", format: "usd" },
+  { key: "match_pct", label: "Match %", step: "0.1", format: "pct" },
+  { key: "life_disability_monthly", label: "Life+dis / mo", step: "1", format: "usd" },
+  { key: "pto_hours_per_period", label: "PTO h / per", step: "0.01", format: "hours" },
+  { key: "other_costs_monthly", label: "Other / mo", step: "1", format: "usd" },
 ];
+
+/** Dollars with commas, percentages to a tenth, hours to two places. */
+function formatCell(v: number | null | undefined, format: CellFormat): string {
+  if (v == null || Number.isNaN(Number(v))) return "";
+  const n = Number(v);
+  switch (format) {
+    case "usd": return fmtUsd(n);
+    case "usd2": return fmtUsd(n, 2);
+    case "pct": return fmtPct(n, 1);
+    case "hours": return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(n);
+    default: return String(n);
+  }
+}
 
 function num(v: number | null | undefined): string {
   return v == null ? "" : String(v);
@@ -212,6 +230,9 @@ export function HeadcountWorkspace({
   const [revenueShares, setRevenueShares] = useState<EntityAllocation[]>([]);
   const [revenueSharesAsOf, setRevenueSharesAsOf] = useState<string | null>(null);
   const [sharesRefreshing, setSharesRefreshing] = useState(false);
+  const [actuals, setActuals] = useState<{ year: number; byMonth: number[]; total: number; monthsWithData: number } | null>(null);
+  const [assumptionRows, setAssumptionRows] = useState<AssumptionRow[]>([]);
+  const [adjustRowId, setAdjustRowId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
 
@@ -258,6 +279,8 @@ export function HeadcountWorkspace({
       setUnallocatedTotal(data.unallocatedTotal ?? 0);
       setRevenueShares(data.plan?.revenueShares ?? []);
       setRevenueSharesAsOf(data.plan?.revenueSharesAsOf ?? null);
+      setActuals(data.actuals ?? null);
+      setAssumptionRows(data.assumptionRows ?? []);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to load headcount");
     } finally {
@@ -701,8 +724,38 @@ export function HeadcountWorkspace({
                   {totals.totalByMonth.map((v, i) => <TableCell key={i} className="text-right tabular-nums">{fmtUsd(v)}</TableCell>)}
                   <TableCell className="text-right tabular-nums">{fmtUsd(totals.total)}</TableCell>
                 </TableRow>
+                {actuals && actuals.monthsWithData > 0 && (
+                  <>
+                    <TableRow className="border-t-2">
+                      <TableCell className="whitespace-nowrap text-muted-foreground">{actuals.year} actual, booked</TableCell>
+                      {actuals.byMonth.map((v, i) => <TableCell key={i} className="text-right tabular-nums text-muted-foreground">{fmtUsd(v)}</TableCell>)}
+                      <TableCell className="text-right font-medium tabular-nums text-muted-foreground">{fmtUsd(actuals.total)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="whitespace-nowrap">Change vs {actuals.year}</TableCell>
+                      {totals.totalByMonth.map((v, i) => {
+                        const base = actuals.byMonth[i];
+                        if (!base) return <TableCell key={i} className="text-right text-muted-foreground">{v ? "new" : ""}</TableCell>;
+                        const pct = ((v - base) / Math.abs(base)) * 100;
+                        return (
+                          <TableCell key={i} className={`text-right tabular-nums ${pct > 0 ? "text-red-700" : pct < 0 ? "text-emerald-700" : ""}`}>
+                            {pct > 0 ? "+" : ""}{fmtPct(pct)}
+                          </TableCell>
+                        );
+                      })}
+                      <TableCell className={`text-right font-medium tabular-nums ${totals.total > actuals.total ? "text-red-700" : totals.total < actuals.total ? "text-emerald-700" : ""}`}>
+                        {actuals.total ? `${totals.total > actuals.total ? "+" : ""}${fmtPct(((totals.total - actuals.total) / Math.abs(actuals.total)) * 100)}` : ""}
+                      </TableCell>
+                    </TableRow>
+                  </>
+                )}
               </TableBody>
             </Table>
+            {actuals && actuals.monthsWithData > 0 && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {actuals.year} actual is every Personnel Costs account in the general ledger for {isPlan ? "all entities" : ownerName}, by month booked. Change compares this projection to it; red is higher cost, green is lower.
+              </p>
+            )}
           </CardContent>
         </Card>
       )}
@@ -814,19 +867,19 @@ export function HeadcountWorkspace({
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Adjust</TableHead>
+                  <TableHead className="text-right">Change</TableHead>
                   <TableHead>Location</TableHead>
                   <TableHead>Class</TableHead>
                   <TableHead>Function</TableHead>
                   <TableHead>Company</TableHead>
-                  <TableHead>Name</TableHead>
                   <TableHead>Dept</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Pay</TableHead>
                   {NUMERIC_FIELDS.map((f) => <TableHead key={f.key} className="whitespace-nowrap text-right">{f.label}</TableHead>)}
-                  <TableHead>Adjustment</TableHead>
                   <TableHead className="text-right">Share</TableHead>
                   <TableHead className="text-right">Year total</TableHead>
-                  <TableHead className="text-right">Change</TableHead>
                   <TableHead />
                 </TableRow>
               </TableHeader>
@@ -846,10 +899,37 @@ export function HeadcountWorkspace({
                 {g.rows.map((r) => {
                   const p = pricedById.get(r.id);
                   const baseline = baselines[r.id];
-                  const delta = p && baseline ? p.total - baseline.total : null;
+                  const delta = p ? p.total - (baseline?.total ?? 0) : 0;
+                  const changeLabel = adjLabel(r);
                   const tagsDisabled = readOnly || savingId === r.id;
                   return (
                     <TableRow key={r.id} className={r.status === "excluded" ? "opacity-50" : undefined}>
+                      <TableCell className="whitespace-nowrap">
+                        <button type="button" className="text-left font-medium hover:underline" onClick={() => setSelected(r.id)}>
+                          {r.name}
+                        </button>
+                        <div className="text-xs text-muted-foreground">
+                          {r.open_role ? "Planned, no name yet" : r.title ?? (r.is_requisition ? "Planned position" : "")}
+                        </div>
+                        {changeLabel && <div className="text-xs text-muted-foreground">{changeLabel}</div>}
+                        {r.seeded_from?.warnings?.length ? (
+                          <div className="text-xs text-amber-600">{r.seeded_from.warnings[0]}</div>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="p-1">
+                        <Button type="button" variant="outline" size="sm" className="h-7 px-2.5 text-xs" disabled={savingId === r.id} onClick={() => setAdjustRowId(r.id)}>
+                          {readOnly ? "View" : "Adjust"}
+                        </Button>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
+                        <span className={delta > 0 ? "text-red-700" : delta < 0 ? "text-emerald-700" : "text-muted-foreground"}>
+                          {delta === 0 ? "$0" : fmtChange(delta)}
+                          {baseline && baseline.total > 0 && delta !== 0 && (
+                            <span className="text-muted-foreground"> ({delta < 0 ? "-" : "+"}{fmtPct((Math.abs(delta) / baseline.total) * 100)})</span>
+                          )}
+                          {(!baseline || baseline.total === 0) && delta > 0 && <span className="text-muted-foreground"> new</span>}
+                        </span>
+                      </TableCell>
                       <TableCell className="p-1">
                         <TagCell label="Location" value={rowLocation(r)} options={[...LOCATIONS]} disabled={tagsDisabled} onSave={(s) => saveTags(r.id, "location_allocations", s)} />
                       </TableCell>
@@ -872,17 +952,6 @@ export function HeadcountWorkspace({
                         ) : (
                           <span className="px-1.5 text-xs">{companyLabel(r) || <span className="text-amber-600">Not allocated</span>}</span>
                         )}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        <button type="button" className="text-left font-medium hover:underline" onClick={() => setSelected(r.id)}>
-                          {r.name}
-                        </button>
-                        <div className="text-xs text-muted-foreground">
-                          {r.open_role ? "Planned, no name yet" : r.title ?? (r.is_requisition ? "Planned position" : "")}
-                        </div>
-                        {r.seeded_from?.warnings?.length ? (
-                          <div className="text-xs text-amber-600">{r.seeded_from.warnings[0]}</div>
-                        ) : null}
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-sm">{r.department ?? ""}</TableCell>
                       <TableCell>
@@ -916,28 +985,14 @@ export function HeadcountWorkspace({
                             id={`hc-${r.id}-${f.key}`}
                             value={r[f.key] as number | null}
                             step={f.step}
+                            format={f.format}
                             disabled={readOnly || savingId === r.id}
                             onCommit={(v) => patch(r.id, { [f.key]: v } as Partial<HeadcountRow>)}
                           />
                         </TableCell>
                       ))}
-                      <TableCell className="p-1">
-                        <AdjustmentCell row={r} disabled={readOnly || savingId === r.id} onSave={(fields) => patch(r.id, fields)} />
-                      </TableCell>
                       <TableCell className="text-right tabular-nums">{p && !isPlan ? fmtPct(p.reShare * 100, 0) : ""}</TableCell>
                       <TableCell className="text-right font-medium tabular-nums">{p ? fmtUsd(p.total) : ""}</TableCell>
-                      <TableCell className="whitespace-nowrap text-right tabular-nums">
-                        {delta != null && baseline ? (
-                          <span className={delta < 0 ? "text-red-700" : "text-emerald-700"}>
-                            {fmtChange(delta)}
-                            {baseline.total > 0 && <span className="text-muted-foreground"> ({delta < 0 ? "-" : "+"}{fmtPct((Math.abs(delta) / baseline.total) * 100)})</span>}
-                          </span>
-                        ) : r.is_requisition ? (
-                          <span className="text-muted-foreground">New</span>
-                        ) : (
-                          ""
-                        )}
-                      </TableCell>
                       <TableCell>
                         {!readOnly && (
                           <Button variant="ghost" size="icon-xs" onClick={() => remove(r)} aria-label={`Remove ${r.name}`}>
@@ -1158,6 +1213,20 @@ export function HeadcountWorkspace({
         </DialogContent>
       </Dialog>
 
+      {adjustRowId && rows.find((r) => r.id === adjustRowId) && (
+        <AdjustDialog
+          key={adjustRowId}
+          row={rows.find((r) => r.id === adjustRowId)!}
+          reShare={pricedById.get(adjustRowId)?.reShare ?? 1}
+          assumptionRows={assumptionRows}
+          fiscalYear={scope.fiscalYear}
+          ownerName={isPlan ? "the organization" : ownerName}
+          readOnly={readOnly}
+          onClose={() => setAdjustRowId(null)}
+          onSubmit={(fields) => patch(adjustRowId, fields)}
+        />
+      )}
+
       {/* Add position dialog: a named hire, or an open role with money set aside */}
       <Dialog open={reqOpen} onOpenChange={setReqOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
@@ -1349,201 +1418,364 @@ export function HeadcountWorkspace({
   );
 }
 
+/**
+ * A number cell that reads as dollars or a percent at rest and becomes a
+ * plain number while it has focus. Typed "$", "," and "%" are ignored.
+ */
 function NumberCell({
   id,
   value,
   step,
+  format,
   disabled,
   onCommit,
 }: {
   id: string;
   value: number | null;
   step?: string;
+  format: CellFormat;
   disabled?: boolean;
   onCommit: (v: number | null) => void;
 }) {
+  const [editing, setEditing] = useState(false);
   const [text, setText] = useState(num(value));
-  useEffect(() => {
-    setText(num(value));
-  }, [value]);
+  // At rest the cell shows the formatted stored value; the draft only matters while editing
+  const shown = editing ? text : formatCell(value, format);
   return (
     <Input
       id={id}
-      type="number"
-      step={step ?? "any"}
-      value={text}
+      type={editing ? "number" : "text"}
+      step={editing ? step ?? "any" : undefined}
+      inputMode="decimal"
+      value={shown}
       disabled={disabled}
-      onChange={(e) => setText(e.target.value)}
+      onFocus={() => { setText(num(value)); setEditing(true); }}
+      onChange={(e) => setText(e.target.value.replace(/[$,%s]/g, ""))}
       onBlur={() => {
-        const next = text.trim() === "" ? null : Number(text);
+        setEditing(false);
+        const cleaned = text.trim();
+        const next = cleaned === "" ? null : Number(cleaned);
+        if (next !== null && Number.isNaN(next)) return;
         if (next !== value) onCommit(next);
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-        if (e.key === "Escape") setText(num(value));
+        if (e.key === "Escape") { setText(num(value)); (e.target as HTMLInputElement).blur(); }
       }}
-      className="h-7 w-[92px] px-1.5 text-right text-xs tabular-nums"
+      className={`h-7 px-1.5 text-right text-xs tabular-nums ${format === "usd" || format === "usd2" ? "w-[104px]" : "w-[84px]"}`}
     />
   );
 }
 
 
 
-/** The Adjustment column: a button showing the saved change, opening a small editor. */
-function AdjustmentCell({
+/** Engine input from a table row, for pricing in the browser. */
+function rowToEngineInput(r: HeadcountRow): HeadcountRowInput {
+  return {
+    id: r.id,
+    name: r.name,
+    employeeId: r.employee_id,
+    paylocityCompanyId: r.paylocity_company_id,
+    reportingEntityId: null,
+    isRequisition: !!r.is_requisition,
+    status: (r.status as HeadcountRowInput["status"]) ?? "active",
+    payType: r.pay_type === "Salary" ? "Salary" : r.pay_type === "Amount" ? "Amount" : "Hourly",
+    baseRate: r.base_rate == null ? null : Number(r.base_rate),
+    annualSalary: r.annual_salary == null ? null : Number(r.annual_salary),
+    amountMonthly: r.amount_monthly == null ? null : Number(r.amount_monthly),
+    amountIsLoaded: r.amount_is_loaded !== false,
+    compAdj:
+      r.comp_adj_kind && r.comp_adj_value != null && Number(r.comp_adj_value) !== 0
+        ? { kind: r.comp_adj_kind, value: Number(r.comp_adj_value), month: Number(r.comp_adj_month ?? 1), reason: r.comp_adj_reason ?? null }
+        : null,
+    stdHoursWeek: Number(r.std_hours_week ?? 40),
+    ftePct: Number(r.fte_pct ?? 100),
+    startMonth: Number(r.start_month ?? 1),
+    endMonth: r.end_month == null ? null : Number(r.end_month),
+    meritPct: Number(r.merit_pct ?? 0),
+    meritMonth: r.merit_month == null ? null : Number(r.merit_month),
+    bonusTarget: Number(r.bonus_target ?? 0),
+    commissionAnnual: Number(r.commission_annual ?? 0),
+    otPct: Number(r.ot_pct ?? 0),
+    dtPct: Number(r.dt_pct ?? 0),
+    mealPct: Number(r.meal_pct ?? 0),
+    otherEarningsMonthly: Number(r.other_earnings_monthly ?? 0),
+    benefitsMonthly: Number(r.benefits_monthly ?? 0),
+    matchPct: Number(r.match_pct ?? 0),
+    lifeDisabilityMonthly: Number(r.life_disability_monthly ?? 0),
+    wcClassCode: r.wc_class_code,
+    ptoHoursPerPeriod: Number(r.pto_hours_per_period ?? 0),
+    otherCostsMonthly: Number(r.other_costs_monthly ?? 0),
+    entityAllocations: r.entity_allocations ?? [],
+    classAllocations: r.class_allocations ?? [],
+  };
+}
+
+/** The row as seeded (its baseline) with no comp adjustment; null for hand-added rows. */
+function baselineOf(r: HeadcountRow): HeadcountRow | null {
+  const fields = readBaselineFields(r.seeded_from);
+  const cleared = { comp_adj_kind: null, comp_adj_value: null, comp_adj_month: null, comp_adj_reason: null, merit_pct: 0, merit_month: null };
+  if (!fields) return r.is_requisition || !r.employee_id ? null : { ...r, ...cleared };
+  return { ...r, ...(fields as Partial<HeadcountRow>), ...cleared };
+}
+
+type AdjustField = {
+  key: keyof HeadcountRow;
+  label: string;
+  format: CellFormat;
+  step?: string;
+  /** Only shown for these pay types */
+  payTypes?: string[];
+};
+
+const ADJUST_FIELDS: AdjustField[] = [
+  { key: "base_rate", label: "Rate per hour", format: "usd2", step: "0.01", payTypes: ["Hourly"] },
+  { key: "annual_salary", label: "Annual salary", format: "usd", step: "1", payTypes: ["Salary"] },
+  { key: "amount_monthly", label: "Amount per month", format: "usd", step: "1", payTypes: ["Amount"] },
+  { key: "std_hours_week", label: "Hours per week", format: "hours", step: "0.5" },
+  { key: "fte_pct", label: "FTE", format: "pct", step: "1" },
+  { key: "start_month", label: "Start month", format: "count", step: "1" },
+  { key: "end_month", label: "End month", format: "count", step: "1" },
+  { key: "bonus_target", label: "Bonus target", format: "usd", step: "1" },
+  { key: "commission_annual", label: "Commission, annual", format: "usd", step: "1" },
+  { key: "ot_pct", label: "Overtime", format: "pct", step: "0.1" },
+  { key: "dt_pct", label: "Doubletime", format: "pct", step: "0.1" },
+  { key: "meal_pct", label: "Meal premiums", format: "pct", step: "0.1" },
+  { key: "benefits_monthly", label: "Benefits per month", format: "usd", step: "1" },
+  { key: "match_pct", label: "401(k) match", format: "pct", step: "0.1" },
+  { key: "life_disability_monthly", label: "Life and disability per month", format: "usd", step: "1" },
+  { key: "pto_hours_per_period", label: "PTO hours per period", format: "hours", step: "0.01" },
+  { key: "other_costs_monthly", label: "Other per month", format: "usd", step: "1" },
+];
+
+const PAY_KEYS = new Set<keyof HeadcountRow>(["base_rate", "annual_salary"]);
+
+/**
+ * Adjust: every number that drives a person's cost, side by side. Current is
+ * the seeded baseline, Adjusted is what the budget uses, and the result is
+ * the full-year loaded comp for both with the net change. Submit writes the
+ * adjusted values; a rate or salary change is stored as the row's comp
+ * adjustment from its effective month, so the baseline stays intact.
+ */
+function AdjustDialog({
   row,
-  disabled,
-  onSave,
+  reShare,
+  assumptionRows,
+  fiscalYear,
+  ownerName,
+  readOnly,
+  onClose,
+  onSubmit,
 }: {
   row: HeadcountRow;
-  disabled?: boolean;
-  onSave: (fields: Partial<HeadcountRow>) => void;
+  reShare: number;
+  assumptionRows: AssumptionRow[];
+  fiscalYear: number;
+  ownerName: string;
+  readOnly: boolean;
+  onClose: () => void;
+  onSubmit: (fields: Partial<HeadcountRow>) => Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
-  const [kind, setKind] = useState<"percent" | "amount" | "rate">(row.comp_adj_kind ?? "percent");
-  const [value, setValue] = useState(num(row.comp_adj_value));
+  const baseline = useMemo(() => baselineOf(row), [row]);
+  // Adjusted starts from what the budget uses today: the row with its comp adjustment applied to pay
+  const initial = useMemo(() => {
+    const d: Record<string, string> = {};
+    for (const f of ADJUST_FIELDS) d[f.key] = num(row[f.key] as number | null);
+    d.pay_type = row.pay_type;
+    if (row.comp_adj_kind && row.comp_adj_value != null) {
+      const next = adjustedPay(row, row.comp_adj_kind, row.comp_adj_value);
+      if (payUnit(row).hourly) d.base_rate = String(Math.round(next * 100) / 100);
+      else d.annual_salary = String(Math.round(next));
+    }
+    return d;
+  }, [row]);
+  const [draft, setDraft] = useState<Record<string, string>>(initial);
   const [month, setMonth] = useState(String(row.comp_adj_month ?? 1));
   const [reason, setReason] = useState(row.comp_adj_reason ?? "");
+  const [saving, setSaving] = useState(false);
 
-  // Reload the draft from the row each time the editor opens
-  const onOpenChange = (next: boolean) => {
-    if (next) {
-      setKind(row.comp_adj_kind ?? "percent");
-      setValue(num(row.comp_adj_value));
-      setMonth(String(row.comp_adj_month ?? 1));
-      setReason(row.comp_adj_reason ?? "");
-    }
-    setOpen(next);
+  const assumptions = useMemo(() => new AssumptionSet(assumptionRows), [assumptionRows]);
+  const ctx = useMemo(() => ({ year: fiscalYear, assumptions, reShare }), [fiscalYear, assumptions, reShare]);
+
+  const currentValue = (key: keyof HeadcountRow): number | string | null => (baseline ? (baseline[key] as number | string | null) : null);
+  const draftNumber = (key: string): number | null => {
+    const v = (draft[key] ?? "").trim();
+    return v === "" ? null : Number(v);
   };
 
-  const label = adjLabel(row);
-  const isAmountRow = row.pay_type === "Amount";
-  const unit = payUnit(row);
-  const v = Number(value);
-  const hasValue = value.trim() !== "" && Number.isFinite(v) && v !== 0;
-  const next = hasValue ? adjustedPay(row, kind, v) : unit.current;
-  const pct = unit.current > 0 ? ((next - unit.current) / unit.current) * 100 : 0;
-
-  if (isAmountRow) {
-    return <span className="px-1.5 text-xs text-muted-foreground">Edit the amount</span>;
-  }
-
-  const save = () => {
-    if (!hasValue) {
-      onSave({ comp_adj_kind: null, comp_adj_value: null, comp_adj_month: null, comp_adj_reason: null });
+  // The row the budget would use if Submit were pressed now
+  const adjustedRow = useMemo((): HeadcountRow => {
+    const next: HeadcountRow = { ...row, pay_type: draft.pay_type };
+    for (const f of ADJUST_FIELDS) (next as unknown as Record<string, unknown>)[f.key] = draftNumber(f.key);
+    // A pay change keeps the baseline pay on the row and rides as a comp adjustment from its month
+    const unit = payUnit(next);
+    const basePay = baseline ? payUnit({ ...baseline, pay_type: draft.pay_type }).current : unit.current;
+    const nextPay = unit.hourly ? draftNumber("base_rate") ?? 0 : draftNumber("annual_salary") ?? 0;
+    if (baseline && draft.pay_type === baseline.pay_type && draft.pay_type !== "Amount" && Math.abs(nextPay - basePay) > 0.004) {
+      if (unit.hourly) next.base_rate = baseline.base_rate;
+      else next.annual_salary = baseline.annual_salary;
+      next.comp_adj_kind = "rate";
+      next.comp_adj_value = nextPay;
+      next.comp_adj_month = Number(month) || 1;
+      next.comp_adj_reason = reason.trim() || null;
     } else {
-      onSave({ comp_adj_kind: kind, comp_adj_value: v, comp_adj_month: Number(month) || 1, comp_adj_reason: reason.trim() || null });
+      next.comp_adj_kind = null;
+      next.comp_adj_value = null;
+      next.comp_adj_month = null;
+      next.comp_adj_reason = null;
     }
-    setOpen(false);
+    return next;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [row, baseline, draft, month, reason]);
+
+  const currentPriced = useMemo(() => (baseline ? pricePosition(rowToEngineInput(baseline), ctx) : null), [baseline, ctx]);
+  const adjustedPriced = useMemo(() => pricePosition(rowToEngineInput(adjustedRow), ctx), [adjustedRow, ctx]);
+  const currentTotal = currentPriced?.total ?? 0;
+  const delta = adjustedPriced.total - currentTotal;
+  const payChanged = !!adjustedRow.comp_adj_kind;
+
+  const submit = async () => {
+    setSaving(true);
+    try {
+      const fields: Partial<HeadcountRow> = { pay_type: adjustedRow.pay_type };
+      for (const f of ADJUST_FIELDS) (fields as Record<string, unknown>)[f.key] = adjustedRow[f.key];
+      fields.comp_adj_kind = adjustedRow.comp_adj_kind;
+      fields.comp_adj_value = adjustedRow.comp_adj_value;
+      fields.comp_adj_month = adjustedRow.comp_adj_month;
+      fields.comp_adj_reason = adjustedRow.comp_adj_reason;
+      await onSubmit(fields);
+      onClose();
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const visibleFields = ADJUST_FIELDS.filter((f) => !f.payTypes || f.payTypes.includes(draft.pay_type));
+  const changedKeys = new Set(
+    visibleFields.filter((f) => baseline && Number(draftNumber(f.key) ?? 0) !== Number((baseline[f.key] as number | null) ?? 0)).map((f) => f.key),
+  );
 
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={disabled}
-          className={`h-7 min-w-[120px] justify-start px-2 text-xs font-normal tabular-nums ${label ? "" : "text-muted-foreground"}`}
-        >
-          {label ?? "None"}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-[340px] space-y-3">
-        <div className="text-sm font-medium">Adjust pay for {row.name}</div>
-        <div className="grid gap-1.5">
-          <span className="text-xs text-muted-foreground">Kind of change</span>
-          <div className="flex overflow-hidden rounded-md border">
-            {(
-              [
-                { k: "percent", label: "Percent" },
-                { k: "amount", label: "Amount" },
-                { k: "rate", label: "New rate" },
-              ] as const
-            ).map((o, i) => (
-              <button
-                key={o.k}
-                type="button"
-                onClick={() => setKind(o.k)}
-                aria-pressed={kind === o.k}
-                className={`flex-1 py-1.5 text-xs ${i > 0 ? "border-l" : ""} ${kind === o.k ? "bg-foreground font-medium text-background" : "text-muted-foreground hover:bg-muted/40"}`}
-              >
-                {o.label}
-              </button>
-            ))}
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Adjust {row.name}</DialogTitle>
+          <DialogDescription>
+            Current is what the person was seeded with. Adjusted is what the budget uses. The result is the full-year loaded comp for {ownerName}, and Submit pulls the adjusted column into the projection.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-4">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[240px]">Field</TableHead>
+                <TableHead className="text-right">Current</TableHead>
+                <TableHead className="text-right">Adjusted</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow>
+                <TableCell>Pay type</TableCell>
+                <TableCell className="text-right text-muted-foreground">{baseline?.pay_type ?? ""}</TableCell>
+                <TableCell className="text-right">
+                  <Select value={draft.pay_type} onValueChange={(v) => setDraft((d) => ({ ...d, pay_type: v }))} disabled={readOnly}>
+                    <SelectTrigger className="ml-auto h-8 w-[120px] text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Hourly">Hourly</SelectItem>
+                      <SelectItem value="Salary">Salary</SelectItem>
+                      <SelectItem value="Amount">Amount</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </TableCell>
+              </TableRow>
+              {visibleFields.map((f) => (
+                <Fragment key={f.key}>
+                  <TableRow>
+                    <TableCell>{f.label}</TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">{formatCell(currentValue(f.key) as number | null, f.format)}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        {changedKeys.has(f.key) && <span className="text-[11px] text-amber-600">changed</span>}
+                        <Input
+                          type="number"
+                          step={f.step ?? "any"}
+                          inputMode="decimal"
+                          value={draft[f.key] ?? ""}
+                          disabled={readOnly}
+                          onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
+                          className="h-8 w-[130px] text-right text-sm tabular-nums"
+                          aria-label={`Adjusted ${f.label}`}
+                        />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                  {PAY_KEYS.has(f.key) && (
+                    <TableRow>
+                      <TableCell className="pl-6 text-muted-foreground">Pay change effective</TableCell>
+                      <TableCell className="text-right text-muted-foreground">{row.comp_adj_kind ? MONTH_NAMES[(row.comp_adj_month ?? 1) - 1] : ""}</TableCell>
+                      <TableCell className="text-right">
+                        <Select value={month} onValueChange={setMonth} disabled={readOnly || !payChanged}>
+                          <SelectTrigger className="ml-auto h-8 w-[130px] text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {MONTH_NAMES.map((m, i) => <SelectItem key={m} value={String(i + 1)}>{m}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
+              ))}
+              <TableRow>
+                <TableCell>Reason (optional)</TableCell>
+                <TableCell className="text-right text-muted-foreground">{row.comp_adj_reason ?? ""}</TableCell>
+                <TableCell className="text-right">
+                  <Input value={reason} onChange={(e) => setReason(e.target.value)} disabled={readOnly} placeholder="Market adjustment, new duties" className="ml-auto h-8 w-[220px] text-sm" aria-label="Reason" />
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+
+          <div className="rounded-md border bg-muted/40 px-4 py-3">
+            <div className="text-xs text-muted-foreground">Result, full year loaded for {ownerName}{reShare < 1 ? ` (${fmtPct(reShare * 100, 0)} share)` : ""}</div>
+            <div className="mt-1 grid grid-cols-3 gap-4 text-sm">
+              <div>
+                <div className="text-xs text-muted-foreground">Current annual comp</div>
+                <div className="text-lg font-semibold tabular-nums">{baseline ? fmtUsd(currentTotal) : <span className="text-muted-foreground">None, new position</span>}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Adjusted annual comp</div>
+                <div className="text-lg font-semibold tabular-nums">{fmtUsd(adjustedPriced.total)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Net change</div>
+                <div className={`text-lg font-semibold tabular-nums ${delta > 0 ? "text-red-700" : delta < 0 ? "text-emerald-700" : ""}`}>
+                  {fmtChange(delta)}
+                  {currentTotal > 0 && <span className="ml-1 text-sm font-normal text-muted-foreground">({delta < 0 ? "-" : "+"}{fmtPct((Math.abs(delta) / currentTotal) * 100)})</span>}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="grid gap-1.5">
-            <Label htmlFor={`adj-value-${row.id}`} className="text-xs text-muted-foreground">
-              {kind === "percent" ? "Percent (negative for a cut)" : kind === "amount" ? (unit.hourly ? "Dollars per hour" : "Dollars per year") : unit.hourly ? "New rate per hour" : "New annual salary"}
-            </Label>
-            <Input
-              id={`adj-value-${row.id}`}
-              type="number"
-              step={kind === "percent" ? "0.1" : unit.hourly ? "0.01" : "1"}
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") save(); }}
-              className="h-8 text-sm tabular-nums"
-              autoFocus
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor={`adj-month-${row.id}`} className="text-xs text-muted-foreground">Effective month</Label>
-            <Select value={month} onValueChange={setMonth}>
-              <SelectTrigger id={`adj-month-${row.id}`} className="h-8 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {MONTH_NAMES.map((m, i) => <SelectItem key={m} value={String(i + 1)}>{m}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor={`adj-reason-${row.id}`} className="text-xs text-muted-foreground">Reason (optional)</Label>
-          <Input id={`adj-reason-${row.id}`} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Market adjustment, new duties" className="h-8 text-sm" />
-        </div>
-        <div className="rounded-md bg-muted/50 px-3 py-2 text-sm">
-          {hasValue ? (
-            <>
-              From <span className="font-medium">{unit.print(unit.current)}</span> to <span className="font-medium">{unit.print(Math.max(0, next))}</span>
-              {unit.current > 0 && (
-                <span className={pct < 0 ? "ml-1 font-medium text-red-700" : "ml-1 font-medium text-emerald-700"}>
-                  {pct < 0 ? "-" : "+"}{fmtPct(Math.abs(pct))}
-                </span>
-              )}
-              <div className="text-xs text-muted-foreground">The Change column shows the full-year effect after you apply.</div>
-            </>
-          ) : (
-            <span className="text-muted-foreground">Enter a value. Leaving it blank removes the adjustment.</span>
-          )}
-        </div>
-        <div className="flex items-center justify-between">
-          {label ? (
-            <button
-              type="button"
-              className="text-xs text-red-700 hover:underline"
-              onClick={() => { onSave({ comp_adj_kind: null, comp_adj_value: null, comp_adj_month: null, comp_adj_reason: null }); setOpen(false); }}
-            >
-              Remove adjustment
-            </button>
-          ) : <span />}
-          <div className="flex gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="button" size="sm" onClick={save}>
-              Apply
-            </Button>
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={readOnly || saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Submit
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
+
 /** One of the three tags: a primary pick with an optional 75/25 or 50/50 split. */
 function TagCell({
   label,
