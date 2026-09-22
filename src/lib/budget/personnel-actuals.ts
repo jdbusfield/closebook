@@ -47,7 +47,12 @@ export async function loadPersonnelActuals(
     endMonth: 12,
     masters,
   });
-  const hasData = Array.from({ length: 12 }, (_, i) => a.monthsWithData.has(monthKey(opts.year, i + 1)));
+  // A month counts as booked when the ledger has it and it has closed: the
+  // current month and anything after it are still moving, and future months
+  // can carry zero or reversal-only balances.
+  const now = new Date();
+  const closed = (m: number) => opts.year < now.getUTCFullYear() || (opts.year === now.getUTCFullYear() && m < now.getUTCMonth() + 1);
+  const hasData = Array.from({ length: 12 }, (_, i) => closed(i + 1) && a.monthsWithData.has(monthKey(opts.year, i + 1)));
   const monthsWithData = hasData.filter(Boolean).length;
   for (const [masterId, series] of a.byMaster) {
     if (!personnelIds.has(masterId)) continue;
