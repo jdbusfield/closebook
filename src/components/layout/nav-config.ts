@@ -75,6 +75,7 @@ export function getOrgNavGroups(): NavGroup[] {
         { title: "QBO Sync", href: "/sync", icon: RefreshCw, module: "qbo_sync" },
         { title: "Diligence", href: "/diligence", icon: Handshake, module: "diligence" },
         { title: "Budget", href: "/budget", icon: Wallet, module: "budgeting" },
+        { title: "Payroll Plan", href: "/budget/payroll", icon: Users, module: "payroll_plan" },
         { title: "Capex Plan", href: "/capex-plan", icon: Truck, module: "capex_plan" },
       ],
     },
