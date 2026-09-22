@@ -53,6 +53,12 @@ interface HeadcountRow {
   notes: string | null;
 }
 
+function seedSkipReasons(skipped: Array<{ reason: string }>): string {
+  const counts = new Map<string, number>();
+  for (const s of skipped) counts.set(s.reason, (counts.get(s.reason) ?? 0) + 1);
+  return [...counts.entries()].map(([reason, n]) => `${n} ${reason}`).join(", ");
+}
+
 interface SeedPreviewRow {
   employeeId: string;
   paylocityCompanyId: string;
@@ -576,7 +582,7 @@ export default function BudgetHeadcountPage({ params }: { params: Promise<{ vers
 
       {/* Seed dialog */}
       <Dialog open={seedOpen} onOpenChange={(o) => { setSeedOpen(o); if (!o) setSeedRows(null); }}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle>Seed headcount from Paylocity</DialogTitle>
             <DialogDescription>
@@ -588,7 +594,7 @@ export default function BudgetHeadcountPage({ params }: { params: Promise<{ vers
               <Loader2 className="h-4 w-4 animate-spin" /> Pulling the roster and paychecks
             </div>
           ) : seedRows ? (
-            <div className="space-y-3">
+            <div className="min-w-0 space-y-3">
               <div className="max-h-[50vh] overflow-auto rounded-md border">
                 <Table>
                   <TableHeader>
@@ -618,7 +624,7 @@ export default function BudgetHeadcountPage({ params }: { params: Promise<{ vers
                         <TableCell className="text-right tabular-nums">{fmtUsd(r.benefitsMonthly)}</TableCell>
                         <TableCell className="text-right tabular-nums">{fmtPct(r.matchPct)}</TableCell>
                         <TableCell className="text-right tabular-nums">{fmtPct(r.reShare * 100, 0)}</TableCell>
-                        <TableCell className="text-xs text-amber-600">{r.warnings.join("; ")}</TableCell>
+                        <TableCell className="max-w-[320px] whitespace-normal text-xs text-amber-600">{r.warnings.join("; ")}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -626,7 +632,7 @@ export default function BudgetHeadcountPage({ params }: { params: Promise<{ vers
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
                 <span>
-                  {seedRows.length} employees to seed · {seedSkipped.length} skipped ({seedSkipped.filter((s) => s.reason === "terminated").length} terminated, {seedSkipped.filter((s) => s.reason !== "terminated").length} in other groups)
+                  {seedRows.length} active employees to seed · {seedSkipped.length} skipped{seedSkipped.length ? ` (${seedSkipReasons(seedSkipped)})` : ""}
                 </span>
                 <label className="flex items-center gap-2">
                   <Checkbox id="seed-overwrite" checked={seedOverwrite} onCheckedChange={(v) => setSeedOverwrite(v === true)} />

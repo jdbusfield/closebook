@@ -543,7 +543,7 @@ export default function CapexPlanPage() {
 
       {/* Purchase dialog */}
       <Dialog open={itemOpen} onOpenChange={setItemOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{itemEditId ? "Edit purchase" : "Planned purchase"}</DialogTitle>
             <DialogDescription>Quantity of identical units placed in service in one month.</DialogDescription>
@@ -661,7 +661,7 @@ export default function CapexPlanPage() {
 
       {/* Disposal dialog */}
       <Dialog open={dispOpen} onOpenChange={setDispOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{dispEditId ? "Edit disposal" : "Planned disposal"}</DialogTitle>
             <DialogDescription>Units leaving the fleet. Proceeds minus net book value is the gain or loss; blank monthly depreciation uses the group average.</DialogDescription>

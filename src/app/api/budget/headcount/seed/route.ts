@@ -93,7 +93,7 @@ export async function POST(request: Request) {
     const roster = (
       await Promise.all(
         clients.map((c) =>
-          c.getEmployees({ activeOnly: false, include: ["info", "position", "payrate", "status", "futurePayrates"] }).catch((err) => {
+          c.getEmployees({ activeOnly: true, include: ["info", "position", "payrate", "status", "futurePayrates"] }).catch((err) => {
             console.error(`Roster fetch failed for company ${c.companyId}:`, err);
             return [];
           }),
@@ -104,8 +104,16 @@ export async function POST(request: Request) {
     const rows: SeedRow[] = [];
     const skipped: Array<{ name: string; reason: string }> = [];
     for (const emp of roster) {
-      if (emp.statusType === "T") {
-        skipped.push({ name: emp.displayName ?? emp.id, reason: "terminated" });
+      // Paylocity returns system accounts, test records and removed employees
+      // even with activeOnly=true (same guard as the payroll sync).
+      if (emp.status === "Removed") continue;
+      if (!emp.info?.firstName && !emp.info?.lastName) continue;
+      if (typeof emp.id === "string" && /^(P\d|coRpt)/i.test(emp.id)) continue;
+      // Only active employees are seeded. The status object is the reliable
+      // source; the top-level statusType is not always populated.
+      const statusType = emp.currentStatus?.statusType ?? emp.statusType;
+      if (statusType !== "A") {
+        skipped.push({ name: emp.displayName ?? emp.id, reason: statusType === "L" ? "on leave" : "terminated" });
         continue;
       }
       const row = seedRowForEmployee(emp, {
