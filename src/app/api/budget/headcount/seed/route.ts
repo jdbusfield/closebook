@@ -167,6 +167,11 @@ export async function POST(request: Request) {
         start_month: r.startMonth,
         merit_pct: r.meritPct,
         merit_month: r.meritMonth,
+        // A future pay rate in Paylocity becomes the row's adjustment
+        comp_adj_kind: r.meritPct ? "percent" : null,
+        comp_adj_value: r.meritPct ? r.meritPct : null,
+        comp_adj_month: r.meritPct ? r.meritMonth ?? 1 : null,
+        comp_adj_reason: r.meritPct ? "Scheduled pay change in Paylocity" : null,
         bonus_target: r.bonusTarget,
         commission_annual: r.commissionAnnual,
         ot_pct: r.otPct,
