@@ -3908,10 +3908,48 @@ export type Database = {
           },
         ]
       }
+      budget_payroll_plans: {
+        Row: {
+          id: string
+          organization_id: string
+          fiscal_year: number
+          status: string
+          revenue_shares: Json
+          revenue_shares_as_of: string | null
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          fiscal_year: number
+          status?: string
+          revenue_shares?: Json
+          revenue_shares_as_of?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          fiscal_year?: number
+          status?: string
+          revenue_shares?: Json
+          revenue_shares_as_of?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       budget_headcount: {
         Row: {
           id: string
-          budget_version_id: string
+          budget_version_id: string | null
+          payroll_plan_id: string | null
+          allocation_mode: string
           reporting_entity_id: string | null
           employee_id: string | null
           paylocity_company_id: string | null
@@ -3959,7 +3997,9 @@ export type Database = {
         }
         Insert: {
           id?: string
-          budget_version_id: string
+          budget_version_id?: string | null
+          payroll_plan_id?: string | null
+          allocation_mode?: string
           reporting_entity_id?: string | null
           employee_id?: string | null
           paylocity_company_id?: string | null
@@ -4007,7 +4047,9 @@ export type Database = {
         }
         Update: {
           id?: string
-          budget_version_id?: string
+          budget_version_id?: string | null
+          payroll_plan_id?: string | null
+          allocation_mode?: string
           reporting_entity_id?: string | null
           employee_id?: string | null
           paylocity_company_id?: string | null

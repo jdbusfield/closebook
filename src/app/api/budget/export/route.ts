@@ -4,7 +4,7 @@ import { accessErrorResponse, assertOrgMember, getBudgetActor, requireVersionAcc
 import { addMatrixSheet, addSheet, createWorkbook, NUMBER_FORMATS, type MatrixRow } from "@/lib/utils/excel";
 import { fetchAllPaginated } from "@/lib/utils/paginated-fetch";
 import { loadMasters, rollupActualsToParents, loadMonthlyActuals, monthKey } from "@/lib/budget/actuals";
-import { loadMemberEntityIds, resolveVersionChartId } from "@/lib/budget/recompute";
+import { loadMemberEntityIds, loadPlanHeadcountForVersion, resolveVersionChartId } from "@/lib/budget/recompute";
 import { fetchBudgetAmountRows, resolveActiveVersions, rollupBudgetToParents } from "@/lib/budget/versions";
 import { INCOME_STATEMENT_SECTIONS } from "@/lib/config/statement-sections";
 import { MONTH_ABBRS } from "@/lib/budget/format";
@@ -51,7 +51,7 @@ export async function GET(request: Request) {
       const masters = await loadMasters(admin, chartId);
       const [rows, headcount, builds] = await Promise.all([
         fetchBudgetAmountRows(admin, [owner.id], { years: [owner.fiscalYear] }),
-        fetchAllPaginated<Record<string, unknown>>((o, l) => admin.from("budget_headcount").select("*").eq("budget_version_id", owner.id).order("name").range(o, o + l - 1)),
+        loadPlanHeadcountForVersion(admin, owner) as unknown as Promise<Record<string, unknown>[]>,
         fetchAllPaginated<Record<string, unknown>>((o, l) => admin.from("budget_builds").select("*").eq("budget_version_id", owner.id).order("build_type").order("label").range(o, o + l - 1)),
       ]);
       let ownerName = "";
@@ -128,6 +128,7 @@ export async function GET(request: Request) {
           { header: "Class", width: 22, value: (r) => splitLabel(readSplits(r.class_allocations, "class")) },
           { header: "Function", width: 18, value: (r) => splitLabel(readSplits(r.function_allocations)) },
           { header: "Name", width: 28, value: (r) => String(r.name ?? "") },
+          { header: "Share", width: 8, value: (r) => (r.share as number) ?? null, format: NUMBER_FORMATS.number },
           { header: "Title", width: 22, value: (r) => (r.title as string) ?? "" },
           { header: "Department", width: 18, value: (r) => (r.department as string) ?? "" },
           { header: "Status", width: 12, value: (r) => String(r.status ?? "") },
