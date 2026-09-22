@@ -13,6 +13,8 @@
 export interface EntityAllocation {
   entity_id: string;
   pct: number;
+  /** Set on revenue shares: the share belongs to this reporting group, carried on its principal entity. */
+  reporting_entity_id?: string;
 }
 
 export type AllocationMode = "manual" | "revenue";
