@@ -46,6 +46,7 @@ export const ASSUMPTION_KEYS: AssumptionKeyDef[] = [
   { key: "bonus_accrual", label: "Bonus accrual", group: "personnel", unit: "ratio", defaultValue: 1, description: "1 = accrue bonus target evenly across the year (JD decision); 0 = land in payout month.", scopes: ["org"] },
   { key: "bonus_payout_month", label: "Bonus payout month", group: "personnel", unit: "month", defaultValue: 12, description: "Only used when bonus_accrual = 0.", scopes: ["org"] },
   { key: "recruiting_cost_per_hire", label: "Recruiting cost per hire", group: "personnel", unit: "usd", defaultValue: 0, description: "Lands in a requisition's start month.", scopes: ["org", "reporting_entity"] },
+  { key: "wage_month_basis", label: "Wages by month", group: "personnel", unit: "ratio", defaultValue: 1, description: "1 = weight each month's wages by its working days (Monday to Friday); 2 = by calendar days; 0 = a flat twelfth every month. Overtime, doubletime and meal follow wages. Bonus, commission, benefits and fees stay flat. The year total is the same under every basis.", scopes: ["org"] },
 
   // Revenue drivers
   { key: "revenue_growth_pct", label: "Revenue growth", group: "revenue", unit: "pct", defaultValue: 0, description: "Applied to trend builds of revenue lines.", scopes: ["org", "reporting_entity"] },

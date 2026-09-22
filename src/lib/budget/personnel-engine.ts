@@ -161,7 +161,40 @@ function emptyComponents(): Record<CostComponent, MonthlyAmounts> {
   return out;
 }
 
-/** Monthly base wages at 100% FTE before merit. */
+export type MonthBasis = "flat" | "working_days" | "calendar_days";
+
+export function monthBasisFromAssumption(value: number): MonthBasis {
+  if (value === 2) return "calendar_days";
+  if (value === 0) return "flat";
+  return "working_days";
+}
+
+/**
+ * Twelve factors that average to 1, so multiplying an average month by its
+ * factor spreads the same annual amount across months in proportion to their
+ * working days (Monday to Friday) or calendar days. Flat returns all ones.
+ */
+export function monthWeights(year: number, basis: MonthBasis): number[] {
+  if (basis === "flat") return new Array(12).fill(1);
+  const counts: number[] = [];
+  for (let m = 0; m < 12; m++) {
+    const days = new Date(Date.UTC(year, m + 1, 0)).getUTCDate();
+    if (basis === "calendar_days") {
+      counts.push(days);
+      continue;
+    }
+    let weekdays = 0;
+    for (let d = 1; d <= days; d++) {
+      const dow = new Date(Date.UTC(year, m, d)).getUTCDay();
+      if (dow !== 0 && dow !== 6) weekdays++;
+    }
+    counts.push(weekdays);
+  }
+  const total = counts.reduce((t, v) => t + v, 0);
+  return counts.map((c) => (c * 12) / total);
+}
+
+/** Monthly base wages at 100% FTE before merit, as an average month. */
 export function monthlyBaseWage(row: Pick<HeadcountRowInput, "payType" | "baseRate" | "annualSalary" | "stdHoursWeek">): number {
   if (row.payType === "Salary") {
     if (row.annualSalary && row.annualSalary > 0) return row.annualSalary / 12;
@@ -234,6 +267,7 @@ export function pricePosition(row: HeadcountRowInput, ctx: PricingContext): Pric
   const recruiting = row.isRequisition ? a.get("recruiting_cost_per_hire", scopes) : 0;
 
   const base100 = monthlyBaseWage(row);
+  const weights = monthWeights(ctx.year, monthBasisFromAssumption(a.get("wage_month_basis")));
   const hourlyEquivalent = row.payType === "Hourly" && row.baseRate
     ? row.baseRate
     : base100 > 0 ? (base100 * 12) / ((row.stdHoursWeek || 40) * 52) : 0;
@@ -247,7 +281,8 @@ export function pricePosition(row: HeadcountRowInput, ctx: PricingContext): Pric
     activeMonths++;
 
     const meritFactor = meritPct && m >= meritMonth ? 1 + meritPct / 100 : 1;
-    const base = base100 * fte * meritFactor;
+    // Weighted by the month's working or calendar days (assumption wage_month_basis)
+    const base = base100 * fte * meritFactor * weights[i];
     baseWagesByMonth[i] = base;
 
     const overtime = base * (row.otPct / 100);
