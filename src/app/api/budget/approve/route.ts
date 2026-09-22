@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { accessErrorResponse, assertOrgEditor, getBudgetActor, loadVersionOwner, BudgetAccessError } from "@/lib/budget/access";
 import { loadComparables } from "@/lib/budget/comparables";
+import { loadPlanHeadcountForVersion } from "@/lib/budget/recompute";
 import { fetchAllPaginated } from "@/lib/utils/paginated-fetch";
 
 export const maxDuration = 120;
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
       loadComparables(admin, owner),
       fetchAllPaginated<Record<string, unknown>>((o, l) => admin.from("budget_assumptions").select("*").eq("budget_version_id", owner.id).range(o, o + l - 1)),
       fetchAllPaginated<Record<string, unknown>>((o, l) => admin.from("budget_amounts").select("master_account_id, qbo_class_id, period_month, amount, source").eq("budget_version_id", owner.id).range(o, o + l - 1)),
-      fetchAllPaginated<Record<string, unknown>>((o, l) => admin.from("budget_headcount").select("*").eq("budget_version_id", owner.id).range(o, o + l - 1)),
+      loadPlanHeadcountForVersion(admin, owner),
     ]);
     const snapshots = [
       { kind: "comparables", payload: comparables },

@@ -143,6 +143,95 @@ export async function requireVersionAccess(
   return owner;
 }
 
+export interface PlanOwner {
+  id: string;
+  organizationId: string;
+  fiscalYear: number;
+  status: string;
+  revenueShares: Array<{ entity_id: string; pct: number }>;
+  revenueSharesAsOf: string | null;
+}
+
+function toPlanOwner(p: {
+  id: string;
+  organization_id: string;
+  fiscal_year: number;
+  status: string;
+  revenue_shares: unknown;
+  revenue_shares_as_of: string | null;
+}): PlanOwner {
+  return {
+    id: p.id,
+    organizationId: p.organization_id,
+    fiscalYear: p.fiscal_year,
+    status: p.status,
+    revenueShares: Array.isArray(p.revenue_shares) ? (p.revenue_shares as Array<{ entity_id: string; pct: number }>) : [],
+    revenueSharesAsOf: p.revenue_shares_as_of ?? null,
+  };
+}
+
+/** The shared payroll plan for an organization and year, or null. */
+export async function loadPlanForYear(
+  admin: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  fiscalYear: number,
+): Promise<PlanOwner | null> {
+  const { data } = await admin
+    .from("budget_payroll_plans")
+    .select("id, organization_id, fiscal_year, status, revenue_shares, revenue_shares_as_of")
+    .eq("organization_id", organizationId)
+    .eq("fiscal_year", fiscalYear)
+    .maybeSingle();
+  return data ? toPlanOwner(data) : null;
+}
+
+/** The plan a version prices its personnel from (same organization and year). */
+export async function loadPlanForVersion(
+  admin: ReturnType<typeof createAdminClient>,
+  owner: VersionOwner,
+): Promise<PlanOwner | null> {
+  if (!owner.organizationId) return null;
+  return loadPlanForYear(admin, owner.organizationId, owner.fiscalYear);
+}
+
+/** Loads a plan and confirms membership (editor role when `write`). */
+export async function requirePlanAccess(
+  admin: ReturnType<typeof createAdminClient>,
+  actor: BudgetActor,
+  planId: string,
+  write: boolean,
+): Promise<PlanOwner> {
+  const { data } = await admin
+    .from("budget_payroll_plans")
+    .select("id, organization_id, fiscal_year, status, revenue_shares, revenue_shares_as_of")
+    .eq("id", planId)
+    .maybeSingle();
+  if (!data) throw new BudgetAccessError("Payroll plan not found", 404);
+  if (write) assertOrgEditor(actor, data.organization_id);
+  else assertOrgMember(actor, data.organization_id);
+  return toPlanOwner(data);
+}
+
+/** Finds the plan for the year, creating it when an editor asks and none exists. */
+export async function getOrCreatePlan(
+  admin: ReturnType<typeof createAdminClient>,
+  actor: BudgetActor,
+  organizationId: string,
+  fiscalYear: number,
+): Promise<PlanOwner> {
+  assertOrgMember(actor, organizationId);
+  const existing = await loadPlanForYear(admin, organizationId, fiscalYear);
+  if (existing) return existing;
+  assertOrgEditor(actor, organizationId);
+  const { data, error } = await admin
+    .from("budget_payroll_plans")
+    .insert({ organization_id: organizationId, fiscal_year: fiscalYear })
+    .select("id, organization_id, fiscal_year, status, revenue_shares, revenue_shares_as_of")
+    .single();
+  if (error || !data) throw new BudgetAccessError(error?.message ?? "Could not create the payroll plan", 500);
+  return toPlanOwner(data);
+}
+
 /** Turns a BudgetAccessError (or anything else) into `{ error }` + status. */
 export function accessErrorResponse(err: unknown): { body: { error: string }; status: number } {
   if (err instanceof BudgetAccessError) return { body: { error: err.message }, status: err.status };

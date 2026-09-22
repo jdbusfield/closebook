@@ -38,10 +38,19 @@ interface ReportingEntity {
   code: string;
 }
 
+interface PlanRow {
+  id: string;
+  fiscal_year: number;
+  status: string;
+  revenue_shares_as_of: string | null;
+  rowCount: number;
+}
+
 export default function BudgetOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [versions, setVersions] = useState<VersionRow[]>([]);
   const [reportingEntities, setReportingEntities] = useState<ReportingEntity[]>([]);
+  const [plans, setPlans] = useState<PlanRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const nextYear = new Date().getFullYear() + 1;
@@ -64,6 +73,7 @@ export default function BudgetOverviewPage() {
       if (!res.ok) throw new Error(data.error ?? "Failed to load");
       setVersions(data.versions ?? []);
       setReportingEntities(data.reportingEntities ?? []);
+      setPlans(data.plans ?? []);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load");
@@ -181,6 +191,18 @@ export default function BudgetOverviewPage() {
                 {list.filter((v) => v.is_active && v.kind === "budget").length} active budget{list.filter((v) => v.is_active && v.kind === "budget").length === 1 ? "" : "s"},{" "}
                 {list.filter((v) => v.kind === "forecast").length} forecast{list.filter((v) => v.kind === "forecast").length === 1 ? "" : "s"}
               </CardDescription>
+              <div className="mt-2 flex flex-wrap items-center gap-3 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                <span className="font-medium">Shared payroll plan</span>
+                <span className="text-muted-foreground">
+                  {(() => {
+                    const p = plans.find((x) => x.fiscal_year === year);
+                    return p ? `${p.rowCount} positions, ${p.status}` : "Not started";
+                  })()}
+                </span>
+                <Button asChild variant="outline" size="sm" className="ml-auto">
+                  <Link href={`/budget/payroll/${year}`}>Open</Link>
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="overflow-x-auto">
               <Table>

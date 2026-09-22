@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { accessErrorResponse, getBudgetActor, requireVersionAccess } from "@/lib/budget/access";
+import { loadPlanHeadcountForVersion } from "@/lib/budget/recompute";
 
 /** GET /api/budget/versions/[id]: version row, owner name, member entities, counts */
 export async function GET(_request: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -40,9 +41,10 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
       const { count: c } = await admin.from(table).select("id", { count: "exact", head: true }).eq("budget_version_id", id);
       return c ?? 0;
     };
-    const [headcount, builds, lines, assumptions] = await Promise.all([
-      count("budget_headcount"), count("budget_builds"), count("budget_amounts"), count("budget_assumptions"),
+    const [planRows, builds, lines, assumptions] = await Promise.all([
+      loadPlanHeadcountForVersion(admin, owner), count("budget_builds"), count("budget_amounts"), count("budget_assumptions"),
     ]);
+    const headcount = planRows.length;
 
     return NextResponse.json({
       version,

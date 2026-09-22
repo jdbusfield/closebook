@@ -3,8 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getAllCompanyClients } from "@/lib/paylocity";
 import { AllocationResolver, type AllocationRow } from "@/lib/paylocity/allocation-resolver";
 import { fetchAllPaginated } from "@/lib/utils/paginated-fetch";
-import { accessErrorResponse, getBudgetActor, requireVersionAccess } from "@/lib/budget/access";
-import { loadMemberEntityIds } from "@/lib/budget/recompute";
+import { accessErrorResponse, getBudgetActor, requirePlanAccess } from "@/lib/budget/access";
 import { functionFromDepartment, locationFromDepartment } from "@/lib/budget/tagging";
 import {
   deriveRunRates,
@@ -18,11 +17,12 @@ export const maxDuration = 300; // live roster pull from both Paylocity companie
 
 /**
  * POST /api/budget/headcount/seed
- * Body: { versionId, mode: "preview" | "commit", overwrite?: boolean }
+ * Body: { planId, mode: "preview" | "commit", overwrite?: boolean }
  *
- * Builds headcount rows for every active employee whose allocation touches
- * the version's reporting entity, from the live roster plus the trailing
- * twelve months of stored paychecks. Commit inserts rows that do not exist
+ * Builds one row per active employee across every Paylocity company for the
+ * organization's shared payroll plan, from the live roster plus the trailing
+ * twelve months of stored paychecks. The HR allocation seeds each row's
+ * entity split; the plan can override it. Commit inserts rows that do not exist
  * yet; with overwrite=true existing seeded rows are refreshed too (rows
  * edited by hand keep their edits unless overwrite is set).
  */
@@ -30,17 +30,20 @@ export async function POST(request: Request) {
   try {
     const actor = await getBudgetActor();
     const body = await request.json().catch(() => ({}));
-    const versionId: string | undefined = body?.versionId;
+    const planId: string | undefined = body?.planId;
     const mode: "preview" | "commit" = body?.mode === "commit" ? "commit" : "preview";
     const overwrite = body?.overwrite === true;
-    if (!versionId) return NextResponse.json({ error: "versionId is required" }, { status: 400 });
+    if (!planId) return NextResponse.json({ error: "planId is required" }, { status: 400 });
 
     const admin = createAdminClient();
     // Paginated reads return shapes (jsonb columns) the generated types do not narrow.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = admin as any;
-    const owner = await requireVersionAccess(admin, actor, versionId, mode === "commit");
-    const memberEntityIds = await loadMemberEntityIds(admin, owner);
+    const plan = await requirePlanAccess(admin, actor, planId, mode === "commit");
+    // The shared plan takes everyone: every entity of the organization counts as "ours"
+    const { data: orgEntities } = await admin.from("entities").select("id").eq("organization_id", plan.organizationId);
+    const memberEntityIds = new Set((orgEntities ?? []).map((e) => e.id));
+    const owner = { fiscalYear: plan.fiscalYear };
 
     // Trailing twelve months of paychecks (not excluded)
     const since = new Date();
@@ -125,7 +128,7 @@ export async function POST(request: Request) {
         wcCodes,
       });
       if (!row) {
-        skipped.push({ name: emp.displayName ?? emp.id, reason: "not allocated to this reporting entity" });
+        skipped.push({ name: emp.displayName ?? emp.id, reason: "no entity allocation in HR" });
         continue;
       }
       rows.push(row);
@@ -140,7 +143,7 @@ export async function POST(request: Request) {
     const { data: existing } = await admin
       .from("budget_headcount")
       .select("id, employee_id, paylocity_company_id")
-      .eq("budget_version_id", owner.id);
+      .eq("payroll_plan_id", plan.id);
     const existingByKey = new Map<string, string>();
     for (const e of existing ?? []) {
       if (e.employee_id) existingByKey.set(`${e.paylocity_company_id}:${e.employee_id}`, e.id);
@@ -151,8 +154,8 @@ export async function POST(request: Request) {
     for (const r of rows) {
       const key = `${r.paylocityCompanyId}:${r.employeeId}`;
       const payload = {
-        budget_version_id: owner.id,
-        reporting_entity_id: owner.reportingEntityId,
+        payroll_plan_id: plan.id,
+        allocation_mode: "manual",
         employee_id: r.employeeId,
         paylocity_company_id: r.paylocityCompanyId,
         name: r.name,

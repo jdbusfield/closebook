@@ -4,14 +4,14 @@
  * equals the sum of its builds.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { VersionOwner } from "./access";
+import { loadPlanForVersion, type VersionOwner } from "./access";
+import { effectiveAllocations, shareForEntities } from "./allocation";
 import { AssumptionSet, type AssumptionRow } from "./assumption-keys";
 import { fetchAllPaginated } from "@/lib/utils/paginated-fetch";
 import {
   COMPONENT_TO_MASTER,
   COST_COMPONENTS,
   pricePosition,
-  reportingEntityShare,
   type CostComponent,
   type HeadcountRowInput,
   type PricedPosition,
@@ -50,6 +50,8 @@ export interface HeadcountDbRow {
   comp_adj_reason?: string | null;
   amount_monthly?: number | null;
   amount_is_loaded?: boolean | null;
+  payroll_plan_id?: string | null;
+  allocation_mode?: string | null;
   location_allocations?: unknown;
   function_allocations?: unknown;
   open_role?: boolean | null;
@@ -69,6 +71,36 @@ export interface HeadcountDbRow {
   class_allocations: unknown;
   seeded_from: unknown;
   notes: string | null;
+}
+
+/** Every row of a shared payroll plan, by name. */
+export async function loadPlanRows(admin: Admin, planId: string): Promise<HeadcountDbRow[]> {
+  return fetchAllPaginated<HeadcountDbRow>((offset, limit) =>
+    admin
+      .from("budget_headcount")
+      .select("*")
+      .eq("payroll_plan_id", planId)
+      .order("name")
+      .range(offset, offset + limit - 1),
+  );
+}
+
+/**
+ * The plan rows a version has a share of, each carrying `share` (0-1) and
+ * the allocation in force. Used by approval snapshots, exports and counts.
+ */
+export async function loadPlanHeadcountForVersion(admin: Admin, owner: VersionOwner): Promise<Array<HeadcountDbRow & { share: number }>> {
+  const [plan, memberEntityIds] = await Promise.all([loadPlanForVersion(admin, owner), loadMemberEntityIds(admin, owner)]);
+  if (!plan) return [];
+  const rows = await loadPlanRows(admin, plan.id);
+  const out: Array<HeadcountDbRow & { share: number }> = [];
+  for (const r of rows) {
+    const allocs = effectiveAllocations(r, plan.revenueShares);
+    const share = shareForEntities(allocs, memberEntityIds);
+    if (share <= 0) continue;
+    out.push({ ...r, entity_allocations: allocs, share: Math.round(share * 10000) / 10000 });
+  }
+  return out;
 }
 
 export function toEngineRow(r: HeadcountDbRow): HeadcountRowInput {
@@ -228,14 +260,11 @@ export async function recomputePersonnel(admin: Admin, owner: VersionOwner): Pro
     loadClassIdsByName(admin, memberEntityIds),
   ]);
 
-  const rows = await fetchAllPaginated<HeadcountDbRow>((offset, limit) =>
-    admin
-      .from("budget_headcount")
-      .select("*")
-      .eq("budget_version_id", owner.id)
-      .order("name")
-      .range(offset, offset + limit - 1),
-  );
+  // Personnel comes from the organization's shared payroll plan for the year;
+  // this version prices its entities' share of every row.
+  const plan = await loadPlanForVersion(admin, owner);
+  const rows = plan ? await loadPlanRows(admin, plan.id) : [];
+  const revenueShares = plan?.revenueShares ?? [];
 
   const subMasterId = new Map<PersonnelComponent, string>();
   const missingSubMasters: string[] = [];
@@ -258,7 +287,8 @@ export async function recomputePersonnel(admin: Admin, owner: VersionOwner): Pro
 
   for (const r of rows) {
     const input = toEngineRow(r);
-    const reShare = reportingEntityShare(input, memberEntityIds);
+    const reShare = shareForEntities(effectiveAllocations(r, revenueShares), memberEntityIds);
+    if (reShare <= 0) continue;
     const priced = pricePosition(input, { year: owner.fiscalYear, assumptions, reShare });
     positions.push(priced);
     if (priced.total === 0) continue;

@@ -67,7 +67,7 @@ export default function BudgetVersionOverviewPage({ params }: { params: Promise<
 
   const steps = [
     { title: "Assumptions", href: `/budget/${versionId}/assumptions`, done: info.counts.assumptions > 0, text: info.counts.assumptions > 0 ? `${info.counts.assumptions} overrides set` : "Using catalog defaults (tax tables for the year)" },
-    { title: "Headcount", href: `/budget/${versionId}/headcount`, done: info.counts.headcount > 0, text: info.counts.headcount > 0 ? `${info.counts.headcount} positions` : "Seed from Paylocity to start" },
+    { title: "Headcount", href: `/budget/${versionId}/headcount`, done: info.counts.headcount > 0, text: info.counts.headcount > 0 ? `${info.counts.headcount} positions from the shared payroll plan` : "Seed the shared payroll plan to start" },
     { title: "Builds", href: `/budget/${versionId}/drivers`, done: info.counts.builds > 0, text: info.counts.builds > 0 ? `${info.counts.builds} builds` : "Run recompute after headcount is in" },
     { title: "Lines", href: `/budget/${versionId}/lines`, done: info.counts.lines > 0, text: info.counts.lines > 0 ? `${info.counts.lines} month cells` : "No amounts yet" },
   ];

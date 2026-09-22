@@ -12,6 +12,7 @@ import { fetchAllPaginated } from "@/lib/utils/paginated-fetch";
 import { loadMasters, loadMonthlyActuals } from "@/lib/budget/actuals";
 import { upsertBudgetCells, type BudgetCell } from "@/lib/budget/amounts";
 import { loadVersionOwner } from "@/lib/budget/access";
+import { loadPlanHeadcountForVersion } from "@/lib/budget/recompute";
 
 /**
  * GET /api/budget/versions?organizationId=&fiscalYear=
@@ -55,17 +56,41 @@ export async function GET(request: Request) {
     const counts = new Map<string, { headcount: number; builds: number; lines: number }>();
     for (const id of versionIds) counts.set(id, { headcount: 0, builds: 0, lines: 0 });
     if (versionIds.length > 0) {
-      const [hc, bl, ln] = await Promise.all([
-        fetchAllPaginated<{ budget_version_id: string }>((o, l) =>
-          admin.from("budget_headcount").select("budget_version_id").in("budget_version_id", versionIds).range(o, o + l - 1)),
-        fetchAllPaginated<{ budget_version_id: string }>((o, l) =>
+      const [bl, ln] = await Promise.all([
+        fetchAllPaginated<{ budget_version_id: string | null }>((o, l) =>
           admin.from("budget_builds").select("budget_version_id").in("budget_version_id", versionIds).range(o, o + l - 1)),
-        fetchAllPaginated<{ budget_version_id: string }>((o, l) =>
+        fetchAllPaginated<{ budget_version_id: string | null }>((o, l) =>
           admin.from("budget_amounts").select("budget_version_id").in("budget_version_id", versionIds).range(o, o + l - 1)),
       ]);
-      for (const r of hc) counts.get(r.budget_version_id)!.headcount++;
-      for (const r of bl) counts.get(r.budget_version_id)!.builds++;
-      for (const r of ln) counts.get(r.budget_version_id)!.lines++;
+      for (const r of bl) if (r.budget_version_id) counts.get(r.budget_version_id)!.builds++;
+      for (const r of ln) if (r.budget_version_id) counts.get(r.budget_version_id)!.lines++;
+      // Headcount is each version's share of the shared payroll plan
+      await Promise.all(
+        (versions ?? []).map(async (v) => {
+          const rows = await loadPlanHeadcountForVersion(admin, {
+            id: v.id,
+            organizationId,
+            entityId: v.entity_id ?? null,
+            reportingEntityId: v.reporting_entity_id ?? null,
+            fiscalYear: v.fiscal_year,
+            kind: v.kind ?? "budget",
+            lockedAt: v.locked_at ?? null,
+            chartId: v.chart_id ?? null,
+          });
+          counts.get(v.id)!.headcount = rows.length;
+        }),
+      );
+    }
+
+    // Shared payroll plans by year, for the list page
+    const { data: plans } = await admin
+      .from("budget_payroll_plans")
+      .select("id, fiscal_year, status, revenue_shares_as_of")
+      .eq("organization_id", organizationId);
+    const planRowCounts = new Map<string, number>();
+    for (const p of plans ?? []) {
+      const { count } = await admin.from("budget_headcount").select("id", { count: "exact", head: true }).eq("payroll_plan_id", p.id);
+      planRowCounts.set(p.id, count ?? 0);
     }
 
     const reById = new Map((res ?? []).map((r) => [r.id, r]));
@@ -85,6 +110,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       organizationId,
       reportingEntities: (res ?? []).filter((r) => r.is_active !== false && !r.exclude_from_breakdown),
+      plans: (plans ?? []).map((p) => ({ ...p, rowCount: planRowCounts.get(p.id) ?? 0 })),
       versions: out,
     });
   } catch (err) {
