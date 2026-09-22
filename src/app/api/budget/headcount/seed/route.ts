@@ -5,6 +5,7 @@ import { AllocationResolver, type AllocationRow } from "@/lib/paylocity/allocati
 import { fetchAllPaginated } from "@/lib/utils/paginated-fetch";
 import { accessErrorResponse, getBudgetActor, requireVersionAccess } from "@/lib/budget/access";
 import { loadMemberEntityIds } from "@/lib/budget/recompute";
+import { functionFromDepartment, locationFromDepartment } from "@/lib/budget/tagging";
 import {
   deriveRunRates,
   seedRowForEmployee,
@@ -182,6 +183,9 @@ export async function POST(request: Request) {
         match_pct: r.matchPct,
         wc_class_code: r.wcClassCode,
         entity_allocations: r.entityAllocations,
+        // Tags: a first pass from the Paylocity department; accounting sets them once per person
+        function_allocations: functionFromDepartment(r.department) ? [{ key: functionFromDepartment(r.department), pct: 100 }] : [],
+        location_allocations: locationFromDepartment(r.department) ? [{ key: locationFromDepartment(r.department), pct: 100 }] : [],
         class_allocations: r.classAllocations,
         seeded_from: { ...r.seededFrom, warnings: r.warnings },
       };

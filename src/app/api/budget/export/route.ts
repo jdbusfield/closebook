@@ -8,6 +8,7 @@ import { loadMemberEntityIds, resolveVersionChartId } from "@/lib/budget/recompu
 import { fetchBudgetAmountRows, resolveActiveVersions, rollupBudgetToParents } from "@/lib/budget/versions";
 import { INCOME_STATEMENT_SECTIONS } from "@/lib/config/statement-sections";
 import { MONTH_ABBRS } from "@/lib/budget/format";
+import { readSplits, splitLabel } from "@/lib/budget/tagging";
 
 export const maxDuration = 120;
 
@@ -123,6 +124,9 @@ export async function GET(request: Request) {
         title: { entityName: ownerName, reportTitle: "Headcount plan", period: `Fiscal year ${owner.fiscalYear}` },
         rows: headcount,
         columns: [
+          { header: "Location", width: 18, value: (r) => splitLabel(readSplits(r.location_allocations)) },
+          { header: "Class", width: 22, value: (r) => splitLabel(readSplits(r.class_allocations, "class")) },
+          { header: "Function", width: 18, value: (r) => splitLabel(readSplits(r.function_allocations)) },
           { header: "Name", width: 28, value: (r) => String(r.name ?? "") },
           { header: "Title", width: 22, value: (r) => (r.title as string) ?? "" },
           { header: "Department", width: 18, value: (r) => (r.department as string) ?? "" },
