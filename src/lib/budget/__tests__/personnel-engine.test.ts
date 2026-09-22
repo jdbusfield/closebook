@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { AssumptionSet } from "../assumption-keys";
 import {
   monthlyBaseWage,
+  monthWeights,
   pricePosition,
   reportingEntityShare,
   sumPositions,
@@ -45,9 +46,34 @@ function row(overrides: Partial<HeadcountRowInput> = {}): HeadcountRowInput {
   };
 }
 
+// Existing expectations are written for flat twelfths; the month basis is tested on its own below.
 const ctx = (rows: ConstructorParameters<typeof AssumptionSet>[0] = []) => ({
   year: 2027,
-  assumptions: new AssumptionSet(rows),
+  assumptions: new AssumptionSet([{ scope: "org", scope_id: null, key: "wage_month_basis", value: 0 }, ...rows]),
+});
+
+test("month weights follow working days by default and keep the year total", () => {
+  // 2027 starts on a Friday: 261 weekdays. Feb has 20, Mar has 23.
+  const wd = monthWeights(2027, "working_days");
+  assert.equal(Math.round(wd.reduce((t, v) => t + v, 0) * 1e9) / 1e9, 12);
+  assert.equal(Math.round(wd[1] * 261 / 12), 20);
+  assert.equal(Math.round(wd[2] * 261 / 12), 23);
+  const cd = monthWeights(2027, "calendar_days");
+  assert.equal(Math.round(cd[1] * 365 / 12), 28);
+  assert.equal(Math.round(cd[6] * 365 / 12), 31);
+  assert.deepEqual(monthWeights(2027, "flat"), new Array(12).fill(1));
+
+  const weighted = pricePosition(row({ payType: "Salary", annualSalary: 120000, baseRate: null }), {
+    year: 2027,
+    assumptions: new AssumptionSet([]),
+  });
+  assert.equal(Math.round(weighted.components.wages[1]), Math.round((120000 * 20) / 261));
+  assert.equal(Math.round(weighted.components.wages[2]), Math.round((120000 * 23) / 261));
+  assert.ok(weighted.components.wages[1] < weighted.components.wages[2]);
+  assert.equal(Math.round(weighted.componentTotals.wages), 120000);
+  // Flat items do not move with the month
+  const bonus = pricePosition(row({ bonusTarget: 12000 }), { year: 2027, assumptions: new AssumptionSet([]) });
+  assert.equal(bonus.components.bonus[1], 1000);
 });
 
 test("hourly base wage = rate x hours x 52 / 12", () => {
