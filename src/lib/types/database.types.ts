@@ -3343,6 +3343,7 @@ export type Database = {
           account_type: string
           account_sub_type: string | null
           parent_account_id: string | null
+          is_intercompany: boolean | null
           is_active: boolean
           display_order: number
           normal_balance: string

@@ -33,7 +33,11 @@ export async function POST(request: Request) {
     if (!chart?.id) return NextResponse.json({ error: "Management chart not found" }, { status: 400 });
     const shape = await planShape(admin, plan.organizationId);
     const masters = await loadMasters(admin, chart.id);
-    const revenueMasters = new Set(masters.filter((m) => m.classification === "Revenue").map((m) => m.id));
+    // Revenue as the Financial Model reports it: the Revenue section (Income
+    // accounts only, so no Other Income) with intercompany accounts eliminated.
+    const revenueMasters = new Set(
+      masters.filter((m) => m.classification === "Revenue" && m.accountType === "Income" && !m.isIntercompany).map((m) => m.id),
+    );
 
     // Last twelve full months before this one
     const now = new Date();
