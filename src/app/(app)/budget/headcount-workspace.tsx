@@ -226,6 +226,8 @@ export function HeadcountWorkspace({
   const [entities, setEntities] = useState<PlanEntity[]>([]);
   const [reportingEntities, setReportingEntities] = useState<Array<{ id: string; name: string; code: string }>>([]);
   const [groupTotals, setGroupTotals] = useState<Record<string, number>>({});
+  const [groupByMonth, setGroupByMonth] = useState<Record<string, number[]>>({});
+  const [unallocatedByMonth, setUnallocatedByMonth] = useState<number[]>([]);
   const [unallocatedTotal, setUnallocatedTotal] = useState(0);
   const [revenueShares, setRevenueShares] = useState<EntityAllocation[]>([]);
   const [revenueSharesAsOf, setRevenueSharesAsOf] = useState<string | null>(null);
@@ -276,6 +278,8 @@ export function HeadcountWorkspace({
       setEntities(data.entities ?? []);
       setReportingEntities(data.reportingEntities ?? []);
       setGroupTotals(data.groupTotals ?? {});
+      setGroupByMonth(data.groupByMonth ?? {});
+      setUnallocatedByMonth(data.unallocatedByMonth ?? []);
       setUnallocatedTotal(data.unallocatedTotal ?? 0);
       setRevenueShares(data.plan?.revenueShares ?? []);
       setRevenueSharesAsOf(data.plan?.revenueSharesAsOf ?? null);
@@ -770,6 +774,56 @@ export function HeadcountWorkspace({
                 {actuals.year} actual is every Personnel Costs account in the general ledger for {isPlan ? "all entities" : ownerName}, by month booked. Change compares this projection to it, month for month and for the months booked so far; red is higher cost, green is lower.
               </p>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {isPlan && totals && rows.length > 0 && reportingEntities.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>By company</CardTitle>
+            <CardDescription>Each reporting group&apos;s share of the personnel cost by month, from the Company column: manual splits and By revenue rows alike.</CardDescription>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Company</TableHead>
+                  {MONTH_ABBRS.map((m) => <TableHead key={m} className="text-right">{m}</TableHead>)}
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="text-right">Share</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {[...reportingEntities]
+                  .map((g) => ({ ...g, series: groupByMonth[g.id] ?? new Array(12).fill(0), total: groupTotals[g.id] ?? 0 }))
+                  .sort((a, b) => b.total - a.total)
+                  .map((g) => (
+                    <TableRow key={g.id}>
+                      <TableCell className="whitespace-nowrap font-medium">{g.name}</TableCell>
+                      {g.series.map((v, i) => <TableCell key={i} className="text-right tabular-nums">{fmtUsd(v)}</TableCell>)}
+                      <TableCell className="text-right font-medium tabular-nums">{fmtUsd(g.total)}</TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">{totals.total > 0 ? fmtPct((g.total / totals.total) * 100) : ""}</TableCell>
+                    </TableRow>
+                  ))}
+                {unallocatedTotal > 0 && (
+                  <TableRow>
+                    <TableCell className="whitespace-nowrap text-amber-600">Unallocated</TableCell>
+                    {(unallocatedByMonth.length === 12 ? unallocatedByMonth : new Array(12).fill(0)).map((v, i) => (
+                      <TableCell key={i} className="text-right tabular-nums text-amber-600">{fmtUsd(v)}</TableCell>
+                    ))}
+                    <TableCell className="text-right font-medium tabular-nums text-amber-600">{fmtUsd(unallocatedTotal)}</TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">{totals.total > 0 ? fmtPct((unallocatedTotal / totals.total) * 100) : ""}</TableCell>
+                  </TableRow>
+                )}
+                <TableRow className="font-medium">
+                  <TableCell>Total</TableCell>
+                  {totals.totalByMonth.map((v, i) => <TableCell key={i} className="text-right tabular-nums">{fmtUsd(v)}</TableCell>)}
+                  <TableCell className="text-right tabular-nums">{fmtUsd(totals.total)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">100.0%</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       )}
@@ -1700,13 +1754,13 @@ function AdjustDialog({
         </DialogHeader>
 
         <div className="grid gap-4">
-          <Table>
+          <Table className="table-fixed">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[220px]">Field</TableHead>
-                <TableHead className="text-right">Current</TableHead>
-                <TableHead className="text-right">Change %</TableHead>
-                <TableHead className="text-right">Adjusted</TableHead>
+                <TableHead>Field</TableHead>
+                <TableHead className="w-[150px] text-right">Current</TableHead>
+                <TableHead className="w-[150px] text-right">Change %</TableHead>
+                <TableHead className="w-[150px] text-right">Adjusted</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1716,7 +1770,7 @@ function AdjustDialog({
                 <TableCell />
                 <TableCell className="text-right">
                   <Select value={draft.pay_type} onValueChange={(v) => setDraft((d) => ({ ...d, pay_type: v }))} disabled={readOnly}>
-                    <SelectTrigger className="ml-auto h-8 w-[120px] text-sm">
+                    <SelectTrigger className="h-8 w-full text-sm">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -1733,7 +1787,7 @@ function AdjustDialog({
                     <TableCell>{f.label}</TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">{formatCell(currentValue(f.key) as number | null, f.format)}</TableCell>
                     <TableCell className="text-right">
-                      <div className="relative ml-auto w-[96px]">
+                      <div className="relative w-full">
                         <Input
                           type="text"
                           inputMode="decimal"
@@ -1749,8 +1803,8 @@ function AdjustDialog({
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {changedKeys.has(f.key) && <span className="text-[11px] text-amber-600">changed</span>}
+                      <div className="relative w-full">
+                        {changedKeys.has(f.key) && <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] uppercase tracking-wide text-amber-600">changed</span>}
                         <Input
                           type="number"
                           step={f.step ?? "any"}
@@ -1758,7 +1812,7 @@ function AdjustDialog({
                           value={draft[f.key] ?? ""}
                           disabled={readOnly}
                           onChange={(e) => { const v = e.target.value; setDraft((d) => ({ ...d, [f.key]: v })); setBump((b) => { const n = { ...b }; delete n[f.key]; return n; }); }}
-                          className="h-8 w-[130px] text-right text-sm tabular-nums"
+                          className={`h-8 w-full text-right text-sm tabular-nums ${changedKeys.has(f.key) ? "border-amber-400" : ""}`}
                           aria-label={`Adjusted ${f.label}`}
                         />
                       </div>
@@ -1771,7 +1825,7 @@ function AdjustDialog({
                       <TableCell />
                       <TableCell className="text-right">
                         <Select value={month} onValueChange={setMonth} disabled={readOnly || !payChanged}>
-                          <SelectTrigger className="ml-auto h-8 w-[130px] text-sm">
+                          <SelectTrigger className="h-8 w-full text-sm">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -1788,7 +1842,7 @@ function AdjustDialog({
                 <TableCell className="text-right text-muted-foreground">{row.comp_adj_reason ?? ""}</TableCell>
                 <TableCell />
                 <TableCell className="text-right">
-                  <Input value={reason} onChange={(e) => setReason(e.target.value)} disabled={readOnly} placeholder="Market adjustment, new duties" className="ml-auto h-8 w-[220px] text-sm" aria-label="Reason" />
+                  <Input value={reason} onChange={(e) => setReason(e.target.value)} disabled={readOnly} placeholder="Market adjustment, new duties" className="h-8 w-full text-sm" aria-label="Reason" />
                 </TableCell>
               </TableRow>
             </TableBody>

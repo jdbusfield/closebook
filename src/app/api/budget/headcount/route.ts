@@ -93,6 +93,8 @@ export async function GET(request: Request) {
 
     const baselines: Record<string, { total: number; gross: number }> = {};
     const groupTotals: Record<string, number> = {};
+    const groupByMonth: Record<string, number[]> = {};
+    const unallocatedByMonth: number[] = new Array(12).fill(0);
     const rowGroupTotals: Record<string, Record<string, number>> = {};
     let unallocatedTotal = 0;
     const priced = rows.map((r) => {
@@ -119,9 +121,14 @@ export async function GET(request: Request) {
           const amt = Math.round(p.total * share * 100) / 100;
           perGroup[g.id] = amt;
           groupTotals[g.id] = (groupTotals[g.id] ?? 0) + amt;
+          const series = groupByMonth[g.id] ?? (groupByMonth[g.id] = new Array(12).fill(0));
+          for (let i = 0; i < 12; i++) series[i] += p.totalByMonth[i] * share;
           allocated += share;
         }
-        if (allocated < 0.999) unallocatedTotal += p.total * (1 - allocated);
+        if (allocated < 0.999) {
+          unallocatedTotal += p.total * (1 - allocated);
+          for (let i = 0; i < 12; i++) unallocatedByMonth[i] += p.totalByMonth[i] * (1 - allocated);
+        }
         rowGroupTotals[r.id] = perGroup;
       }
       return p;
@@ -152,6 +159,8 @@ export async function GET(request: Request) {
       totals,
       baselines,
       groupTotals,
+      groupByMonth: Object.fromEntries(Object.entries(groupByMonth).map(([k, v]) => [k, v.map((x) => Math.round(x * 100) / 100)])),
+      unallocatedByMonth: unallocatedByMonth.map((x) => Math.round(x * 100) / 100),
       rowGroupTotals,
       unallocatedTotal: Math.round(unallocatedTotal * 100) / 100,
       meritDefault: { pct: assumptions.get("merit_pct_default"), month: assumptions.get("merit_month_default") },
