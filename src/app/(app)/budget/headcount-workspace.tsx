@@ -625,10 +625,7 @@ export function HeadcountWorkspace({
   return (
     <div className="space-y-6">
       {isPlan ? (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="max-w-3xl text-sm text-muted-foreground">
-            One row per person across both Paylocity companies. Seeding pulls the live roster and twelve months of paychecks; every field can be edited afterwards. Company is who pays for the person: by hand, or by each company&apos;s share of revenue. Click a name for the monthly breakdown.
-          </p>
+        <div className="flex flex-wrap items-center justify-end gap-3">
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={refreshShares} disabled={readOnly || sharesRefreshing} title={revenueSharesAsOf ?? "Not computed yet"}>
               {sharesRefreshing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
@@ -654,11 +651,6 @@ export function HeadcountWorkspace({
             <Link href={`/budget/payroll/${scope.fiscalYear}`}>Open the payroll plan</Link>
           </Button>
         </div>
-      )}
-      {isPlan && revenueShares.length > 0 && (
-        <p className="text-xs text-muted-foreground">
-          Revenue shares by reporting group: {revenueShares.map((s) => `${reportingEntities.find((g) => g.id === s.reporting_entity_id)?.name ?? entityById.get(s.entity_id)?.reportingEntityName ?? entityById.get(s.entity_id)?.code ?? "?"} ${fmtPct(s.pct)}`).join(", ")}. {revenueSharesAsOf}.
-        </p>
       )}
 
       {totals && rows.length > 0 && (

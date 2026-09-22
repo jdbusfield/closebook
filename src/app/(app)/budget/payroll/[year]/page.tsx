@@ -60,9 +60,6 @@ export default function PayrollPlanPage({ params }: { params: Promise<{ year: st
             Payroll plan {fiscalYear}
             <Badge variant="outline">{info.plan.status}</Badge>
           </h1>
-          <p className="max-w-3xl text-sm text-muted-foreground">
-            Every person from both Paylocity companies, once. Tag each one, set the pay change for the year, and allocate them to a company by hand or by revenue. Each reporting group&apos;s budget prices its share of this list.
-          </p>
         </div>
       </div>
       <HeadcountWorkspace
