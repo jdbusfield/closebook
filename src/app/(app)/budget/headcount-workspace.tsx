@@ -230,7 +230,7 @@ export function HeadcountWorkspace({
   const [revenueShares, setRevenueShares] = useState<EntityAllocation[]>([]);
   const [revenueSharesAsOf, setRevenueSharesAsOf] = useState<string | null>(null);
   const [sharesRefreshing, setSharesRefreshing] = useState(false);
-  const [actuals, setActuals] = useState<{ year: number; byMonth: number[]; total: number; monthsWithData: number } | null>(null);
+  const [actuals, setActuals] = useState<{ year: number; byMonth: number[]; total: number; monthsWithData: number; hasData: boolean[] } | null>(null);
   const [assumptionRows, setAssumptionRows] = useState<AssumptionRow[]>([]);
   const [adjustRowId, setAdjustRowId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -724,36 +724,50 @@ export function HeadcountWorkspace({
                   {totals.totalByMonth.map((v, i) => <TableCell key={i} className="text-right tabular-nums">{fmtUsd(v)}</TableCell>)}
                   <TableCell className="text-right tabular-nums">{fmtUsd(totals.total)}</TableCell>
                 </TableRow>
-                {actuals && actuals.monthsWithData > 0 && (
-                  <>
-                    <TableRow className="border-t-2">
-                      <TableCell className="whitespace-nowrap text-muted-foreground">{actuals.year} actual, booked</TableCell>
-                      {actuals.byMonth.map((v, i) => <TableCell key={i} className="text-right tabular-nums text-muted-foreground">{fmtUsd(v)}</TableCell>)}
-                      <TableCell className="text-right font-medium tabular-nums text-muted-foreground">{fmtUsd(actuals.total)}</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="whitespace-nowrap">Change vs {actuals.year}</TableCell>
-                      {totals.totalByMonth.map((v, i) => {
-                        const base = actuals.byMonth[i];
-                        if (!base) return <TableCell key={i} className="text-right text-muted-foreground">{v ? "new" : ""}</TableCell>;
-                        const pct = ((v - base) / Math.abs(base)) * 100;
-                        return (
-                          <TableCell key={i} className={`text-right tabular-nums ${pct > 0 ? "text-red-700" : pct < 0 ? "text-emerald-700" : ""}`}>
-                            {pct > 0 ? "+" : ""}{fmtPct(pct)}
-                          </TableCell>
-                        );
-                      })}
-                      <TableCell className={`text-right font-medium tabular-nums ${totals.total > actuals.total ? "text-red-700" : totals.total < actuals.total ? "text-emerald-700" : ""}`}>
-                        {actuals.total ? `${totals.total > actuals.total ? "+" : ""}${fmtPct(((totals.total - actuals.total) / Math.abs(actuals.total)) * 100)}` : ""}
-                      </TableCell>
-                    </TableRow>
-                  </>
-                )}
+                {actuals && actuals.monthsWithData > 0 && (() => {
+                  // Compare like for like: the projection over the months the ledger has booked
+                  const booked = actuals.hasData;
+                  const lastBooked = booked.lastIndexOf(true);
+                  const actualToDate = actuals.byMonth.reduce((t, v, i) => (booked[i] ? t + v : t), 0);
+                  const projectedSameMonths = totals.totalByMonth.reduce((t, v, i) => (booked[i] ? t + v : t), 0);
+                  const totalPct = actualToDate ? ((projectedSameMonths - actualToDate) / Math.abs(actualToDate)) * 100 : 0;
+                  const partial = actuals.monthsWithData < 12;
+                  return (
+                    <>
+                      <TableRow className="border-t-2">
+                        <TableCell className="whitespace-nowrap text-muted-foreground">
+                          {actuals.year} actual, booked{partial && lastBooked >= 0 ? ` through ${MONTH_ABBRS[lastBooked]}` : ""}
+                        </TableCell>
+                        {actuals.byMonth.map((v, i) => (
+                          <TableCell key={i} className="text-right tabular-nums text-muted-foreground">{booked[i] ? fmtUsd(v) : ""}</TableCell>
+                        ))}
+                        <TableCell className="text-right font-medium tabular-nums text-muted-foreground">{fmtUsd(actualToDate)}</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="whitespace-nowrap">Change vs {actuals.year}{partial ? ", same months" : ""}</TableCell>
+                        {totals.totalByMonth.map((v, i) => {
+                          if (!booked[i]) return <TableCell key={i} className="text-right text-muted-foreground"></TableCell>;
+                          const base = actuals.byMonth[i];
+                          if (!base) return <TableCell key={i} className="text-right text-muted-foreground">{v ? "new" : ""}</TableCell>;
+                          const pct = ((v - base) / Math.abs(base)) * 100;
+                          return (
+                            <TableCell key={i} className={`text-right tabular-nums ${pct > 0 ? "text-red-700" : pct < 0 ? "text-emerald-700" : ""}`}>
+                              {pct > 0 ? "+" : ""}{fmtPct(pct)}
+                            </TableCell>
+                          );
+                        })}
+                        <TableCell className={`text-right font-medium tabular-nums ${totalPct > 0 ? "text-red-700" : totalPct < 0 ? "text-emerald-700" : ""}`}>
+                          {actualToDate ? `${totalPct > 0 ? "+" : ""}${fmtPct(totalPct)}` : ""}
+                        </TableCell>
+                      </TableRow>
+                    </>
+                  );
+                })()}
               </TableBody>
             </Table>
             {actuals && actuals.monthsWithData > 0 && (
               <p className="mt-2 text-xs text-muted-foreground">
-                {actuals.year} actual is every Personnel Costs account in the general ledger for {isPlan ? "all entities" : ownerName}, by month booked. Change compares this projection to it; red is higher cost, green is lower.
+                {actuals.year} actual is every Personnel Costs account in the general ledger for {isPlan ? "all entities" : ownerName}, by month booked. Change compares this projection to it, month for month and for the months booked so far; red is higher cost, green is lower.
               </p>
             )}
           </CardContent>
@@ -1590,6 +1604,7 @@ function AdjustDialog({
     return d;
   }, [row]);
   const [draft, setDraft] = useState<Record<string, string>>(initial);
+  const [bump, setBump] = useState<Record<string, string>>({});
   const [month, setMonth] = useState(String(row.comp_adj_month ?? 1));
   const [reason, setReason] = useState(row.comp_adj_reason ?? "");
   const [saving, setSaving] = useState(false);
@@ -1601,6 +1616,25 @@ function AdjustDialog({
   const draftNumber = (key: string): number | null => {
     const v = (draft[key] ?? "").trim();
     return v === "" ? null : Number(v);
+  };
+  /** Percent the adjusted value sits above or below the current one, as typed or as implied. */
+  const bumpShown = (f: AdjustField): string => {
+    if (bump[f.key] !== undefined) return bump[f.key];
+    const cur = Number(currentValue(f.key) ?? 0);
+    const adj = draftNumber(f.key);
+    if (!cur || adj == null) return "";
+    const pct = ((adj - cur) / Math.abs(cur)) * 100;
+    return Math.abs(pct) < 0.005 ? "" : String(Math.round(pct * 10) / 10);
+  };
+  /** Typing a percent sets the adjusted value from the current one. */
+  const applyBump = (f: AdjustField, text: string) => {
+    setBump((b) => ({ ...b, [f.key]: text }));
+    const pct = Number(text.replace(/[%\s]/g, ""));
+    const cur = Number(currentValue(f.key) ?? 0);
+    if (text.trim() === "" || Number.isNaN(pct)) return;
+    const raw = cur * (1 + pct / 100);
+    const next = f.format === "usd2" || f.format === "hours" || f.format === "pct" ? Math.round(raw * 100) / 100 : Math.round(raw);
+    setDraft((d) => ({ ...d, [f.key]: String(next) }));
   };
 
   // The row the budget would use if Submit were pressed now
@@ -1661,7 +1695,7 @@ function AdjustDialog({
         <DialogHeader>
           <DialogTitle>Adjust {row.name}</DialogTitle>
           <DialogDescription>
-            Current is what the person was seeded with. Adjusted is what the budget uses. The result is the full-year loaded comp for {ownerName}, and Submit pulls the adjusted column into the projection.
+            Current is what the person was seeded with. Type a percent in Change to move a value up or down from current, or type the adjusted value directly. The result is the full-year loaded comp for {ownerName}, and Submit pulls the adjusted column into the projection.
           </DialogDescription>
         </DialogHeader>
 
@@ -1669,8 +1703,9 @@ function AdjustDialog({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[240px]">Field</TableHead>
+                <TableHead className="w-[220px]">Field</TableHead>
                 <TableHead className="text-right">Current</TableHead>
+                <TableHead className="text-right">Change %</TableHead>
                 <TableHead className="text-right">Adjusted</TableHead>
               </TableRow>
             </TableHeader>
@@ -1678,6 +1713,7 @@ function AdjustDialog({
               <TableRow>
                 <TableCell>Pay type</TableCell>
                 <TableCell className="text-right text-muted-foreground">{baseline?.pay_type ?? ""}</TableCell>
+                <TableCell />
                 <TableCell className="text-right">
                   <Select value={draft.pay_type} onValueChange={(v) => setDraft((d) => ({ ...d, pay_type: v }))} disabled={readOnly}>
                     <SelectTrigger className="ml-auto h-8 w-[120px] text-sm">
@@ -1697,6 +1733,22 @@ function AdjustDialog({
                     <TableCell>{f.label}</TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">{formatCell(currentValue(f.key) as number | null, f.format)}</TableCell>
                     <TableCell className="text-right">
+                      <div className="relative ml-auto w-[96px]">
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          value={bumpShown(f)}
+                          disabled={readOnly || !Number(currentValue(f.key) ?? 0)}
+                          placeholder={Number(currentValue(f.key) ?? 0) ? "+0.0" : ""}
+                          onChange={(e) => applyBump(f, e.target.value)}
+                          className={`h-8 pr-6 text-right text-sm tabular-nums ${Number(bumpShown(f)) > 0 ? "text-red-700" : Number(bumpShown(f)) < 0 ? "text-emerald-700" : ""}`}
+                          aria-label={`Change ${f.label} by percent`}
+                          title="Type a percent to move the adjusted value up or down from the current one"
+                        />
+                        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
                         {changedKeys.has(f.key) && <span className="text-[11px] text-amber-600">changed</span>}
                         <Input
@@ -1705,7 +1757,7 @@ function AdjustDialog({
                           inputMode="decimal"
                           value={draft[f.key] ?? ""}
                           disabled={readOnly}
-                          onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
+                          onChange={(e) => { const v = e.target.value; setDraft((d) => ({ ...d, [f.key]: v })); setBump((b) => { const n = { ...b }; delete n[f.key]; return n; }); }}
                           className="h-8 w-[130px] text-right text-sm tabular-nums"
                           aria-label={`Adjusted ${f.label}`}
                         />
@@ -1716,6 +1768,7 @@ function AdjustDialog({
                     <TableRow>
                       <TableCell className="pl-6 text-muted-foreground">Pay change effective</TableCell>
                       <TableCell className="text-right text-muted-foreground">{row.comp_adj_kind ? MONTH_NAMES[(row.comp_adj_month ?? 1) - 1] : ""}</TableCell>
+                      <TableCell />
                       <TableCell className="text-right">
                         <Select value={month} onValueChange={setMonth} disabled={readOnly || !payChanged}>
                           <SelectTrigger className="ml-auto h-8 w-[130px] text-sm">
@@ -1733,6 +1786,7 @@ function AdjustDialog({
               <TableRow>
                 <TableCell>Reason (optional)</TableCell>
                 <TableCell className="text-right text-muted-foreground">{row.comp_adj_reason ?? ""}</TableCell>
+                <TableCell />
                 <TableCell className="text-right">
                   <Input value={reason} onChange={(e) => setReason(e.target.value)} disabled={readOnly} placeholder="Market adjustment, new duties" className="ml-auto h-8 w-[220px] text-sm" aria-label="Reason" />
                 </TableCell>

@@ -11,7 +11,7 @@ import {
 import { effectiveAllocations, shareForEntities } from "@/lib/budget/allocation";
 import { planShape } from "@/lib/budget/plan-shape";
 import { loadAssumptions, loadMemberEntityIds, loadPlanRows, resolveVersionChartId, toEngineRow } from "@/lib/budget/recompute";
-import { lastCompleteYear, loadPersonnelActuals, type PersonnelActuals } from "@/lib/budget/personnel-actuals";
+import { comparisonYear, loadPersonnelActuals, type PersonnelActuals } from "@/lib/budget/personnel-actuals";
 import { AssumptionSet } from "@/lib/budget/assumption-keys";
 import { pricePosition, sumPositions } from "@/lib/budget/personnel-engine";
 import { baselineRow } from "@/lib/budget/baseline";
@@ -138,7 +138,7 @@ export async function GET(request: Request) {
         const { data: chart } = await admin.from("master_charts").select("id").eq("organization_id", organizationId).eq("kind", "management").maybeSingle();
         chartId = chart?.id ?? null;
       }
-      if (chartId) actuals = await loadPersonnelActuals(admin, { chartId, entityIds: actualEntityIds, year: lastCompleteYear(fiscalYear) });
+      if (chartId) actuals = await loadPersonnelActuals(admin, { chartId, entityIds: actualEntityIds, year: comparisonYear(fiscalYear) });
     } catch (err) {
       console.error("headcount actuals failed:", err);
     }
