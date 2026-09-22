@@ -20,6 +20,8 @@ export interface MasterInfo {
   classification: string;
   accountType: string;
   parentAccountId: string | null;
+  /** Flagged intercompany on the chart; the Financial Model eliminates these. */
+  isIntercompany: boolean;
 }
 
 export interface ActualsResult {
@@ -54,11 +56,11 @@ export function monthsBetween(startYear: number, startMonth: number, endYear: nu
 
 export async function loadMasters(admin: Admin, chartId: string): Promise<MasterInfo[]> {
   const rows = await fetchAllPaginated<{
-    id: string; account_number: string | null; name: string; classification: string; account_type: string; parent_account_id: string | null;
+    id: string; account_number: string | null; name: string; classification: string; account_type: string; parent_account_id: string | null; is_intercompany: boolean | null;
   }>((o, l) =>
     admin
       .from("master_accounts")
-      .select("id, account_number, name, classification, account_type, parent_account_id")
+      .select("id, account_number, name, classification, account_type, parent_account_id, is_intercompany")
       .eq("chart_id", chartId)
       .eq("is_active", true)
       .order("display_order")
@@ -72,6 +74,7 @@ export async function loadMasters(admin: Admin, chartId: string): Promise<Master
     classification: r.classification,
     accountType: r.account_type,
     parentAccountId: r.parent_account_id,
+    isIntercompany: r.is_intercompany === true,
   }));
 }
 
