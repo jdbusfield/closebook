@@ -185,8 +185,16 @@ function adjLabel(row: HeadcountRow): string | null {
 }
 
 export type HeadcountScope =
-  | { kind: "plan"; planId: string; fiscalYear: number }
+  | { kind: "plan"; planId?: string; fiscalYear: number }
   | { kind: "version"; versionId: string; fiscalYear: number };
+
+export interface PlanInfo {
+  id: string;
+  organizationId: string;
+  fiscalYear: number;
+  status: string;
+  revenueSharesAsOf: string | null;
+}
 
 export interface PlanEntity {
   id: string;
@@ -205,15 +213,25 @@ export function HeadcountWorkspace({
   readOnly,
   ownerName,
   onChanged,
+  onPlanLoaded,
 }: {
   scope: HeadcountScope;
   readOnly: boolean;
   ownerName: string;
   onChanged?: () => void;
+  /** Plan scope: the plan the rows came back with, on every load */
+  onPlanLoaded?: (info: { plan: PlanInfo; canEdit: boolean }) => void;
 }) {
   const isPlan = scope.kind === "plan";
   const reloadVersion = () => onChanged?.();
-  const fetchUrl = isPlan ? `/api/budget/headcount?planId=${scope.planId}` : `/api/budget/headcount?versionId=${scope.versionId}`;
+  // A plan page may start from the year alone; the first load resolves the plan id
+  const [planId, setPlanId] = useState<string | undefined>(scope.kind === "plan" ? scope["planId"] : undefined);
+  // Fetch by whatever the scope gave, so the url (and the load) stays the same after the id is known
+  const fetchUrl = !isPlan
+    ? `/api/budget/headcount?versionId=${scope.versionId}`
+    : scope.planId
+      ? `/api/budget/headcount?planId=${scope.planId}`
+      : `/api/budget/headcount?fiscalYear=${scope.fiscalYear}`;
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<HeadcountRow[]>([]);
   const [priced, setPriced] = useState<PricedPosition[]>([]);
@@ -273,6 +291,10 @@ export function HeadcountWorkspace({
       const res = await fetch(fetchUrl);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to load");
+      if (isPlan && data.plan?.id) {
+        setPlanId(data.plan.id);
+        onPlanLoaded?.({ plan: data.plan, canEdit: !!data.canEdit });
+      }
       setRows(data.rows ?? []);
       setPriced(data.priced ?? []);
       setTotals(data.totals ?? null);
@@ -296,7 +318,8 @@ export function HeadcountWorkspace({
     } finally {
       setLoading(false);
     }
-  }, [fetchUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchUrl, isPlan]);
 
   useEffect(() => {
     load();
@@ -342,7 +365,7 @@ export function HeadcountWorkspace({
       const res = await fetch("/api/budget/headcount/seed", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planId: isPlan ? scope.planId : undefined, mode: "preview" }),
+        body: JSON.stringify({ planId: isPlan ? planId : undefined, mode: "preview" }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Preview failed");
@@ -361,7 +384,7 @@ export function HeadcountWorkspace({
       const res = await fetch("/api/budget/headcount/seed", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planId: isPlan ? scope.planId : undefined, mode: "commit", overwrite: seedOverwrite }),
+        body: JSON.stringify({ planId: isPlan ? planId : undefined, mode: "commit", overwrite: seedOverwrite }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Seed failed");
@@ -407,7 +430,7 @@ export function HeadcountWorkspace({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          planId: isPlan ? scope.planId : undefined,
+          planId: isPlan ? planId : undefined,
           open_role: open,
           count: open ? reqPreview.count : 1,
           name: open ? undefined : req.name.trim(),
@@ -568,7 +591,7 @@ export function HeadcountWorkspace({
       const res = await fetch("/api/budget/payroll-plan/revenue-shares", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planId: scope.planId }),
+        body: JSON.stringify({ planId: planId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Refresh failed");
@@ -1143,7 +1166,7 @@ export function HeadcountWorkspace({
         </CardContent>
       </Card>
 
-      {isPlan && <PlanHistory planId={scope.planId} entityNames={entityCodes} />}
+      {isPlan && planId && <PlanHistory planId={planId} entityNames={entityCodes} />}
 
       {/* Side sheet: monthly components for one position */}
       <Sheet open={!!selectedRow} onOpenChange={(open) => { if (!open) setSelected(null); }}>
@@ -1288,7 +1311,7 @@ export function HeadcountWorkspace({
                 {isPlan && (
                   <div className="rounded-md border p-3">
                     <div className="mb-1 text-xs text-muted-foreground">Changes to this person</div>
-                    <PlanHistory planId={scope.planId} rowId={selectedRow.id} entityNames={entityCodes} compact />
+                    {planId && <PlanHistory planId={planId} rowId={selectedRow.id} entityNames={entityCodes} compact />}
                   </div>
                 )}
                 {selectedRow.seeded_from?.runRate && (
