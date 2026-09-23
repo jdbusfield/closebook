@@ -9,6 +9,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const EDITOR_ROLES = new Set(["admin", "controller", "preparer"]);
+/** Roles that may reseed a payroll plan, recompute its revenue shares, remove rows or change its status. */
+export const MANAGER_ROLES = new Set(["admin", "controller"]);
 
 export interface BudgetActor {
   userId: string;
@@ -56,6 +58,22 @@ export function assertOrgEditor(actor: BudgetActor, organizationId: string | nul
   if (!EDITOR_ROLES.has(role)) {
     throw new BudgetAccessError("Editor role required", 403);
   }
+}
+
+/**
+ * Preparers restricted to the Payroll Plan module are the managers who submit
+ * pay changes: they adjust, tag, allocate and add positions, and nothing more.
+ */
+export function assertOrgManager(actor: BudgetActor, organizationId: string | null | undefined) {
+  assertOrgMember(actor, organizationId);
+  const role = actor.orgRoles.get(organizationId!) ?? "";
+  if (!MANAGER_ROLES.has(role)) {
+    throw new BudgetAccessError("Admin or controller role required", 403);
+  }
+}
+
+export function canManageOrg(actor: BudgetActor, organizationId: string | null | undefined): boolean {
+  return !!organizationId && MANAGER_ROLES.has(actor.orgRoles.get(organizationId) ?? "");
 }
 
 /** Organization that owns an entity. */

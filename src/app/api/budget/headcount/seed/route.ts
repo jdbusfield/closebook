@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getAllCompanyClients } from "@/lib/paylocity";
 import { AllocationResolver, type AllocationRow } from "@/lib/paylocity/allocation-resolver";
 import { fetchAllPaginated } from "@/lib/utils/paginated-fetch";
-import { accessErrorResponse, getBudgetActor, requirePlanAccess } from "@/lib/budget/access";
+import { accessErrorResponse, getBudgetActor, requirePlanAccess, assertOrgManager } from "@/lib/budget/access";
 import { functionFromDepartment, locationFromDepartment } from "@/lib/budget/tagging";
 import { snapshotFields } from "@/lib/budget/baseline";
 import {
@@ -41,6 +41,7 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = admin as any;
     const plan = await requirePlanAccess(admin, actor, planId, mode === "commit");
+    assertOrgManager(actor, plan.organizationId);
     // The shared plan takes everyone: every entity of the organization counts as "ours"
     const { data: orgEntities } = await admin.from("entities").select("id").eq("organization_id", plan.organizationId);
     const memberEntityIds = new Set((orgEntities ?? []).map((e) => e.id));
