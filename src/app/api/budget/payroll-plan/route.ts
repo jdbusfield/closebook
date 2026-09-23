@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { accessErrorResponse, getBudgetActor, getOrCreatePlan, requirePlanAccess } from "@/lib/budget/access";
+import { accessErrorResponse, getBudgetActor, getOrCreatePlan, requirePlanAccess, assertOrgManager } from "@/lib/budget/access";
 import { planShape } from "@/lib/budget/plan-shape";
 
 /**
@@ -35,7 +35,8 @@ export async function PATCH(request: Request) {
     const planId: string | undefined = body?.planId;
     if (!planId) return NextResponse.json({ error: "planId is required" }, { status: 400 });
     const admin = createAdminClient();
-    await requirePlanAccess(admin, actor, planId, true);
+    const plan = await requirePlanAccess(admin, actor, planId, true);
+    assertOrgManager(actor, plan.organizationId);
     const fields: Record<string, unknown> = {};
     if (typeof body.status === "string") fields.status = body.status;
     if (typeof body.notes === "string" || body.notes === null) fields.notes = body.notes;

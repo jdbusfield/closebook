@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { canOpenModule, defaultHrefFor, moduleForPath } from "@/lib/access/modules";
+import { canOpenModule, defaultHrefFor, moduleForPath, type ModuleKey } from "@/lib/access/modules";
 import { parseAccessRow } from "@/lib/access/parse";
 import {
   ACTOR_HEADER,
@@ -98,6 +98,25 @@ export async function updateSession(request: NextRequest) {
 
   // Module allowlist: a member restricted to certain modules is bounced off
   // any page outside them. Entity restrictions are enforced by RLS.
+  // The budget API gets the same gate: a manager given only the Payroll Plan
+  // module can call the plan routes and nothing else under /api/budget.
+  const budgetApiModule = (pathname: string): ModuleKey | null => {
+    if (!pathname.startsWith("/api/budget")) return null;
+    return pathname.startsWith("/api/budget/headcount") || pathname.startsWith("/api/budget/payroll-plan") ? "payroll_plan" : "budgeting";
+  };
+  if (user && isApiRoute) {
+    const pathname = request.nextUrl.pathname;
+    const moduleKey = budgetApiModule(pathname);
+    if (moduleKey) {
+      const { data: row } = await supabase.from("organization_members").select("*").eq("user_id", user.id).limit(1).maybeSingle();
+      if (row) {
+        const access = parseAccessRow(row as Record<string, unknown>);
+        // Budget access covers the plan routes too; the plan module covers only them
+        const allowed = canOpenModule(access, moduleKey) || (moduleKey === "payroll_plan" && canOpenModule(access, "budgeting"));
+        if (!allowed) return NextResponse.json({ error: "This module is not part of your access" }, { status: 403 });
+      }
+    }
+  }
   if (user && !isAuthRoute && !isApiRoute && !isEmbedRoute) {
     const pathname = request.nextUrl.pathname;
     const moduleKey = moduleForPath(pathname);

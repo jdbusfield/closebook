@@ -8,6 +8,8 @@ import {
   requirePlanAccess,
   requireVersionAccess,
   type PlanOwner,
+  assertOrgManager,
+  canManageOrg,
 } from "@/lib/budget/access";
 import { effectiveAllocations, shareForEntities } from "@/lib/budget/allocation";
 import { planShape } from "@/lib/budget/plan-shape";
@@ -227,6 +229,7 @@ export async function GET(request: Request) {
       plan,
       version,
       canEdit: ["admin", "controller", "preparer"].includes(role),
+      canManage: canManageOrg(actor, organizationId),
       actuals,
       groupActuals,
       unallocatedActuals,
@@ -346,6 +349,11 @@ export async function DELETE(request: Request) {
     const admin = createAdminClient();
     const existing = await requireRowWrite(admin, actor, id);
     if (!existing) return NextResponse.json({ error: "Row not found" }, { status: 404 });
+    // Removing a person is a manager's call; preparers adjust and tag
+    if (existing.payroll_plan_id) {
+      const plan = await requirePlanAccess(admin, actor, existing.payroll_plan_id, true);
+      assertOrgManager(actor, plan.organizationId);
+    }
 
     const { error } = await admin.from("budget_headcount").delete().eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

@@ -225,6 +225,8 @@ export function HeadcountWorkspace({
   const reloadVersion = () => onChanged?.();
   // A plan page may start from the year alone; the first load resolves the plan id
   const [planId, setPlanId] = useState<string | undefined>(scope.kind === "plan" ? scope["planId"] : undefined);
+  // Admin or controller: may reseed, recompute revenue shares and remove rows. Managers adjust, tag and add.
+  const [canManage, setCanManage] = useState(false);
   // Fetch by whatever the scope gave, so the url (and the load) stays the same after the id is known
   const fetchUrl = !isPlan
     ? `/api/budget/headcount?versionId=${scope.versionId}`
@@ -291,6 +293,7 @@ export function HeadcountWorkspace({
       const res = await fetch(fetchUrl);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to load");
+      setCanManage(!!data.canManage);
       if (isPlan && data.plan?.id) {
         setPlanId(data.plan.id);
         onPlanLoaded?.({ plan: data.plan, canEdit: !!data.canEdit });
@@ -654,7 +657,7 @@ export function HeadcountWorkspace({
 
   return (
     <div className="space-y-6">
-      {isPlan ? (
+      {isPlan && canManage ? (
         <div className="flex flex-wrap items-center justify-end gap-3">
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={refreshShares} disabled={readOnly || sharesRefreshing} title={revenueSharesAsOf ?? "Not computed yet"}>
@@ -667,7 +670,7 @@ export function HeadcountWorkspace({
             </Button>
           </div>
         </div>
-      ) : (
+      ) : isPlan ? null : (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/40 px-4 py-3 text-sm">
           <span>
             Personnel comes from the shared payroll plan for {scope.fiscalYear}. This is {ownerName}&apos;s share of it, priced with this version&apos;s assumptions.
@@ -1125,7 +1128,7 @@ export function HeadcountWorkspace({
                       <TableCell className="text-right tabular-nums">{p && !isPlan ? fmtPct(p.reShare * 100, 0) : ""}</TableCell>
                       <TableCell className="text-right font-medium tabular-nums">{p ? fmtUsd(p.total) : ""}</TableCell>
                       <TableCell>
-                        {!readOnly && (
+                        {!readOnly && canManage && (
                           <Button variant="ghost" size="icon-xs" onClick={() => remove(r)} aria-label={`Remove ${r.name}`}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>

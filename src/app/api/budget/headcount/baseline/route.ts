@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { accessErrorResponse, getBudgetActor, requirePlanAccess } from "@/lib/budget/access";
+import { accessErrorResponse, getBudgetActor, requirePlanAccess, assertOrgManager } from "@/lib/budget/access";
 import { loadPlanRows } from "@/lib/budget/recompute";
 import { readBaselineFields, snapshotFields } from "@/lib/budget/baseline";
 
@@ -18,6 +18,7 @@ export async function POST(request: Request) {
     if (!planId) return NextResponse.json({ error: "planId is required" }, { status: 400 });
     const admin = createAdminClient();
     const plan = await requirePlanAccess(admin, actor, planId, true);
+    assertOrgManager(actor, plan.organizationId);
     const rows = await loadPlanRows(admin, plan.id);
     let written = 0;
     for (const r of rows) {
