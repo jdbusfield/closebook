@@ -271,7 +271,9 @@ export function HeadcountWorkspace({
     mode: "open" as "named" | "open",
     name: "",
     title: "",
-    department: "",
+    location: "",
+    class_key: "",
+    function_key: "",
     count: "1",
     pay_type: "Hourly" as "Hourly" | "Salary" | "Amount",
     base_rate: "",
@@ -281,7 +283,6 @@ export function HeadcountWorkspace({
     start_month: "1",
     end_month: "",
     benefits_monthly: "",
-    wc_class_code: "",
   };
   const [req, setReq] = useState(emptyReq);
 
@@ -434,7 +435,9 @@ export function HeadcountWorkspace({
           count: open ? reqPreview.count : 1,
           name: open ? undefined : req.name.trim(),
           title: req.title.trim() || null,
-          department: req.department || null,
+          location_allocations: req.location ? [{ key: req.location, pct: 100 }] : [],
+          class_allocations: req.class_key ? [{ class: req.class_key, pct: 100 }] : [],
+          function_allocations: req.function_key ? [{ key: req.function_key, pct: 100 }] : [],
           is_requisition: true,
           status: "planned",
           pay_type: req.pay_type,
@@ -445,7 +448,6 @@ export function HeadcountWorkspace({
           start_month: reqPreview.start,
           end_month: req.end_month ? reqPreview.end : null,
           benefits_monthly: req.benefits_monthly ? Number(req.benefits_monthly) : 0,
-          wc_class_code: req.wc_class_code || null,
         }),
       });
       const data = await res.json();
@@ -662,10 +664,6 @@ export function HeadcountWorkspace({
             <Button variant="outline" onClick={() => { setSeedOpen(true); seedPreview(); }} disabled={readOnly}>
               <Download className="mr-2 h-4 w-4" />
               Seed from Paylocity
-            </Button>
-            <Button onClick={() => setReqOpen(true)} disabled={readOnly}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add position
             </Button>
           </div>
         </div>
@@ -959,6 +957,12 @@ export function HeadcountWorkspace({
                   </SelectContent>
                 </Select>
               </div>
+            )}
+            {isPlan && (
+              <Button onClick={() => setReqOpen(true)} disabled={readOnly}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add position
+              </Button>
             )}
           </div>
         </CardHeader>
@@ -1271,15 +1275,6 @@ export function HeadcountWorkspace({
                     onBlur={(e) => { if (e.target.value !== (selectedRow.notes ?? "")) patch(selectedRow.id, { notes: e.target.value }); }}
                   />
                 </div>
-                <div className="grid gap-1.5">
-                  <Label htmlFor="hc-wc">Workers comp class code</Label>
-                  <Input
-                    id="hc-wc"
-                    defaultValue={selectedRow.wc_class_code ?? ""}
-                    disabled={readOnly}
-                    onBlur={(e) => { if (e.target.value !== (selectedRow.wc_class_code ?? "")) patch(selectedRow.id, { wc_class_code: e.target.value || null }); }}
-                  />
-                </div>
                 {isPlan && (
                   <div className="rounded-md border p-3">
                     <div className="mb-1 text-xs text-muted-foreground">Changes to this person</div>
@@ -1441,14 +1436,36 @@ export function HeadcountWorkspace({
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div className="grid gap-1.5">
-                <Label htmlFor="req-dept">Department</Label>
-                <Input id="req-dept" value={req.department} onChange={(e) => setReq((r) => ({ ...r, department: e.target.value }))} />
+                <Label htmlFor="req-location">Location</Label>
+                <Select value={req.location || "none"} onValueChange={(v) => setReq((r) => ({ ...r, location: v === "none" ? "" : v }))}>
+                  <SelectTrigger id="req-location"><SelectValue placeholder="Choose" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Not set</SelectItem>
+                    {LOCATIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid gap-1.5">
-                <Label htmlFor="req-wc">Workers comp class</Label>
-                <Input id="req-wc" value={req.wc_class_code} onChange={(e) => setReq((r) => ({ ...r, wc_class_code: e.target.value }))} placeholder="8810" />
+                <Label htmlFor="req-class">Class</Label>
+                <Select value={req.class_key || "none"} onValueChange={(v) => setReq((r) => ({ ...r, class_key: v === "none" ? "" : v }))}>
+                  <SelectTrigger id="req-class"><SelectValue placeholder="Choose" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Not set</SelectItem>
+                    {classOptions.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="req-function">Function</Label>
+                <Select value={req.function_key || "none"} onValueChange={(v) => setReq((r) => ({ ...r, function_key: v === "none" ? "" : v }))}>
+                  <SelectTrigger id="req-function"><SelectValue placeholder="Choose" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Not set</SelectItem>
+                    {FUNCTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
