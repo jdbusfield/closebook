@@ -11,7 +11,17 @@ import {
 import { effectiveAllocations, shareForEntities } from "@/lib/budget/allocation";
 import { planShape } from "@/lib/budget/plan-shape";
 import { loadAssumptions, loadMemberEntityIds, loadPlanRows, resolveVersionChartId, toEngineRow } from "@/lib/budget/recompute";
-import { comparisonYear, loadPersonnelActuals, type PersonnelActuals } from "@/lib/budget/personnel-actuals";
+import {
+  allocateActualsByEmployer,
+  comparisonYear,
+  loadPersonnelActualsByEntity,
+  sumActuals,
+  withAllocated,
+  type AllocationWeight,
+  type PersonnelActuals,
+  type PersonnelActualsByEntity,
+} from "@/lib/budget/personnel-actuals";
+import { employerEntityId } from "@/lib/paylocity/companies";
 import { AssumptionSet } from "@/lib/budget/assumption-keys";
 import { pricePosition, sumPositions } from "@/lib/budget/personnel-engine";
 import { baselineRow } from "@/lib/budget/baseline";
@@ -63,28 +73,49 @@ export async function GET(request: Request) {
     const versionId = searchParams.get("versionId");
     const admin = createAdminClient();
 
-    let plan: PlanOwner | null;
-    let assumptions: AssumptionSet;
+    let plan: PlanOwner | null = null;
     let fiscalYear: number;
     let memberEntityIds: Set<string> | null = null;
     let version = null as Awaited<ReturnType<typeof requireVersionAccess>> | null;
     if (planId) {
       plan = await requirePlanAccess(admin, actor, planId, false);
-      assumptions = await planAssumptions(admin, plan);
       fiscalYear = plan.fiscalYear;
     } else if (versionId) {
       version = await requireVersionAccess(admin, actor, versionId, false);
-      plan = await loadPlanForVersion(admin, version);
-      [assumptions, memberEntityIds] = await Promise.all([loadAssumptions(admin, version.id), loadMemberEntityIds(admin, version)]);
       fiscalYear = version.fiscalYear;
     } else {
       return NextResponse.json({ error: "planId or versionId is required" }, { status: 400 });
     }
 
     const organizationId = plan?.organizationId ?? version?.organizationId ?? null;
-    const shape = organizationId ? await planShape(admin, organizationId) : { entities: [], reportingEntities: [], membersByGroup: {} };
+    const compareYear = comparisonYear(fiscalYear);
+    // Everything below depends only on the owner: load it all at once
+    const [shapeResult, planFromVersion, versionAssumptions, versionMembers, chartId] = await Promise.all([
+      organizationId ? planShape(admin, organizationId) : Promise.resolve({ entities: [], reportingEntities: [], membersByGroup: {} as Record<string, string[]> }),
+      version ? loadPlanForVersion(admin, version) : Promise.resolve(plan),
+      version ? loadAssumptions(admin, version.id) : plan ? planAssumptions(admin, plan) : Promise.resolve(new AssumptionSet([])),
+      version ? loadMemberEntityIds(admin, version) : Promise.resolve(null),
+      version
+        ? resolveVersionChartId(admin, version).catch(() => null)
+        : organizationId
+          ? admin.from("master_charts").select("id").eq("organization_id", organizationId).eq("kind", "management").maybeSingle().then((r) => r.data?.id ?? null)
+          : Promise.resolve(null),
+    ]);
+    const shape = shapeResult;
+    plan = planFromVersion;
+    const assumptions: AssumptionSet = versionAssumptions;
+    memberEntityIds = versionMembers;
     const revenueShares = plan?.revenueShares ?? [];
-    const allRows = plan ? await loadPlanRows(admin, plan.id) : [];
+    // Booked personnel cost for the comparison year, per entity, alongside the rows
+    const [allRows, bookedByEntity] = await Promise.all([
+      plan ? loadPlanRows(admin, plan.id) : Promise.resolve([]),
+      chartId
+        ? loadPersonnelActualsByEntity(admin, { chartId, entityIds: shape.entities.map((e) => e.id), year: compareYear }).catch((err) => {
+            console.error("headcount actuals failed:", err);
+            return null as PersonnelActualsByEntity | null;
+          })
+        : Promise.resolve(null as PersonnelActualsByEntity | null),
+    ]);
 
     // On a version, keep only the rows this group has a share of
     const rows = memberEntityIds
@@ -97,12 +128,14 @@ export async function GET(request: Request) {
     const unallocatedByMonth: number[] = new Array(12).fill(0);
     const rowGroupTotals: Record<string, Record<string, number>> = {};
     let unallocatedTotal = 0;
+    const weights: AllocationWeight[] = [];
     const priced = rows.map((r) => {
       const input = toEngineRow(r);
       const allocs = effectiveAllocations(r, revenueShares);
       const reShare = memberEntityIds ? shareForEntities(allocs, memberEntityIds) : 1;
       const ctx = { year: fiscalYear, assumptions, reShare };
       const p = pricePosition(input, ctx);
+      if (!memberEntityIds) weights.push({ employerEntityId: employerEntityId(r.paylocity_company_id), costByMonth: p.totalByMonth, allocations: allocs });
       // Baseline: the row as seeded, without its comp adjustment. Hand-added rows have none.
       const base = baselineRow(r);
       if (base) {
@@ -135,30 +168,35 @@ export async function GET(request: Request) {
     });
     const totals = sumPositions(priced);
 
-    // What the projection is up against: personnel cost booked in the last complete year
+    // What the projection is up against: personnel cost booked in the
+    // comparison year, moved from the entity that ran the payroll to the
+    // entities the plan allocates those people to (JD: the by-company
+    // comparison has to respect allocations, not where the ledger booked it).
+    // A version's own rows are priced at its share, so its weights come from
+    // every plan row at 100%.
     let actuals: PersonnelActuals | null = null;
     const groupActuals: Record<string, PersonnelActuals> = {};
-    try {
-      const actualEntityIds = memberEntityIds ? [...memberEntityIds] : shape.entities.map((e) => e.id);
-      let chartId: string | null = null;
-      if (version) chartId = await resolveVersionChartId(admin, version);
-      else if (organizationId) {
-        const { data: chart } = await admin.from("master_charts").select("id").eq("organization_id", organizationId).eq("kind", "management").maybeSingle();
-        chartId = chart?.id ?? null;
-      }
-      if (chartId) {
-        actuals = await loadPersonnelActuals(admin, { chartId, entityIds: actualEntityIds, year: comparisonYear(fiscalYear) });
-        // Plan view: the same, per reporting group, for the By company card
-        if (!memberEntityIds) {
-          for (const g of shape.reportingEntities) {
-            const members = shape.membersByGroup[g.id] ?? [];
-            if (members.length === 0) continue;
-            groupActuals[g.id] = await loadPersonnelActuals(admin, { chartId, entityIds: members, year: comparisonYear(fiscalYear) });
-          }
+    let unallocatedActuals: number[] | null = null;
+    if (bookedByEntity) {
+      if (memberEntityIds) {
+        for (const r of allRows) {
+          const p = pricePosition(toEngineRow(r), { year: fiscalYear, assumptions, reShare: 1 });
+          weights.push({ employerEntityId: employerEntityId(r.paylocity_company_id), costByMonth: p.totalByMonth, allocations: effectiveAllocations(r, revenueShares) });
         }
       }
-    } catch (err) {
-      console.error("headcount actuals failed:", err);
+      const moved = allocateActualsByEmployer(bookedByEntity, weights);
+      const allocated = withAllocated(bookedByEntity, moved.byEntity);
+      if (memberEntityIds) {
+        actuals = sumActuals(allocated, memberEntityIds);
+      } else {
+        actuals = sumActuals(bookedByEntity, bookedByEntity.byEntity.keys());
+        for (const g of shape.reportingEntities) {
+          const members = shape.membersByGroup[g.id] ?? [];
+          if (members.length === 0) continue;
+          groupActuals[g.id] = sumActuals(allocated, members);
+        }
+        unallocatedActuals = moved.unallocated;
+      }
     }
 
     return NextResponse.json({
@@ -166,6 +204,7 @@ export async function GET(request: Request) {
       version,
       actuals,
       groupActuals,
+      unallocatedActuals,
       rows,
       priced,
       totals,
