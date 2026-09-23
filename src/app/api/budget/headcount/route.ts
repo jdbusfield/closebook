@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   accessErrorResponse,
   getBudgetActor,
+  getOrCreatePlan,
   loadPlanForVersion,
   requirePlanAccess,
   requireVersionAccess,
@@ -63,6 +64,7 @@ async function planAssumptions(admin: ReturnType<typeof createAdminClient>, plan
 
 /**
  * GET /api/budget/headcount?planId=   the shared plan: every row at 100%, plus each reporting group's share
+ * GET /api/budget/headcount?fiscalYear=  the same, finding (or creating) the caller's plan for the year in one round trip
  * GET /api/budget/headcount?versionId=  a version's view: the plan's rows priced at this group's share
  */
 export async function GET(request: Request) {
@@ -71,6 +73,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const planId = searchParams.get("planId");
     const versionId = searchParams.get("versionId");
+    const planYear = Number(searchParams.get("fiscalYear"));
     const admin = createAdminClient();
 
     let plan: PlanOwner | null = null;
@@ -80,17 +83,21 @@ export async function GET(request: Request) {
     if (planId) {
       plan = await requirePlanAccess(admin, actor, planId, false);
       fiscalYear = plan.fiscalYear;
+    } else if (planYear) {
+      const orgId = searchParams.get("organizationId") ?? [...actor.orgRoles.keys()][0];
+      plan = await getOrCreatePlan(admin, actor, orgId, planYear);
+      fiscalYear = plan.fiscalYear;
     } else if (versionId) {
       version = await requireVersionAccess(admin, actor, versionId, false);
       fiscalYear = version.fiscalYear;
     } else {
-      return NextResponse.json({ error: "planId or versionId is required" }, { status: 400 });
+      return NextResponse.json({ error: "planId, fiscalYear or versionId is required" }, { status: 400 });
     }
 
     const organizationId = plan?.organizationId ?? version?.organizationId ?? null;
     const compareYear = comparisonYear(fiscalYear);
     // Everything below depends only on the owner: load it all at once
-    const [shapeResult, planFromVersion, versionAssumptions, versionMembers, chartId] = await Promise.all([
+    const [shapeResult, planFromVersion, versionAssumptions, versionMembers, chartId, planRows] = await Promise.all([
       organizationId ? planShape(admin, organizationId) : Promise.resolve({ entities: [], reportingEntities: [], membersByGroup: {} as Record<string, string[]> }),
       version ? loadPlanForVersion(admin, version) : Promise.resolve(plan),
       version ? loadAssumptions(admin, version.id) : plan ? planAssumptions(admin, plan) : Promise.resolve(new AssumptionSet([])),
@@ -100,6 +107,8 @@ export async function GET(request: Request) {
         : organizationId
           ? admin.from("master_charts").select("id").eq("organization_id", organizationId).eq("kind", "management").maybeSingle().then((r) => r.data?.id ?? null)
           : Promise.resolve(null),
+      // The plan view knows its plan already; a version finds it above and loads rows after
+      plan ? loadPlanRows(admin, plan.id) : Promise.resolve(null),
     ]);
     const shape = shapeResult;
     plan = planFromVersion;
@@ -108,7 +117,7 @@ export async function GET(request: Request) {
     const revenueShares = plan?.revenueShares ?? [];
     // Booked personnel cost for the comparison year, per entity, alongside the rows
     const [allRows, bookedByEntity] = await Promise.all([
-      plan ? loadPlanRows(admin, plan.id) : Promise.resolve([]),
+      planRows ? Promise.resolve(planRows) : plan ? loadPlanRows(admin, plan.id) : Promise.resolve([]),
       chartId
         ? loadPersonnelActualsByEntity(admin, { chartId, entityIds: shape.entities.map((e) => e.id), year: compareYear }).catch((err) => {
             console.error("headcount actuals failed:", err);
@@ -199,9 +208,11 @@ export async function GET(request: Request) {
       }
     }
 
+    const role = organizationId ? actor.orgRoles.get(organizationId) ?? "" : "";
     return NextResponse.json({
       plan,
       version,
+      canEdit: ["admin", "controller", "preparer"].includes(role),
       actuals,
       groupActuals,
       unallocatedActuals,
