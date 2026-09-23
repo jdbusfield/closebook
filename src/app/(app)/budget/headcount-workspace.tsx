@@ -231,6 +231,7 @@ export function HeadcountWorkspace({
   const [groupByMonth, setGroupByMonth] = useState<Record<string, number[]>>({});
   const [groupActuals, setGroupActuals] = useState<Record<string, { year: number; byMonth: number[]; hasData: boolean[]; monthsWithData: number }>>({});
   const [unallocatedByMonth, setUnallocatedByMonth] = useState<number[]>([]);
+  const [unallocatedActuals, setUnallocatedActuals] = useState<number[] | null>(null);
   const [unallocatedTotal, setUnallocatedTotal] = useState(0);
   const [revenueShares, setRevenueShares] = useState<EntityAllocation[]>([]);
   const [revenueSharesAsOf, setRevenueSharesAsOf] = useState<string | null>(null);
@@ -284,6 +285,7 @@ export function HeadcountWorkspace({
       setGroupByMonth(data.groupByMonth ?? {});
       setGroupActuals(data.groupActuals ?? {});
       setUnallocatedByMonth(data.unallocatedByMonth ?? []);
+      setUnallocatedActuals(data.unallocatedActuals ?? null);
       setUnallocatedTotal(data.unallocatedTotal ?? 0);
       setRevenueShares(data.plan?.revenueShares ?? []);
       setRevenueSharesAsOf(data.plan?.revenueSharesAsOf ?? null);
@@ -768,7 +770,7 @@ export function HeadcountWorkspace({
             </Table>
             {actuals && actuals.monthsWithData > 0 && (
               <p className="mt-2 text-xs text-muted-foreground">
-                {actuals.year} actual is every Personnel Costs account in the general ledger for {isPlan ? "all entities" : ownerName}, by month booked. Change compares this projection to it, month for month and for the months booked so far; red is higher cost, green is lower.
+                {actuals.year} actual is every Personnel Costs account in the general ledger{isPlan ? " for all entities, by month booked" : `, moved from the company that ran the payroll to ${ownerName} the way the plan allocates its people`}. Change compares this projection to it, month for month and for the months booked so far; red is higher cost, green is lower.
               </p>
             )}
           </CardContent>
@@ -779,7 +781,7 @@ export function HeadcountWorkspace({
         <Card>
           <CardHeader>
             <CardTitle>By company</CardTitle>
-            <CardDescription>Each reporting group&apos;s share of the personnel cost by month, from the Company column: manual splits and By revenue rows alike.</CardDescription>
+            <CardDescription>Each reporting group&apos;s share of the personnel cost by month, from the Company column: manual splits and By revenue rows alike. The prior-year row moves what Silverco and HDR booked to the companies their people are allocated to, so both years are split the same way.</CardDescription>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             <Table>
@@ -812,7 +814,7 @@ export function HeadcountWorkspace({
                         {ga && ga.monthsWithData > 0 && (
                           <>
                             <TableRow>
-                              <TableCell className="whitespace-nowrap pl-6 text-xs text-muted-foreground">{ga.year} actual, booked</TableCell>
+                              <TableCell className="whitespace-nowrap pl-6 text-xs text-muted-foreground">{ga.year} actual, allocated</TableCell>
                               {ga.byMonth.map((v, i) => <TableCell key={i} className="text-right text-xs tabular-nums text-muted-foreground">{booked[i] ? fmtUsd(v) : ""}</TableCell>)}
                               <TableCell className="text-right text-xs tabular-nums text-muted-foreground">{fmtUsd(actualToDate)}</TableCell>
                               <TableCell />
@@ -848,6 +850,14 @@ export function HeadcountWorkspace({
                     ))}
                     <TableCell className="text-right font-medium tabular-nums text-amber-600">{fmtUsd(unallocatedTotal)}</TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">{totals.total > 0 ? fmtPct((unallocatedTotal / totals.total) * 100) : ""}</TableCell>
+                  </TableRow>
+                )}
+                {unallocatedActuals && actuals && unallocatedActuals.some((v, i) => actuals.hasData[i] && v > 0) && (
+                  <TableRow>
+                    <TableCell className="whitespace-nowrap pl-6 text-xs text-muted-foreground">{actuals.year} actual, unallocated</TableCell>
+                    {unallocatedActuals.map((v, i) => <TableCell key={i} className="text-right text-xs tabular-nums text-muted-foreground">{actuals.hasData[i] ? fmtUsd(v) : ""}</TableCell>)}
+                    <TableCell className="text-right text-xs tabular-nums text-muted-foreground">{fmtUsd(unallocatedActuals.reduce((t, v, i) => (actuals.hasData[i] ? t + v : t), 0))}</TableCell>
+                    <TableCell />
                   </TableRow>
                 )}
                 <TableRow className="font-medium">
