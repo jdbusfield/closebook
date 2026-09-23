@@ -1097,8 +1097,8 @@ export function HeadcountWorkspace({
                         )}
                       </TableCell>
                       {/* From here on the columns read only: every value changes through Adjust */}
-                      <TableCell className={`whitespace-nowrap border-l text-sm ${r.status === "active" ? "" : "text-muted-foreground"}`}>{STATUS_LABELS[r.status] ?? r.status}</TableCell>
-                      <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{r.pay_type}</TableCell>
+                      <TableCell className="whitespace-nowrap border-l text-sm">{STATUS_LABELS[r.status] ?? r.status}</TableCell>
+                      <TableCell className="whitespace-nowrap text-sm">{r.pay_type}</TableCell>
                       {showMonths
                         ? MONTH_ABBRS.map((m, i) => {
                             const d = (p?.totalByMonth[i] ?? 0) - (baseline?.byMonth?.[i] ?? 0);
@@ -1113,7 +1113,7 @@ export function HeadcountWorkspace({
                             const adjusted = PAY_KEYS.has(f.key) && r.comp_adj_kind && r.comp_adj_value != null && payUnit(r).hourly === (f.key === "base_rate");
                             const v = adjusted ? adjustedPay(r, r.comp_adj_kind!, r.comp_adj_value!) : (r[f.key] as number | null);
                             return (
-                              <TableCell key={f.key} className={`whitespace-nowrap text-right text-xs tabular-nums ${adjusted ? "font-medium" : "text-muted-foreground"}`}>
+                              <TableCell key={f.key} className={`whitespace-nowrap text-right text-sm tabular-nums ${adjusted ? "font-semibold" : ""}`}>
                                 {formatCell(v, f.format)}
                               </TableCell>
                             );
