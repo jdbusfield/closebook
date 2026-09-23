@@ -1,502 +1,594 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { toast } from "sonner";
-import {
-  Upload,
-  Settings,
-  FileSpreadsheet,
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
-  Receipt,
-  RefreshCw,
-} from "lucide-react";
-import { formatCurrency, getCurrentPeriod, getPeriodLabel } from "@/lib/utils/dates";
+import { Download, FileSpreadsheet, RefreshCw, Settings, Upload } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { formatCurrency } from "@/lib/utils/dates";
+import type { AccrualItem, AccrualSettings } from "@/lib/revenue-accrual/types";
+import type { AccrualReport } from "@/lib/revenue-accrual/report";
+import { accountLabel } from "@/lib/revenue-accrual/engine";
+import { parseQuotesWorkbook } from "./quotes-parse";
 
-interface RevenueSchedule {
-  id: string;
-  period_year: number;
-  period_month: number;
-  source_file_name: string | null;
-  uploaded_at: string | null;
-  total_earned_revenue: number;
-  total_billed_revenue: number;
-  total_accrued_revenue: number;
-  total_deferred_revenue: number;
-  status: string;
+interface Meta {
+  quotes: { fileName: string; uploadedAt: string; count: number; sheet: string } | null;
+  qbo: { pulledAt: string; from: string; to: string; docs: number; companyName: string | null } | null;
+  decisionsUpdatedAt: string | null;
 }
 
-interface RevenueLineItem {
-  id: string;
-  contract_id: string | null;
-  customer_name: string | null;
-  description: string | null;
-  rental_start: string | null;
-  rental_end: string | null;
-  total_contract_value: number;
-  daily_rate: number;
-  days_in_period: number;
-  earned_revenue: number;
-  billed_amount: number;
-  accrual_amount: number;
-  deferral_amount: number;
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const TIER: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
+  confirmed: { label: "Confirmed", variant: "default" },
+  job: { label: "Matched On The Job", variant: "secondary" },
+  quote: { label: "From Quote Dates", variant: "outline" },
+  review: { label: "Needs Review", variant: "destructive" },
+};
+
+function lastMonths(n: number) {
+  const now = new Date();
+  const out: { year: number; month: number }[] = [];
+  for (let i = 0; i < n; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    out.push({ year: d.getFullYear(), month: d.getMonth() + 1 });
+  }
+  return out;
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  draft: "Draft",
-  posted: "Posted",
-  reversed: "Reversed",
-};
+const when = (iso: string | null | undefined) =>
+  iso
+    ? new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })
+    : "";
 
-const STATUS_VARIANTS: Record<string, "default" | "secondary" | "outline"> = {
-  draft: "outline",
-  posted: "default",
-  reversed: "secondary",
-};
-
-export default function RevenuePage() {
-  const params = useParams();
-  const entityId = params.entityId as string;
-  const supabase = createClient();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const current = getCurrentPeriod();
-  const [periodYear, setPeriodYear] = useState(current.year);
-  const [periodMonth, setPeriodMonth] = useState(current.month);
-  const [schedule, setSchedule] = useState<RevenueSchedule | null>(null);
-  const [lineItems, setLineItems] = useState<RevenueLineItem[]>([]);
+export default function RevenueAccrualPage() {
+  const { entityId } = useParams() as { entityId: string };
+  const months = useMemo(() => lastMonths(13), []);
+  const [period, setPeriod] = useState(months[1]); // last closed month
+  const [meta, setMeta] = useState<Meta | null>(null);
+  const [settings, setSettings] = useState<AccrualSettings | null>(null);
+  const [report, setReport] = useState<AccrualReport | null>(null);
+  const [decisions, setDecisions] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [hasQBOConnection, setHasQBOConnection] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const loadSchedule = useCallback(async () => {
+  const load = useCallback(async () => {
     setLoading(true);
-
-    const { data: sched } = await supabase
-      .from("revenue_schedules")
-      .select("*")
-      .eq("entity_id", entityId)
-      .eq("period_year", periodYear)
-      .eq("period_month", periodMonth)
-      .single();
-
-    if (sched) {
-      setSchedule(sched as unknown as RevenueSchedule);
-
-      const { data: items } = await supabase
-        .from("revenue_line_items")
-        .select("*")
-        .eq("schedule_id", sched.id)
-        .order("row_order");
-
-      setLineItems((items as unknown as RevenueLineItem[]) ?? []);
-    } else {
-      setSchedule(null);
-      setLineItems([]);
-    }
-
-    setLoading(false);
-  }, [supabase, entityId, periodYear, periodMonth]);
-
-  useEffect(() => {
-    loadSchedule();
-  }, [loadSchedule]);
-
-  // Check if this entity has a QBO connection (for showing sync button)
-  useEffect(() => {
-    async function checkQBO() {
-      const { count } = await supabase
-        .from("qbo_connections")
-        .select("id", { count: "exact", head: true })
-        .eq("entity_id", entityId);
-      setHasQBOConnection((count ?? 0) > 0);
-    }
-    checkQBO();
-  }, [supabase, entityId]);
-
-  async function handleQBOSync() {
-    setSyncing(true);
     try {
-      const res = await fetch("/api/qbo/rental-accruals", {
+      const res = await fetch(`/api/revenue-accrual?entityId=${entityId}&year=${period.year}&month=${period.month}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      setMeta(json.meta);
+      setSettings(json.settings);
+      setReport(json.report);
+      setDecisions(json.report?.decisions ?? {});
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not load the report");
+    } finally {
+      setLoading(false);
+    }
+  }, [entityId, period]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const included = useCallback(
+    (it: AccrualItem) => (it.id in decisions ? decisions[it.id] : it.defaultInclude),
+    [decisions],
+  );
+
+  const persistDecisions = (next: Record<string, boolean>) => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      const res = await fetch("/api/revenue-accrual/decisions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entityId, periodYear, periodMonth }),
+        body: JSON.stringify({ entityId, ...period, decisions: next }),
       });
+      if (!res.ok) toast.error((await res.json().catch(() => ({}))).error ?? "Could not save the choice");
+      else load();
+    }, 700);
+  };
 
-      const json = await res.json();
+  const toggle = (it: AccrualItem, value: boolean) => {
+    const next = { ...decisions };
+    if (value === it.defaultInclude) delete next[it.id];
+    else next[it.id] = value;
+    setDecisions(next);
+    persistDecisions(next);
+  };
 
-      if (!res.ok) {
-        toast.error(json.error || "QBO sync failed");
-      } else if (json.message) {
-        toast.info(json.message);
-      } else {
-        toast.success(
-          `Synced ${json.linesProcessed} invoices from QuickBooks${
-            json.skippedCount > 0 ? ` (${json.skippedCount} skipped)` : ""
-          }`
-        );
-        loadSchedule();
-      }
-    } catch {
-      toast.error("QBO sync failed — network error");
-    }
-    setSyncing(false);
-  }
-
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setUploading(true);
-
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("entityId", entityId);
-    formData.append("periodYear", String(periodYear));
-    formData.append("periodMonth", String(periodMonth));
-
+  async function onQuotesFile(file: File) {
+    setBusy("quotes");
     try {
-      const res = await fetch("/api/revenue/upload", {
+      const keepFrom = `${period.year - 1}-${String(period.month).padStart(2, "0")}-01`;
+      const parsed = await parseQuotesWorkbook(file, keepFrom);
+      const res = await fetch("/api/revenue-accrual/quotes", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entityId, fileName: file.name, sheet: parsed.sheet, quotes: parsed.quotes }),
       });
-
       const json = await res.json();
-
-      if (!res.ok) {
-        toast.error(json.error || "Upload failed");
-        if (json.details) {
-          json.details.forEach((d: string) => toast.warning(d));
-        }
-      } else {
-        toast.success(
-          `Processed ${json.linesProcessed} contracts${
-            json.skippedRows > 0 ? ` (${json.skippedRows} skipped)` : ""
-          }`
-        );
-        loadSchedule();
-      }
-    } catch {
-      toast.error("Upload failed — network error");
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      toast.success(`Saved ${json.count.toLocaleString()} quotes from the "${parsed.sheet}" tab`);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not read the Quotes Report");
+    } finally {
+      setBusy(null);
+      if (fileRef.current) fileRef.current.value = "";
     }
-
-    setUploading(false);
-    // Reset file input
-    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  const years = Array.from({ length: 5 }, (_, i) => current.year - 2 + i);
-  const months = Array.from({ length: 12 }, (_, i) => i + 1);
+  async function pullQbo() {
+    setBusy("qbo");
+    try {
+      const res = await fetch("/api/revenue-accrual/qbo-pull", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entityId, ...period }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      toast.success(`Pulled ${json.docs.toLocaleString()} documents and ${json.journals} journal entries`);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "QuickBooks pull failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const download = (kind: "working" | "journals") => {
+    window.location.href = `/api/revenue-accrual/export?entityId=${entityId}&year=${period.year}&month=${period.month}&kind=${kind}`;
+  };
+
+  const items = report?.result.items ?? [];
+  const accruals = items.filter((i) => i.kind === "accrual" && i.tier !== "review");
+  const deferrals = items.filter((i) => i.kind === "deferral" && i.tier !== "review");
+  const review = items.filter((i) => i.tier === "review");
+  const monthLabel = `${MONTHS[period.month - 1]} ${period.year}`;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Revenue Accruals & Deferrals
-          </h1>
-          <p className="text-muted-foreground">
-            Track earned vs billed revenue by rental contract
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight">Revenue Accrual</h1>
+          <p className="text-muted-foreground">Month-end accrual and deferral from the Quotes Report and QuickBooks</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Link href={`/${entityId}/revenue/settings`}>
-            <Button variant="outline" size="sm">
-              <Settings className="mr-2 h-4 w-4" />
-              Settings
-            </Button>
-          </Link>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            className="hidden"
-            onChange={handleUpload}
-          />
-          <Button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            variant="outline"
+        <div className="flex flex-wrap items-center gap-2">
+          <Select
+            value={`${period.year}-${period.month}`}
+            onValueChange={(v) => {
+              const [y, m] = v.split("-").map(Number);
+              setPeriod({ year: y, month: m });
+            }}
           >
-            <Upload className="mr-2 h-4 w-4" />
-            {uploading ? "Uploading..." : "Upload Spreadsheet"}
+            <SelectTrigger className="w-[180px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {months.map((m) => (
+                <SelectItem key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>
+                  {MONTHS[m.month - 1]} {m.year}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" onClick={() => setSettingsOpen(true)} disabled={!settings}>
+            <Settings className="mr-2 h-4 w-4" />
+            Settings
           </Button>
-          {hasQBOConnection && (
-            <Button onClick={handleQBOSync} disabled={syncing}>
-              <RefreshCw
-                className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`}
-              />
-              {syncing ? "Syncing..." : "Sync from QuickBooks"}
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">1. Quotes Report</CardTitle>
+            <CardDescription>
+              {meta?.quotes
+                ? `${meta.quotes.fileName}: ${meta.quotes.count.toLocaleString()} quotes, uploaded ${when(meta.quotes.uploadedAt)}`
+                : "Upload the Quotes Report workbook (the Query1 tab is read)."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".xlsx,.xlsm,.xls"
+              className="hidden"
+              onChange={(e) => e.target.files?.[0] && onQuotesFile(e.target.files[0])}
+            />
+            <Button onClick={() => fileRef.current?.click()} disabled={busy !== null}>
+              <Upload className="mr-2 h-4 w-4" />
+              {busy === "quotes" ? "Reading The Workbook..." : meta?.quotes ? "Upload A New Quotes Report" : "Upload Quotes Report"}
             </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Period Selector */}
-      <div className="flex items-center gap-4">
-        <Select
-          value={String(periodYear)}
-          onValueChange={(v) => setPeriodYear(Number(v))}
-        >
-          <SelectTrigger className="w-[120px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {years.map((y) => (
-              <SelectItem key={y} value={String(y)}>
-                {y}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={String(periodMonth)}
-          onValueChange={(v) => setPeriodMonth(Number(v))}
-        >
-          <SelectTrigger className="w-[150px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {months.map((m) => (
-              <SelectItem key={m} value={String(m)}>
-                {getPeriodLabel(current.year, m).split(" ")[0]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <span className="text-sm text-muted-foreground">
-          {getPeriodLabel(periodYear, periodMonth)}
-        </span>
-      </div>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">Earned Revenue</p>
-            </div>
-            <p className="text-2xl font-semibold tabular-nums mt-1">
-              {formatCurrency(schedule?.total_earned_revenue ?? 0)}
-            </p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <Receipt className="h-4 w-4 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">Billed Revenue</p>
-            </div>
-            <p className="text-2xl font-semibold tabular-nums mt-1">
-              {formatCurrency(schedule?.total_billed_revenue ?? 0)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-green-600" />
-              <p className="text-sm text-muted-foreground">Accrual</p>
-            </div>
-            <p className="text-2xl font-semibold tabular-nums mt-1 text-green-600">
-              {formatCurrency(schedule?.total_accrued_revenue ?? 0)}
-            </p>
-            <p className="text-xs text-muted-foreground">Earned but not billed</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <TrendingDown className="h-4 w-4 text-orange-600" />
-              <p className="text-sm text-muted-foreground">Deferral</p>
-            </div>
-            <p className="text-2xl font-semibold tabular-nums mt-1 text-orange-600">
-              {formatCurrency(schedule?.total_deferred_revenue ?? 0)}
-            </p>
-            <p className="text-xs text-muted-foreground">Billed but not earned</p>
+          <CardHeader>
+            <CardTitle className="text-base">2. QuickBooks</CardTitle>
+            <CardDescription>
+              {meta?.qbo
+                ? `${meta.qbo.docs.toLocaleString()} documents dated ${meta.qbo.from} to ${meta.qbo.to}, pulled ${when(meta.qbo.pulledAt)}`
+                : "Pull invoices, sales receipts, credit memos, refunds and journal entries."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={pullQbo} disabled={busy !== null}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${busy === "qbo" ? "animate-spin" : ""}`} />
+              {busy === "qbo" ? "Pulling From QuickBooks..." : meta?.qbo ? "Pull Again" : "Pull From QuickBooks"}
+            </Button>
           </CardContent>
         </Card>
       </div>
 
-      {/* Source File Info */}
-      {schedule?.source_file_name && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <FileSpreadsheet className="h-4 w-4" />
-          <span>
-            Source: {schedule.source_file_name}
-            {schedule.uploaded_at &&
-              ` — uploaded ${new Date(schedule.uploaded_at).toLocaleString()}`}
-          </span>
-          <Badge variant={STATUS_VARIANTS[schedule.status] ?? "outline"}>
-            {STATUS_LABELS[schedule.status] ?? schedule.status}
-          </Badge>
-        </div>
-      )}
+      {loading && !report ? (
+        <p className="text-muted-foreground">Loading...</p>
+      ) : !report ? (
+        <Card>
+          <CardContent className="py-10 text-center text-muted-foreground">
+            Upload the Quotes Report and pull from QuickBooks to build the {monthLabel} accrual.
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Accrual To Book</CardDescription>
+                <CardTitle className="text-2xl tabular-nums">{formatCurrency(report.totals.accrual)}</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                Already booked for {monthLabel}: {formatCurrency(report.booked.accrualTotal)}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Deferral To Book</CardDescription>
+                <CardTitle className="text-2xl tabular-nums">{formatCurrency(report.totals.deferral)}</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                Already booked for {monthLabel}: {formatCurrency(report.booked.deferralTotal)}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Needs Review</CardDescription>
+                <CardTitle className="text-2xl tabular-nums">
+                  {formatCurrency(review.reduce((s, i) => s + i.amount, 0))}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                {review.length} lines; {review.filter(included).length} included so far
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Prior Month Check ({MONTHS[report.prior.period.month - 1]})</CardDescription>
+                <CardTitle className={`text-2xl tabular-nums ${report.prior.shortfall > 0.005 ? "text-destructive" : ""}`}>
+                  {report.prior.shortfall > 0.005 ? "Short " : report.prior.shortfall < -0.005 ? "Over " : ""}
+                  {formatCurrency(Math.abs(report.prior.shortfall))}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                Booked {formatCurrency(report.prior.bookedAccrual)}; this method now finds{" "}
+                {formatCurrency(report.prior.recomputedAccrual)}
+                {report.prior.enteredBeforeBooking != null &&
+                  `, ${formatCurrency(report.prior.enteredBeforeBooking)} of it already invoiced when that accrual was booked`}
+              </CardContent>
+            </Card>
+          </div>
 
-      {/* Contract Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Rental Contracts</CardTitle>
-          <CardDescription>
-            {lineItems.length} contract{lineItems.length !== 1 ? "s" : ""} for{" "}
-            {getPeriodLabel(periodYear, periodMonth)}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <p className="text-sm text-muted-foreground">Loading...</p>
-          ) : lineItems.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <FileSpreadsheet className="h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium mb-2">No Revenue Data</h3>
-              <p className="text-muted-foreground text-center mb-4">
-                {hasQBOConnection
-                  ? "Sync invoices from QuickBooks or upload a spreadsheet to calculate accruals and deferrals."
-                  : "Upload a spreadsheet with rental contract data to calculate accruals and deferrals for this period."}
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => download("journals")}>
+              <Download className="mr-2 h-4 w-4" />
+              Download Journal Entries
+            </Button>
+            <Button variant="outline" onClick={() => download("working")}>
+              <FileSpreadsheet className="mr-2 h-4 w-4" />
+              Download Working File
+            </Button>
+          </div>
+
+          <Tabs defaultValue="accruals">
+            <TabsList className="flex-wrap">
+              <TabsTrigger value="accruals">Accruals ({accruals.length})</TabsTrigger>
+              <TabsTrigger value="deferrals">Deferrals ({deferrals.length})</TabsTrigger>
+              <TabsTrigger value="review">Needs Review ({review.length})</TabsTrigger>
+              <TabsTrigger value="journals">Journal Entries ({report.journals.length})</TabsTrigger>
+              <TabsTrigger value="unmatched">Invoices Without A Quote ({report.result.unmatchedDocs.length})</TabsTrigger>
+            </TabsList>
+            <TabsContent value="accruals">
+              <ItemTable items={accruals} included={included} onToggle={toggle} />
+            </TabsContent>
+            <TabsContent value="deferrals">
+              <ItemTable items={deferrals} included={included} onToggle={toggle} />
+            </TabsContent>
+            <TabsContent value="review">
+              <p className="mb-3 text-sm text-muted-foreground">
+                These are left out unless you check them. Check a line when you know the work belongs in {monthLabel}.
               </p>
-              <div className="flex items-center gap-2">
-                {hasQBOConnection && (
-                  <Button onClick={handleQBOSync} disabled={syncing}>
-                    <RefreshCw
-                      className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`}
-                    />
-                    {syncing ? "Syncing..." : "Sync from QuickBooks"}
-                  </Button>
-                )}
-                <Button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading}
-                  variant={hasQBOConnection ? "outline" : "default"}
-                >
-                  <Upload className="mr-2 h-4 w-4" />
-                  Upload Spreadsheet
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
+              <ItemTable items={review} included={included} onToggle={toggle} />
+            </TabsContent>
+            <TabsContent value="journals" className="space-y-6">
+              {report.journals.map((j) => (
+                <Card key={j.number}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">
+                      {j.number}{" "}
+                      <span className="font-normal text-muted-foreground">
+                        dated {j.date}, {j.title.toLowerCase()}
+                      </span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Account</TableHead>
+                          <TableHead className="text-right">Debits</TableHead>
+                          <TableHead className="text-right">Credits</TableHead>
+                          <TableHead>Description</TableHead>
+                          <TableHead>Class</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {j.rows.map((r, i) => (
+                          <TableRow key={i}>
+                            <TableCell className="whitespace-normal">{r.account}</TableCell>
+                            <TableCell className="text-right tabular-nums">{r.debit != null ? formatCurrency(r.debit) : ""}</TableCell>
+                            <TableCell className="text-right tabular-nums">{r.credit != null ? formatCurrency(r.credit) : ""}</TableCell>
+                            <TableCell>{r.description}</TableCell>
+                            <TableCell>{r.className}</TableCell>
+                          </TableRow>
+                        ))}
+                        <TableRow className="font-semibold">
+                          <TableCell>Total</TableCell>
+                          <TableCell className="text-right tabular-nums">{formatCurrency(j.total)}</TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatCurrency(j.rows.reduce((s, r) => s + (r.credit ?? 0), 0))}
+                          </TableCell>
+                          <TableCell />
+                          <TableCell />
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              ))}
+            </TabsContent>
+            <TabsContent value="unmatched">
+              <p className="mb-3 text-sm text-muted-foreground">
+                QuickBooks documents since the start of the prior month that do not tie to a single quote. Loss and damage,
+                walk-up sales and combined billing show up here.
+              </p>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Contract</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Number</TableHead>
+                    <TableHead>Date</TableHead>
                     <TableHead>Customer</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Rental Period</TableHead>
-                    <TableHead className="text-right">Daily Rate</TableHead>
-                    <TableHead className="text-right">Days</TableHead>
-                    <TableHead className="text-right">Earned</TableHead>
-                    <TableHead className="text-right">Billed</TableHead>
-                    <TableHead className="text-right">Accrual</TableHead>
-                    <TableHead className="text-right">Deferral</TableHead>
+                    <TableHead className="text-right">Revenue</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {lineItems.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell className="font-medium">
-                        {item.contract_id ?? "---"}
-                      </TableCell>
-                      <TableCell>{item.customer_name ?? "---"}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate">
-                        {item.description ?? "---"}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
-                        {item.rental_start && item.rental_end
-                          ? `${new Date(item.rental_start).toLocaleDateString()} – ${new Date(item.rental_end).toLocaleDateString()}`
-                          : "---"}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatCurrency(item.daily_rate)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {item.days_in_period}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatCurrency(item.earned_revenue)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatCurrency(item.billed_amount)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {item.accrual_amount > 0 ? (
-                          <span className="text-green-600">
-                            {formatCurrency(item.accrual_amount)}
-                          </span>
-                        ) : (
-                          "---"
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {item.deferral_amount > 0 ? (
-                          <span className="text-orange-600">
-                            {formatCurrency(item.deferral_amount)}
-                          </span>
-                        ) : (
-                          "---"
-                        )}
-                      </TableCell>
+                  {report.result.unmatchedDocs.map((d, i) => (
+                    <TableRow key={`${d.type}-${d.num}-${i}`}>
+                      <TableCell>{d.type}</TableCell>
+                      <TableCell>{d.num}</TableCell>
+                      <TableCell>{d.date}</TableCell>
+                      <TableCell className="whitespace-normal">{d.customer}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(d.amount)}</TableCell>
                     </TableRow>
                   ))}
-                  {/* Totals Row */}
-                  <TableRow className="font-semibold border-t-2">
-                    <TableCell colSpan={6}>Totals</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatCurrency(
-                        lineItems.reduce((s, i) => s + i.earned_revenue, 0)
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatCurrency(
-                        lineItems.reduce((s, i) => s + i.billed_amount, 0)
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums text-green-600">
-                      {formatCurrency(
-                        lineItems.reduce((s, i) => s + i.accrual_amount, 0)
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums text-orange-600">
-                      {formatCurrency(
-                        lineItems.reduce((s, i) => s + i.deferral_amount, 0)
-                      )}
-                    </TableCell>
-                  </TableRow>
                 </TableBody>
               </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            </TabsContent>
+          </Tabs>
+        </>
+      )}
+
+      {settings && settingsOpen && (
+        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} entityId={entityId} settings={settings} onSaved={load} />
+      )}
     </div>
+  );
+}
+
+function ItemTable({
+  items,
+  included,
+  onToggle,
+}: {
+  items: AccrualItem[];
+  included: (it: AccrualItem) => boolean;
+  onToggle: (it: AccrualItem, v: boolean) => void;
+}) {
+  if (!items.length) return <p className="py-6 text-sm text-muted-foreground">Nothing here for this month.</p>;
+  const total = items.filter(included).reduce((s, i) => s + i.amount, 0);
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-10">Include</TableHead>
+          <TableHead>Customer And Quote</TableHead>
+          <TableHead>Invoice</TableHead>
+          <TableHead className="text-right">Amount</TableHead>
+          <TableHead>Accounts And Classes</TableHead>
+          <TableHead>Why</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {items.map((it) => (
+          <TableRow key={it.id} className="align-top">
+            <TableCell>
+              <Checkbox checked={included(it)} onCheckedChange={(v) => onToggle(it, v === true)} />
+            </TableCell>
+            <TableCell className="whitespace-normal">
+              <Badge variant={TIER[it.tier]?.variant ?? "outline"} className="mb-1">
+                {TIER[it.tier]?.label ?? it.tier}
+              </Badge>
+              <div>{it.customer ?? it.project ?? ""}</div>
+              {it.quoteId && (
+                <div className="text-sm text-muted-foreground">
+                  {it.quoteId}
+                  {it.project && it.customer ? `, ${it.project}` : ""}
+                  {it.quoteStart ? `, ${it.quoteStart} to ${it.quoteEnd}` : ""}
+                  {it.quoteAmount != null ? `, ${formatCurrency(it.quoteAmount)}` : ""}
+                </div>
+              )}
+            </TableCell>
+            <TableCell className="whitespace-normal text-sm">
+              {it.docNum ? (
+                <>
+                  <div>
+                    {it.docType === "SalesReceipt" ? "Receipt" : it.docType} {it.docNum}, {it.docDate}
+                  </div>
+                  {it.docAmount != null && <div className="text-muted-foreground">{formatCurrency(it.docAmount)}</div>}
+                  {it.docCreated && <div className="text-muted-foreground">Entered {when(it.docCreated)}</div>}
+                </>
+              ) : (
+                <span className="text-muted-foreground">Not invoiced yet</span>
+              )}
+            </TableCell>
+            <TableCell className="text-right tabular-nums">{formatCurrency(it.amount)}</TableCell>
+            <TableCell className="whitespace-normal text-sm">
+              {it.allocation.map((a, i) => (
+                <div key={i}>
+                  {accountLabel(a.account)} / {a.className ?? "No class"}: {formatCurrency(a.amount)}
+                </div>
+              ))}
+              <div className="text-muted-foreground">{it.allocationSource}</div>
+            </TableCell>
+            <TableCell className="max-w-md whitespace-normal text-sm text-muted-foreground">
+              {it.reason}
+              {it.memo ? ` Memo: "${it.memo}"` : ""}
+            </TableCell>
+          </TableRow>
+        ))}
+        <TableRow className="font-semibold">
+          <TableCell />
+          <TableCell>Total Included</TableCell>
+          <TableCell />
+          <TableCell className="text-right tabular-nums">{formatCurrency(total)}</TableCell>
+          <TableCell />
+          <TableCell />
+        </TableRow>
+      </TableBody>
+    </Table>
+  );
+}
+
+function SettingsDialog({
+  open,
+  onOpenChange,
+  entityId,
+  settings,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  entityId: string;
+  settings: AccrualSettings;
+  onSaved: () => void;
+}) {
+  const [accrued, setAccrued] = useState(settings.accruedAccount);
+  const [deferred, setDeferred] = useState(settings.deferredAccount);
+  const [aliases, setAliases] = useState<[string, string][]>(Object.entries(settings.aliases));
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    const res = await fetch("/api/revenue-accrual/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        entityId,
+        accruedAccount: accrued,
+        deferredAccount: deferred,
+        aliases: Object.fromEntries(aliases.filter(([a, b]) => a.trim() && b.trim())),
+      }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      toast.error((await res.json().catch(() => ({}))).error ?? "Could not save settings");
+      return;
+    }
+    toast.success("Settings saved");
+    onOpenChange(false);
+    onSaved();
+  }
+
+  const accountFields: [string, typeof accrued, (v: typeof accrued) => void][] = [
+    ["Accrued Revenue Account", accrued, setAccrued],
+    ["Deferred Revenue Account", deferred, setDeferred],
+  ];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Revenue Accrual Settings</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-5">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {accountFields.map(([label, value, set]) => (
+              <div key={label} className="space-y-1">
+                <Label>{label}</Label>
+                <div className="flex gap-2">
+                  <Input
+                    className="w-24"
+                    value={value.number ?? ""}
+                    placeholder="Number"
+                    onChange={(e) => set({ ...value, number: e.target.value || null })}
+                  />
+                  <Input value={value.name} placeholder="Name" onChange={(e) => set({ ...value, name: e.target.value })} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="space-y-2">
+            <Label>Quote Names That Bill Under Another QuickBooks Customer</Label>
+            <p className="text-sm text-muted-foreground">
+              Left: the project name on the quote. Right: the QuickBooks customer or job it is invoiced under.
+            </p>
+            <div className="max-h-72 space-y-2 overflow-y-auto">
+              {aliases.map(([a, b], i) => (
+                <div key={i} className="flex gap-2">
+                  <Input value={a} onChange={(e) => setAliases(aliases.map((x, j) => (j === i ? [e.target.value, x[1]] : x)))} />
+                  <Input value={b} onChange={(e) => setAliases(aliases.map((x, j) => (j === i ? [x[0], e.target.value] : x)))} />
+                  <Button variant="ghost" onClick={() => setAliases(aliases.filter((_, j) => j !== i))}>
+                    Remove
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <Button variant="outline" onClick={() => setAliases([...aliases, ["", ""]])}>
+              Add A Name
+            </Button>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button onClick={save} disabled={saving}>
+            {saving ? "Saving..." : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
