@@ -135,12 +135,11 @@ function fmtChange(v: number, digits = 0): string {
   return v < 0 ? `-${abs}` : `+${abs}`;
 }
 
-type ViewMode = "name" | "salary" | "company" | "department" | "geography" | "location" | "function" | "class";
+type ViewMode = "name" | "salary" | "company" | "geography" | "location" | "function" | "class";
 const VIEW_MODES: Array<{ key: ViewMode; label: string }> = [
   { key: "name", label: "Name" },
   { key: "salary", label: "Salary" },
   { key: "company", label: "Company" },
-  { key: "department", label: "Department" },
   { key: "geography", label: "Geography" },
   { key: "location", label: "Location" },
   { key: "function", label: "Function" },
@@ -615,7 +614,6 @@ export function HeadcountWorkspace({
     }
     const keyOf = (r: HeadcountRow): string => {
       if (viewMode === "company") return companyLabel(r, true) || "Not allocated";
-      if (viewMode === "department") return r.department?.trim() || "No department";
       if (viewMode === "location") return primaryKey(rowLocation(r)) || "Not set";
       if (viewMode === "geography") {
         const l = primaryKey(rowLocation(r));
@@ -901,7 +899,7 @@ export function HeadcountWorkspace({
             <div className="space-y-1.5">
               <CardTitle>Positions</CardTitle>
               <CardDescription>
-                Location, Class and Function are the three tags from the cheat sheet, set once per person; a split is 75/25 or 50/50. Edits save when you leave a cell. Adjustment is one pay change for the year. Change is what that adjustment does to the full-year cost for this group. Share shows the part of the person allocated to this group.
+                Name, Location, Class, Function and Company edit in place and save as you go; a tag split is 75/25 or 50/50. Everything from Status to the right is read only and changes through the Adjust button, which prices the change before you submit it. Change is what that adjustment does to the full-year cost. Share shows the part of the person allocated to this group.
               </CardDescription>
             </div>
             {rows.length > 0 && (
@@ -1018,8 +1016,7 @@ export function HeadcountWorkspace({
                   <TableHead>Class</TableHead>
                   <TableHead>Function</TableHead>
                   <TableHead>Company</TableHead>
-                  <TableHead>Dept</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead className="border-l">Status</TableHead>
                   <TableHead>Pay</TableHead>
                   {showMonths
                     ? MONTH_ABBRS.map((m) => <TableHead key={m} className="text-right">{m}</TableHead>)
@@ -1099,32 +1096,9 @@ export function HeadcountWorkspace({
                           <span className="px-1.5 text-xs">{companyLabel(r) || <span className="text-amber-600">Not allocated</span>}</span>
                         )}
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-sm">{r.department ?? ""}</TableCell>
-                      <TableCell>
-                        <Select value={r.status} onValueChange={(v) => patch(r.id, { status: v })} disabled={readOnly}>
-                          <SelectTrigger className="h-8 w-[120px]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="active">Active</SelectItem>
-                            <SelectItem value="planned">Planned</SelectItem>
-                            <SelectItem value="terminated">Terminated</SelectItem>
-                            <SelectItem value="excluded">Excluded</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <Select value={r.pay_type} onValueChange={(v) => patch(r.id, { pay_type: v })} disabled={readOnly}>
-                          <SelectTrigger className="h-8 w-[104px]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Hourly">Hourly</SelectItem>
-                            <SelectItem value="Salary">Salary</SelectItem>
-                            <SelectItem value="Amount">Amount</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
+                      {/* From here on the columns read only: every value changes through Adjust */}
+                      <TableCell className={`whitespace-nowrap border-l text-sm ${r.status === "active" ? "" : "text-muted-foreground"}`}>{STATUS_LABELS[r.status] ?? r.status}</TableCell>
+                      <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{r.pay_type}</TableCell>
                       {showMonths
                         ? MONTH_ABBRS.map((m, i) => {
                             const d = (p?.totalByMonth[i] ?? 0) - (baseline?.byMonth?.[i] ?? 0);
@@ -1134,18 +1108,16 @@ export function HeadcountWorkspace({
                               </TableCell>
                             );
                           })
-                        : NUMERIC_FIELDS.map((f) => (
-                            <TableCell key={f.key} className="p-1">
-                              <NumberCell
-                                id={`hc-${r.id}-${f.key}`}
-                                value={r[f.key] as number | null}
-                                step={f.step}
-                                format={f.format}
-                                disabled={readOnly || savingId === r.id}
-                                onCommit={(v) => patch(r.id, { [f.key]: v } as Partial<HeadcountRow>)}
-                              />
-                            </TableCell>
-                          ))}
+                        : NUMERIC_FIELDS.map((f) => {
+                            // Pay shows what is in force: the seeded pay with this year's adjustment applied
+                            const adjusted = PAY_KEYS.has(f.key) && r.comp_adj_kind && r.comp_adj_value != null && payUnit(r).hourly === (f.key === "base_rate");
+                            const v = adjusted ? adjustedPay(r, r.comp_adj_kind!, r.comp_adj_value!) : (r[f.key] as number | null);
+                            return (
+                              <TableCell key={f.key} className={`whitespace-nowrap text-right text-xs tabular-nums ${adjusted ? "font-medium" : "text-muted-foreground"}`}>
+                                {formatCell(v, f.format)}
+                              </TableCell>
+                            );
+                          })}
                       <TableCell className="text-right tabular-nums">{p && !isPlan ? fmtPct(p.reShare * 100, 0) : ""}</TableCell>
                       <TableCell className="text-right font-medium tabular-nums">{p ? fmtUsd(p.total) : ""}</TableCell>
                       <TableCell>
@@ -1608,53 +1580,6 @@ export function HeadcountWorkspace({
  * A number cell that reads as dollars or a percent at rest and becomes a
  * plain number while it has focus. Typed "$", "," and "%" are ignored.
  */
-function NumberCell({
-  id,
-  value,
-  step,
-  format,
-  disabled,
-  onCommit,
-}: {
-  id: string;
-  value: number | null;
-  step?: string;
-  format: CellFormat;
-  disabled?: boolean;
-  onCommit: (v: number | null) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [text, setText] = useState(num(value));
-  // At rest the cell shows the formatted stored value; the draft only matters while editing
-  const shown = editing ? text : formatCell(value, format);
-  return (
-    <Input
-      id={id}
-      type={editing ? "number" : "text"}
-      step={editing ? step ?? "any" : undefined}
-      inputMode="decimal"
-      value={shown}
-      disabled={disabled}
-      onFocus={() => { setText(num(value)); setEditing(true); }}
-      onChange={(e) => setText(e.target.value.replace(/[$,%s]/g, ""))}
-      onBlur={() => {
-        setEditing(false);
-        const cleaned = text.trim();
-        const next = cleaned === "" ? null : Number(cleaned);
-        if (next !== null && Number.isNaN(next)) return;
-        if (next !== value) onCommit(next);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-        if (e.key === "Escape") { setText(num(value)); (e.target as HTMLInputElement).blur(); }
-      }}
-      className={`h-7 px-1.5 text-right text-xs tabular-nums ${format === "usd" || format === "usd2" ? "w-[104px]" : "w-[84px]"}`}
-    />
-  );
-}
-
-
-
 /** Engine input from a table row, for pricing in the browser. */
 function rowToEngineInput(r: HeadcountRow): HeadcountRowInput {
   return {
@@ -1736,6 +1661,8 @@ const ADJUST_FIELDS: AdjustField[] = [
 
 const PAY_KEYS = new Set<keyof HeadcountRow>(["base_rate", "annual_salary"]);
 
+const STATUS_LABELS: Record<string, string> = { active: "Active", planned: "Planned", terminated: "Terminated", excluded: "Excluded" };
+
 /**
  * Adjust: every number that drives a person's cost, side by side. Current is
  * the seeded baseline, Adjusted is what the budget uses, and the result is
@@ -1776,6 +1703,7 @@ function AdjustDialog({
     return d;
   }, [row]);
   const [draft, setDraft] = useState<Record<string, string>>(initial);
+  const [status, setStatus] = useState(row.status);
   const [bump, setBump] = useState<Record<string, string>>({});
   const [month, setMonth] = useState(String(row.comp_adj_month ?? 1));
   const [reason, setReason] = useState(row.comp_adj_reason ?? "");
@@ -1811,7 +1739,7 @@ function AdjustDialog({
 
   // The row the budget would use if Submit were pressed now
   const adjustedRow = useMemo((): HeadcountRow => {
-    const next: HeadcountRow = { ...row, pay_type: draft.pay_type };
+    const next: HeadcountRow = { ...row, pay_type: draft.pay_type, status };
     for (const f of ADJUST_FIELDS) (next as unknown as Record<string, unknown>)[f.key] = draftNumber(f.key);
     // A pay change keeps the baseline pay on the row and rides as a comp adjustment from its month
     const unit = payUnit(next);
@@ -1832,7 +1760,7 @@ function AdjustDialog({
     }
     return next;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [row, baseline, draft, month, reason]);
+  }, [row, baseline, draft, status, month, reason]);
 
   const currentPriced = useMemo(() => (baseline ? pricePosition(rowToEngineInput(baseline), ctx) : null), [baseline, ctx]);
   const adjustedPriced = useMemo(() => pricePosition(rowToEngineInput(adjustedRow), ctx), [adjustedRow, ctx]);
@@ -1843,7 +1771,7 @@ function AdjustDialog({
   const submit = async () => {
     setSaving(true);
     try {
-      const fields: Partial<HeadcountRow> = { pay_type: adjustedRow.pay_type };
+      const fields: Partial<HeadcountRow> = { pay_type: adjustedRow.pay_type, status: adjustedRow.status };
       for (const f of ADJUST_FIELDS) (fields as Record<string, unknown>)[f.key] = adjustedRow[f.key];
       fields.comp_adj_kind = adjustedRow.comp_adj_kind;
       fields.comp_adj_value = adjustedRow.comp_adj_value;
@@ -1882,6 +1810,21 @@ function AdjustDialog({
               </TableRow>
             </TableHeader>
             <TableBody>
+              <TableRow>
+                <TableCell>Status</TableCell>
+                <TableCell className="text-right text-muted-foreground">{STATUS_LABELS[row.status] ?? row.status}</TableCell>
+                <TableCell />
+                <TableCell className="text-right">
+                  <Select value={status} onValueChange={setStatus} disabled={readOnly}>
+                    <SelectTrigger className="h-8 w-full text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(STATUS_LABELS).map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </TableCell>
+              </TableRow>
               <TableRow>
                 <TableCell>Pay type</TableCell>
                 <TableCell className="text-right text-muted-foreground">{baseline?.pay_type ?? ""}</TableCell>
