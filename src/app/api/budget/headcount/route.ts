@@ -68,8 +68,18 @@ async function planAssumptions(admin: ReturnType<typeof createAdminClient>, plan
  * GET /api/budget/headcount?versionId=  a version's view: the plan's rows priced at this group's share
  */
 export async function GET(request: Request) {
+  // Phase timings go out as a Server-Timing header so a slow load can be read from the browser
+  const t0 = Date.now();
+  const marks: Array<[string, number]> = [];
+  let last = t0;
+  const mark = (name: string) => {
+    const now = Date.now();
+    marks.push([name, now - last]);
+    last = now;
+  };
   try {
     const actor = await getBudgetActor();
+    mark("actor");
     const { searchParams } = new URL(request.url);
     const planId = searchParams.get("planId");
     const versionId = searchParams.get("versionId");
@@ -94,6 +104,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "planId, fiscalYear or versionId is required" }, { status: 400 });
     }
 
+    mark("owner");
     const organizationId = plan?.organizationId ?? version?.organizationId ?? null;
     const compareYear = comparisonYear(fiscalYear);
     // Everything below depends only on the owner: load it all at once
@@ -110,6 +121,7 @@ export async function GET(request: Request) {
       // The plan view knows its plan already; a version finds it above and loads rows after
       plan ? loadPlanRows(admin, plan.id) : Promise.resolve(null),
     ]);
+    mark("batch");
     const shape = shapeResult;
     plan = planFromVersion;
     const assumptions: AssumptionSet = versionAssumptions;
@@ -126,6 +138,7 @@ export async function GET(request: Request) {
         : Promise.resolve(null as PersonnelActualsByEntity | null),
     ]);
 
+    mark("rows+actuals");
     // On a version, keep only the rows this group has a share of
     const rows = memberEntityIds
       ? allRows.filter((r) => shareForEntities(effectiveAllocations(r, revenueShares), memberEntityIds!) > 0)
@@ -208,6 +221,7 @@ export async function GET(request: Request) {
       }
     }
 
+    mark("price");
     const role = organizationId ? actor.orgRoles.get(organizationId) ?? "" : "";
     return NextResponse.json({
       plan,
@@ -229,7 +243,7 @@ export async function GET(request: Request) {
       assumptionRows: assumptions.toRows(),
       memberEntityIds: memberEntityIds ? [...memberEntityIds] : [],
       ...shape,
-    });
+    }, { headers: { "Server-Timing": [...marks, ["total", Date.now() - t0] as [string, number]].map(([n, d]) => `${n};dur=${d}`).join(", ") } });
   } catch (err) {
     console.error("GET /api/budget/headcount error:", err);
     const { body, status } = accessErrorResponse(err);
