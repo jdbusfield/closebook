@@ -451,10 +451,6 @@ export default function MembersPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <Button type="submit" disabled={inviting}>
-                  <UserPlus className="mr-2 h-4 w-4" />
-                  {inviting ? "Creating..." : "Create Account"}
-                </Button>
               </div>
               <div className="rounded-md border p-4 space-y-1">
                 <p className="text-sm font-medium">Access</p>
@@ -469,6 +465,10 @@ export default function MembersPage() {
                   idPrefix="invite"
                 />
               </div>
+              <Button type="submit" disabled={inviting} className="w-fit">
+                <UserPlus className="mr-2 h-4 w-4" />
+                {inviting ? "Creating..." : "Create account with this access"}
+              </Button>
               {inviteLink && (
                 <div className="rounded-md border bg-muted/50 p-3 space-y-2">
                   <p className="text-sm font-medium">Invite Link</p>
@@ -744,7 +744,7 @@ export default function MembersPage() {
 
       {/* Access Scope Dialog */}
       <Dialog open={accessDialogOpen} onOpenChange={setAccessDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Access</DialogTitle>
             <DialogDescription>
