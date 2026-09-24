@@ -263,7 +263,7 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="min-w-[320px]">Account</TableHead>
+                <TableHead className="w-[380px] min-w-[380px] max-w-[380px]">Account</TableHead>
                 {MONTH_ABBRS.map((m) => <TableHead key={m} className="text-right">{m}</TableHead>)}
                 <TableHead className="text-right">Total</TableHead>
                 {showPrior && (
@@ -303,9 +303,9 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
                             <>
                               {m.items.map((it) => (
                                 <TableRow key={it.id} className="text-sm">
-                                  <TableCell className="py-1.5 pl-9">
+                                  <TableCell className="w-[380px] min-w-[380px] max-w-[380px] whitespace-normal py-1.5 pl-9 align-top">
                                     <div className="flex items-start gap-2">
-                                      <div className="min-w-0">
+                                      <div className="min-w-0 break-words">
                                         <div className="flex flex-wrap items-center gap-x-2">
                                           <span>{it.label}</span>
                                           {it.count != null && <span className="text-xs text-muted-foreground">{it.count} {it.kind === "payroll" ? "people" : "rows"}</span>}
