@@ -10,7 +10,7 @@
  * year, so the reasons behind the number are on the page from the start.
  */
 import { loadMonthlyActuals, monthKey, rollupActualsToParents } from "./actuals";
-import { trendStats } from "./trend-builds";
+import { lastBookedIndex, trendStats } from "./trend-builds";
 import { evaluateMethod, readMethod, type LineMethod, type MethodHistory } from "./line-methods";
 import { fetchAllPaginated } from "@/lib/utils/paginated-fetch";
 import { amountsFromArray, type Admin, type BuildContext, type BuildInsert } from "./build-types";
@@ -38,6 +38,7 @@ export async function loadHistoryBank(ctx: BuildContext): Promise<HistoryBank> {
     masters: ctx.masters,
   });
   const months = actuals.monthsRequested;
+  const endIndex = lastBookedIndex(months, actuals.monthsWithData);
   const byMaster = rollupActualsToParents(actuals.byMaster, ctx.masters);
   const parentOf = new Map(ctx.masters.filter((m) => m.parentAccountId).map((m) => [m.id, m.parentAccountId!]));
   const accountsByMaster = new Map<string, string[]>();
@@ -48,14 +49,13 @@ export async function loadHistoryBank(ctx: BuildContext): Promise<HistoryBank> {
   }
   const empty = new Map<string, number>();
   const history = (series: Map<string, number>): MethodHistory => {
-    const stats = trendStats("", series, months);
-    const last12 = months.slice(-12);
+    const stats = trendStats("", series, months, endIndex);
     return {
       priorYear: Array.from({ length: 12 }, (_, i) => Math.round((series.get(monthKey(ctx.year - 1, i + 1)) ?? 0) * 100) / 100),
       trailing12: stats.trailing12,
       trailing3Annualized: stats.trailing3Annualized,
       seasonality: stats.seasonality,
-      hasFullYear: last12.every((m) => series.has(monthKey(m.year, m.month))),
+      hasFullYear: stats.hasFullYear,
     };
   };
   const sumSeries = (ids: string[]): Map<string, number> => {

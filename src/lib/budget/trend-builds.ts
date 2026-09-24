@@ -14,15 +14,32 @@ export interface TrendStats {
   seasonality: number[]; // 12 factors averaging 1
   stdDevMonthly: number;
   meanMonthly: number;
+  /** The twelve months ending at the last booked month were all present */
+  hasFullYear: boolean;
 }
 
-/** Seasonality index and volatility from a monthly series keyed "YYYY-M". */
-export function trendStats(masterId: string, series: Map<string, number>, months: Array<{ year: number; month: number }>): TrendStats {
+/**
+ * The last month of the window that has closed and has ledger data: the
+ * trailing figures end there, not at the window's December. A budget built
+ * in September compares to the twelve months through August.
+ */
+export function lastBookedIndex(months: Array<{ year: number; month: number }>, monthsWithData: Set<string>, now = new Date()): number {
+  const closed = (m: { year: number; month: number }) => m.year < now.getUTCFullYear() || (m.year === now.getUTCFullYear() && m.month < now.getUTCMonth() + 1);
+  for (let i = months.length - 1; i >= 0; i--) if (closed(months[i]) && monthsWithData.has(monthKey(months[i].year, months[i].month))) return i;
+  return months.length - 1;
+}
+
+/** Seasonality index and volatility from a monthly series keyed "YYYY-M"; trailing figures end at endIndex. */
+export function trendStats(masterId: string, series: Map<string, number>, months: Array<{ year: number; month: number }>, endIndex?: number): TrendStats {
   const values = months.map((m) => series.get(monthKey(m.year, m.month)));
   const present = values.map((v, i) => ({ v, i })).filter((x) => x.v !== undefined) as Array<{ v: number; i: number }>;
   const n = present.length;
-  const last12 = values.slice(-12).map((v) => v ?? 0);
-  const last3 = values.slice(-3).map((v) => v ?? 0);
+  const end = Math.min(values.length - 1, Math.max(0, endIndex ?? values.length - 1));
+  const window = values.slice(0, end + 1);
+  const last12Raw = window.slice(-12);
+  const last12 = last12Raw.map((v) => v ?? 0);
+  const last3 = window.slice(-3).map((v) => v ?? 0);
+  const hasFullYear = last12Raw.length === 12 && last12Raw.every((v) => v !== undefined);
   const trailing12 = last12.reduce((t, v) => t + v, 0);
   const trailing3Annualized = (last3.reduce((t, v) => t + v, 0) / 3) * 12;
   const mean = n > 0 ? present.reduce((t, x) => t + x.v, 0) / n : 0;
@@ -46,6 +63,7 @@ export function trendStats(masterId: string, series: Map<string, number>, months
     seasonality: bounded.map((f) => f / avg),
     stdDevMonthly: Math.sqrt(variance),
     meanMonthly: mean,
+    hasFullYear,
   };
 }
 
@@ -65,6 +83,7 @@ export async function trendBuilds(
     masters: ctx.masters,
   });
   const months = actuals.monthsRequested;
+  const endIndex = lastBookedIndex(months, actuals.monthsWithData);
   const byMaster = actuals.byMaster;
   const reScope = [{ scope: "reporting_entity", scopeId: ctx.owner.reportingEntityId }];
   const growth = ctx.assumptions.get("revenue_growth_pct", reScope) / 100;
@@ -79,9 +98,9 @@ export async function trendBuilds(
     if (opts.onlyMasterIds && !opts.onlyMasterIds.has(master.id)) continue;
     const series = byMaster.get(master.id);
     if (!series || series.size === 0) continue;
-    const stats = trendStats(master.id, series, months);
-    // Base = trailing twelve months when we have them, else annualized last three
-    const hasFullYear = months.slice(-12).every((m) => series.has(monthKey(m.year, m.month)));
+    const stats = trendStats(master.id, series, months, endIndex);
+    // Base = trailing twelve months through the last booked month when we have them, else annualized last three
+    const hasFullYear = stats.hasFullYear;
     const base = hasFullYear ? stats.trailing12 : stats.trailing3Annualized;
     if (!base) continue;
     const factor = master.classification === "Revenue" ? 1 + growth : 1 + inflation;
