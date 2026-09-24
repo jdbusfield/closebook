@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { allocate, includedItems, runAccrual } from "../engine";
+import { allocate, includedItems, runAccrual, usableRentalPeriod } from "../engine";
 import { buildJournals } from "../journals";
 import { DEFAULT_SETTINGS } from "../defaults";
 import { memoDates, parseRentalPeriod, shareThrough } from "../dates";
@@ -137,4 +137,19 @@ test("journal entries balance to the penny and reverse on the 1st", () => {
   const offset = js[0].rows.find((x) => x.account.startsWith("12200"))!;
   assert.equal(offset.debit, 700.01);
   assert.equal(offset.className, "");
+});
+
+test("a Rental Period equal to the invoice date, or years long, is ignored", () => {
+  const base = doc("600", "WBTV:Shrinking:Shrinking S4 (HDR Location)", "2026-09-02", [[500, "42002", "Service", "Bathrooms"]]);
+  assert.equal(usableRentalPeriod({ ...base, rentalPeriod: { start: "2026-09-02", end: "2026-09-02" } }), null);
+  assert.equal(usableRentalPeriod({ ...base, rentalPeriod: { start: "2026-08-24", end: "2029-08-26" } }), null);
+  assert.deepEqual(usableRentalPeriod({ ...base, rentalPeriod: { start: "2026-08-24", end: "2026-08-26" } }), { start: "2026-08-24", end: "2026-08-26" });
+});
+
+test("an invoice with its own rental dates still covers its job's quote, so the quote is not accrued twice", () => {
+  const quotes = [quote("R1", "Shrinking S4", "2026-08-24", "2026-08-26", 500)];
+  const d = { ...doc("601", "WBTV:Shrinking:Shrinking S4 (HDR Location)", "2026-09-02", [[450, "42002", "Service", "Bathrooms"]]), rentalPeriod: { start: "2026-08-24", end: "2026-08-26" } };
+  const r = runAccrual({ period: aug, quotes, docs: [d], settings: S });
+  assert.equal(r.items.filter((i) => i.source === "Rental Period on invoice").reduce((s, i) => s + i.amount, 0), 450);
+  assert.equal(r.items.filter((i) => i.tier === "quote").reduce((s, i) => s + i.amount, 0), 50);
 });

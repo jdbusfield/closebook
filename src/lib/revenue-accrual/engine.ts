@@ -5,6 +5,7 @@ import type {
   Allocation,
   Doc,
   DocLine,
+  IsoDate,
   MonthRef,
   Quote,
   RunResult,
@@ -32,6 +33,22 @@ interface DocInfo {
   topKey: string;
   nameless: boolean;
   quote: Quote | null;
+  /** Rental Period field, when it is a usable range */
+  rp: { start: IsoDate; end: IsoDate } | null;
+}
+
+/**
+ * A Rental Period that is just the invoice date (common on location invoices)
+ * or that runs years (typos like "08/26/29") says nothing about the service
+ * dates, so it is ignored.
+ */
+export function usableRentalPeriod(doc: Doc): { start: IsoDate; end: IsoDate } | null {
+  const rp = doc.rentalPeriod;
+  if (!rp) return null;
+  if (rp.start === doc.date && rp.end === doc.date) return null;
+  if (daysBetween(rp.start, rp.end) > 400) return null;
+  if (Math.abs(daysBetween(rp.start, doc.date)) > 400) return null;
+  return rp;
 }
 
 export function isExcluded(line: DocLine, settings: AccrualSettings): boolean {
@@ -97,6 +114,7 @@ export function runAccrual({ period, quotes, docs, settings }: RunInput): RunRes
       topKey: nameless ? "" : normKey(customerTop(doc.customer)),
       nameless,
       quote: null,
+      rp: usableRentalPeriod(doc),
     };
   });
   const customerKeys = new Set<string>();
@@ -187,7 +205,7 @@ export function runAccrual({ period, quotes, docs, settings }: RunInput): RunRes
   for (const i of infos) {
     const span = i.quote
       ? { start: i.quote.start, end: i.quote.end }
-      : i.doc.rentalPeriod ?? null;
+      : i.rp ?? null;
     if (!span || i.revenue === 0) continue;
     const source = i.quote ? "Invoice ties to a quote" : "Rental Period on invoice";
     const extra: Partial<AccrualItem> = i.quote
@@ -209,7 +227,7 @@ export function runAccrual({ period, quotes, docs, settings }: RunInput): RunRes
 
   // ---- (c) service dates in line memos, on documents not tied to a quote
   for (const i of infos) {
-    if (i.quote || i.doc.rentalPeriod) continue;
+    if (i.quote || i.rp) continue;
     const after = toUtc(i.doc.date) > toUtc(E);
     const inMonth = !after && toUtc(i.doc.date) >= toUtc(S);
     if (!after && !inMonth) continue;
@@ -292,7 +310,7 @@ export function runAccrual({ period, quotes, docs, settings }: RunInput): RunRes
     let need = cents(q.amount);
     if (key) {
       const cands = (jobDocs.get(key) ?? [])
-        .filter((i) => !i.quote && !i.doc.rentalPeriod && i.revenue > 0 && toUtc(i.doc.date) >= toUtc(addDays(q.start, -30)))
+        .filter((i) => !i.quote && i.revenue > 0 && toUtc(i.doc.date) >= toUtc(addDays(q.start, -30)))
         .sort((a, b) => toUtc(a.doc.date) - toUtc(b.doc.date));
       for (const i of cands) {
         if (need < 0.01) break;
@@ -301,20 +319,24 @@ export function runAccrual({ period, quotes, docs, settings }: RunInput): RunRes
         const take = cents(Math.min(p.left, need));
         p.left = cents(p.left - take);
         need = cents(need - take);
+        // Invoices with their own rental dates were accrued or deferred above; they only cover the quote here
+        if (i.rp) continue;
         const after = toUtc(i.doc.date) > toUtc(E);
         const amt = after ? take * earned : take * (1 - earned);
         if (cents(amt) < 0.01) continue;
         const kind = after ? "accrual" : "deferral";
+        // An older invoice deferred only by inference (no rental dates on it) needs a look
+        const olderDeferral = !after && toUtc(i.doc.date) < toUtc(S);
         items.push({
           id: `${kind}:job:${q.id}:${i.doc.key}`,
           kind,
-          tier: "job",
+          tier: olderDeferral ? "review" : "job",
           source: "Invoice on the same job",
           reason: after
             ? `Invoice ${i.doc.num} (${i.doc.date}) on this job does not tie to a single quote; ${fmt$(take)} of it was applied to this quote, and ${pct(earned)} of the rental (${q.start} to ${q.end}) was on or before ${E}.`
             : `Invoice ${i.doc.num} (${i.doc.date}) on this job was applied to this quote; ${pct(1 - earned)} of the rental (${q.start} to ${q.end}) is after ${E}.`,
           amount: cents(amt),
-          defaultInclude: true,
+          defaultInclude: !olderDeferral,
           allocation: allocate(amt, lineWeights(p.lines.length ? p.lines : i.lines)),
           allocationSource: "Invoice lines",
           docNum: i.doc.num,
@@ -358,7 +380,7 @@ export function runAccrual({ period, quotes, docs, settings }: RunInput): RunRes
   // ---- (e) early next-month invoices left over after (d), on jobs that had work this month
   const reviewCut = addDays(E, NEXT_MONTH_REVIEW_DAYS);
   for (const i of infos) {
-    if (i.quote || i.doc.rentalPeriod || i.revenue <= 0) continue;
+    if (i.quote || i.rp || i.revenue <= 0) continue;
     if (toUtc(i.doc.date) <= toUtc(E) || toUtc(i.doc.date) > toUtc(reviewCut)) continue;
     if (!(monthJobs.has(i.leafKey) || monthJobs.has(i.topKey))) continue;
     const p = poolFor(i);
@@ -391,7 +413,7 @@ export function runAccrual({ period, quotes, docs, settings }: RunInput): RunRes
     jobQuotes.get(k)!.push(q);
   }
   for (const i of infos) {
-    if (i.quote || i.doc.rentalPeriod || i.revenue <= 0) continue;
+    if (i.quote || i.rp || i.revenue <= 0) continue;
     if (toUtc(i.doc.date) < toUtc(S) || toUtc(i.doc.date) > toUtc(E)) continue;
     if (consumed.get(i.doc.key)) continue;
     const qs = [...(jobQuotes.get(i.leafKey) ?? []), ...(jobQuotes.get(i.topKey) ?? [])];
