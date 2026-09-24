@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { computeCapexMonthly, levelPayment, unitMonthlyDepreciation } from "../capex-engine";
-import { trendStats } from "../trend-builds";
+import { lastBookedIndex, trendStats } from "../trend-builds";
 import { monthsBetween, monthKey } from "../actuals";
 import { expandAllocation } from "../schedule-builds";
 
@@ -81,4 +81,23 @@ test("allocation expansion: repeating single month and monthly spread", () => {
   });
   assert.equal(spread.length, 12);
   assert.equal(spread[0].amount, 100);
+});
+
+test("trailing figures end at the last booked month, not the window's December", () => {
+  const months = monthsBetween(2024, 1, 2026, 12);
+  const series = new Map<string, number>();
+  // Booked through August 2026 at 100 a month; nothing after
+  for (const m of months) if (m.year < 2026 || m.month <= 8) series.set(monthKey(m.year, m.month), 100);
+  const withData = new Set(series.keys());
+  const end = lastBookedIndex(months, withData, new Date(Date.UTC(2026, 8, 24)));
+  assert.equal(months[end].year, 2026);
+  assert.equal(months[end].month, 8);
+  const s = trendStats("m", series, months, end);
+  assert.equal(s.trailing12, 1200);
+  assert.equal(s.trailing3Annualized, 1200);
+  assert.equal(s.hasFullYear, true);
+  // Without the end index the old behaviour reads four empty months
+  const old = trendStats("m", series, months);
+  assert.equal(old.trailing3Annualized, 0);
+  assert.equal(old.hasFullYear, false);
 });
