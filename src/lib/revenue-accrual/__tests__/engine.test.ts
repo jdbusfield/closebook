@@ -4,7 +4,7 @@ import { allocate, includedItems, runAccrual, usableRentalPeriod } from "../engi
 import { buildJournals } from "../journals";
 import { DEFAULT_SETTINGS } from "../defaults";
 import { memoDates, parseRentalPeriod, shareThrough } from "../dates";
-import { normKey, similarity } from "../names";
+import { normKey, parseQuoteRefs, similarity } from "../names";
 import type { Doc, Quote } from "../types";
 
 const S = { ...DEFAULT_SETTINGS, aliases: {} };
@@ -155,4 +155,19 @@ test("an invoice with its own rental dates still covers its job's quote, so the 
   const r = runAccrual({ period: aug, quotes, docs: [d], settings: S });
   assert.equal(r.items.filter((i) => i.source === "Rental Period on invoice").reduce((s, i) => s + i.amount, 0), 450);
   assert.equal(r.items.filter((i) => i.tier === "quote").reduce((s, i) => s + i.amount, 0), 50);
+});
+
+test("an invoice that names its quote ties to it even when the amounts differ", () => {
+  const quotes = [
+    quote("Quote HDR-116116", "Sepia", "2026-08-26", "2026-08-28", 9000),
+    quote("Quote WT-116116", "Other Show", "2026-08-01", "2026-08-02", 500),
+  ];
+  const d = { ...doc("238377", "Derby, LLC:Sepia (HDR Location)", "2026-09-01", [[10589.07, "49000", "Location package", "Locations"]]), quoteRefs: parseQuoteRefs("HDR-116116") };
+  const r = runAccrual({ period: aug, quotes, docs: [d], settings: S });
+  const it = r.items.find((x) => x.kind === "accrual")!;
+  assert.equal(it.source, "Invoice names its quote");
+  assert.equal(it.amount, 10589.07);
+  assert.equal(r.items.filter((x) => x.tier === "quote").length, 1); // only the WT quote, never invoiced
+  assert.deepEqual(parseQuoteRefs("HDR 116116, 116117"), ["HDR-116116", "116117"]);
+  assert.deepEqual(parseQuoteRefs("Quote HDR-116116"), ["HDR-116116"]);
 });

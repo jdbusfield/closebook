@@ -1,6 +1,7 @@
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { BookedJournal, Doc, DocLine, DocType, IsoDate } from "./types";
 import { parseRentalPeriod } from "./dates";
+import { parseQuoteRefs } from "./names";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -150,6 +151,7 @@ export async function pullFromQuickBooks(
         }
       }
       const rp = (d.CustomField ?? []).find((cf: any) => /rental\s*(period|dates)/i.test(cf.Name ?? ""));
+      const qn = (d.CustomField ?? []).find((cf: any) => /quote/i.test(cf.Name ?? ""));
       docs.push({
         key: `${t.entity}:${d.Id}`,
         num: String(d.DocNumber ?? d.Id),
@@ -159,6 +161,7 @@ export async function pullFromQuickBooks(
         customer: d.CustomerRef?.value ? (custName.get(String(d.CustomerRef.value)) ?? d.CustomerRef.name ?? "(none)") : "(none)",
         lines,
         rentalPeriod: rp?.StringValue ? parseRentalPeriod(rp.StringValue, d.TxnDate) : null,
+        quoteRefs: qn?.StringValue ? parseQuoteRefs(qn.StringValue) : [],
       });
     }
   });

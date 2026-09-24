@@ -93,3 +93,20 @@ export function buildKeyMapper(
     return found;
   };
 }
+
+/**
+ * Quote numbers as typed on an invoice ("HDR-116116", "HDR 116116, 116117")
+ * or as the Quotes Report writes them ("Quote HDR-116116"). The same number
+ * can exist under HDR and WT, so a prefix is kept when present:
+ * "HDR-116116"; a bare number stays "116116".
+ */
+export function parseQuoteRefs(value: string): string[] {
+  const out: string[] = [];
+  const re = /(?:\b([A-Za-z]{2,4})\s*[-#]?\s*)?(\d{5,7})/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(String(value ?? ""))) !== null) {
+    const pre = m[1] && !/^quote$/i.test(m[1]) ? m[1].toUpperCase() : "";
+    out.push(pre ? `${pre}-${m[2]}` : m[2]);
+  }
+  return [...new Set(out)];
+}

@@ -11,7 +11,7 @@ import type {
   RunResult,
 } from "./types";
 import { addDays, daysBetween, memoDates, monthEnd, monthStart, shareThrough, shiftMonth, toUtc } from "./dates";
-import { buildKeyMapper, customerLeaf, customerTop, normKey } from "./names";
+import { buildKeyMapper, customerLeaf, customerTop, normKey, parseQuoteRefs } from "./names";
 
 const cents = (n: number) => Math.round(n * 100) / 100;
 const MATCH_WINDOW_DAYS = 150;
@@ -33,6 +33,8 @@ interface DocInfo {
   topKey: string;
   nameless: boolean;
   quote: Quote | null;
+  /** True when the invoice's Quote Number field named the quote */
+  quoteLinked?: boolean;
   /** Rental Period field, when it is a usable range */
   rp: { start: IsoDate; end: IsoDate } | null;
 }
@@ -162,6 +164,36 @@ export function runAccrual({ period, quotes, docs, settings }: RunInput): RunRes
       }
     }
   };
+  // An invoice that names its quote in the "Quote Number" field ties to it directly
+  const byRef = new Map<string, Quote[]>();
+  for (const q of quotes) {
+    for (const r of parseQuoteRefs(q.id)) {
+      const digits = r.replace(/^\D+-/, "");
+      for (const k of new Set([r, digits])) {
+        if (!byRef.has(k)) byRef.set(k, []);
+        byRef.get(k)!.push(q);
+      }
+    }
+  }
+  const resolveRef = (ref: string, i: DocInfo): Quote | null => {
+    const hits = byRef.get(ref) ?? [];
+    if (hits.length === 1) return hits[0];
+    // A bare number shared by an HDR and a WT quote: take the one on this customer
+    const mine = hits.filter((q) => {
+      const k = qKey.get(q.id) ?? mapKey(q.project);
+      return !!k && (k === i.leafKey || k === i.topKey);
+    });
+    return mine.length === 1 ? mine[0] : null;
+  };
+  for (const i of infos) {
+    const refs = (i.doc.quoteRefs ?? []).map((n) => resolveRef(n, i)).filter((q): q is Quote => !!q);
+    if (!refs.length) continue;
+    const first = refs.reduce((a, b) => (toUtc(a.start) <= toUtc(b.start) ? a : b));
+    const last = refs.reduce((a, b) => (toUtc(a.end) >= toUtc(b.end) ? a : b));
+    i.quote = refs.length === 1 ? refs[0] : { ...first, id: refs.map((q) => q.id).join(", "), end: last.end, amount: refs.reduce((s2, q) => s2 + q.amount, 0) };
+    i.quoteLinked = true;
+    for (const q of refs) used.add(q.id);
+  }
   matchPass(false);
   matchPass(true);
 
@@ -207,7 +239,7 @@ export function runAccrual({ period, quotes, docs, settings }: RunInput): RunRes
       ? { start: i.quote.start, end: i.quote.end }
       : i.rp ?? null;
     if (!span || i.revenue === 0) continue;
-    const source = i.quote ? "Invoice ties to a quote" : "Rental Period on invoice";
+    const source = i.quoteLinked ? "Invoice names its quote" : i.quote ? "Invoice ties to a quote" : "Rental Period on invoice";
     const extra: Partial<AccrualItem> = i.quote
       ? { quoteId: i.quote.id, project: i.quote.project, quoteStart: i.quote.start, quoteEnd: i.quote.end, quoteAmount: i.quote.amount }
       : { quoteStart: span.start, quoteEnd: span.end };

@@ -48,6 +48,8 @@ export interface Doc {
   lines: DocLine[];
   /** Parsed "Rental Period" custom field, when present */
   rentalPeriod?: { start: IsoDate; end: IsoDate } | null;
+  /** Quote numbers typed in the invoice's "Quote Number" field, e.g. ["HDR-116116"] */
+  quoteRefs?: string[];
 }
 
 export interface BookedJournal {
