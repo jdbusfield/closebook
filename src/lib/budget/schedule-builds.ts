@@ -27,7 +27,6 @@ function masterFor(ctx: BuildContext, accountId: string | null | undefined, fall
 
 const INTEREST_NUMBER = "7100";
 const RENT_NUMBER = "6000";
-const OTHER_REVENUE_NUMBER = "4090";
 const VEHICLE_DEPR_NUMBER = "7000";
 const OTHER_DEPR_NUMBER = "7500";
 const GAIN_LOSS_NUMBER = "7400";
@@ -198,10 +197,11 @@ export async function leaseBuilds(ctx: BuildContext): Promise<BuildInsert[]> {
     }
   }
 
-  // Subleases: income
+  // Subleases net against the rent line (JD): what we collect from a
+  // subtenant comes off the lease it sits under, so Rent is net rent.
   const { data: subleases } = await ctx.admin
     .from("subleases")
-    .select("id, entity_id, sublease_name, status")
+    .select("id, entity_id, lease_id, sublease_name, status")
     .in("entity_id", ctx.memberEntityIds)
     .eq("status", "active");
   if (subleases && subleases.length > 0) {
@@ -214,8 +214,10 @@ export async function leaseBuilds(ctx: BuildContext): Promise<BuildInsert[]> {
         .eq("period_year", ctx.year)
         .range(o, o + l - 1),
     );
-    const master = ctx.masterByNumber.get(OTHER_REVENUE_NUMBER)?.id;
-    if (master) {
+    const rentAccountByLease = new Map<string, string | null>(
+      ((leases ?? []) as Array<{ id: string; lease_expense_account_id: string | null }>).map((l) => [l.id, l.lease_expense_account_id]),
+    );
+    {
       const bySub = new Map<string, number[]>();
       for (const p of payments) {
         const arr = bySub.get(p.sublease_id) ?? zeros();
@@ -225,6 +227,9 @@ export async function leaseBuilds(ctx: BuildContext): Promise<BuildInsert[]> {
       for (const s of subleases as Array<Record<string, unknown>>) {
         const arr = bySub.get(String(s.id));
         if (!arr || isAllZero(arr)) continue;
+        // Same master as the lease's own rent, so the two net on one line
+        const master = masterFor(ctx, rentAccountByLease.get(String(s.lease_id)) ?? null, RENT_NUMBER);
+        if (!master) continue;
         out.push(
           baseBuild(ctx, {
             master_account_id: master,
@@ -233,10 +238,10 @@ export async function leaseBuilds(ctx: BuildContext): Promise<BuildInsert[]> {
             source_table: "subleases",
             source_id: String(s.id),
             component: "sublease_income",
-            label: `${s.sublease_name} (sublease income)`,
-            amounts: amountsFromArray(arr),
+            label: `${s.sublease_name} (sublease, nets against rent)`,
+            amounts: amountsFromArray(arr.map((v) => -v)),
             assumption_keys: [],
-            meta: { entityId: s.entity_id },
+            meta: { entityId: s.entity_id, leaseId: s.lease_id, netsAgainstRent: true },
           }),
         );
       }
