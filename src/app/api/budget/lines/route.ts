@@ -227,7 +227,7 @@ export async function GET(request: Request) {
         sourceHref: src.href(owner.fiscalYear, entityForHref),
         methodText: null,
         method: null,
-        note: g.b.note,
+        note: g.b.note ?? (g.b.component === "sublease_income" ? "Sublease income, netted against rent" : null),
         count: g.count > 1 ? g.count : null,
         months: g.months.map((v) => Math.round(v * 100) / 100),
         total: total(g.months),
