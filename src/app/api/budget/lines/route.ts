@@ -33,6 +33,8 @@ export interface ModelItem {
   editable: boolean;
   /** For breakout items: last year's total behind the method */
   history: { priorYear: number; trailing12: number } | null;
+  /** A pod: the pieces that net to this item (a lease and its subleases) */
+  parts?: Array<{ label: string; months: number[]; total: number; note: string | null }>;
 }
 
 interface BuildRow {
@@ -217,22 +219,45 @@ export async function GET(request: Request) {
         history: null,
       });
     }
+    // Each location is one pod (JD): the lease with its subleases beneath it, net on the pod line
+    const cleanLabel = (l: string) => l.replace(/\s*\((base rent|cam|property tax|insurance|utilities|other|sublease income|sublease, nets against rent)\)\s*$/i, "");
+    const subleasesOfLease = new Map<string, Array<{ b: BuildRow; months: number[] }>>();
+    for (const g of grouped.values()) {
+      if (g.b.source_table !== "subleases") continue;
+      const leaseId = metaOf(g.b).leaseId;
+      if (typeof leaseId !== "string" || !leaseId) continue;
+      const parentKey = `${g.top}|leases|${leaseId}`;
+      if (!grouped.has(parentKey)) continue;
+      subleasesOfLease.set(parentKey, [...(subleasesOfLease.get(parentKey) ?? []), { b: g.b, months: g.months }]);
+    }
+    const foldedIn = new Set([...subleasesOfLease.values()].flat().map((s) => s.b.id));
     for (const [key, g] of grouped) {
+      if (foldedIn.has(g.b.id)) continue;
       const src = sourceOf(g.b);
+      const subs = subleasesOfLease.get(key) ?? [];
+      const netMonths = g.months.slice();
+      for (const s of subs) addInto(netMonths, s.months);
+      const parts = subs.length
+        ? [
+            { label: cleanLabel(g.b.label), months: g.months.map((v) => Math.round(v * 100) / 100), total: total(g.months), note: "Lease" },
+            ...subs.map((s) => ({ label: cleanLabel(s.b.label), months: s.months.map((v) => Math.round(v * 100) / 100), total: total(s.months), note: "Sublease, nets against rent" })),
+          ]
+        : undefined;
       push(g.top, {
         id: `schedule:${key}`,
         kind: "schedule",
-        label: g.b.label.replace(/\s*\((base rent|cam|property tax|insurance|utilities|other|sublease income)\)\s*$/i, ""),
+        label: cleanLabel(g.b.label),
         source: src.label,
         sourceHref: src.href(owner.fiscalYear, entityForHref),
-        methodText: null,
+        methodText: subs.length ? `Net of ${subs.length} sublease${subs.length === 1 ? "" : "s"}` : null,
         method: null,
         note: g.b.note ?? (g.b.component === "sublease_income" ? "Sublease income, netted against rent" : null),
         count: g.count > 1 ? g.count : null,
-        months: g.months.map((v) => Math.round(v * 100) / 100),
-        total: total(g.months),
+        months: netMonths.map((v) => Math.round(v * 100) / 100),
+        total: total(netMonths),
         editable: false,
         history: null,
+        parts,
       });
     }
     // Amounts typed straight into cells on masters that have no builds (the older way)

@@ -31,6 +31,7 @@ interface Item {
   total: number;
   editable: boolean;
   history: { priorYear: number; trailing12: number } | null;
+  parts?: Array<{ label: string; months: number[]; total: number; note: string | null }>;
 }
 interface MasterLine {
   id: string;
@@ -302,7 +303,8 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
                           {expanded && (
                             <>
                               {m.items.map((it) => (
-                                <TableRow key={it.id} className="text-sm">
+                                <Fragment key={it.id}>
+                                <TableRow className="text-sm">
                                   <TableCell className="w-[380px] min-w-[380px] max-w-[380px] whitespace-normal py-1.5 pl-9 align-top">
                                     <div className="flex items-start gap-2">
                                       <div className="min-w-0 break-words">
@@ -332,8 +334,18 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
                                       )}
                                     </div>
                                   </TableCell>
-                                  <MonthCells months={it.months} showPrior={showPrior} className="py-1.5 text-xs text-muted-foreground" />
+                                  <MonthCells months={it.months} showPrior={showPrior} className={cn("py-1.5 text-xs", it.parts ? "text-foreground" : "text-muted-foreground")} />
                                 </TableRow>
+                                {(it.parts ?? []).map((p, idx) => (
+                                  <TableRow key={idx} className="text-xs text-muted-foreground">
+                                    <TableCell className="w-[380px] min-w-[380px] max-w-[380px] whitespace-normal py-1 pl-14">
+                                      {p.label}
+                                      {p.note && <span className="ml-2 italic">{p.note}</span>}
+                                    </TableCell>
+                                    <MonthCells months={p.months} showPrior={showPrior} className="py-1 text-xs text-muted-foreground" />
+                                  </TableRow>
+                                ))}
+                                </Fragment>
                               ))}
                               {m.items.length === 0 && (
                                 <TableRow className="text-sm">
