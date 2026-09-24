@@ -30,6 +30,8 @@ export interface ActualsResult {
   byMaster: Map<string, Map<string, number>>;
   /** entity account id -> master id */
   accountToMaster: Map<string, string>;
+  /** entity account id -> "YYYY-M" -> amount (budget sign); the same activity before it is summed into masters */
+  byAccount: Map<string, Map<string, number>>;
   monthsRequested: Array<{ year: number; month: number }>;
   /** months that have any GL row for at least one entity in scope */
   monthsWithData: Set<string>;
@@ -119,9 +121,10 @@ export async function loadMonthlyActuals(
   const years = [...new Set(allMonths.map((m) => m.year))];
 
   const byMaster = new Map<string, Map<string, number>>();
+  const byAccount = new Map<string, Map<string, number>>();
   const monthsWithData = new Set<string>();
   if (accountToMaster.size === 0 || opts.entityIds.length === 0) {
-    return { masters, byMaster, accountToMaster, monthsRequested, monthsWithData };
+    return { masters, byMaster, byAccount, accountToMaster, monthsRequested, monthsWithData };
   }
 
   const accountIds = [...accountToMaster.keys()];
@@ -169,10 +172,13 @@ export async function loadMonthlyActuals(
       }
       const key = monthKey(m.year, m.month);
       series.set(key, (series.get(key) ?? 0) + activity * sign);
+      const acct = byAccount.get(accountId) ?? new Map<string, number>();
+      acct.set(key, (acct.get(key) ?? 0) + activity * sign);
+      byAccount.set(accountId, acct);
     }
   }
 
-  return { masters, byMaster, accountToMaster, monthsRequested, monthsWithData };
+  return { masters, byMaster, byAccount, accountToMaster, monthsRequested, monthsWithData };
 }
 
 /** Rolls child masters into parents (in place) and returns the map. */

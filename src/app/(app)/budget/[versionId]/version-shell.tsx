@@ -54,7 +54,7 @@ const TABS = [
   { key: "assumptions", label: "Assumptions" },
   { key: "headcount", label: "Headcount" },
   { key: "drivers", label: "Drivers" },
-  { key: "lines", label: "Lines" },
+  { key: "lines", label: "Model" },
   { key: "review", label: "Review" },
 ];
 

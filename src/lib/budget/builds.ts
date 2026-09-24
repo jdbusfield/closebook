@@ -9,9 +9,10 @@ import { loadAssumptions, loadMemberEntityIds, recomputePersonnel, resolveVersio
 import { allocationBuilds, debtBuilds, depreciationBuilds, insuranceBuilds, leaseBuilds } from "./schedule-builds";
 import { fleetRevenueBuilds } from "./driver-builds";
 import { trendBuilds } from "./trend-builds";
+import { recomputeMethodBuilds } from "./method-builds";
 import type { Admin, BuildContext, BuildInsert, BuildType } from "./build-types";
 
-export type RecomputeScope = "personnel" | "schedules" | "drivers" | "trend" | "all";
+export type RecomputeScope = "personnel" | "schedules" | "drivers" | "trend" | "methods" | "all";
 
 export interface RecomputeSummary {
   scope: RecomputeScope;
@@ -19,6 +20,7 @@ export interface RecomputeSummary {
   schedules?: { debt: number; leases: number; depreciation: number; insurance: number; allocations: number };
   drivers?: { fleetRevenue: number };
   trend?: { builds: number; skippedMasters: number };
+  methods?: { items: number };
   lines: { linesUpserted: number; linesDeleted: number };
   warnings: string[];
 }
@@ -114,6 +116,14 @@ export async function recomputeVersion(admin: Admin, owner: VersionOwner, scope:
     const trend = await trendBuilds(ctx, { excludeMasterIds: excluded }).catch((e) => { summary.warnings.push(`Trend: ${e.message}`); return []; });
     await replaceBuilds(admin, owner.id, ["trend"], trend);
     summary.trend = { builds: trend.length, skippedMasters: excluded.size };
+  }
+
+  if (scope === "methods" || scope === "all") {
+    // Method items last: the ones that follow another line need the others in place
+    summary.methods = await recomputeMethodBuilds(ctx).catch((e) => {
+      summary.warnings.push(`Items: ${e.message}`);
+      return { items: 0 };
+    });
   }
 
   summary.lines = await syncLinesFromBuilds(admin, owner);

@@ -3,6 +3,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { accessErrorResponse, getBudgetActor, requireVersionAccess } from "@/lib/budget/access";
 import { fetchAllPaginated } from "@/lib/utils/paginated-fetch";
 import { syncLinesFromBuilds } from "@/lib/budget/recompute";
+import { buildContext } from "@/lib/budget/builds";
+import { clearTrendForMaster, methodBuild, recomputeMethodBuilds } from "@/lib/budget/method-builds";
+import { readMethod } from "@/lib/budget/line-methods";
+import type { BuildInsert } from "@/lib/budget/build-types";
 
 /**
  * GET /api/budget/builds?versionId=&masterAccountId=&type=
@@ -39,9 +43,18 @@ export async function GET(request: Request) {
   }
 }
 
+function cleanAmounts(amounts: unknown): Record<string, number> {
+  const a = (amounts ?? {}) as Record<string, unknown>;
+  const clean: Record<string, number> = {};
+  for (let m = 1; m <= 12; m++) clean[String(m)] = Math.round(Number(a[String(m)] ?? 0) * 100) / 100;
+  return clean;
+}
+
 /**
- * POST /api/budget/builds  { versionId, masterAccountId, classId?, label, amounts: {"1":..}, note? }
- * A manual named item beneath a line (a contract, a retainer, a known invoice).
+ * POST /api/budget/builds
+ *   { versionId, masterAccountId, label, note?, method }          an item priced by its method
+ *   { versionId, masterAccountId, label, note?, amounts: {"1":..} } a typed item
+ * Either way the master's run-rate build steps aside: the line is now its items.
  */
 export async function POST(request: Request) {
   try {
@@ -53,33 +66,41 @@ export async function POST(request: Request) {
     }
     const admin = createAdminClient();
     const owner = await requireVersionAccess(admin, actor, versionId, true);
-    const clean: Record<string, number> = {};
-    for (let m = 1; m <= 12; m++) clean[String(m)] = Math.round(Number(amounts?.[String(m)] ?? 0) * 100) / 100;
-    const { data, error } = await admin
-      .from("budget_builds")
-      .insert({
+    const method = readMethod(body?.method);
+    if (body?.method && !method) return NextResponse.json({ error: "Unknown method" }, { status: 400 });
+
+    let row: BuildInsert & { note: string | null };
+    if (method) {
+      const ctx = await buildContext(admin, owner);
+      row = methodBuild(ctx, masterAccountId, String(label), method, note ?? null);
+    } else {
+      row = {
         budget_version_id: owner.id,
         reporting_entity_id: owner.reportingEntityId,
         entity_id: owner.entityId,
         master_account_id: masterAccountId,
-        qbo_class_id: classId ?? null,
-        build_type: "manual",
+        qbo_class_id: (classId as string | undefined) ?? null,
+        build_type: "manual" as const,
         source_table: null,
         source_id: null,
         component: "manual",
         label: String(label),
-        amounts: clean,
+        amounts: cleanAmounts(amounts),
         assumption_keys: [],
         is_computed: false,
         meta: null,
         note: note ?? null,
         computed_at: new Date().toISOString(),
-      })
-      .select("*")
-      .single();
+      };
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await admin.from("budget_builds").insert([row as any]).select("*").single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    await clearTrendForMaster(admin, owner.id, masterAccountId);
+    if (method) await recomputeMethodBuilds(await buildContext(admin, owner));
     const lines = await syncLinesFromBuilds(admin, owner);
-    return NextResponse.json({ build: data, ...lines }, { status: 201 });
+    const { data: fresh } = await admin.from("budget_builds").select("*").eq("id", data.id).single();
+    return NextResponse.json({ build: fresh ?? data, ...lines }, { status: 201 });
   } catch (err) {
     console.error("POST /api/budget/builds error:", err);
     const { body, status } = accessErrorResponse(err);
@@ -87,7 +108,7 @@ export async function POST(request: Request) {
   }
 }
 
-/** PATCH { id, label?, amounts?, note?, classId? } (manual builds only) */
+/** PATCH { id, label?, note?, classId?, method? | amounts? } (manual items only) */
 export async function PATCH(request: Request) {
   try {
     const actor = await getBudgetActor();
@@ -95,22 +116,39 @@ export async function PATCH(request: Request) {
     const id: string | undefined = body?.id;
     if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
     const admin = createAdminClient();
-    const { data: existing } = await admin.from("budget_builds").select("id, budget_version_id, build_type").eq("id", id).maybeSingle();
+    const { data: existing } = await admin.from("budget_builds").select("id, budget_version_id, build_type, meta").eq("id", id).maybeSingle();
     if (!existing) return NextResponse.json({ error: "Build not found" }, { status: 404 });
-    if (existing.build_type !== "manual") return NextResponse.json({ error: "Only manual builds can be edited; computed builds change through their source" }, { status: 400 });
+    if (existing.build_type !== "manual") return NextResponse.json({ error: "Only items can be edited; computed builds change through their source" }, { status: 400 });
     const owner = await requireVersionAccess(admin, actor, existing.budget_version_id, true);
     const fields: Record<string, unknown> = {};
     if ("label" in body) fields.label = String(body.label);
     if ("note" in body) fields.note = body.note ?? null;
     if ("classId" in body) fields.qbo_class_id = body.classId ?? null;
-    if ("amounts" in body) {
-      const clean: Record<string, number> = {};
-      for (let m = 1; m <= 12; m++) clean[String(m)] = Math.round(Number(body.amounts?.[String(m)] ?? 0) * 100) / 100;
-      fields.amounts = clean;
+    let hasMethod = false;
+    if ("method" in body) {
+      const method = readMethod(body.method);
+      if (body.method && !method) return NextResponse.json({ error: "Unknown method" }, { status: 400 });
+      const meta = (existing.meta ?? {}) as Record<string, unknown>;
+      if (method) {
+        fields.meta = { ...meta, method };
+        fields.is_computed = true;
+        fields.component = "method";
+        hasMethod = true;
+      } else {
+        const { method: _drop, history: _h, ...rest } = meta as Record<string, unknown> & { method?: unknown; history?: unknown };
+        void _drop;
+        void _h;
+        fields.meta = Object.keys(rest).length ? rest : null;
+        fields.is_computed = false;
+        fields.component = "manual";
+      }
     }
-    const { data, error } = await admin.from("budget_builds").update(fields).eq("id", id).select("*").single();
+    if ("amounts" in body && !hasMethod) fields.amounts = cleanAmounts(body.amounts);
+    const { error } = await admin.from("budget_builds").update(fields).eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (hasMethod) await recomputeMethodBuilds(await buildContext(admin, owner));
     const lines = await syncLinesFromBuilds(admin, owner);
+    const { data } = await admin.from("budget_builds").select("*").eq("id", id).single();
     return NextResponse.json({ build: data, ...lines });
   } catch (err) {
     console.error("PATCH /api/budget/builds error:", err);
@@ -119,7 +157,7 @@ export async function PATCH(request: Request) {
   }
 }
 
-/** DELETE /api/budget/builds?id= (manual builds only) */
+/** DELETE /api/budget/builds?id= (manual items only) */
 export async function DELETE(request: Request) {
   try {
     const actor = await getBudgetActor();
@@ -129,10 +167,12 @@ export async function DELETE(request: Request) {
     const admin = createAdminClient();
     const { data: existing } = await admin.from("budget_builds").select("id, budget_version_id, build_type").eq("id", id).maybeSingle();
     if (!existing) return NextResponse.json({ error: "Build not found" }, { status: 404 });
-    if (existing.build_type !== "manual") return NextResponse.json({ error: "Only manual builds can be deleted here" }, { status: 400 });
+    if (existing.build_type !== "manual") return NextResponse.json({ error: "Only items can be removed here" }, { status: 400 });
     const owner = await requireVersionAccess(admin, actor, existing.budget_version_id, true);
     const { error } = await admin.from("budget_builds").delete().eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    // Items that follow other lines may move
+    await recomputeMethodBuilds(await buildContext(admin, owner));
     const lines = await syncLinesFromBuilds(admin, owner);
     return NextResponse.json({ success: true, ...lines });
   } catch (err) {
