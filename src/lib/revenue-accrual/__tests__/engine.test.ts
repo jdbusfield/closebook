@@ -41,6 +41,9 @@ test("dates: memo service dates, with and without a year, and a typo year", () =
   assert.deepEqual(memoDates("Service 8-27-27 @ 1pm", "2026-09-02"), ["2026-08-27"]);
   assert.deepEqual(memoDates("10x10 Pop-Up Tent", "2026-09-02"), []);
   assert.deepEqual(parseRentalPeriod("8/25/26 - 9/3/26", "2026-09-05"), { start: "2026-08-25", end: "2026-09-03" });
+  assert.deepEqual(parseRentalPeriod("08/26/26 08/28/26", "2026-09-01"), { start: "2026-08-26", end: "2026-08-28" });
+  assert.deepEqual(parseRentalPeriod("8/26-8/28", "2026-09-01"), { start: "2026-08-26", end: "2026-08-28" });
+  assert.deepEqual(parseRentalPeriod("08/24/26", "2026-09-01"), { start: "2026-08-24", end: "2026-08-24" });
 });
 
 test("names: keys and close spellings", () => {

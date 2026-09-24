@@ -91,12 +91,13 @@ export function memoDates(memo: string, docDate: IsoDate): IsoDate[] {
   return out;
 }
 
-/** "Rental Period" custom field: "8/1/26 - 8/15/26", "08/01/2026-08/15/2026", "8/1 to 8/15/2026". */
+/**
+ * "Rental Period" custom field. People type it many ways: "8/1/26 - 8/15/26",
+ * "08/26/26 08/28/26" (no dash), "8/1 to 8/15/2026", "08/24/26". Every date
+ * in the text counts; the earliest is the start and the latest the end.
+ */
 export function parseRentalPeriod(value: string, docDate: IsoDate): { start: IsoDate; end: IsoDate } | null {
-  const parts = value.split(/\s*(?:-|–|—|to|thru|through)\s*(?=\d)/i);
-  if (parts.length < 2) return null;
-  const a = memoDates(parts[0], docDate)[0];
-  const b = memoDates(parts[1], docDate)[0];
-  if (!a || !b) return null;
-  return toUtc(a) <= toUtc(b) ? { start: a, end: b } : { start: b, end: a };
+  const ds = memoDates(value, docDate).sort((a, b) => toUtc(a) - toUtc(b));
+  if (!ds.length) return null;
+  return { start: ds[0], end: ds[ds.length - 1] };
 }
