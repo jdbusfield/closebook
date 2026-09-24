@@ -10,7 +10,7 @@
  * year, so the reasons behind the number are on the page from the start.
  */
 import { loadMonthlyActuals, monthKey, rollupActualsToParents } from "./actuals";
-import { lastBookedIndex, trendStats } from "./trend-builds";
+import { lastBookedIndex, trendBuilds, trendStats } from "./trend-builds";
 import { evaluateMethod, readMethod, type LineMethod, type MethodHistory } from "./line-methods";
 import { fetchAllPaginated } from "@/lib/utils/paginated-fetch";
 import { amountsFromArray, type Admin, type BuildContext, type BuildInsert } from "./build-types";
@@ -139,6 +139,21 @@ export async function recomputeMethodBuilds(ctx: BuildContext, bank?: HistoryBan
 export async function clearTrendForMaster(admin: Admin, versionId: string, masterId: string): Promise<void> {
   const { error } = await admin.from("budget_builds").delete().eq("budget_version_id", versionId).eq("build_type", "trend").eq("master_account_id", masterId);
   if (error) throw new Error(`Could not clear the run-rate build: ${error.message}`);
+}
+
+/**
+ * When a master's last item goes, its run rate comes back, so the line
+ * never silently drops to zero.
+ */
+export async function restoreTrendIfBare(ctx: BuildContext, masterId: string): Promise<boolean> {
+  const { count } = await ctx.admin.from("budget_builds").select("id", { count: "exact", head: true }).eq("budget_version_id", ctx.owner.id).eq("master_account_id", masterId);
+  if ((count ?? 0) > 0) return false;
+  const rows = await trendBuilds(ctx, { excludeMasterIds: new Set(), onlyMasterIds: new Set([masterId]) });
+  if (rows.length === 0) return false;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await ctx.admin.from("budget_builds").insert(rows as any);
+  if (error) throw new Error(`Could not restore the run rate: ${error.message}`);
+  return true;
 }
 
 /** The manual build row for a method item. */

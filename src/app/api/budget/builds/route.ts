@@ -4,7 +4,7 @@ import { accessErrorResponse, getBudgetActor, requireVersionAccess } from "@/lib
 import { fetchAllPaginated } from "@/lib/utils/paginated-fetch";
 import { syncLinesFromBuilds } from "@/lib/budget/recompute";
 import { buildContext } from "@/lib/budget/builds";
-import { clearTrendForMaster, methodBuild, recomputeMethodBuilds } from "@/lib/budget/method-builds";
+import { clearTrendForMaster, methodBuild, recomputeMethodBuilds, restoreTrendIfBare } from "@/lib/budget/method-builds";
 import { readMethod } from "@/lib/budget/line-methods";
 import type { BuildInsert } from "@/lib/budget/build-types";
 
@@ -165,16 +165,18 @@ export async function DELETE(request: Request) {
     const id = searchParams.get("id");
     if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
     const admin = createAdminClient();
-    const { data: existing } = await admin.from("budget_builds").select("id, budget_version_id, build_type").eq("id", id).maybeSingle();
+    const { data: existing } = await admin.from("budget_builds").select("id, budget_version_id, build_type, master_account_id").eq("id", id).maybeSingle();
     if (!existing) return NextResponse.json({ error: "Build not found" }, { status: 404 });
     if (existing.build_type !== "manual") return NextResponse.json({ error: "Only items can be removed here" }, { status: 400 });
     const owner = await requireVersionAccess(admin, actor, existing.budget_version_id, true);
     const { error } = await admin.from("budget_builds").delete().eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    // Items that follow other lines may move
-    await recomputeMethodBuilds(await buildContext(admin, owner));
+    const ctx = await buildContext(admin, owner);
+    // A line left with nothing gets its run rate back; items that follow other lines may move
+    const restored = await restoreTrendIfBare(ctx, existing.master_account_id);
+    await recomputeMethodBuilds(ctx);
     const lines = await syncLinesFromBuilds(admin, owner);
-    return NextResponse.json({ success: true, ...lines });
+    return NextResponse.json({ success: true, restoredRunRate: restored, ...lines });
   } catch (err) {
     console.error("DELETE /api/budget/builds error:", err);
     const { body, status } = accessErrorResponse(err);
