@@ -5,10 +5,10 @@ import { recomputeVersion, type RecomputeScope } from "@/lib/budget/builds";
 
 export const maxDuration = 300; // depreciation over ~700 assets plus KPI history
 
-const SCOPES = new Set<RecomputeScope>(["personnel", "schedules", "drivers", "trend", "all"]);
+const SCOPES = new Set<RecomputeScope>(["personnel", "schedules", "drivers", "trend", "methods", "all"]);
 
 /**
- * POST /api/budget/recompute  { versionId, scope?: "personnel" | "schedules" | "drivers" | "trend" | "all" }
+ * POST /api/budget/recompute  { versionId, scope?: "personnel" | "schedules" | "drivers" | "trend" | "methods" | "all" }
  * Rebuilds computed builds for the scope and syncs lines from builds.
  * Manual builds are never touched.
  */

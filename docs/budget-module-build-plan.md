@@ -196,3 +196,27 @@ Proposal: https://claude.ai/artifact/VCXR8trCTA9BuEW9qJPme3
   drivers pages (15 tests)
 - 2026-09-15 phase 3 (3.1–3.4): 5d9e3f2 comparables, freshness guard, review page, forecasts
 - 2026-09-15 phase 4 (4.1–4.5): d177a0f approve/lock, exports, wiki; then Link fix + build
+
+### Phase 5: the model view (Sep 24 2026)
+
+JD: budget only the master accounts the Financial Model shows, through EBITDA,
+with items under each master that say what the money is and why; payroll and
+rent come from their modules.
+
+- [x] 5.1 `line-methods.ts`: pure item methods (run rate, last year adjusted, same each
+      month, annual total even/shape, percent of a line, one time, by month), plain-English
+      `describeMethod`, `readMethod`. Tests in `__tests__/line-methods.test.ts`.
+- [x] 5.2 `method-builds.ts`: items are manual builds with `meta.method`; `recomputeMethodBuilds`
+      re-evaluates them last (percent-of-line reads the other builds); `breakoutMaster` seeds a
+      bucketed master with one run-rate item per entity account (same-named accounts share an
+      item, small ones as "Other accounts"). `actuals.ts` now returns `byAccount`.
+- [x] 5.3 Recompute scope `methods` (in `all` after trend). Builds API takes `method`; adding an
+      item clears the master's trend build. `POST /api/budget/builds/breakout`.
+- [x] 5.4 `GET /api/budget/lines` returns every top-level master with its items (payroll grouped
+      by component, leases grouped per lease), prior-year rolled to masters, `belowEbitda` net,
+      plus the older `lines` list for Review.
+- [x] 5.5 `/budget/[id]/lines` (tab "Model"): sections to EBITDA, expandable masters, item rows
+      with source chip, method text and reason; Add item / Break out by account / Replace run
+      rate; one net line below EBITDA to net income. Inline cell editing removed.
+- [ ] 5.6 Insurance from `insurance_payment_schedules`; lease fallback with escalations;
+      commissions and rebates as percent-of-revenue items; a preview in the item dialog.
