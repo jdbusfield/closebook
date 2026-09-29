@@ -159,7 +159,7 @@ export function QuoteDialog({
             <Textarea
               value={terms}
               onChange={(e) => setTerms(e.target.value)}
-              placeholder="Includes delivery, setup, and servicing. Held for 14 days."
+              placeholder="Includes delivery, setup, and pickup. Held for 14 days."
               rows={2}
               className="resize-none text-sm"
             />

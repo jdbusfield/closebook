@@ -26,9 +26,9 @@ BEGIN
 
   INSERT INTO rental_inquiry_funnel_steps (entity_id, funnel_id, day_offset, subject, body, sort_order) VALUES
   (hdr, fid, 0, 'Your {company} quote',
-   E'Hi {first},\n\nThanks for reaching out to {company}. Here''s a recap of what you sent over:\n\n{details}\n\nAnd here''s your quote:\n\n{quote}\n\nThat includes delivery, setup, and scheduled servicing. The quote is good for 14 days, and I''m glad to hold a unit for {date} while you decide. Want me to lock it in?\n\n— {rep}\n{company} · {company_email} · {company_phone}', 0),
+   E'Hi {first},\n\nThanks for reaching out to {company}. Here''s a recap of what you sent over:\n\n{details}\n\nAnd here''s your quote:\n\n{quote}\n\nThat includes delivery, setup, and pickup. The quote is good for 14 days, and I''m glad to hold a unit for {date} while you decide. Want me to lock it in?\n\n— {rep}\n{company} · {company_email} · {company_phone}', 0),
   (hdr, fid, 2, 'Did the quote land alright?',
-   E'Hi {first},\n\nJust making sure my quote reached you and answering the usual first question: yes, the number includes delivery, setup, pickup, and servicing. Nothing gets added later.\n\nIf anything about the setup changed (dates, headcount, location), tell me and I''ll re-price it the same day. And I can still hold a unit for {date} at no cost while you decide.\n\n— {rep}\n{company} · {company_phone}', 1),
+   E'Hi {first},\n\nJust making sure my quote reached you and answering the usual first question: yes, the number includes delivery, setup, and pickup. Nothing gets added later.\n\nIf anything about the setup changed (dates, headcount, location), tell me and I''ll re-price it the same day. And I can still hold a unit for {date} at no cost while you decide.\n\n— {rep}\n{company} · {company_phone}', 1),
   (hdr, fid, 4, 'If the number''s the hangup, talk to me',
    E'Hi {first},\n\nQuick follow-up on the quote I sent for {date}. If you''re comparing options, worth knowing what''s behind our number: late-model trailers, real flushing toilets and sinks, climate control, and we handle every bit of the logistics.\n\nIf budget is the sticking point, tell me what you were hoping to spend. There''s often a configuration that gets us there.\n\n— {rep}\n{company} · {company_email}', 2),
   (hdr, fid, 6, 'Closing out your quote for now',
