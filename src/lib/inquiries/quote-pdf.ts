@@ -569,14 +569,14 @@ export async function buildQuoteDoc(
       // ignore any saved quote terms here.
       `By accepting this invoice, you authorize ${BRAND.name} to charge the credit card on file for the full amount of this invoice. ` +
       "The card on file will be charged within seven (7) days of the start date of your rental. " +
-      "This amount includes delivery, setup, and servicing. " +
+      "This amount includes delivery, setup, and pickup. " +
       `Please reference invoice ${docNumber} on any payment-related correspondence.`
     : (quote.terms && quote.terms.trim()) ||
       (accepted
         ? `This quote was accepted on ${acceptedDate} and your rental is confirmed. ` +
-          "Pricing includes delivery, setup, and servicing. We will reach out ahead of " +
+          "Pricing includes delivery, setup, and pickup. We will reach out ahead of " +
           "your start date to coordinate delivery access, power, and water."
-        : "Quote includes delivery, setup, and servicing. Pricing is held for 14 days. " +
+        : "Quote includes delivery, setup, and pickup. Pricing is held for 14 days. " +
           "Reply to confirm and we will hold your date.");
   d.setFont("helvetica", "normal");
   d.setFontSize(9);

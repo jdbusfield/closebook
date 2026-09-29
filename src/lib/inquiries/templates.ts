@@ -102,7 +102,7 @@ export const DEFAULT_TEMPLATES: MessageTemplate[] = [
     cadence: "First response — recap their request and price it",
     subject: "Your {company} quote ({reference})",
     body:
-      "Hi {first},\n\nThanks for reaching out to {company}! Here's a recap of what you sent over:\n\n{details}\n\nBased on that, here's your quote:\n\n{quote}\n\nThis includes delivery, setup, and servicing. The quote is good for 14 days and I'm glad to hold your date while you decide. Want me to lock it in?\n\n— {rep}\n{company} · {company_email}",
+      "Hi {first},\n\nThanks for reaching out to {company}! Here's a recap of what you sent over:\n\n{details}\n\nBased on that, here's your quote:\n\n{quote}\n\nThis includes delivery, setup, and pickup. The quote is good for 14 days and I'm glad to hold your date while you decide. Want me to lock it in?\n\n— {rep}\n{company} · {company_email}",
   },
   {
     id: "gen-email-intro",
@@ -139,7 +139,7 @@ export const DEFAULT_TEMPLATES: MessageTemplate[] = [
     cadence: "Day 2 value email",
     subject: "Keeping {location} OSHA-compliant",
     body:
-      "Hi {first},\n\nQuick follow-up — we handle restroom and shower trailers for job sites across SoCal with scheduled servicing so you stay compliant without thinking about it. Longer jobs get better monthly rates.\n\nHow many units and what's the duration? I'll size it and send a firm number the same day.\n\n— {rep}\n{company}",
+      "Hi {first},\n\nQuick follow-up — we handle restroom and shower trailers for job sites across SoCal, with delivery, setup, and pickup handled for you. Longer jobs get better monthly rates.\n\nHow many units and what's the duration? I'll size it and send a firm number the same day.\n\n— {rep}\n{company}",
   },
 
   // --- Track: Events / weddings --------------------------------------------
