@@ -909,6 +909,81 @@ export type Database = {
         }
         Relationships: []
       }
+      rental_inquiry_ai_calls: {
+        Row: {
+          id: string
+          inquiry_id: string
+          entity_id: string
+          status: string
+          attempt: number
+          to_number: string
+          scheduled_for: string
+          dialed_at: string | null
+          ended_at: string | null
+          conversation_id: string | null
+          call_sid: string | null
+          failure_reason: string | null
+          call_outcome: string | null
+          hot_lead: boolean | null
+          do_not_call: boolean
+          duration_secs: number | null
+          summary: string | null
+          collected: Json | null
+          evaluation: Json | null
+          transcript: Json | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          inquiry_id: string
+          entity_id: string
+          status?: string
+          attempt?: number
+          to_number: string
+          scheduled_for: string
+          dialed_at?: string | null
+          ended_at?: string | null
+          conversation_id?: string | null
+          call_sid?: string | null
+          failure_reason?: string | null
+          call_outcome?: string | null
+          hot_lead?: boolean | null
+          do_not_call?: boolean
+          duration_secs?: number | null
+          summary?: string | null
+          collected?: Json | null
+          evaluation?: Json | null
+          transcript?: Json | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          inquiry_id?: string
+          entity_id?: string
+          status?: string
+          attempt?: number
+          to_number?: string
+          scheduled_for?: string
+          dialed_at?: string | null
+          ended_at?: string | null
+          conversation_id?: string | null
+          call_sid?: string | null
+          failure_reason?: string | null
+          call_outcome?: string | null
+          hot_lead?: boolean | null
+          do_not_call?: boolean
+          duration_secs?: number | null
+          summary?: string | null
+          collected?: Json | null
+          evaluation?: Json | null
+          transcript?: Json | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       rental_inquiry_funnel_enrollments: {
         Row: {
           id: string
