@@ -3,7 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveEmbedEntity } from "@/lib/inquiries/embed-auth";
 import { needsOutreachStatus } from "@/lib/inquiries/shared";
+import { assertQuoteActionable } from "@/lib/inquiries/quote-validity";
 import {
+  assertFunnelTermsCompatible,
   ENROLLMENT_COLUMNS,
   enrollmentQuote,
   funnelUsesQuote,
@@ -50,7 +52,7 @@ export async function POST(request: Request) {
     if (embedEntityId) {
       const { data } = await admin
         .from("rental_inquiries")
-        .select("id, entity_id, status, email, lane")
+        .select("id, entity_id, status, email, lane, start_date")
         .eq("id", inquiryId)
         .eq("entity_id", embedEntityId)
         .maybeSingle();
@@ -59,7 +61,7 @@ export async function POST(request: Request) {
     const supabase = await createClient();
     const { data } = await supabase
       .from("rental_inquiries")
-      .select("id, entity_id, status, email, lane")
+      .select("id, entity_id, status, email, lane, start_date")
       .eq("id", inquiryId)
       .maybeSingle();
     return data;
@@ -83,7 +85,7 @@ export async function POST(request: Request) {
         .maybeSingle();
       if (!inq) return null;
     }
-    return data as EnrollmentRow & { enrolled_by: string | null };
+    return data as EnrollmentRow & { enrolled_by: string | null; stopped_reason: string | null };
   }
 
   switch (action) {
@@ -99,6 +101,20 @@ export async function POST(request: Request) {
       }
       const inquiry = await loadInquiry(inquiryId);
       if (!inquiry) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      const { data: pendingDelivery, error: pendingError } = await admin
+        .from("rental_inquiry_funnel_enrollments")
+        .select("id")
+        .eq("inquiry_id", inquiryId)
+        .like("stopped_reason", "delivery_pending:%")
+        .limit(1)
+        .maybeSingle();
+      if (pendingError) return NextResponse.json({ error: pendingError.message }, { status: 500 });
+      if (pendingDelivery) {
+        return NextResponse.json(
+          { error: "An earlier email delivery needs reconciliation before starting another funnel. Check the provider and sent-email history; the email may already have been sent." },
+          { status: 409 }
+        );
+      }
       // Cold-outreach cards are never auto-emailed — Joe sends by hand.
       if (inquiry.lane === "cold") {
         return NextResponse.json(
@@ -138,36 +154,25 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "This funnel has no steps yet" }, { status: 400 });
       }
 
-      // A picked quote must be one of THIS inquiry's saved quotes.
-      if (quoteId) {
-        const { data: q } = await admin
-          .from("rental_inquiry_quotes")
-          .select("id")
-          .eq("id", quoteId)
-          .eq("inquiry_id", inquiryId)
-          .eq("entity_id", inquiry.entity_id)
-          .maybeSingle();
-        if (!q) {
-          return NextResponse.json(
-            { error: "That quote doesn't belong to this inquiry" },
-            { status: 400 }
-          );
+      // Persist the selected quote even when the rep chose "latest". A later
+      // deletion or new revision must not silently change a running funnel.
+      let selectedQuoteId = quoteId ?? null;
+      try {
+        assertFunnelTermsCompatible(ordered);
+        if (selectedQuoteId || funnelUsesQuote(ordered)) {
+          const quote = await enrollmentQuote(admin, {
+            inquiry_id: inquiryId,
+            quote_id: selectedQuoteId,
+          });
+          if (!quote) throw new Error("This funnel sends your quote - draft a quote on the inquiry first");
+          assertQuoteActionable(quote, inquiry);
+          selectedQuoteId = quote.id;
         }
-      }
-
-      // Quote-led funnels ({quote} in a step) refuse to start without a quote —
-      // better a clear error now than a customer email with a hole in it.
-      if (funnelUsesQuote(ordered) && !quoteId) {
-        const fallback = await enrollmentQuote(admin, {
-          inquiry_id: inquiryId,
-          quote_id: null,
-        });
-        if (!fallback) {
-          return NextResponse.json(
-            { error: "This funnel sends your quote — draft a quote on the inquiry first" },
-            { status: 400 }
-          );
-        }
+      } catch (err) {
+        return NextResponse.json(
+          { error: err instanceof Error ? err.message : "Quote requires review" },
+          { status: 400 }
+        );
       }
 
       // Switching funnels replaces the live one — a lead should never be on two.
@@ -184,7 +189,7 @@ export async function POST(request: Request) {
           entity_id: inquiry.entity_id,
           inquiry_id: inquiryId,
           funnel_id: funnelId,
-          quote_id: quoteId ?? null,
+          quote_id: selectedQuoteId,
           status: "active",
           enrolled_at: enrolledAt,
           enrolled_by: actor ?? null,
@@ -205,15 +210,26 @@ export async function POST(request: Request) {
       if (ordered[0].day_offset === 0) {
         sendResult = await processEnrollment(admin, enrollment as EnrollmentRow);
         if (sendResult.outcome === "error") {
-          // Roll the enrollment back so a rep isn't left with a silent dud
-          // (most likely cause: RESEND_API_KEY missing).
-          await admin
-            .from("rental_inquiry_funnel_enrollments")
-            .delete()
-            .eq("id", enrollment.id);
+          // Preserve the stopped delivery claim if the provider was contacted;
+          // deleting it would lose the evidence needed to avoid a duplicate.
+          if (!sendResult.deliveryMayHaveOccurred) {
+            await admin
+              .from("rental_inquiry_funnel_enrollments")
+              .delete()
+              .eq("id", enrollment.id);
+          }
           return NextResponse.json(
-            { error: `Couldn't send the first email: ${sendResult.error}` },
+            { error: sendResult.deliveryMayHaveOccurred
+              ? `Delivery requires review before retrying: ${sendResult.error}`
+              : `Couldn't send the first email: ${sendResult.error}`,
+              enrollmentId: enrollment.id },
             { status: 502 }
+          );
+        }
+        if (sendResult.outcome === "stopped") {
+          return NextResponse.json(
+            { error: sendResult.reason, enrollmentId: enrollment.id },
+            { status: 409 }
           );
         }
       }
@@ -230,6 +246,12 @@ export async function POST(request: Request) {
       const { enrollmentId } = body as { enrollmentId: string };
       const enrollment = await loadEnrollment(enrollmentId);
       if (!enrollment) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      if (enrollment.stopped_reason?.startsWith("delivery_pending:")) {
+        return NextResponse.json(
+          { error: "This funnel is already stopped for delivery review. Reconcile the provider and sent-email history before clearing the stop reason." },
+          { status: 409 }
+        );
+      }
       const { error } = await admin
         .from("rental_inquiry_funnel_enrollments")
         .update({ status: "stopped", stopped_reason: "manual" })
@@ -249,6 +271,17 @@ export async function POST(request: Request) {
       if (enrollment.status === "completed") {
         return NextResponse.json({ error: "This funnel already finished" }, { status: 400 });
       }
+      if (enrollment.stopped_reason?.startsWith("delivery_pending:")) {
+        return NextResponse.json(
+          { error: "Email delivery needs reconciliation. Check the provider and sent-email history before resuming; this step may already have been sent." },
+          { status: 409 }
+        );
+      }
+      const inquiry = await loadInquiry(enrollment.inquiry_id);
+      if (!inquiry) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      if (!needsOutreachStatus(inquiry.status ?? "new") || !inquiry.email || inquiry.lane === "cold") {
+        return NextResponse.json({ error: "This inquiry is not eligible for automated email outreach" }, { status: 400 });
+      }
       const { data: steps } = await admin
         .from("rental_inquiry_funnel_steps")
         .select(FUNNEL_STEP_COLUMNS)
@@ -264,11 +297,27 @@ export async function POST(request: Request) {
           .eq("id", enrollmentId);
         return NextResponse.json({ ok: true, completed: true });
       }
+      try {
+        assertFunnelTermsCompatible(ordered.slice(enrollment.steps_sent));
+        if (enrollment.quote_id || funnelUsesQuote(ordered)) {
+          if (!enrollment.quote_id) {
+            throw new Error("This funnel has no saved quote selection. Review and enroll it with a quote again.");
+          }
+          const quote = await enrollmentQuote(admin, enrollment);
+          if (!quote) throw new Error("The selected quote is missing. Review this funnel before resuming.");
+          assertQuoteActionable(quote, inquiry);
+        }
+      } catch (err) {
+        return NextResponse.json(
+          { error: err instanceof Error ? err.message : "Quote requires review" },
+          { status: 400 }
+        );
+      }
       const due = stepDueAt(enrollment.enrolled_at, next.day_offset);
       const nextSendAt = new Date(due) < new Date() ? new Date().toISOString() : due;
       const { error } = await admin
         .from("rental_inquiry_funnel_enrollments")
-        .update({ status: "active", next_send_at: nextSendAt, replied_at: null })
+        .update({ status: "active", next_send_at: nextSendAt, replied_at: null, stopped_reason: null })
         .eq("id", enrollmentId);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       return NextResponse.json({ ok: true });

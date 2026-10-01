@@ -20,6 +20,13 @@ import {
 } from "@/lib/inquiries/shared";
 import { brandOf, renderTemplate, type MessageTemplate } from "@/lib/inquiries/templates";
 import { publicResourceUrl } from "@/lib/inquiries/resources";
+import {
+  assertQuoteActionable,
+  assertQuoteTermsCompatible,
+  formatQuoteDate,
+  quoteIssueDate,
+  quoteValidityText,
+} from "@/lib/inquiries/quote-validity";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -55,35 +62,45 @@ const QUOTE_COLUMNS =
   "id, inquiry_id, quote_number, status, lines, subtotal, tax_rate, tax, total, valid_until, terms, accepted_at, created_by, created_at, updated_at";
 
 // The quote riding along on an enrollment: the one picked at enroll time,
-// falling back to the inquiry's latest saved quote (covers enrollments made
-// before a quote existed, or a picked quote that was since deleted).
+// falling back to the inquiry's latest saved quote only when making a new
+// selection. An explicitly selected quote must never silently change.
 export async function enrollmentQuote(
   admin: Admin,
   enrollment: Pick<EnrollmentRow, "inquiry_id" | "quote_id">
 ): Promise<InquiryQuote | null> {
   if (enrollment.quote_id) {
-    const { data } = await admin
+    const { data, error } = await admin
       .from("rental_inquiry_quotes")
       .select(QUOTE_COLUMNS)
       .eq("id", enrollment.quote_id)
+      .eq("inquiry_id", enrollment.inquiry_id)
       .maybeSingle();
-    if (data) return data as unknown as InquiryQuote;
+    if (error) throw new Error(`Unable to load the selected quote: ${error.message}`);
+    if (!data) throw new Error("The selected quote is missing. Review and select a saved quote again.");
+    return data as unknown as InquiryQuote;
   }
-  const { data } = await admin
+  const { data, error } = await admin
     .from("rental_inquiry_quotes")
     .select(QUOTE_COLUMNS)
     .eq("inquiry_id", enrollment.inquiry_id)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  if (error) throw new Error(`Unable to load the quote: ${error.message}`);
   return (data as unknown as InquiryQuote) ?? null;
 }
 
 // Does any step of this funnel merge the quote in?
 export function funnelUsesQuote(steps: Pick<FunnelStepRow, "subject" | "body">[]): boolean {
   return steps.some(
-    (s) => s.body.includes("{quote}") || (s.subject ?? "").includes("{quote")
+    (s) => /\{quote(?:_number|_valid_until|_issued_on|_validity)?\}/i.test(`${s.subject ?? ""}\n${s.body}`)
   );
+}
+
+export function assertFunnelTermsCompatible(steps: Pick<FunnelStepRow, "subject" | "body">[]): void {
+  for (const step of steps) {
+    assertQuoteTermsCompatible(`${step.subject ?? ""}\n${step.body}`);
+  }
 }
 
 export function resendClient(): Resend | null {
@@ -147,12 +164,12 @@ async function loadResourceLinks(
 }
 
 export type ProcessResult =
-  | { outcome: "sent"; stepId: string; final: boolean }
+  | { outcome: "sent"; stepId: string; final: boolean; warning?: string }
   | { outcome: "completed" }
   | { outcome: "paused_replied" }
   | { outcome: "stopped"; reason: string }
   | { outcome: "skipped"; reason: string }
-  | { outcome: "error"; error: string };
+  | { outcome: "error"; error: string; deliveryMayHaveOccurred?: boolean };
 
 // Send the next due step of an enrollment (if the chain is still unbroken) and
 // advance its cursor. Never throws — the cron loops over many enrollments and
@@ -161,6 +178,8 @@ export async function processEnrollment(
   admin: Admin,
   enrollment: EnrollmentRow
 ): Promise<ProcessResult> {
+  let deliveryStarted = false;
+  let deliveredStepId: string | null = null;
   try {
     if (enrollment.status !== "active") {
       return { outcome: "skipped", reason: `status ${enrollment.status}` };
@@ -247,12 +266,37 @@ export async function processEnrollment(
       return { outcome: "skipped", reason: "rescheduled_by_step_edit" };
     }
 
+    const inq = inquiry as unknown as Inquiry;
+    // Check every quote-linked enrollment, including follow-ups without a
+    // {quote} token. NULL also means ON DELETE SET NULL may have removed the
+    // selected quote; only a new enrollment may choose the latest quote.
+    let quote: InquiryQuote | null = null;
+    try {
+      assertFunnelTermsCompatible(ordered.slice(enrollment.steps_sent));
+      if (enrollment.quote_id || funnelUsesQuote(ordered)) {
+        if (!enrollment.quote_id) {
+          throw new Error("This funnel has no saved quote selection. Review and enroll it with a quote again.");
+        }
+        quote = await enrollmentQuote(admin, enrollment);
+        if (!quote) throw new Error("The selected quote is missing. Review this funnel before sending.");
+        assertQuoteActionable(quote, inq);
+      }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "Quote requires review";
+      const { error } = await admin
+        .from("rental_inquiry_funnel_enrollments")
+        .update({ status: "stopped", next_send_at: null, stopped_reason: `quote_review:${reason}` })
+        .eq("id", enrollment.id)
+        .eq("status", "active");
+      if (error) return { outcome: "error", error: `${reason} Could not stop the funnel: ${error.message}` };
+      return { outcome: "stopped", reason };
+    }
+
     const resend = resendClient();
     if (!resend) {
       return { outcome: "error", error: "RESEND_API_KEY is not configured" };
     }
 
-    const inq = inquiry as unknown as Inquiry;
     const brand = brandOf(inq);
     const tpl: MessageTemplate = {
       id: `funnel-step-${step.id}`,
@@ -263,21 +307,21 @@ export async function processEnrollment(
       subject: step.subject,
       body: step.body,
     };
-    // Resolve the quote riding on this enrollment when the step merges it in.
-    let extra: { quote?: string; quote_number?: string } | undefined;
-    let quote: InquiryQuote | null = null;
-    if (funnelUsesQuote([step])) {
-      quote = await enrollmentQuote(admin, enrollment);
-      extra = quote
-        ? { quote: quoteEmailBlock(quote), quote_number: quote.quote_number }
-        : // Enrollment validates a quote exists for quote-led funnels, so this
-          // only happens if every quote was deleted mid-funnel. Degrade to a
-          // sentence that still reads naturally after "here's your quote:".
-          { quote: "I'm finalizing your pricing now — reply here and I'll have the exact number over to you the same day." };
-    }
+    const stepUsesQuote = funnelUsesQuote([step]);
+    const extra = quote ? {
+      quote: quoteEmailBlock(quote),
+      quote_number: quote.quote_number,
+      quote_valid_until: formatQuoteDate(quote.valid_until),
+      quote_issued_on: formatQuoteDate(quoteIssueDate(quote.created_at)),
+      quote_validity: quoteValidityText(quote),
+    } : undefined;
 
     // Empty rep name falls back to the brand team signature ("the HDR team").
     const rendered = renderTemplate(tpl, inq, "", extra);
+    if (quote && !rendered.body.includes(quoteValidityText(quote))) {
+      rendered.body += `\n\n${quoteValidityText(quote)}`;
+    }
+    assertQuoteTermsCompatible(`${rendered.subject ?? ""}\n${rendered.body}`);
 
     const links = await loadResourceLinks(admin, enrollment.entity_id, step.resource_ids);
     let text = rendered.body;
@@ -315,7 +359,7 @@ export async function processEnrollment(
     // same document "Download PDF" produces in the drawer. PDF trouble never
     // blocks the send; the quote is in the body text regardless.
     let attachments: { filename: string; content: Buffer }[] | undefined;
-    if (quote) {
+    if (quote && stepUsesQuote) {
       try {
         const { buildQuoteDoc } = await import("@/lib/inquiries/quote-pdf");
         const doc = await buildQuoteDoc(quote, inq);
@@ -330,6 +374,36 @@ export async function processEnrollment(
       }
     }
 
+    // Persist the delivery claim before contacting the provider. If the DB
+    // becomes unavailable after delivery, cron cannot blindly send again.
+    // Review must reconcile this state before manually resuming.
+    const { data: claimed, error: claimError } = await admin
+      .from("rental_inquiry_funnel_enrollments")
+      .update({ status: "stopped", stopped_reason: `delivery_pending:${step.id}`, next_send_at: null })
+      .eq("id", enrollment.id)
+      .eq("status", "active")
+      .eq("steps_sent", enrollment.steps_sent)
+      .select("id")
+      .maybeSingle();
+    if (claimError) return { outcome: "error", error: `Could not reserve email delivery: ${claimError.message}` };
+    if (!claimed) return { outcome: "skipped", reason: "enrollment_changed_before_send" };
+
+    // PDF generation and DB reads may have crossed the business-calendar
+    // midnight boundary. Recheck immediately before contacting the provider.
+    try {
+      if (quote) assertQuoteActionable(quote, inq);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "Quote requires review";
+      const { error } = await admin
+        .from("rental_inquiry_funnel_enrollments")
+        .update({ stopped_reason: `quote_review:${reason}` })
+        .eq("id", enrollment.id)
+        .eq("stopped_reason", `delivery_pending:${step.id}`);
+      if (error) return { outcome: "error", error: `${reason} Could not record review reason: ${error.message}` };
+      return { outcome: "stopped", reason };
+    }
+
+    deliveryStarted = true;
     const { data: sendData, error: sendError } = await resend.emails.send({
       from: `${brand.company} <${brand.email}>`,
       to: [inquiry.email],
@@ -352,13 +426,18 @@ export async function processEnrollment(
             },
           }
         : {}),
-    });
+    }, { idempotencyKey: `funnel/${enrollment.id}/${step.id}/${enrollment.steps_sent}` });
     if (sendError) {
-      return { outcome: "error", error: sendError.message };
+      return {
+        outcome: "error",
+        error: `Email delivery needs review before retrying: ${sendError.message}`,
+        deliveryMayHaveOccurred: true,
+      };
     }
+    deliveredStepId = step.id;
 
     const now = new Date().toISOString();
-    await admin.from("rental_inquiry_messages").insert({
+    const { error: messageError } = await admin.from("rental_inquiry_messages").insert({
       inquiry_id: enrollment.inquiry_id,
       entity_id: enrollment.entity_id,
       direction: "outbound",
@@ -371,10 +450,21 @@ export async function processEnrollment(
       resend_email_id: sendData?.id ?? null,
       sent_at: now,
     });
-    await admin
+    if (messageError) throw new Error(`Could not record sent email: ${messageError.message}`);
+    if (quote && stepUsesQuote) {
+      const { error: quoteError } = await admin
+        .from("rental_inquiry_quotes")
+        .update({ status: "sent" })
+        .eq("id", quote.id)
+        .eq("inquiry_id", enrollment.inquiry_id)
+        .eq("status", "draft");
+      if (quoteError) throw new Error(`Could not mark quote as sent: ${quoteError.message}`);
+    }
+    const { error: activityError } = await admin
       .from("rental_inquiries")
       .update({ last_activity_at: now })
       .eq("id", enrollment.inquiry_id);
+    if (activityError) throw new Error(`Could not record inquiry activity: ${activityError.message}`);
 
     // Keep the board honest: each funnel send walks the card down the outreach
     // ladder — the quote email to Quote Sent, every later email to Followed Up
@@ -391,31 +481,47 @@ export async function processEnrollment(
     const currentStage = normalizeStatus(inquiry.status);
     const curIdx = LADDER.indexOf(currentStage);
     if (curIdx !== -1 && LADDER.indexOf(targetStage) > curIdx) {
-      await admin
+      const { error: stageError } = await admin
         .from("rental_inquiries")
         .update({ status: targetStage })
         .eq("id", enrollment.inquiry_id)
         .eq("status", inquiry.status ?? "new");
+      if (stageError) throw new Error(`Could not advance inquiry stage: ${stageError.message}`);
     }
 
     const next = ordered[enrollment.steps_sent + 1];
-    await admin
+    const { error: advanceError } = await admin
       .from("rental_inquiry_funnel_enrollments")
       .update(
         next
           ? {
               steps_sent: enrollment.steps_sent + 1,
+              status: "active",
+              stopped_reason: null,
               next_send_at: stepDueAt(enrollment.enrolled_at, next.day_offset),
             }
-          : { steps_sent: enrollment.steps_sent + 1, status: "completed", next_send_at: null }
+          : { steps_sent: enrollment.steps_sent + 1, status: "completed", stopped_reason: null, next_send_at: null }
       )
-      .eq("id", enrollment.id);
+      .eq("id", enrollment.id)
+      .eq("stopped_reason", `delivery_pending:${step.id}`);
+    if (advanceError) throw new Error(`Could not advance funnel: ${advanceError.message}`);
 
     return { outcome: "sent", stepId: step.id, final: !next };
   } catch (err) {
+    const error = err instanceof Error ? err.message : "Unknown error";
+    if (deliveredStepId) {
+      console.error("[funnel-send] email sent; reconciliation required", enrollment.id, error);
+      return {
+        outcome: "sent",
+        stepId: deliveredStepId,
+        final: false,
+        warning: `Email was sent, but the funnel is stopped for review. Do not resend. ${error}`,
+      };
+    }
     return {
       outcome: "error",
-      error: err instanceof Error ? err.message : "Unknown error",
+      error,
+      ...(deliveryStarted ? { deliveryMayHaveOccurred: true } : {}),
     };
   }
 }

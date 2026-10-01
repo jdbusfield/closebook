@@ -15,6 +15,7 @@
 import { type Inquiry, fmtDate } from "@/lib/inquiries/shared";
 import { HDR_LOGO_DATA_URL } from "@/lib/inquiries/hdr-logo";
 import { VERSATILE_LOGO_DATA_URL } from "@/lib/inquiries/versatile-logo";
+import { formatQuoteDate, quoteActionProblem, quoteIssueDate, quoteValidityText } from "./quote-validity";
 
 // The minimal shape this renderer needs — satisfied by a saved InquiryQuote or a
 // freshly-computed draft before it is persisted.
@@ -204,6 +205,13 @@ export async function buildQuoteDoc(
   // treatment only applies to the quote variant.
   const isInvoice = variant === "invoice";
   const accepted = !isInvoice && quote.status === "accepted";
+  // Quotes retain their saved issuance date when downloaded again. Legacy
+  // missing dates are explicit; rendering must never issue a fresh quote.
+  const issuedDate = isInvoice
+    ? todayLong()
+    : formatQuoteDate(quoteIssueDate(quote.created_at));
+  const validDate = formatQuoteDate(quote.valid_until);
+  const validityReview = !isInvoice && !accepted ? quoteActionProblem(quote, inquiry) : null;
   const docNumber = isInvoice ? invoiceNumberFor(quote.quote_number) : quote.quote_number;
   // Bill-to override: the quote/invoice is issued in billing_name + billing_address
   // when set, otherwise the inquiry's own contact name. Address is free-form,
@@ -213,9 +221,7 @@ export async function buildQuoteDoc(
     .split(/\r?\n/)
     .map((s) => s.trim())
     .filter(Boolean);
-  const acceptedDate = quote.accepted_at
-    ? fmtDate(quote.accepted_at, { month: "short", day: "numeric", year: "numeric" })
-    : todayLong();
+  const acceptedDate = formatQuoteDate(quoteIssueDate(quote.accepted_at));
 
   // ─── Masthead ─────────────────────────────────────────────────────────────
   try {
@@ -270,7 +276,7 @@ export async function buildQuoteDoc(
   d.text("Date:", labelRX, 68, { align: "right" });
   d.setFont("helvetica", "normal");
   setText(d, MUTED);
-  d.text(todayLong(), labelRX + 10, 68);
+  d.text(issuedDate, labelRX + 10, 68);
   if (isInvoice) {
     d.setFont("helvetica", "bold");
     setText(d, INK);
@@ -285,13 +291,13 @@ export async function buildQuoteDoc(
     d.setFont("helvetica", "normal");
     setText(d, MUTED);
     d.text(acceptedDate, labelRX + 10, 82);
-  } else if (quote.valid_until) {
+  } else {
     d.setFont("helvetica", "bold");
     setText(d, INK);
     d.text("Valid:", labelRX, 82, { align: "right" });
     d.setFont("helvetica", "normal");
     setText(d, MUTED);
-    d.text(fmtDate(quote.valid_until, { month: "short", day: "numeric", year: "numeric" }), labelRX + 10, 82);
+    d.text(validDate, labelRX + 10, 82);
   }
 
   // Company block, under the logo.
@@ -356,7 +362,7 @@ export async function buildQuoteDoc(
   field(cols[1].x, gy + 15, "Phone", inquiry.phone || "-");
   field(cols[1].x, gy + 30, "Email", inquiry.email || "-", cols[1].w);
   // Column 3
-  field(cols[2].x, gy, "Date", todayLong());
+  field(cols[2].x, gy, "Date", issuedDate);
   if (isInvoice) {
     field(cols[2].x, gy + 15, "Due", "On receipt");
     field(cols[2].x, gy + 30, "Status", "Invoiced");
@@ -364,9 +370,7 @@ export async function buildQuoteDoc(
     field(cols[2].x, gy + 15, "Accepted", acceptedDate);
     field(cols[2].x, gy + 30, "Status", "Confirmed");
   } else {
-    field(cols[2].x, gy + 15, "Valid", quote.valid_until
-      ? fmtDate(quote.valid_until, { month: "short", day: "numeric", year: "numeric" })
-      : "14 days");
+    field(cols[2].x, gy + 15, "Valid", validDate);
     field(cols[2].x, gy + 30, "Terms", "Due on acceptance");
   }
 
@@ -571,13 +575,17 @@ export async function buildQuoteDoc(
       "The card on file will be charged within seven (7) days of the start date of your rental. " +
       "This amount includes delivery, setup, and pickup. " +
       `Please reference invoice ${docNumber} on any payment-related correspondence.`
-    : (quote.terms && quote.terms.trim()) ||
+    : ((quote.terms && quote.terms.trim()) ||
       (accepted
         ? `This quote was accepted on ${acceptedDate} and your rental is confirmed. ` +
           "Pricing includes delivery, setup, and pickup. We will reach out ahead of " +
           "your start date to coordinate delivery access, power, and water."
-        : "Quote includes delivery, setup, and pickup. Pricing is held for 14 days. " +
-          "Reply to confirm and we will hold your date.");
+        : "Quote includes delivery, setup, and pickup. " +
+          "Reply to confirm and we will hold your date.")) +
+      // Preserve saved terms for historical accuracy, including legacy terms
+      // needing review. The persisted deadline always accompanies them.
+      ` ${quoteValidityText(quote)}` +
+      (validityReview ? ` REVIEW REQUIRED: ${validityReview}` : "");
   d.setFont("helvetica", "normal");
   d.setFontSize(9);
   const wrapped = d.splitTextToSize(termsText, usable);

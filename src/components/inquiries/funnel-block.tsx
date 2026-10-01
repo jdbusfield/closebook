@@ -47,11 +47,12 @@ import {
   type InquiryQuote,
 } from "@/lib/inquiries/shared";
 import type { FunnelStep } from "@/lib/inquiries/funnels";
+import { assertQuoteTermsCompatible, formatQuoteDate, quoteActionProblem, quoteIssueDate, quoteValidityText } from "@/lib/inquiries/quote-validity";
 
 // Does any step of this funnel merge the saved quote in? (Client twin of the
 // server check in funnel-send.ts.)
 function usesQuote(steps: Pick<FunnelStep, "subject" | "body">[]): boolean {
-  return steps.some((s) => s.body.includes("{quote}") || (s.subject ?? "").includes("{quote"));
+  return steps.some((s) => /\{quote(?:_number|_valid_until|_issued_on|_validity)?\}/i.test(`${s.subject ?? ""}\n${s.body}`));
 }
 
 function fmtWhen(d: Date): string {
@@ -146,6 +147,12 @@ export function FunnelBlock({
     // Default the quote to the inquiry's latest whenever the funnel merges one in.
     setQuoteId(f && usesQuote(fn.stepsFor(f.id)) ? (inquiry.quotes?.[0]?.id ?? null) : null);
   };
+
+  if (enrollment?.stopped_reason?.startsWith("delivery_pending:")) {
+    return <p className="rounded-lg border border-amber-200 p-3 text-xs text-amber-800" role="status">
+      Email delivery needs review. Check the provider and sent-email history before starting another funnel; the last email may already have been sent.
+    </p>;
+  }
 
   // --- A live/paused/finished enrollment: status + controls -----------------
   if (enrollment && enrollment.status !== "stopped") {
@@ -250,6 +257,9 @@ export function FunnelBlock({
 
   return (
     <div>
+      {enrollment?.stopped_reason?.startsWith("quote_review:") && (
+        <p className="mb-2 text-xs text-amber-700" role="status">{enrollment.stopped_reason.slice("quote_review:".length)}</p>
+      )}
       <Button
         variant="outline"
         size="sm"
@@ -330,8 +340,19 @@ function StartDialog({
   const needsQuote = candidate ? usesQuote(candidateSteps) : false;
   const selectedQuote = quotes.find((q) => q.id === quoteId) ?? null;
   const missingQuote = needsQuote && !selectedQuote;
+  let reviewReason = selectedQuote ? quoteActionProblem(selectedQuote, inquiry) : null;
+  try {
+    for (const step of candidateSteps) assertQuoteTermsCompatible(`${step.subject ?? ""}\n${step.body}`);
+  } catch (error) {
+    reviewReason = (error as Error).message;
+  }
   const extra = selectedQuote
-    ? { quote: quoteEmailBlock(selectedQuote), quote_number: selectedQuote.quote_number }
+    ? {
+        quote: quoteEmailBlock(selectedQuote), quote_number: selectedQuote.quote_number,
+        quote_issued_on: formatQuoteDate(quoteIssueDate(selectedQuote.created_at)),
+        quote_valid_until: formatQuoteDate(selectedQuote.valid_until),
+        quote_validity: quoteValidityText(selectedQuote),
+      }
     : undefined;
   // Same anchor rule as the server send: when the customer already has an email
   // thread, every funnel email goes out as a reply on it ("Re: <thread>").
@@ -476,6 +497,7 @@ function StartDialog({
                 </div>
               ))}
 
+            {reviewReason && <p className="text-xs text-amber-700" role="status">{reviewReason}</p>}
             <div className="space-y-2">
               {schedulePreview(fn.stepsFor(candidate.id)).map(({ step, at }, i) => {
                 const tpl: MessageTemplate = {
@@ -488,6 +510,9 @@ function StartDialog({
                   body: step.body,
                 };
                 const rendered = renderTemplate(tpl, previewInquiry, "", extra);
+                if (selectedQuote && !rendered.body.includes(quoteValidityText(selectedQuote))) {
+                  rendered.body += `\n\n${quoteValidityText(selectedQuote)}`;
+                }
                 const subject = anchor?.subject || rendered.subject || "(no subject)";
                 const isExpanded = expanded === null ? i === 0 : expanded === step.id;
                 return (
@@ -542,7 +567,7 @@ function StartDialog({
               <Button
                 size="sm"
                 onClick={onStart}
-                disabled={starting || missingQuote}
+                disabled={starting || missingQuote || !!reviewReason}
                 className="gap-1.5"
               >
                 <Zap className="size-3.5" />

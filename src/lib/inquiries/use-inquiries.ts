@@ -12,6 +12,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useEmbed } from "@/lib/inquiries/embed-context";
 import { toast } from "sonner";
 import { apiErrorMessage } from "@/lib/inquiries/api-error";
+import { assertQuoteActionable, prepareQuoteValidity } from "@/lib/inquiries/quote-validity";
 import {
   type Inquiry,
   type InquiryTask,
@@ -476,6 +477,14 @@ export function useInquiries(entityId: string, lane: InquiryLane = "inbound"): U
           created = res.quote as InquiryQuote;
         } else {
           const supabase = createClient();
+          const { data: inquiry, error: inquiryError } = await supabase
+            .from("rental_inquiries")
+            .select("start_date")
+            .eq("id", id)
+            .eq("entity_id", eid)
+            .single();
+          if (inquiryError || !inquiry) throw new Error(inquiryError?.message ?? "Inquiry not found");
+          const validity = prepareQuoteValidity(inquiry.start_date, draft.valid_until);
           const { data, error } = await supabase
             .from("rental_inquiry_quotes")
             .insert({
@@ -486,7 +495,10 @@ export function useInquiries(entityId: string, lane: InquiryLane = "inbound"): U
               tax_rate: draft.tax_rate,
               tax: draft.tax,
               total: draft.total,
-              valid_until: draft.valid_until ?? null,
+              ...validity,
+              // The DB derives defaults at its issuance instant, including
+              // saves crossing business midnight or a skewed browser clock.
+              valid_until: draft.valid_until || null,
               terms: draft.terms ?? null,
               created_by: actor,
             })
@@ -516,32 +528,47 @@ export function useInquiries(entityId: string, lane: InquiryLane = "inbound"): U
       // Acceptance is stamped so the accepted PDF can show the date; moving a
       // quote out of accepted clears the stamp.
       const acceptedAt = status === "accepted" ? new Date().toISOString() : null;
-      // Optimistic local status flip.
-      setInquiries((prev) =>
-        prev.map((i) => ({
-          ...i,
-          quotes: (i.quotes || []).map((q) =>
-            q.id === quoteId ? { ...q, status, accepted_at: acceptedAt } : q
-          ),
-        }))
-      );
       try {
         if (isEmbed) {
           await embedPost({ action: "update_quote", quoteId, status });
         } else {
           const supabase = createClient();
+          // Read current persisted dates; a stale drawer must not accept an
+          // expired quote or miss an event-date change made by another rep.
+          if (status === "accepted" || status === "sent") {
+            const { data: quote, error: quoteError } = await supabase
+              .from("rental_inquiry_quotes")
+              .select("inquiry_id, created_at, valid_until, status, terms")
+              .eq("id", quoteId)
+              .eq("entity_id", eid)
+              .single();
+            if (quoteError || !quote) throw new Error(quoteError?.message ?? "Quote not found");
+            const { data: inquiry, error: inquiryError } = await supabase
+              .from("rental_inquiries")
+              .select("start_date")
+              .eq("id", quote.inquiry_id)
+              .eq("entity_id", eid)
+              .single();
+            if (inquiryError || !inquiry) throw new Error(inquiryError?.message ?? "Inquiry not found");
+            assertQuoteActionable(quote, inquiry);
+          }
           const { error } = await supabase
             .from("rental_inquiry_quotes")
             .update({ status, accepted_at: acceptedAt })
-            .eq("id", quoteId);
+            .eq("id", quoteId)
+            .eq("entity_id", eid)
+            .select("id")
+            .single();
           if (error) throw new Error(error.message);
         }
+        toast.success(`Quote marked ${status}`);
+        await load();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Couldn't update quote");
         await load();
       }
     },
-    [isEmbed, embedPost, load]
+    [eid, isEmbed, embedPost, load]
   );
 
   const deleteQuote = useCallback(

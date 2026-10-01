@@ -2,6 +2,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { HDR_ENTITY_ID } from "@/lib/inquiries/shared";
 import { resolveEmbedEntity } from "@/lib/inquiries/embed-auth";
+import { assertQuoteActionable, prepareQuoteValidity } from "@/lib/inquiries/quote-validity";
 import { buildEmailHealth } from "@/lib/email-health/report";
 import type { Database } from "@/lib/types/database.types";
 import { AD_DATA_START, AD_ROW_COLUMNS, AD_RUN_COLUMNS } from "@/lib/ads/columns";
@@ -698,8 +699,24 @@ export async function POST(request: Request) {
           terms?: string | null;
         };
       };
-      if (!(await inquiryBelongsTo(admin, id, entityId))) {
+      const { data: inquiry, error: inquiryError } = await admin
+        .from("rental_inquiries")
+        .select("start_date")
+        .eq("id", id)
+        .eq("entity_id", entityId)
+        .maybeSingle();
+      if (inquiryError) return NextResponse.json({ error: inquiryError.message }, { status: 500 });
+      if (!inquiry) {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      let validity: ReturnType<typeof prepareQuoteValidity>;
+      try {
+        validity = prepareQuoteValidity(inquiry.start_date, draft.valid_until);
+      } catch (error) {
+        return NextResponse.json(
+          { error: error instanceof Error ? error.message : "Invalid quote validity" },
+          { status: 400 }
+        );
       }
       const { data, error } = await admin
         .from("rental_inquiry_quotes")
@@ -711,7 +728,9 @@ export async function POST(request: Request) {
           tax_rate: draft.tax_rate,
           tax: draft.tax,
           total: draft.total,
-          valid_until: draft.valid_until ?? null,
+          ...validity,
+          // Let the DB derive the default at the actual issuance instant.
+          valid_until: draft.valid_until || null,
           terms: draft.terms ?? null,
           created_by: entityId === HDR_ENTITY_ID ? "HDR Team" : "Versatile Team",
         })
@@ -723,6 +742,35 @@ export async function POST(request: Request) {
 
     case "update_quote": {
       const { quoteId, status } = body as { quoteId: string; status: string };
+      if (!["draft", "sent", "accepted", "declined", "expired"].includes(status)) {
+        return NextResponse.json({ error: "Invalid quote status" }, { status: 400 });
+      }
+      const { data: quote, error: quoteError } = await admin
+        .from("rental_inquiry_quotes")
+        .select("inquiry_id, created_at, valid_until, status, terms")
+        .eq("id", quoteId)
+        .eq("entity_id", entityId)
+        .maybeSingle();
+      if (quoteError) return NextResponse.json({ error: quoteError.message }, { status: 500 });
+      if (!quote) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      if (status === "accepted" || status === "sent") {
+        const { data: inquiry, error: inquiryError } = await admin
+          .from("rental_inquiries")
+          .select("start_date")
+          .eq("id", quote.inquiry_id)
+          .eq("entity_id", entityId)
+          .maybeSingle();
+        if (inquiryError) return NextResponse.json({ error: inquiryError.message }, { status: 500 });
+        if (!inquiry) return NextResponse.json({ error: "Not found" }, { status: 404 });
+        try {
+          assertQuoteActionable(quote, inquiry);
+        } catch (error) {
+          return NextResponse.json(
+            { error: error instanceof Error ? error.message : "Quote requires review" },
+            { status: 409 }
+          );
+        }
+      }
       const { error } = await admin
         .from("rental_inquiry_quotes")
         .update({
@@ -730,7 +778,9 @@ export async function POST(request: Request) {
           accepted_at: status === "accepted" ? new Date().toISOString() : null,
         })
         .eq("id", quoteId)
-        .eq("entity_id", entityId);
+        .eq("entity_id", entityId)
+        .select("id")
+        .single();
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       return NextResponse.json({ ok: true });
     }

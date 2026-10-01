@@ -43,6 +43,7 @@ import { MessageBody } from "@/components/inquiries/email-body";
 import { QuoteDialog } from "@/components/inquiries/quote-dialog";
 import { QuotesList } from "@/components/inquiries/quotes-list";
 import { type QuoteDraft } from "@/lib/inquiries/use-inquiries";
+import { assertQuoteActionable, prepareQuoteValidity } from "@/lib/inquiries/quote-validity";
 import {
   INQUIRY_STATUSES,
   STATUS_LABELS,
@@ -311,6 +312,14 @@ export default function InquiryDetailPage() {
           return data.quote as InquiryQuote;
         }
         const supabase = createClient();
+        const { data: currentInquiry, error: inquiryError } = await supabase
+          .from("rental_inquiries")
+          .select("start_date")
+          .eq("id", id)
+          .eq("entity_id", entityId)
+          .single();
+        if (inquiryError || !currentInquiry) throw new Error(inquiryError?.message ?? "Inquiry not found");
+        const validity = prepareQuoteValidity(currentInquiry.start_date, draft.valid_until);
         const { data, error } = await supabase
           .from("rental_inquiry_quotes")
           .insert({
@@ -321,7 +330,9 @@ export default function InquiryDetailPage() {
             tax_rate: draft.tax_rate,
             tax: draft.tax,
             total: draft.total,
-            valid_until: draft.valid_until ?? null,
+            ...validity,
+            // Let the DB derive the default at the actual issuance instant.
+            valid_until: draft.valid_until || null,
             terms: draft.terms ?? null,
           })
           .select(
@@ -343,27 +354,46 @@ export default function InquiryDetailPage() {
   const updateQuoteStatus = useCallback(
     async (quoteId: string, status: InquiryQuote["status"]) => {
       const acceptedAt = status === "accepted" ? new Date().toISOString() : null;
-      setQuotes((prev) =>
-        prev.map((q) => (q.id === quoteId ? { ...q, status, accepted_at: acceptedAt } : q))
-      );
       try {
         if (isEmbed) {
           await embedAction({ action: "update_quote", quoteId, status });
         } else {
           const supabase = createClient();
+          if (status === "accepted" || status === "sent") {
+            const { data: quote, error: quoteError } = await supabase
+              .from("rental_inquiry_quotes")
+              .select("inquiry_id, created_at, valid_until, status, terms")
+              .eq("id", quoteId)
+              .eq("entity_id", entityId)
+              .single();
+            if (quoteError || !quote) throw new Error(quoteError?.message ?? "Quote not found");
+            const { data: currentInquiry, error: inquiryError } = await supabase
+              .from("rental_inquiries")
+              .select("start_date")
+              .eq("id", quote.inquiry_id)
+              .eq("entity_id", entityId)
+              .single();
+            if (inquiryError || !currentInquiry) throw new Error(inquiryError?.message ?? "Inquiry not found");
+            assertQuoteActionable(quote, currentInquiry);
+          }
           const { error } = await supabase
             .from("rental_inquiry_quotes")
             .update({ status, accepted_at: acceptedAt })
-            .eq("id", quoteId);
+            .eq("id", quoteId)
+            .eq("entity_id", entityId)
+            .select("id")
+            .single();
           if (error) throw new Error(error.message);
         }
+        toast.success(`Quote marked ${status}`);
+        await load();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Couldn't update quote");
         await load();
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isEmbed, embedKey, load]
+    [isEmbed, embedKey, entityId, load]
   );
 
   const deleteQuote = useCallback(

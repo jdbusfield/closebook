@@ -30,14 +30,8 @@ import {
 } from "@/components/inquiries/quote-builder";
 import { downloadQuotePdf } from "@/lib/inquiries/quote-pdf";
 import { type QuoteDraft } from "@/lib/inquiries/use-inquiries";
-import { type Inquiry, type InquiryQuote, fmtMoney, toISODate } from "@/lib/inquiries/shared";
-
-// Default validity: 14 days out (matches the quote copy's "good for 14 days").
-function defaultValidUntil(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 14);
-  return toISODate(d);
-}
+import { type Inquiry, type InquiryQuote, fmtMoney } from "@/lib/inquiries/shared";
+import { businessDate, prepareQuoteValidity, quoteValidityLimit, QUOTE_TIME_ZONE } from "@/lib/inquiries/quote-validity";
 
 export function QuoteDialog({
   inquiry,
@@ -66,7 +60,9 @@ export function QuoteDialog({
 
   const [lines, setLines] = useState<QuoteLine[]>(() => seedQuoteLines(inquiry));
   const [taxRate, setTaxRate] = useState(0);
-  const [validUntil, setValidUntil] = useState<string>(defaultValidUntil());
+  // Empty means the default is recomputed on save, including after midnight.
+  const [validUntil, setValidUntil] = useState("");
+  const validityLimit = quoteValidityLimit(businessDate(), inquiry.start_date);
   const [terms, setTerms] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -84,6 +80,12 @@ export function QuoteDialog({
 
   const save = async (alsoDownload: boolean) => {
     const draft = buildDraft();
+    try {
+      prepareQuoteValidity(inquiry.start_date, draft.valid_until);
+    } catch (error) {
+      toast.error((error as Error).message);
+      return;
+    }
     if (draft.lines.length === 0) {
       toast.error("Add at least one line item");
       return;
@@ -145,12 +147,20 @@ export function QuoteDialog({
               <span className="text-xs font-medium text-muted-foreground">Valid until</span>
               <Input
                 type="date"
-                value={validUntil}
+                value={validUntil || validityLimit || ""}
+                min={businessDate()}
+                max={validityLimit || undefined}
+                disabled={!validityLimit}
                 onChange={(e) => setValidUntil(e.target.value)}
                 className="h-9"
               />
             </label>
           </div>
+          <p className={`text-xs ${validityLimit ? "text-muted-foreground" : "text-amber-700"}`} role="status">
+            {validityLimit
+              ? `Price validity ends on ${validityLimit} (${QUOTE_TIME_ZONE}): three calendar days from saving, capped at the day before the event. You may choose an earlier date.`
+              : "Review required: confirm a future event date. Same-day requests can be saved as drafts, but cannot be sent or accepted."}
+          </p>
 
           <label className="block space-y-1">
             <span className="text-xs font-medium text-muted-foreground">
@@ -159,7 +169,7 @@ export function QuoteDialog({
             <Textarea
               value={terms}
               onChange={(e) => setTerms(e.target.value)}
-              placeholder="Includes delivery, setup, and pickup. Held for 14 days."
+              placeholder="Additional terms or notes. The saved price-validity date prints separately."
               rows={2}
               className="resize-none text-sm"
             />
