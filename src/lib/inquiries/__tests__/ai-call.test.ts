@@ -72,7 +72,9 @@ test("ineligibleReason only allows HDR site quote inquiries with a US phone", ()
   assert.equal(ineligibleReason({ ...base, entity_id: VERSATILE_ENTITY_ID }, on), "not an HDR site inquiry");
   assert.equal(ineligibleReason({ ...base, request_type: "reservation" }, on), "not a quote inquiry");
   assert.equal(ineligibleReason({ ...base, phone: "n/a" }, on), "no valid US phone");
-  assert.equal(ineligibleReason({ ...base, phone: "808-555-0142" }, on), "area code outside calling hours");
+  for (const ac of ["808", "907", "787", "671"]) {
+    assert.equal(ineligibleReason({ ...base, phone: `${ac}-555-0142` }, on), "area code outside calling hours");
+  }
 });
 
 test("pilot allowlist restricts calls to listed numbers", () => {

@@ -31,8 +31,10 @@ export const MAX_ATTEMPTS = 2;
 export const RETRY_AFTER_MINUTES = 120;
 /** A queued call this far past its slot is dropped, not dialed late. */
 export const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
-// Hawaii and Alaska are 2-3 hours behind LA, so a 9am PT call lands at 6-7am.
-const OUTSIDE_WINDOW_AREA_CODES = new Set(["808", "907"]);
+// Area codes where a 9am-6pm PT call can land outside 8am-9pm local time:
+// Hawaii, Alaska, American Samoa (behind LA); Puerto Rico and USVI (+3-4h);
+// Guam and CNMI (+17-18h).
+const OUTSIDE_WINDOW_AREA_CODES = new Set(["808", "907", "684", "787", "939", "340", "671", "670"]);
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit tested)
