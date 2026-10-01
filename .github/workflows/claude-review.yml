@@ -1,0 +1,113 @@
+# Claude Review: the final review gate on every PR (Oct 1 2026).
+# Codex and Claude Code sessions both open PRs here. Claude reads the repo rules and
+# the diff, leaves inline comments plus one summary comment, and labels the PR:
+#   claude: pass   safe to merge
+#   claude: flag   mergeable, but JD looks first (migration, billing, judgment call)
+#   claude: block  this check fails; fix by pushing to the same branch, it reruns
+name: Claude Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            You are the final reviewer for Closebook, JD's accounting app (Next.js,
+            Supabase, Vercel). Codex and Claude Code agents open PRs here; JD ships
+            on your verdict. A merge to main deploys to production on Vercel. This
+            repo is PUBLIC.
+
+            1. Read AGENTS.md and .claude/CLAUDE.md in full. Their rules are the bar.
+            2. Read the PR with `gh pr view` and the diff with `gh pr diff`.
+            3. Open the files the diff touches and their callers. Never judge a
+               change from the diff alone.
+            4. For each real problem, leave an inline comment on the line: what
+               breaks, for whom, and the fix. No style nits.
+            5. Post exactly one summary comment with `gh pr comment`. First line:
+               "**Claude Review: PASS**", "**Claude Review: FLAG**" or
+               "**Claude Review: BLOCK**". Then at most 8 short bullets: what the PR
+               does, each blocking or flagged item, and what JD must do (for
+               example "apply supabase/migrations/2026... before merging").
+            6. Return the verdict.
+
+            BLOCK when the change would:
+            - break production or fail typecheck/build;
+            - get money wrong: sign conventions, rounding to the cent, period or
+              month-end boundaries, double counting, entity scoping (ARH and
+              Silverco are different entities), a balance sheet that no longer
+              balances, or statements that no longer tie;
+            - lose or corrupt ledger, invoice, quote or budget data, or write to
+              the database in a way it can't undo;
+            - open a security hole: an API route under src/app/api that skips the
+              Supabase auth check or org/member scoping, a service-role key used
+              where a user session belongs, or any secret, token, customer data or
+              .env value committed (the repo is public);
+            - break a rule in .claude/CLAUDE.md, including unpaginated Supabase
+              queries that assume under 1,000 rows.
+
+            FLAG (passes the check, JD looks first) when the change:
+            - adds SQL under supabase/migrations/ (say whether JD applies it before
+              or after merge) or a table missing from database.types.ts;
+            - touches auth, member access scopes, billing, rebates, accruals,
+              cron jobs, or anything that emails customers;
+            - deletes a feature, a report, data or a scheduled job;
+            - does more than the PR description says;
+            - is a judgment call you are not sure about, or you could not read
+              enough to be sure. Never PASS what you could not verify.
+
+            PASS otherwise. Write in plain English with no em-dashes.
+          claude_args: |
+            --model claude-opus-5-5
+            --allowedTools "Read,Grep,Glob,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git log:*),Bash(git show:*)"
+            --json-schema '{"type":"object","properties":{"verdict":{"type":"string","enum":["pass","flag","block"]},"summary":{"type":"string"}},"required":["verdict","summary"]}'
+
+      - name: Label the PR and set the result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          OUT: ${{ steps.claude.outputs.structured_output }}
+        run: |
+          [ -n "$OUT" ] || OUT='{}'
+          verdict=$(echo "$OUT" | jq -r '.verdict // empty')
+          summary=$(echo "$OUT" | jq -r '.summary // empty')
+          gh label create "claude: pass" --color 2da44e --force -R "$GITHUB_REPOSITORY" >/dev/null
+          gh label create "claude: flag" --color d4a72c --force -R "$GITHUB_REPOSITORY" >/dev/null
+          gh label create "claude: block" --color cf222e --force -R "$GITHUB_REPOSITORY" >/dev/null
+          gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --remove-label "claude: pass" --remove-label "claude: flag" --remove-label "claude: block" >/dev/null || true
+          if [ -z "$verdict" ]; then
+            echo "::error::Claude Review did not finish, so this PR is not cleared. Re-run the job."
+            exit 1
+          fi
+          gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --add-label "claude: $verdict" >/dev/null
+          echo "### Claude Review: ${verdict^^}" >> "$GITHUB_STEP_SUMMARY"
+          echo "$summary" >> "$GITHUB_STEP_SUMMARY"
+          case "$verdict" in
+            block) echo "::error::Claude Review: BLOCK. $summary"; exit 1 ;;
+            flag)  echo "::warning::Claude Review: FLAG. $summary" ;;
+          esac
