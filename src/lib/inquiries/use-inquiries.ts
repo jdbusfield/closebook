@@ -12,6 +12,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useEmbed } from "@/lib/inquiries/embed-context";
 import { toast } from "sonner";
 import { apiErrorMessage } from "@/lib/inquiries/api-error";
+import { assertQuoteNotExpired, prepareQuoteValidity } from "@/lib/inquiries/quote-validity";
 import {
   type Inquiry,
   type InquiryTask,
@@ -37,6 +38,8 @@ export interface QuoteDraft {
   tax: number;
   total: number;
   valid_until?: string | null;
+  /** Keep a displayed default distinct from a rep-entered custom date. */
+  use_default_validity?: boolean;
   terms?: string | null;
 }
 
@@ -476,6 +479,13 @@ export function useInquiries(entityId: string, lane: InquiryLane = "inbound"): U
           created = res.quote as InquiryQuote;
         } else {
           const supabase = createClient();
+          const { data: inquiry, error: inquiryError } = await supabase
+            .from("rental_inquiries")
+            .select("start_date")
+            .eq("id", id)
+            .eq("entity_id", eid)
+            .single();
+          if (inquiryError || !inquiry) throw new Error(inquiryError?.message ?? "Inquiry not found");
           const { data, error } = await supabase
             .from("rental_inquiry_quotes")
             .insert({
@@ -486,7 +496,7 @@ export function useInquiries(entityId: string, lane: InquiryLane = "inbound"): U
               tax_rate: draft.tax_rate,
               tax: draft.tax,
               total: draft.total,
-              valid_until: draft.valid_until ?? null,
+              ...prepareQuoteValidity(inquiry.start_date, draft.use_default_validity ? null : draft.valid_until),
               terms: draft.terms ?? null,
               created_by: actor,
             })
@@ -513,6 +523,21 @@ export function useInquiries(entityId: string, lane: InquiryLane = "inbound"): U
 
   const updateQuoteStatus = useCallback(
     async (quoteId: string, status: InquiryQuote["status"]) => {
+      if (!isEmbed && (status === "sent" || status === "accepted")) {
+        try {
+          const { data: quote, error } = await createClient()
+            .from("rental_inquiry_quotes")
+            .select("valid_until")
+            .eq("id", quoteId)
+            .eq("entity_id", eid)
+            .single();
+          if (error || !quote) throw new Error(error?.message ?? "Quote not found");
+          assertQuoteNotExpired(quote);
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : "Couldn't update quote");
+          return;
+        }
+      }
       // Acceptance is stamped so the accepted PDF can show the date; moving a
       // quote out of accepted clears the stamp.
       const acceptedAt = status === "accepted" ? new Date().toISOString() : null;
@@ -541,7 +566,7 @@ export function useInquiries(entityId: string, lane: InquiryLane = "inbound"): U
         await load();
       }
     },
-    [isEmbed, embedPost, load]
+    [eid, isEmbed, embedPost, load]
   );
 
   const deleteQuote = useCallback(

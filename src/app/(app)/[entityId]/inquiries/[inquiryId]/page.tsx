@@ -43,6 +43,7 @@ import { MessageBody } from "@/components/inquiries/email-body";
 import { QuoteDialog } from "@/components/inquiries/quote-dialog";
 import { QuotesList } from "@/components/inquiries/quotes-list";
 import { type QuoteDraft } from "@/lib/inquiries/use-inquiries";
+import { assertQuoteNotExpired, prepareQuoteValidity } from "@/lib/inquiries/quote-validity";
 import {
   INQUIRY_STATUSES,
   STATUS_LABELS,
@@ -311,6 +312,13 @@ export default function InquiryDetailPage() {
           return data.quote as InquiryQuote;
         }
         const supabase = createClient();
+        const { data: currentInquiry, error: inquiryError } = await supabase
+          .from("rental_inquiries")
+          .select("start_date")
+          .eq("id", id)
+          .eq("entity_id", entityId)
+          .single();
+        if (inquiryError || !currentInquiry) throw new Error(inquiryError?.message ?? "Inquiry not found");
         const { data, error } = await supabase
           .from("rental_inquiry_quotes")
           .insert({
@@ -321,7 +329,7 @@ export default function InquiryDetailPage() {
             tax_rate: draft.tax_rate,
             tax: draft.tax,
             total: draft.total,
-            valid_until: draft.valid_until ?? null,
+            ...prepareQuoteValidity(currentInquiry.start_date, draft.use_default_validity ? null : draft.valid_until),
             terms: draft.terms ?? null,
           })
           .select(
@@ -342,6 +350,21 @@ export default function InquiryDetailPage() {
 
   const updateQuoteStatus = useCallback(
     async (quoteId: string, status: InquiryQuote["status"]) => {
+      if (!isEmbed && (status === "sent" || status === "accepted")) {
+        try {
+          const { data: quote, error } = await createClient()
+            .from("rental_inquiry_quotes")
+            .select("valid_until")
+            .eq("id", quoteId)
+            .eq("entity_id", entityId)
+            .single();
+          if (error || !quote) throw new Error(error?.message ?? "Quote not found");
+          assertQuoteNotExpired(quote);
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : "Couldn't update quote");
+          return;
+        }
+      }
       const acceptedAt = status === "accepted" ? new Date().toISOString() : null;
       setQuotes((prev) =>
         prev.map((q) => (q.id === quoteId ? { ...q, status, accepted_at: acceptedAt } : q))
@@ -363,7 +386,7 @@ export default function InquiryDetailPage() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isEmbed, embedKey, load]
+    [isEmbed, embedKey, entityId, load]
   );
 
   const deleteQuote = useCallback(

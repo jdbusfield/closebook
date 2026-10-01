@@ -102,7 +102,7 @@ export const DEFAULT_TEMPLATES: MessageTemplate[] = [
     cadence: "First response — recap their request and price it",
     subject: "Your {company} quote ({reference})",
     body:
-      "Hi {first},\n\nThanks for reaching out to {company}! Here's a recap of what you sent over:\n\n{details}\n\nBased on that, here's your quote:\n\n{quote}\n\nThis includes delivery, setup, and pickup. The quote is good for 14 days and I'm glad to hold your date while you decide. Want me to lock it in?\n\n— {rep}\n{company} · {company_email}",
+      "Hi {first},\n\nThanks for reaching out to {company}! Here's a recap of what you sent over:\n\n{details}\n\nBased on that, here's your quote:\n\n{quote}\n\nThis includes delivery, setup, and pickup. I'm glad to hold your date while you decide. Want me to lock it in?\n\n— {rep}\n{company} · {company_email}",
   },
   {
     id: "gen-email-intro",

@@ -36,7 +36,8 @@ import {
 } from "@/components/inquiries/quote-builder";
 import { downloadQuotePdf } from "@/lib/inquiries/quote-pdf";
 import { type QuoteDraft } from "@/lib/inquiries/use-inquiries";
-import { type Inquiry, type InquiryActivity, type InquiryQuote } from "@/lib/inquiries/shared";
+import { type Inquiry, type InquiryActivity, type InquiryQuote, quoteEmailBlock } from "@/lib/inquiries/shared";
+import { prepareQuoteValidity, quoteValidityText } from "@/lib/inquiries/quote-validity";
 
 async function copyText(text: string): Promise<boolean> {
   try {
@@ -92,6 +93,7 @@ export function TemplatePicker({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [savingQuote, setSavingQuote] = useState(false);
+  const [savedQuote, setSavedQuote] = useState<InquiryQuote | null>(null);
   const [quoteLines, setQuoteLines] = useState<QuoteLine[]>(() =>
     seedQuoteLines(inquiry)
   );
@@ -106,18 +108,24 @@ export function TemplatePicker({
   const selected = all.find((t) => t.id === selectedId) ?? all[0] ?? null;
   const showQuote = !!selected && selected.body.includes("{quote}");
   const quote = useMemo(() => formatQuote(quoteLines), [quoteLines]);
+  const matchingQuote = savedQuote && JSON.stringify(savedQuote.lines) === JSON.stringify(toLineItems(quoteLines))
+    ? savedQuote : null;
+  const draftValidity = prepareQuoteValidity(inquiry.start_date);
+  const quoteText = matchingQuote ? quoteEmailBlock(matchingQuote)
+    : quote.text + (draftValidity.valid_until ? `\n${quoteValidityText(draftValidity)}` : "");
 
   const latestQuoteNumber = inquiry.quotes?.[0]?.quote_number;
   const rendered: { subject?: string; body: string } = selected
     ? renderTemplate(selected, inquiry, rep, {
-        quote: showQuote ? quote.text : undefined,
-        quote_number: latestQuoteNumber,
+        quote: showQuote ? quoteText : undefined,
+        quote_number: matchingQuote?.quote_number ?? latestQuoteNumber,
       })
     : { subject: undefined, body: "" };
 
   const reset = () => {
     setSelectedId(null);
     setCopied(false);
+    setSavedQuote(null);
   };
 
   const logEntry = (tpl: MessageTemplate, subject?: string) => ({
@@ -143,7 +151,8 @@ export function TemplatePicker({
       tax_rate: 0,
       tax: 0,
       total: totals.total,
-      valid_until: null,
+      valid_until: prepareQuoteValidity(inquiry.start_date).valid_until,
+      use_default_validity: true,
       terms: null,
     };
     if (draft.lines.length === 0) {
@@ -154,6 +163,7 @@ export function TemplatePicker({
     try {
       const created = await onSaveQuote(inquiry.id, draft);
       if (!created) return; // onSaveQuote already surfaced the error
+      setSavedQuote(created);
       if (onSetValue && totals.total > 0) onSetValue(inquiry.id, totals.total);
       toast.success(`Quote ${created.quote_number} saved`);
       await downloadQuotePdf(created, inquiry);

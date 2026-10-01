@@ -2,6 +2,8 @@
 // Mirrors the "Bathroom Trailer Rental CRM" design: a 6-stage pipeline, a fixed
 // fleet roster, follow-up tasks, and an activity timeline.
 
+import { quoteValidityText } from "./quote-validity";
+
 // HDR (Hollywood Depot Rentals) entity id. Mirrors ENTITY_IDS.HDR in
 // src/lib/paylocity/cost-center-config.ts. Overridable via env for safety.
 export const HDR_ENTITY_ID =
@@ -455,7 +457,8 @@ export interface InquiryQuote {
 // (bulleted lines, then totals). Used by both the funnel send engine and the
 // enroll dialog's preview, so what the rep previews is exactly what sends.
 export function quoteEmailBlock(
-  q: Pick<InquiryQuote, "lines" | "subtotal" | "tax" | "total">
+  q: Pick<InquiryQuote, "lines" | "subtotal" | "tax" | "total"> &
+    Partial<Pick<InquiryQuote, "created_at" | "valid_until">>
 ): string {
   const rows = (q.lines ?? [])
     .filter((l) => (l.description ?? "").trim() !== "" || Number(l.rate) > 0)
@@ -469,7 +472,7 @@ export function quoteEmailBlock(
     Number(q.tax) > 0
       ? [`Subtotal: ${fmtMoney(q.subtotal)}`, `Tax: ${fmtMoney(q.tax)}`, `Total: ${fmtMoney(q.total)}`]
       : [`Total: ${fmtMoney(q.total)}`];
-  return [...rows, ...totals].join("\n");
+  return [...rows, ...totals, ...(q.valid_until ? [quoteValidityText(q)] : [])].join("\n");
 }
 
 export interface InquiryMessage {

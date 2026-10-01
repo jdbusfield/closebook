@@ -15,6 +15,7 @@
 import { type Inquiry, fmtDate } from "@/lib/inquiries/shared";
 import { HDR_LOGO_DATA_URL } from "@/lib/inquiries/hdr-logo";
 import { VERSATILE_LOGO_DATA_URL } from "@/lib/inquiries/versatile-logo";
+import { formatQuoteDate, quoteIssueDate, quoteValidityText } from "./quote-validity";
 
 // The minimal shape this renderer needs — satisfied by a saved InquiryQuote or a
 // freshly-computed draft before it is persisted.
@@ -204,6 +205,11 @@ export async function buildQuoteDoc(
   // treatment only applies to the quote variant.
   const isInvoice = variant === "invoice";
   const accepted = !isInvoice && quote.status === "accepted";
+  // Regeneration preserves the saved quote's issuance date. Invoice dates keep
+  // their existing behavior, independent of the source quote's issue date.
+  const issuedOn = quoteIssueDate(quote.created_at);
+  const issuedDate = isInvoice ? todayLong() : issuedOn ? formatQuoteDate(issuedOn) : "Not set";
+  const validDate = quote.valid_until ? formatQuoteDate(quote.valid_until) : "Not set";
   const docNumber = isInvoice ? invoiceNumberFor(quote.quote_number) : quote.quote_number;
   // Bill-to override: the quote/invoice is issued in billing_name + billing_address
   // when set, otherwise the inquiry's own contact name. Address is free-form,
@@ -270,7 +276,7 @@ export async function buildQuoteDoc(
   d.text("Date:", labelRX, 68, { align: "right" });
   d.setFont("helvetica", "normal");
   setText(d, MUTED);
-  d.text(todayLong(), labelRX + 10, 68);
+  d.text(issuedDate, labelRX + 10, 68);
   if (isInvoice) {
     d.setFont("helvetica", "bold");
     setText(d, INK);
@@ -285,13 +291,13 @@ export async function buildQuoteDoc(
     d.setFont("helvetica", "normal");
     setText(d, MUTED);
     d.text(acceptedDate, labelRX + 10, 82);
-  } else if (quote.valid_until) {
+  } else {
     d.setFont("helvetica", "bold");
     setText(d, INK);
     d.text("Valid:", labelRX, 82, { align: "right" });
     d.setFont("helvetica", "normal");
     setText(d, MUTED);
-    d.text(fmtDate(quote.valid_until, { month: "short", day: "numeric", year: "numeric" }), labelRX + 10, 82);
+    d.text(validDate, labelRX + 10, 82);
   }
 
   // Company block, under the logo.
@@ -356,7 +362,7 @@ export async function buildQuoteDoc(
   field(cols[1].x, gy + 15, "Phone", inquiry.phone || "-");
   field(cols[1].x, gy + 30, "Email", inquiry.email || "-", cols[1].w);
   // Column 3
-  field(cols[2].x, gy, "Date", todayLong());
+  field(cols[2].x, gy, "Date", issuedDate);
   if (isInvoice) {
     field(cols[2].x, gy + 15, "Due", "On receipt");
     field(cols[2].x, gy + 30, "Status", "Invoiced");
@@ -364,9 +370,7 @@ export async function buildQuoteDoc(
     field(cols[2].x, gy + 15, "Accepted", acceptedDate);
     field(cols[2].x, gy + 30, "Status", "Confirmed");
   } else {
-    field(cols[2].x, gy + 15, "Valid", quote.valid_until
-      ? fmtDate(quote.valid_until, { month: "short", day: "numeric", year: "numeric" })
-      : "14 days");
+    field(cols[2].x, gy + 15, "Valid", validDate);
     field(cols[2].x, gy + 30, "Terms", "Due on acceptance");
   }
 
@@ -576,7 +580,7 @@ export async function buildQuoteDoc(
         ? `This quote was accepted on ${acceptedDate} and your rental is confirmed. ` +
           "Pricing includes delivery, setup, and pickup. We will reach out ahead of " +
           "your start date to coordinate delivery access, power, and water."
-        : "Quote includes delivery, setup, and pickup. Pricing is held for 14 days. " +
+        : `Quote includes delivery, setup, and pickup. ${quoteValidityText(quote)} ` +
           "Reply to confirm and we will hold your date.");
   d.setFont("helvetica", "normal");
   d.setFontSize(9);

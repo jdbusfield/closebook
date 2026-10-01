@@ -30,14 +30,8 @@ import {
 } from "@/components/inquiries/quote-builder";
 import { downloadQuotePdf } from "@/lib/inquiries/quote-pdf";
 import { type QuoteDraft } from "@/lib/inquiries/use-inquiries";
-import { type Inquiry, type InquiryQuote, fmtMoney, toISODate } from "@/lib/inquiries/shared";
-
-// Default validity: 14 days out (matches the quote copy's "good for 14 days").
-function defaultValidUntil(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 14);
-  return toISODate(d);
-}
+import { type Inquiry, type InquiryQuote, fmtMoney } from "@/lib/inquiries/shared";
+import { prepareQuoteValidity } from "@/lib/inquiries/quote-validity";
 
 export function QuoteDialog({
   inquiry,
@@ -66,7 +60,9 @@ export function QuoteDialog({
 
   const [lines, setLines] = useState<QuoteLine[]>(() => seedQuoteLines(inquiry));
   const [taxRate, setTaxRate] = useState(0);
-  const [validUntil, setValidUntil] = useState<string>(defaultValidUntil());
+  // Recompute the default until the rep enters a custom date.
+  const [validUntil, setValidUntil] = useState<string | null>(null);
+  const defaultValidity = prepareQuoteValidity(inquiry.start_date).valid_until;
   const [terms, setTerms] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -78,7 +74,8 @@ export function QuoteDialog({
     tax_rate: Number(taxRate) || 0,
     tax: totals.tax,
     total: totals.total,
-    valid_until: validUntil || null,
+    valid_until: prepareQuoteValidity(inquiry.start_date, validUntil).valid_until,
+    use_default_validity: !validUntil,
     terms: terms.trim() || null,
   });
 
@@ -145,7 +142,7 @@ export function QuoteDialog({
               <span className="text-xs font-medium text-muted-foreground">Valid until</span>
               <Input
                 type="date"
-                value={validUntil}
+                value={validUntil ?? defaultValidity ?? ""}
                 onChange={(e) => setValidUntil(e.target.value)}
                 className="h-9"
               />
@@ -159,7 +156,7 @@ export function QuoteDialog({
             <Textarea
               value={terms}
               onChange={(e) => setTerms(e.target.value)}
-              placeholder="Includes delivery, setup, and pickup. Held for 14 days."
+              placeholder="Includes delivery, setup, and pickup."
               rows={2}
               className="resize-none text-sm"
             />

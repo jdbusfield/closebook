@@ -143,9 +143,6 @@ export function QuotesList({
                     className="h-8 gap-1.5 bg-emerald-600 text-xs text-white hover:bg-emerald-700"
                     onClick={() => {
                       onUpdateStatus(q.id, "accepted");
-                      toast.success(
-                        `${q.quote_number} marked accepted — download the accepted copy to send to the customer`
-                      );
                     }}
                   >
                     <CheckCircle2 className="size-3.5" /> Confirm accepted
