@@ -49,7 +49,19 @@ test("missing validity has no implicit duration or review requirement", async ()
   const text = drawnText(await buildQuoteDoc(missing, inquiry));
   assert.match(text, /Pricing validity date not set\./);
   assert.doesNotMatch(text, /14 days|Pricing valid through|review/i);
-  assert.match(quoteEmailBlock(missing as InquiryQuote), /Pricing validity date not set\./);
+  assert.doesNotMatch(quoteEmailBlock(missing as InquiryQuote), /Pricing valid|Pricing validity date not set/);
+});
+
+test("email quote blocks omit missing expiry without changing totals or adding an empty line", () => {
+  const template = DEFAULT_TEMPLATES.find((item) => item.id === "quote-email-builder")!;
+  for (const valid_until of [null, undefined, ""]) {
+    const email = quoteEmailBlock({ ...quote, valid_until } as InquiryQuote);
+    assert.match(email, /Existing rental item \u2014 \$125\nTotal: \$125$/);
+    assert.doesNotMatch(email, /Pricing valid|Pricing validity date not set/);
+    const rendered = renderTemplate(template, inquiry, "Test Rep", { quote: email });
+    assert.doesNotMatch(rendered.body, /Pricing valid|Pricing validity date not set/);
+  }
+  assert.match(quoteEmailBlock(quote as InquiryQuote), /Pricing valid through Oct 4, 2026\.$/);
 });
 
 test("saved custom expiration and custom terms render unchanged", async () => {

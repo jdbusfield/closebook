@@ -110,8 +110,9 @@ export function TemplatePicker({
   const quote = useMemo(() => formatQuote(quoteLines), [quoteLines]);
   const matchingQuote = savedQuote && JSON.stringify(savedQuote.lines) === JSON.stringify(toLineItems(quoteLines))
     ? savedQuote : null;
+  const draftValidity = prepareQuoteValidity(inquiry.start_date);
   const quoteText = matchingQuote ? quoteEmailBlock(matchingQuote)
-    : `${quote.text}\n${quoteValidityText(prepareQuoteValidity(inquiry.start_date))}`;
+    : quote.text + (draftValidity.valid_until ? `\n${quoteValidityText(draftValidity)}` : "");
 
   const latestQuoteNumber = inquiry.quotes?.[0]?.quote_number;
   const rendered: { subject?: string; body: string } = selected

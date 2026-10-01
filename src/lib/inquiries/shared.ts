@@ -472,7 +472,7 @@ export function quoteEmailBlock(
     Number(q.tax) > 0
       ? [`Subtotal: ${fmtMoney(q.subtotal)}`, `Tax: ${fmtMoney(q.tax)}`, `Total: ${fmtMoney(q.total)}`]
       : [`Total: ${fmtMoney(q.total)}`];
-  return [...rows, ...totals, quoteValidityText(q)].join("\n");
+  return [...rows, ...totals, ...(q.valid_until ? [quoteValidityText(q)] : [])].join("\n");
 }
 
 export interface InquiryMessage {
