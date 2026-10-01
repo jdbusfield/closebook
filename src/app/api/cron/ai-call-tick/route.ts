@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { aiCallConfig, dialAiCall, type AiCallRow } from "@/lib/inquiries/ai-call";
+import { aiCallConfig, dialAiCall, inCallingHours, type AiCallRow } from "@/lib/inquiries/ai-call";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -8,10 +8,12 @@ export const maxDuration = 60;
 // ============================================================================
 // Every-minute AI call tick: dial each queued HDR inquiry call that is due.
 //
-// Calls are queued by the inquiry ingest route with scheduled_for already
-// pushed into calling hours, so this only dials what is due. dialAiCall claims
-// each row before dialing, so overlapping runs never double-dial. Calls stuck
-// in "dialing" for two hours (no webhook ever arrived) are marked failed.
+// Calls are queued with scheduled_for already pushed into calling hours, and
+// the window is checked again here at dial time, so an overdue backlog never
+// dials outside hours. Rows more than a day past their slot are dropped.
+// dialAiCall claims each row before dialing, so overlapping runs never
+// double-dial. Calls stuck in "dialing" for two hours (no webhook ever
+// arrived) are marked failed.
 //
 // Auth: Vercel Cron sends `Authorization: Bearer $CRON_SECRET`.
 // ============================================================================
@@ -24,7 +26,8 @@ export async function GET(request: Request) {
   if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!aiCallConfig().enabled) {
+  const cfg = aiCallConfig();
+  if (!cfg.enabled) {
     return NextResponse.json({ ok: true, disabled: true });
   }
 
@@ -36,6 +39,10 @@ export async function GET(request: Request) {
     .update({ status: "failed", failure_reason: "no result from ElevenLabs", updated_at: now.toISOString() })
     .eq("status", "dialing")
     .lt("dialed_at", new Date(now.getTime() - STALE_DIALING_MS).toISOString());
+
+  if (!inCallingHours(now, cfg.hours)) {
+    return NextResponse.json({ ok: true, outsideHours: true });
+  }
 
   const { data: due, error } = await admin
     .from("rental_inquiry_ai_calls")

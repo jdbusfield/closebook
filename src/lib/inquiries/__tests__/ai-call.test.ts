@@ -3,6 +3,7 @@ import { createHmac } from "node:crypto";
 import { test } from "node:test";
 import {
   dynamicVariables,
+  inCallingHours,
   formatCallMessage,
   ineligibleReason,
   nextCallTime,
@@ -13,7 +14,7 @@ import {
 } from "../ai-call";
 import { HDR_ENTITY_ID, VERSATILE_ENTITY_ID } from "../shared";
 
-const hours = { start: 9, end: 19 };
+const hours = { start: 9, end: 18 };
 
 test("toE164 accepts US numbers in common formats and rejects the rest", () => {
   assert.equal(toE164("(323) 555-0142"), "+13235550142");
@@ -26,7 +27,7 @@ test("toE164 accepts US numbers in common formats and rejects the rest", () => {
   assert.equal(toE164(null), null);
 });
 
-test("parseHours falls back to 9-19 on bad input", () => {
+test("parseHours falls back to 9-18 on bad input", () => {
   assert.deepEqual(parseHours("8-20"), { start: 8, end: 20 });
   assert.deepEqual(parseHours(undefined), hours);
   assert.deepEqual(parseHours("20-8"), hours);
@@ -46,8 +47,15 @@ test("nextCallTime pushes early-morning inquiries to 9am the same LA day", () =>
 test("nextCallTime pushes evening inquiries to 9am the next LA day", () => {
   // 20:15 PDT Oct 1 = 03:15Z Oct 2 -> 9:00 PDT Oct 2 = 16:00Z
   assert.equal(nextCallTime(new Date("2026-10-02T03:15:00Z"), 2, hours).toISOString(), "2026-10-02T16:00:00.000Z");
-  // 18:59 PDT plus a 2 minute delay lands after close.
-  assert.equal(nextCallTime(new Date("2026-10-02T01:59:00Z"), 2, hours).toISOString(), "2026-10-02T16:00:00.000Z");
+  // 17:59 PDT plus a 2 minute delay lands after close.
+  assert.equal(nextCallTime(new Date("2026-10-02T00:59:00Z"), 2, hours).toISOString(), "2026-10-02T16:00:00.000Z");
+});
+
+test("inCallingHours checks LA time at dial time", () => {
+  assert.equal(inCallingHours(new Date("2026-10-01T16:00:00Z"), hours), true); // 9:00 PDT
+  assert.equal(inCallingHours(new Date("2026-10-02T00:59:00Z"), hours), true); // 17:59 PDT
+  assert.equal(inCallingHours(new Date("2026-10-02T01:00:00Z"), hours), false); // 18:00 PDT
+  assert.equal(inCallingHours(new Date("2026-10-01T15:59:00Z"), hours), false); // 8:59 PDT
 });
 
 test("nextCallTime handles the November DST change", () => {
@@ -64,6 +72,7 @@ test("ineligibleReason only allows HDR site quote inquiries with a US phone", ()
   assert.equal(ineligibleReason({ ...base, entity_id: VERSATILE_ENTITY_ID }, on), "not an HDR site inquiry");
   assert.equal(ineligibleReason({ ...base, request_type: "reservation" }, on), "not a quote inquiry");
   assert.equal(ineligibleReason({ ...base, phone: "n/a" }, on), "no valid US phone");
+  assert.equal(ineligibleReason({ ...base, phone: "808-555-0142" }, on), "area code outside calling hours");
 });
 
 test("pilot allowlist restricts calls to listed numbers", () => {

@@ -14,7 +14,8 @@
 //   ELEVENLABS_WEBHOOK_SECRET         post-call webhook HMAC secret
 //   AI_CALL_ALLOWLIST                 optional comma list of E.164 numbers; when
 //                                     set, only these numbers are ever called (pilot)
-//   AI_CALL_HOURS                     calling window in LA time, default "9-19"
+//   AI_CALL_HOURS                     calling window in LA time, default "9-18"
+//                                     (6pm PT = 9pm ET, the latest legal hour on the East Coast)
 //   AI_CALL_DELAY_MINUTES             wait after the form submit, default 2
 
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -28,6 +29,10 @@ export type AiCallRow = Database["public"]["Tables"]["rental_inquiry_ai_calls"][
 const TZ = "America/Los_Angeles";
 export const MAX_ATTEMPTS = 2;
 export const RETRY_AFTER_MINUTES = 120;
+/** A queued call this far past its slot is dropped, not dialed late. */
+export const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+// Hawaii and Alaska are 2-3 hours behind LA, so a 9am PT call lands at 6-7am.
+const OUTSIDE_WINDOW_AREA_CODES = new Set(["808", "907"]);
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit tested)
@@ -48,7 +53,7 @@ export function parseHours(raw: string | undefined): { start: number; end: numbe
     const end = Number(m[2]);
     if (start >= 0 && end <= 24 && start < end) return { start, end };
   }
-  return { start: 9, end: 19 };
+  return { start: 9, end: 18 };
 }
 
 function laParts(d: Date): { y: number; m: number; day: number; hour: number; minute: number } {
@@ -73,6 +78,11 @@ function laWallClock(y: number, m: number, day: number, hour: number): Date {
   const first = new Date(guess.getTime() - laOffsetMinutes(guess) * 60000);
   // Re-check the offset at the result in case the guess straddled a DST change.
   return new Date(guess.getTime() - laOffsetMinutes(first) * 60000);
+}
+
+export function inCallingHours(at: Date, hours: { start: number; end: number }): boolean {
+  const h = laParts(at).hour;
+  return h >= hours.start && h < hours.end;
 }
 
 /**
@@ -107,6 +117,7 @@ export function ineligibleReason(
   if ((inq.request_type ?? "inquiry") !== "inquiry") return "not a quote inquiry";
   const number = toE164(inq.phone);
   if (!number) return "no valid US phone";
+  if (OUTSIDE_WINDOW_AREA_CODES.has(number.slice(2, 5))) return "area code outside calling hours";
   if (opts.allowlist.length && !opts.allowlist.includes(number)) return "not on pilot allowlist";
   return null;
 }
@@ -306,6 +317,16 @@ export async function queueAiCall(admin: Admin, inquiryId: string): Promise<stri
  * overlapping cron runs can never dial the same call twice.
  */
 export async function dialAiCall(admin: Admin, call: AiCallRow): Promise<{ outcome: string; error?: string }> {
+  // A backlog (flag off for a day, cron outage) is dropped rather than
+  // phoning customers about a day-old request out of the blue.
+  if (Date.now() - new Date(call.scheduled_for).getTime() > STALE_AFTER_MS) {
+    await admin
+      .from("rental_inquiry_ai_calls")
+      .update({ status: "canceled", failure_reason: "stale: missed its calling slot", updated_at: new Date().toISOString() })
+      .eq("id", call.id)
+      .eq("status", "queued");
+    return { outcome: "canceled" };
+  }
   const { data: claimed } = await admin
     .from("rental_inquiry_ai_calls")
     .update({ status: "dialing", dialed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
