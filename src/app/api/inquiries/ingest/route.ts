@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveBrand } from "@/lib/inquiries/shared";
+import { queueAiCall } from "@/lib/inquiries/ai-call";
 import type { Database } from "@/lib/types/database.types";
 
 type MessageInsert = Database["public"]["Tables"]["rental_inquiry_messages"]["Insert"];
@@ -260,5 +261,9 @@ export async function POST(request: Request) {
     if (msgErr) console.error("[inquiries/ingest] message insert failed", msgErr);
   }
 
-  return NextResponse.json({ ok: true, inquiryId: inquiry.id, reference });
+  // Queue the AI callback (HDR site inquiries only; off unless
+  // AI_CALLS_ENABLED). Best-effort: never fails the ingest.
+  const aiCall = await queueAiCall(supabase, inquiry.id);
+
+  return NextResponse.json({ ok: true, inquiryId: inquiry.id, reference, aiCall });
 }
