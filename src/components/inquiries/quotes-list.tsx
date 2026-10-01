@@ -17,7 +17,6 @@ import {
 } from "@/components/ui/select";
 import { CheckCircle2, Download, FileText, Trash2 } from "lucide-react";
 import { downloadQuotePdf, downloadInvoicePdf } from "@/lib/inquiries/quote-pdf";
-import { quoteActionProblem, quoteValidityText } from "@/lib/inquiries/quote-validity";
 import {
   type Inquiry,
   type InquiryQuote,
@@ -65,7 +64,6 @@ export function QuotesList({
     <div className="space-y-2">
       {quotes.map((q) => {
         const isAccepted = q.status === "accepted";
-        const actionProblem = quoteActionProblem(q, inquiry);
         return (
           <div
             key={q.id}
@@ -93,10 +91,6 @@ export function QuotesList({
               {` · ${fmtDateTime(q.created_at)}`}
             </div>
 
-            <p className="mt-1 text-[11px] text-muted-foreground">{quoteValidityText(q)}</p>
-            {!isAccepted && actionProblem && (
-              <p className="mt-1 text-xs text-amber-700" role="status">{actionProblem}</p>
-            )}
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {isAccepted ? (
                 <>
@@ -147,7 +141,6 @@ export function QuotesList({
                   <Button
                     size="sm"
                     className="h-8 gap-1.5 bg-emerald-600 text-xs text-white hover:bg-emerald-700"
-                    disabled={!!actionProblem}
                     onClick={() => {
                       onUpdateStatus(q.id, "accepted");
                     }}
@@ -166,7 +159,7 @@ export function QuotesList({
                 </SelectTrigger>
                 <SelectContent>
                   {STATUS_OPTIONS.map((s) => (
-                    <SelectItem key={s} value={s} disabled={!!actionProblem && (s === "sent" || s === "accepted")} className="text-xs capitalize">
+                    <SelectItem key={s} value={s} className="text-xs capitalize">
                       {s}
                     </SelectItem>
                   ))}

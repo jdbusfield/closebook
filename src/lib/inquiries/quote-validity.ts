@@ -1,16 +1,8 @@
-// Quote price validity uses one business calendar, independent of the browser,
-// server timezone or DST. Issuance is the persisted created_at (first save).
-// Inventory reservations/holds are deliberately outside this policy.
+// Price validity uses the Los Angeles calendar, independent of browser/server
+// timezone and DST. These defaults apply only to new quotes, not saved records.
 export const QUOTE_TIME_ZONE = "America/Los_Angeles";
 
-type QuoteDates = {
-  created_at?: string | null;
-  valid_until?: string | null;
-  status?: string;
-  terms?: string | null;
-};
-
-export function calendarDate(value?: string | null): string | null {
+function calendarDate(value?: string | null): string | null {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const date = new Date(`${value}T12:00:00Z`);
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value ? value : null;
@@ -25,23 +17,15 @@ export function businessDate(now: Date = new Date()): string {
 }
 
 export function quoteIssueDate(createdAt?: string | null): string | null {
-  // Timestamps must identify an instant, never depend on the viewer's timezone.
   if (!createdAt || !/T.*(?:Z|[+-]\d{2}:?\d{2})$/i.test(createdAt)) return null;
   const date = new Date(createdAt);
   return Number.isFinite(date.getTime()) ? businessDate(date) : null;
 }
 
-export function addCalendarDays(date: string, days: number): string {
-  if (!calendarDate(date)) throw new Error("Invalid calendar date");
+function addDays(date: string, days: number): string {
   const result = new Date(`${date}T12:00:00Z`);
   result.setUTCDate(result.getUTCDate() + days);
   return result.toISOString().slice(0, 10);
-}
-
-export function quoteValidityLimit(issuedOn: string, startDate?: string | null): string | null {
-  const event = calendarDate(startDate);
-  if (!calendarDate(issuedOn) || !event || event <= issuedOn) return null;
-  return [addCalendarDays(issuedOn, 3), addCalendarDays(event, -1)].sort()[0];
 }
 
 export function prepareQuoteValidity(
@@ -49,70 +33,32 @@ export function prepareQuoteValidity(
   requestedValidUntil?: string | null,
   now: Date = new Date(),
 ): { created_at: string; valid_until: string | null } {
-  const issuedOn = businessDate(now);
-  const limit = quoteValidityLimit(issuedOn, startDate);
-  if (requestedValidUntil && (!calendarDate(requestedValidUntil) || !limit || requestedValidUntil < issuedOn || requestedValidUntil > limit)) {
-    throw new Error(limit
-      ? `Choose a validity date from ${issuedOn} through ${limit} (${QUOTE_TIME_ZONE}).`
-      : "This event date requires review. Save a draft without a validity date.");
-  }
-  return { created_at: now.toISOString(), valid_until: requestedValidUntil || limit };
+  const created_at = now.toISOString();
+  const issuedOn = quoteIssueDate(created_at)!;
+  const event = calendarDate(startDate);
+  const defaultExpiry = event && event > issuedOn
+    ? [addDays(issuedOn, 3), addDays(event, -1)].sort()[0]
+    : null;
+  // Explicit dates retain the existing custom-date behavior.
+  return { created_at, valid_until: requestedValidUntil || defaultExpiry };
 }
 
 export function formatQuoteDate(value?: string | null): string {
   const date = calendarDate(value);
   return date ? new Intl.DateTimeFormat("en-US", {
     timeZone: "UTC", month: "short", day: "numeric", year: "numeric",
-  }).format(new Date(`${date}T12:00:00Z`)) : "Review required";
+  }).format(new Date(`${date}T12:00:00Z`)) : "Not set";
 }
 
-export function quoteValidityText(quote: QuoteDates): string {
+export function quoteValidityText(quote: { valid_until?: string | null }): string {
   return calendarDate(quote.valid_until)
-    ? `Pricing valid through ${formatQuoteDate(quote.valid_until)} (${QUOTE_TIME_ZONE}).`
-    : "Price validity requires review before sending or accepting this quote.";
+    ? `Pricing valid through ${formatQuoteDate(quote.valid_until)}.`
+    : "Pricing validity date not set.";
 }
 
-// Legacy/custom terms are preserved. Reject fixed-duration pricing claims at
-// action time instead of rewriting them or mistaking an inventory hold for price validity.
-export function assertQuoteTermsCompatible(text: string): void {
-  const flat = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
-  const duration = "(?:\\d+|one|two|three|four|five|seven|fourteen|thirty)(?:\\s*\\([^)]+\\))?\\s*[- ]?\\s*(?:calendar\\s+|business\\s+)?days?";
-  const pricing = "(?:quot(?:e|es|ed)|pric(?:e|es|ing)|rates?)";
-  const promise = "(?:valid|good|held|hold|honou?red|guaranteed|expires?|locked|stands?)";
-  if (new RegExp(`\\b${pricing}[^.!?;]{0,90}\\b${promise}[^.!?;]{0,50}\\b${duration}\\b`, "i").test(flat)
-    || new RegExp(`\\b${promise}[^.!?;]{0,30}\\b${pricing}[^.!?;]{0,30}\\b${duration}\\b`, "i").test(flat)) {
-    throw new Error("Review legacy quote terms: replace fixed-day price validity with the saved quote's exact expiry date. Inventory hold terms are separate.");
-  }
-}
-
-export function quoteActionProblem(
-  quote: QuoteDates,
-  inquiry: { start_date?: string | null },
-  now: Date = new Date(),
-): string | null {
-  if (quote.status && !["draft", "sent"].includes(quote.status)) {
-    return `This quote is ${quote.status}; review it before sending or accepting.`;
-  }
-  const issuedOn = quoteIssueDate(quote.created_at);
-  if (!issuedOn) return "Quote issuance is missing or invalid; review and issue a new quote.";
-  const event = calendarDate(inquiry.start_date);
-  if (!event) return "Confirm an exact event date (YYYY-MM-DD) before sending or accepting the quote.";
-  const today = businessDate(now);
-  if (event <= today || event <= issuedOn) return "Same-day or past event: review required before sending or accepting the quote.";
+export function assertQuoteNotExpired(quote: { valid_until?: string | null }, now: Date = new Date()): void {
   const expiry = calendarDate(quote.valid_until);
-  if (!expiry) return "Quote validity is missing or invalid; review and issue a new quote.";
-  if (expiry < today) return `Quote expired on ${formatQuoteDate(expiry)} (${QUOTE_TIME_ZONE}); issue a new quote.`;
-  const limit = quoteValidityLimit(issuedOn, event);
-  if (issuedOn > today || expiry < issuedOn || !limit || expiry > limit) {
-    return "Saved quote dates conflict with the three-calendar-day/event-date policy; review and issue a new quote.";
+  if (expiry && expiry < businessDate(now)) {
+    throw new Error(`This quote expired on ${formatQuoteDate(expiry)}. Issue a new quote.`);
   }
-  try { assertQuoteTermsCompatible(quote.terms || ""); } catch (error) {
-    return (error as Error).message;
-  }
-  return null;
-}
-
-export function assertQuoteActionable(quote: QuoteDates, inquiry: { start_date?: string | null }, now: Date = new Date()): void {
-  const problem = quoteActionProblem(quote, inquiry, now);
-  if (problem) throw new Error(problem);
 }

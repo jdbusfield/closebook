@@ -43,7 +43,7 @@ import { MessageBody } from "@/components/inquiries/email-body";
 import { QuoteDialog } from "@/components/inquiries/quote-dialog";
 import { QuotesList } from "@/components/inquiries/quotes-list";
 import { type QuoteDraft } from "@/lib/inquiries/use-inquiries";
-import { assertQuoteActionable, prepareQuoteValidity } from "@/lib/inquiries/quote-validity";
+import { assertQuoteNotExpired, prepareQuoteValidity } from "@/lib/inquiries/quote-validity";
 import {
   INQUIRY_STATUSES,
   STATUS_LABELS,
@@ -319,7 +319,6 @@ export default function InquiryDetailPage() {
           .eq("entity_id", entityId)
           .single();
         if (inquiryError || !currentInquiry) throw new Error(inquiryError?.message ?? "Inquiry not found");
-        const validity = prepareQuoteValidity(currentInquiry.start_date, draft.valid_until);
         const { data, error } = await supabase
           .from("rental_inquiry_quotes")
           .insert({
@@ -330,9 +329,7 @@ export default function InquiryDetailPage() {
             tax_rate: draft.tax_rate,
             tax: draft.tax,
             total: draft.total,
-            ...validity,
-            // Let the DB derive the default at the actual issuance instant.
-            valid_until: draft.valid_until || null,
+            ...prepareQuoteValidity(currentInquiry.start_date, draft.use_default_validity ? null : draft.valid_until),
             terms: draft.terms ?? null,
           })
           .select(
@@ -353,40 +350,36 @@ export default function InquiryDetailPage() {
 
   const updateQuoteStatus = useCallback(
     async (quoteId: string, status: InquiryQuote["status"]) => {
+      if (!isEmbed && (status === "sent" || status === "accepted")) {
+        try {
+          const { data: quote, error } = await createClient()
+            .from("rental_inquiry_quotes")
+            .select("valid_until")
+            .eq("id", quoteId)
+            .eq("entity_id", entityId)
+            .single();
+          if (error || !quote) throw new Error(error?.message ?? "Quote not found");
+          assertQuoteNotExpired(quote);
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : "Couldn't update quote");
+          return;
+        }
+      }
       const acceptedAt = status === "accepted" ? new Date().toISOString() : null;
+      setQuotes((prev) =>
+        prev.map((q) => (q.id === quoteId ? { ...q, status, accepted_at: acceptedAt } : q))
+      );
       try {
         if (isEmbed) {
           await embedAction({ action: "update_quote", quoteId, status });
         } else {
           const supabase = createClient();
-          if (status === "accepted" || status === "sent") {
-            const { data: quote, error: quoteError } = await supabase
-              .from("rental_inquiry_quotes")
-              .select("inquiry_id, created_at, valid_until, status, terms")
-              .eq("id", quoteId)
-              .eq("entity_id", entityId)
-              .single();
-            if (quoteError || !quote) throw new Error(quoteError?.message ?? "Quote not found");
-            const { data: currentInquiry, error: inquiryError } = await supabase
-              .from("rental_inquiries")
-              .select("start_date")
-              .eq("id", quote.inquiry_id)
-              .eq("entity_id", entityId)
-              .single();
-            if (inquiryError || !currentInquiry) throw new Error(inquiryError?.message ?? "Inquiry not found");
-            assertQuoteActionable(quote, currentInquiry);
-          }
           const { error } = await supabase
             .from("rental_inquiry_quotes")
             .update({ status, accepted_at: acceptedAt })
-            .eq("id", quoteId)
-            .eq("entity_id", entityId)
-            .select("id")
-            .single();
+            .eq("id", quoteId);
           if (error) throw new Error(error.message);
         }
-        toast.success(`Quote marked ${status}`);
-        await load();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Couldn't update quote");
         await load();

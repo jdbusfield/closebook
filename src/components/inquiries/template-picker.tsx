@@ -37,14 +37,7 @@ import {
 import { downloadQuotePdf } from "@/lib/inquiries/quote-pdf";
 import { type QuoteDraft } from "@/lib/inquiries/use-inquiries";
 import { type Inquiry, type InquiryActivity, type InquiryQuote, quoteEmailBlock } from "@/lib/inquiries/shared";
-import {
-  assertQuoteActionable,
-  assertQuoteTermsCompatible,
-  formatQuoteDate,
-  quoteActionProblem,
-  quoteIssueDate,
-  quoteValidityText,
-} from "@/lib/inquiries/quote-validity";
+import { prepareQuoteValidity, quoteValidityText } from "@/lib/inquiries/quote-validity";
 
 async function copyText(text: string): Promise<boolean> {
   try {
@@ -77,7 +70,7 @@ export function TemplatePicker({
   /**
    * Persist the quote built here so it's saved on the deal (and re-downloadable
    * by any rep), then hand back the saved row so we can download its PDF. When
-   * omitted, quote templates use the latest saved quote on the deal.
+   * omitted, the quote still merges into the email body as text but isn't saved.
    */
   onSaveQuote?: (id: string, draft: QuoteDraft) => Promise<InquiryQuote | null>;
   /** Controlled open state. Omit to let the built-in trigger manage it. */
@@ -113,38 +106,20 @@ export function TemplatePicker({
   const track = useMemo(() => inferTrack(inquiry), [inquiry]);
 
   const selected = all.find((t) => t.id === selectedId) ?? all[0] ?? null;
-  const mergesQuote = !!selected && selected.body.includes("{quote}");
-  const showQuote = mergesQuote && !!onSaveQuote;
-  const usesQuote = !!selected && /\{quote(?:_number|_valid_until|_issued_on|_validity)?\}/.test(
-    `${selected.subject ?? ""}\n${selected.body}`
-  );
+  const showQuote = !!selected && selected.body.includes("{quote}");
   const quote = useMemo(() => formatQuote(quoteLines), [quoteLines]);
-
-  // A copied quote must be the same persisted record as its PDF. Editing any
-  // line invalidates the saved selection until the revised quote is saved.
   const matchingQuote = savedQuote && JSON.stringify(savedQuote.lines) === JSON.stringify(toLineItems(quoteLines))
     ? savedQuote : null;
-  const quoteForEmail = showQuote ? matchingQuote : inquiry.quotes?.[0];
-  const quoteEmail = quoteForEmail
-    ? quoteEmailBlock(quoteForEmail)
-    : showQuote
-      ? `${quote.text}\n\nSave this quote to set its issue date and pricing expiration.`
-      : "Save a quote on the deal before composing its email.";
+  const quoteText = matchingQuote ? quoteEmailBlock(matchingQuote)
+    : `${quote.text}\n${quoteValidityText(prepareQuoteValidity(inquiry.start_date))}`;
+
+  const latestQuoteNumber = inquiry.quotes?.[0]?.quote_number;
   const rendered: { subject?: string; body: string } = selected
     ? renderTemplate(selected, inquiry, rep, {
-        quote: mergesQuote ? quoteEmail : undefined,
-        quote_number: quoteForEmail?.quote_number,
-        quote_issued_on: formatQuoteDate(quoteIssueDate(quoteForEmail?.created_at)),
-        quote_valid_until: formatQuoteDate(quoteForEmail?.valid_until),
-        quote_validity: quoteValidityText(quoteForEmail ?? {}),
+        quote: showQuote ? quoteText : undefined,
+        quote_number: matchingQuote?.quote_number ?? latestQuoteNumber,
       })
     : { subject: undefined, body: "" };
-  if (usesQuote && quoteForEmail && !rendered.body.includes(quoteValidityText(quoteForEmail))) {
-    rendered.body += `\n\n${quoteValidityText(quoteForEmail)}`;
-  }
-  const quoteProblem = !usesQuote ? null : quoteForEmail
-    ? quoteActionProblem(quoteForEmail, inquiry)
-    : "Save the quote before copying or composing its email.";
 
   const reset = () => {
     setSelectedId(null);
@@ -175,9 +150,8 @@ export function TemplatePicker({
       tax_rate: 0,
       tax: 0,
       total: totals.total,
-      // Save applies the calendar policy and issuance together, including when
-      // the business date changes while this picker remains open.
-      valid_until: null,
+      valid_until: prepareQuoteValidity(inquiry.start_date).valid_until,
+      use_default_validity: true,
       terms: null,
     };
     if (draft.lines.length === 0) {
@@ -197,23 +171,7 @@ export function TemplatePicker({
     }
   };
 
-  const validateQuoteEmail = () => {
-    try {
-      if (usesQuote) {
-        if (!quoteForEmail) throw new Error("Save the quote before copying or composing its email.");
-        assertQuoteActionable(quoteForEmail, inquiry);
-      }
-      assertQuoteTermsCompatible(rendered.subject ?? "");
-      assertQuoteTermsCompatible(rendered.body);
-      return true;
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Quote email requires review.");
-      return false;
-    }
-  };
-
   const doCopy = async () => {
-    if (!validateQuoteEmail()) return;
     const ok = await copyText(rendered.body);
     if (ok) {
       setCopied(true);
@@ -225,7 +183,7 @@ export function TemplatePicker({
   };
 
   const doCopyAndLog = async () => {
-    if (!selected || !validateQuoteEmail()) return;
+    if (!selected) return;
     await copyText(rendered.body);
     const { type, body } = logEntry(selected, rendered.subject);
     onLog(type, body);
@@ -303,13 +261,7 @@ export function TemplatePicker({
               {selected ? (
                 <>
                   {showQuote && (
-                    <QuoteBuilder lines={quoteLines} setLines={(lines) => {
-                      setQuoteLines(lines);
-                      setSavedQuote(null);
-                    }} />
-                  )}
-                  {quoteProblem && (
-                    <p role="status" className="text-xs text-amber-700">{quoteProblem}</p>
+                    <QuoteBuilder lines={quoteLines} setLines={setQuoteLines} />
                   )}
                   {/* Email preview */}
                   <div className="overflow-hidden rounded-lg border bg-white">
@@ -337,7 +289,7 @@ export function TemplatePicker({
 
             {/* Actions */}
             <div className="flex flex-wrap items-center gap-2 border-t px-5 py-3">
-              {showQuote && (
+              {showQuote && onSaveQuote && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -362,11 +314,8 @@ export function TemplatePicker({
                 <Button asChild variant="outline" size="sm" className="gap-1.5">
                   <a
                     href={mailto()}
-                    onClick={(event) => {
-                      if (!selected || !validateQuoteEmail()) {
-                        event.preventDefault();
-                        return;
-                      }
+                    onClick={() => {
+                      if (!selected) return;
                       const { type, body } = logEntry(selected, rendered.subject);
                       onLog(type, body);
                       maybeSaveValue();

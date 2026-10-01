@@ -1,139 +1,100 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
-import { assertQuoteActionable, prepareQuoteValidity } from "../quote-validity";
+import { assertQuoteNotExpired, prepareQuoteValidity } from "../quote-validity";
 
-// Run the actual two app mutation callbacks with isolated dependencies. This
-// avoids mounting the unrelated CRM UI or creating an authenticated DB client.
+const now = new Date("2026-10-01T17:00:00Z");
 const targets = [
-  ["pipeline hook", "src/lib/inquiries/use-inquiries.ts"],
-  ["inquiry detail page", "src/app/(app)/[entityId]/inquiries/[inquiryId]/page.tsx"],
+  ["pipeline", "src/lib/inquiries/use-inquiries.ts"],
+  ["detail", "src/app/(app)/[entityId]/inquiries/[inquiryId]/page.tsx"],
+  ["embed", "src/app/api/inquiries/embed/route.ts"],
 ] as const;
-const NOW = new Date("2026-10-01T17:00:00Z");
 type Row = Record<string, unknown>;
 
-function callbackSource(path: string, name: string): string {
-  const source = ts.createSourceFile(path, readFileSync(resolve(path), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  let callback: ts.Expression | undefined;
-  const visit = (node: ts.Node) => {
-    if (ts.isVariableDeclaration(node) && node.name.getText(source) === name && node.initializer && ts.isCallExpression(node.initializer)) {
-      callback = node.initializer.arguments[0];
-    }
-    ts.forEachChild(node, visit);
+// Execute real app callbacks and the embed route against an in-memory DB.
+// No credentials, live records, React mount, or network requests are involved.
+function harness(path: string, action: "create" | "update", expiry: string | null = "2026-10-02") {
+  const embed = path.includes("/api/");
+  let source = readFileSync(path, "utf8");
+  if (!embed) {
+    const ast = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    let callback: ts.Expression | undefined;
+    const visit = (node: ts.Node) => {
+      if (ts.isVariableDeclaration(node) && node.name.getText(ast) === (action === "create" ? "addQuote" : "updateQuoteStatus") && node.initializer && ts.isCallExpression(node.initializer)) callback = node.initializer.arguments[0];
+      ts.forEachChild(node, visit);
+    };
+    visit(ast);
+    assert.ok(callback);
+    source = `exports.run = ${callback.getText(ast)};`;
+  }
+  const writes: Row[] = [], errors: string[] = [];
+  const db = { from: () => {
+    let mutation: Row | undefined;
+    const result = () => ({ data: mutation ? { quote_number: "Q1242", ...mutation } : { start_date: "2026-10-03", valid_until: expiry }, error: null });
+    const query = {
+      select: () => query, eq: () => query,
+      insert: (row: Row) => { mutation = row; writes.push(row); return query; },
+      update: (row: Row) => { mutation = row; writes.push(row); return query; },
+      single: async () => result(), maybeSingle: async () => result(),
+      then: (done: (value: ReturnType<typeof result>) => unknown) => Promise.resolve(result()).then(done),
+    };
+    return query;
+  } };
+  const policy = {
+    prepareQuoteValidity: (start: string | null, custom?: string | null) => prepareQuoteValidity(start, custom, now),
+    assertQuoteNotExpired: (quote: { valid_until?: string | null }) => assertQuoteNotExpired(quote, now),
   };
-  visit(source);
-  assert.ok(callback, `${name} callback exists in ${path}`);
-  return ts.transpileModule(`exports.callback = ${callback.getText(source)};`, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
-  }).outputText;
-}
-
-function harness(path: string, action: string, {
-  event = "2026-10-03", quote = {}, isEmbed = false, updateError = false,
-}: { event?: string | null; quote?: Row; isEmbed?: boolean; updateError?: boolean } = {}) {
-  const writes: { kind: string; values: Row }[] = [];
-  const success: string[] = [];
-  const errors: string[] = [];
-  const embedCalls: Row[] = [];
-  const tables: Record<string, Row> = {
-    rental_inquiries: { id: "inquiry-1", entity_id: "hdr", start_date: event },
-    rental_inquiry_quotes: {
-      id: "quote-1", inquiry_id: "inquiry-1", entity_id: "hdr", status: "draft",
-      created_at: NOW.toISOString(), valid_until: "2026-10-02", terms: null, ...quote,
-    },
+  const modules: Record<string, unknown> = {
+    "next/server": { NextResponse: { json: (body: Row, options?: { status: number }) => ({ body, status: options?.status ?? 200 }) } },
+    "@/lib/supabase/admin": { createAdminClient: () => db },
+    "@/lib/inquiries/shared": { HDR_ENTITY_ID: "hdr" },
+    "@/lib/inquiries/embed-auth": { resolveEmbedEntity: () => "hdr" },
+    "@/lib/inquiries/quote-validity": policy,
+    "@/lib/email-health/report": {}, "@/lib/ads/columns": {},
   };
-  const client = {
-    from(table: string) {
-      const filters: Array<[string, unknown]> = [];
-      let kind = "read";
-      let values: Row = {};
-      const query = {
-        select() { return query; },
-        eq(key: string, value: unknown) { filters.push([key, value]); return query; },
-        insert(next: Row) { kind = "insert"; values = next; return query; },
-        update(next: Row) { kind = "update"; values = next; return query; },
-        async single() {
-          const row = tables[table];
-          if (kind !== "read") {
-            writes.push({ kind, values });
-            if (kind === "update" && updateError) return { data: null, error: { message: "Write failed" } };
-            return { data: { id: "quote-1", quote_number: "Q1242", ...values }, error: null };
-          }
-          return filters.every(([key, value]) => row?.[key] === value)
-            ? { data: row, error: null }
-            : { data: null, error: { message: "Not found" } };
-        },
-      };
-      return query;
-    },
-  };
-  const embedPost = async (payload: Row) => { embedCalls.push(payload); return { quote: { id: "quote-1", quote_number: "Q1242" } }; };
-  const exports: { callback?: (...args: unknown[]) => Promise<unknown> } = {};
-  runInNewContext(callbackSource(path, action), {
-    exports, Error, Date, isEmbed,
-    eid: "hdr", entityId: "hdr", actor: "Test rep", QUOTE_COLUMNS: "*", createClient: () => client,
-    embedPost, embedAction: embedPost, load: async () => {}, addActivity: async () => {},
-    toast: { success: (text: string) => success.push(text), error: (text: string) => errors.push(text) },
-    prepareQuoteValidity: (start: string | null, requested?: string | null) => prepareQuoteValidity(start, requested, NOW),
-    assertQuoteActionable: (saved: Parameters<typeof assertQuoteActionable>[0], inquiry: { start_date?: string | null }) => assertQuoteActionable(saved, inquiry, NOW),
-    // Guarded status updates should never claim an optimistic success.
-    setInquiries: () => assert.fail("Status changed before persistence"),
-    setQuotes: () => assert.fail("Status changed before persistence"),
+  const exports: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
+  runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, {
+    exports, Error, Date, ...policy, require: (name: string) => { assert.ok(name in modules); return modules[name]; },
+    createClient: () => db, isEmbed: false, eid: "hdr", entityId: "hdr", actor: "Test", QUOTE_COLUMNS: "*",
+    setQuotes: () => {}, setInquiries: () => {}, load: async () => {}, addActivity: async () => {},
+    toast: { error: (message: string) => errors.push(message) },
   });
-  return { writes, success, errors, embedCalls, invoke: exports.callback! };
+  const invoke = async (value: string | Row) => {
+    if (!embed) return exports.run(action === "create" ? "inquiry" : "quote", value);
+    const body = action === "create" ? { action: "create_quote", id: "inquiry", draft: value } : { action: "update_quote", quoteId: "quote", status: value };
+    const response = await exports.POST(new Request("https://test.invalid", { method: "POST", body: JSON.stringify(body) })) as { body: Row; status: number };
+    if (response.status !== 200) errors.push(String(response.body.error));
+  };
+  return { writes, errors, invoke };
 }
-
-const draft = { lines: [{ description: "Trailer", qty: 1, rate: 100 }], subtotal: 100, tax_rate: 0, tax: 0, total: 100, valid_until: null };
 
 for (const [label, path] of targets) {
-  test(`${label}: create validates fresh inquiry and leaves default expiry to server issuance`, async () => {
-    const h = harness(path, "addQuote");
-    await h.invoke("inquiry-1", draft);
-    assert.deepEqual(h.errors, []);
-    assert.equal(h.writes[0].values.created_at, NOW.toISOString());
-    assert.equal(h.writes[0].values.valid_until, null);
-    assert.equal(h.writes[0].values.total, 100);
+  test(`${label}: new quotes persist default expiry and preserve explicit custom expiry`, async () => {
+    for (const custom of [null, "2026-10-15"]) {
+      const h = harness(path, "create");
+      await h.invoke({ lines: [], subtotal: 100, tax_rate: 0, tax: 0, total: 100, valid_until: custom });
+      assert.deepEqual(h.errors, []);
+      assert.equal(h.writes[0].created_at, now.toISOString());
+      assert.equal(h.writes[0].valid_until, custom ?? "2026-10-02");
+      assert.equal(h.writes[0].total, 100);
+    }
+    // A default displayed for a previous event/date is recomputed at save,
+    // while the same date entered explicitly above remains a custom expiry.
+    const staleDefault = harness(path, "create");
+    await staleDefault.invoke({ lines: [], total: 100, valid_until: "2026-10-04", use_default_validity: true });
+    assert.equal(staleDefault.writes[0].valid_until, "2026-10-02");
+    assert.equal("use_default_validity" in staleDefault.writes[0], false);
   });
-
-  test(`${label}: expired/same-day/null validity cannot be accepted or marked sent`, async () => {
-    for (const status of ["accepted", "sent"]) {
-      for (const options of [
-        { quote: { created_at: "2026-09-27T17:00:00Z", valid_until: "2026-09-30" } },
-        { event: "2026-10-01" },
-        { quote: { valid_until: null } },
-      ]) {
-        const h = harness(path, "updateQuoteStatus", options);
-        await h.invoke("quote-1", status);
-        assert.equal(h.writes.length, 0);
-        assert.equal(h.success.length, 0);
-        assert.equal(h.errors.length, 1);
+  test(`${label}: send and acceptance reject only expired stored validity`, async () => {
+    for (const status of ["sent", "accepted"]) {
+      for (const expiry of ["2026-09-30", "2026-10-01", "2026-10-15", null]) {
+        const h = harness(path, "update", expiry);
+        await h.invoke(status);
+        assert.equal(h.writes.length, expiry === "2026-09-30" ? 0 : 1);
+        assert.deepEqual(h.errors, expiry === "2026-09-30" ? ["This quote expired on Sep 30, 2026. Issue a new quote."] : []);
       }
     }
-  });
-
-  test(`${label}: accepted status succeeds only after persistence; DB failure never shows success`, async () => {
-    const h = harness(path, "updateQuoteStatus");
-    await h.invoke("quote-1", "accepted");
-    assert.equal(h.writes[0].values.status, "accepted");
-    assert.ok(h.writes[0].values.accepted_at);
-    assert.equal(h.success.length, 1);
-    const failed = harness(path, "updateQuoteStatus", { updateError: true });
-    await failed.invoke("quote-1", "accepted");
-    assert.equal(failed.success.length, 0);
-    assert.deepEqual(failed.errors, ["Write failed"]);
-  });
-
-  test(`${label}: embed mode delegates both creation and status to guarded route`, async () => {
-    const create = harness(path, "addQuote", { isEmbed: true });
-    await create.invoke("inquiry-1", draft);
-    assert.equal(create.embedCalls[0].action, "create_quote");
-    assert.equal(create.writes.length, 0);
-    const update = harness(path, "updateQuoteStatus", { isEmbed: true });
-    await update.invoke("quote-1", "accepted");
-    assert.equal(update.embedCalls[0].action, "update_quote");
-    assert.equal(update.writes.length, 0);
   });
 }

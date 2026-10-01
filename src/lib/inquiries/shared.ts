@@ -2,7 +2,7 @@
 // Mirrors the "Bathroom Trailer Rental CRM" design: a 6-stage pipeline, a fixed
 // fleet roster, follow-up tasks, and an activity timeline.
 
-import { formatQuoteDate, quoteIssueDate, quoteValidityText } from "./quote-validity";
+import { quoteValidityText } from "./quote-validity";
 
 // HDR (Hollywood Depot Rentals) entity id. Mirrors ENTITY_IDS.HDR in
 // src/lib/paylocity/cost-center-config.ts. Overridable via env for safety.
@@ -472,13 +472,7 @@ export function quoteEmailBlock(
     Number(q.tax) > 0
       ? [`Subtotal: ${fmtMoney(q.subtotal)}`, `Tax: ${fmtMoney(q.tax)}`, `Total: ${fmtMoney(q.total)}`]
       : [`Total: ${fmtMoney(q.total)}`];
-  const issued = quoteIssueDate(q.created_at);
-  return [
-    ...rows,
-    ...totals,
-    issued ? `Issued: ${formatQuoteDate(issued)}` : "Issue date requires review.",
-    quoteValidityText(q),
-  ].join("\n");
+  return [...rows, ...totals, quoteValidityText(q)].join("\n");
 }
 
 export interface InquiryMessage {

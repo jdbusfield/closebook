@@ -17,7 +17,6 @@ import {
   fmtMoney,
   inquiryKind,
 } from "./shared";
-import { quoteValidityText } from "./quote-validity";
 
 // Brand identity for the {company}/{company_email} merge tokens + the rep
 // fallback, chosen the same way the quote PDF picks its theme: Versatile by
@@ -353,13 +352,7 @@ export function renderTemplate(
   tpl: MessageTemplate,
   inq: Inquiry,
   rep: string,
-  extra?: {
-    quote?: string;
-    quote_number?: string;
-    quote_valid_until?: string;
-    quote_issued_on?: string;
-    quote_validity?: string;
-  }
+  extra?: { quote?: string; quote_number?: string }
 ): { subject?: string; body: string } {
   const brand = brandOf(inq);
   const map: Record<string, string> = {
@@ -388,9 +381,6 @@ export function renderTemplate(
     details: buildDetailsBlock(inq),
     quote: extra?.quote ?? "— your itemized quote will appear here —",
     quote_number: extra?.quote_number ?? "",
-    quote_valid_until: extra?.quote_valid_until || "Review required",
-    quote_issued_on: extra?.quote_issued_on || "Review required",
-    quote_validity: extra?.quote_validity || quoteValidityText({}),
   };
   const fill = (s?: string) =>
     s?.replace(/\{(\w+)\}/g, (_, k: string) => (k in map ? map[k] : `{${k}}`));
@@ -405,9 +395,6 @@ export const MERGE_FIELDS: { token: string; label: string }[] = [
   { token: "details", label: "All submitted request details" },
   { token: "quote", label: "Itemized quote (built when sending)" },
   { token: "quote_number", label: "Latest saved quote number" },
-  { token: "quote_issued_on", label: "Saved quote issue date" },
-  { token: "quote_valid_until", label: "Saved pricing expiration date" },
-  { token: "quote_validity", label: "Saved pricing validity (with time zone)" },
   { token: "use_case", label: "Event / use case" },
   { token: "date", label: "Rental start date" },
   { token: "end_date", label: "Rental end date" },

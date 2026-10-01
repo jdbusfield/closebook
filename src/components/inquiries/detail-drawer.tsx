@@ -1252,7 +1252,6 @@ export function ActivityTimeline({
   onAddActivity,
   onDeleteActivity,
   onSetValue,
-  onAddQuote,
   actor = "You",
 }: {
   inquiry: Inquiry;
@@ -1260,7 +1259,6 @@ export function ActivityTimeline({
   onAddActivity: DrawerCallbacks["onAddActivity"];
   onDeleteActivity: DrawerCallbacks["onDeleteActivity"];
   onSetValue?: DrawerCallbacks["onSetValue"];
-  onAddQuote?: DrawerCallbacks["onAddQuote"];
   actor?: string;
 }) {
   const [type, setType] = useState<InquiryActivity["type"]>("note");
@@ -1318,7 +1316,6 @@ export function ActivityTimeline({
             rep={actor}
             onLog={(t, body) => onAddActivity(inquiry.id, t, body)}
             onSetValue={onSetValue}
-            onSaveQuote={onAddQuote}
           />
         </div>
       </div>
@@ -1510,7 +1507,6 @@ export function InquiryDrawer({
                   onAddActivity={callbacks.onAddActivity}
                   onDeleteActivity={callbacks.onDeleteActivity}
                   onSetValue={callbacks.onSetValue}
-                  onAddQuote={callbacks.onAddQuote}
                   actor={actor}
                 />
               </Section>

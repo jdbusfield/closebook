@@ -296,20 +296,15 @@ export function useFunnels(entityId: string): UseFunnels {
     ): Promise<boolean> => {
       try {
         const data = await funnelsApi({ action: "enroll", inquiryId, funnelId, actor, quoteId });
-        if (data.sendResult?.warning) {
-          toast.warning(data.sendResult.warning);
-        } else {
-          toast.success(
-            data.sendResult?.outcome === "sent"
-              ? "Funnel started - first email sent"
-              : "Funnel started"
-          );
-        }
+        toast.success(
+          data.sendResult?.outcome === "sent"
+            ? "Funnel started — first email sent"
+            : "Funnel started"
+        );
         await load();
         return true;
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Couldn't start the funnel");
-        await load();
         return false;
       }
     },

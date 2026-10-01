@@ -15,7 +15,7 @@
 import { type Inquiry, fmtDate } from "@/lib/inquiries/shared";
 import { HDR_LOGO_DATA_URL } from "@/lib/inquiries/hdr-logo";
 import { VERSATILE_LOGO_DATA_URL } from "@/lib/inquiries/versatile-logo";
-import { formatQuoteDate, quoteActionProblem, quoteIssueDate, quoteValidityText } from "./quote-validity";
+import { formatQuoteDate, quoteIssueDate, quoteValidityText } from "./quote-validity";
 
 // The minimal shape this renderer needs — satisfied by a saved InquiryQuote or a
 // freshly-computed draft before it is persisted.
@@ -205,13 +205,11 @@ export async function buildQuoteDoc(
   // treatment only applies to the quote variant.
   const isInvoice = variant === "invoice";
   const accepted = !isInvoice && quote.status === "accepted";
-  // Quotes retain their saved issuance date when downloaded again. Legacy
-  // missing dates are explicit; rendering must never issue a fresh quote.
-  const issuedDate = isInvoice
-    ? todayLong()
-    : formatQuoteDate(quoteIssueDate(quote.created_at));
-  const validDate = formatQuoteDate(quote.valid_until);
-  const validityReview = !isInvoice && !accepted ? quoteActionProblem(quote, inquiry) : null;
+  // Regeneration preserves the saved quote's issuance date. Invoice dates keep
+  // their existing behavior, independent of the source quote's issue date.
+  const issuedOn = quoteIssueDate(quote.created_at);
+  const issuedDate = isInvoice ? todayLong() : issuedOn ? formatQuoteDate(issuedOn) : "Not set";
+  const validDate = quote.valid_until ? formatQuoteDate(quote.valid_until) : "Not set";
   const docNumber = isInvoice ? invoiceNumberFor(quote.quote_number) : quote.quote_number;
   // Bill-to override: the quote/invoice is issued in billing_name + billing_address
   // when set, otherwise the inquiry's own contact name. Address is free-form,
@@ -221,7 +219,9 @@ export async function buildQuoteDoc(
     .split(/\r?\n/)
     .map((s) => s.trim())
     .filter(Boolean);
-  const acceptedDate = formatQuoteDate(quoteIssueDate(quote.accepted_at));
+  const acceptedDate = quote.accepted_at
+    ? fmtDate(quote.accepted_at, { month: "short", day: "numeric", year: "numeric" })
+    : todayLong();
 
   // ─── Masthead ─────────────────────────────────────────────────────────────
   try {
@@ -575,17 +575,13 @@ export async function buildQuoteDoc(
       "The card on file will be charged within seven (7) days of the start date of your rental. " +
       "This amount includes delivery, setup, and pickup. " +
       `Please reference invoice ${docNumber} on any payment-related correspondence.`
-    : ((quote.terms && quote.terms.trim()) ||
+    : (quote.terms && quote.terms.trim()) ||
       (accepted
         ? `This quote was accepted on ${acceptedDate} and your rental is confirmed. ` +
           "Pricing includes delivery, setup, and pickup. We will reach out ahead of " +
           "your start date to coordinate delivery access, power, and water."
-        : "Quote includes delivery, setup, and pickup. " +
-          "Reply to confirm and we will hold your date.")) +
-      // Preserve saved terms for historical accuracy, including legacy terms
-      // needing review. The persisted deadline always accompanies them.
-      ` ${quoteValidityText(quote)}` +
-      (validityReview ? ` REVIEW REQUIRED: ${validityReview}` : "");
+        : `Quote includes delivery, setup, and pickup. ${quoteValidityText(quote)} ` +
+          "Reply to confirm and we will hold your date.");
   d.setFont("helvetica", "normal");
   d.setFontSize(9);
   const wrapped = d.splitTextToSize(termsText, usable);
