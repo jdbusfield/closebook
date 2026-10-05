@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  MAX_ATTEMPTS,
   formatCallMessage,
   queueRetry,
   toJson,
@@ -8,6 +9,8 @@ import {
   type AiCallRow,
   type TranscriptTurn,
 } from "@/lib/inquiries/ai-call";
+import { sendAiCallReport, type RawTranscriptTurn, type ReportInquiry } from "@/lib/inquiries/ai-call-report";
+import { resendClient } from "@/lib/inquiries/funnel-send";
 
 export const runtime = "nodejs";
 
@@ -16,6 +19,8 @@ export const runtime = "nodejs";
 //   transcript on the call row, and add an "ai_call" message to the inquiry
 //   timeline so the team sees it on the card.
 // - call_initiation_failure: busy / no-answer; queue one retry.
+// Every finished call (answered, voicemail, or the last failed attempt) also
+// emails an internal report to sales@ (see ai-call-report.ts).
 // Authenticated by the HMAC signature header, not a user session.
 
 interface DataCollectionResult {
@@ -82,7 +87,22 @@ export async function POST(request: Request) {
         updated_at: nowIso,
       })
       .eq("id", call.id);
-    if (reason === "busy" || reason === "no-answer") await queueRetry(admin, call);
+    const retryable = reason === "busy" || reason === "no-answer";
+    if (retryable && call.attempt < MAX_ATTEMPTS) {
+      await queueRetry(admin, call);
+    } else {
+      // Last attempt: tell sales@ so the missed lead still gets followed up.
+      const inquiry = await loadInquiry(admin, call.inquiry_id);
+      if (inquiry) {
+        await sendAiCallReport(resendClient(), {
+          kind: retryable ? "no_answer" : "failed",
+          inquiry,
+          attempt: call.attempt,
+          failureReason: reason,
+          conversationId: call.conversation_id ?? data.conversation_id ?? null,
+        });
+      }
+    }
     return NextResponse.json({ ok: true });
   }
 
@@ -158,10 +178,41 @@ export async function POST(request: Request) {
       sent_at: nowIso,
     });
     if (msgErr) console.error("[ai-call-webhook] timeline insert failed", msgErr);
+
+    // Internal report for sales@, inside the dedupe guard so a redelivered
+    // webhook does not send it twice. Uses the raw transcript, which still has
+    // the get_price tool result (the exact price the agent quoted).
+    const inquiry = await loadInquiry(admin, call.inquiry_id);
+    if (inquiry) {
+      await sendAiCallReport(resendClient(), {
+        kind: outcome === "voicemail" ? "voicemail" : "answered",
+        inquiry,
+        attempt: call.attempt,
+        outcome,
+        collected,
+        summary: analysis.transcript_summary ?? null,
+        durationSecs: duration,
+        transcript: (data.transcript ?? []) as RawTranscriptTurn[],
+        conversationId,
+      });
+    }
   }
   await admin.from("rental_inquiries").update({ last_activity_at: nowIso }).eq("id", call.inquiry_id);
 
   return NextResponse.json({ ok: true });
+}
+
+async function loadInquiry(
+  admin: ReturnType<typeof createAdminClient>,
+  inquiryId: string
+): Promise<ReportInquiry | null> {
+  const { data, error } = await admin
+    .from("rental_inquiries")
+    .select("id, entity_id, reference, name, email, phone, use_case, start_date, end_date, guests, location, notes")
+    .eq("id", inquiryId)
+    .maybeSingle();
+  if (error) console.error("[ai-call-webhook] inquiry load failed", error.message);
+  return data ?? null;
 }
 
 async function findCall(
