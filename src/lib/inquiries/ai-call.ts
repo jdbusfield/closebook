@@ -15,7 +15,8 @@
 //   AI_CALL_ALLOWLIST                 optional comma list of E.164 numbers; when
 //                                     set, only these numbers are ever called (pilot)
 //   AI_CALL_HOURS                     calling window in LA time, default "9-18"
-//                                     (6pm PT = 9pm ET, the latest legal hour on the East Coast)
+//                                     (6pm PT = 9pm ET, the latest legal hour on the East Coast).
+//                                     Weekdays only (JD, Oct 5 2026): weekend inquiries are called Monday.
 //   AI_CALL_DELAY_MINUTES             wait after the form submit, default 2
 
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -58,13 +59,17 @@ export function parseHours(raw: string | undefined): { start: number; end: numbe
   return { start: 9, end: 18 };
 }
 
-function laParts(d: Date): { y: number; m: number; day: number; hour: number; minute: number } {
+function laParts(d: Date): { y: number; m: number; day: number; hour: number; minute: number; weekend: boolean } {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23", weekday: "short",
   }).formatToParts(d);
   const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
-  return { y: get("year"), m: get("month"), day: get("day"), hour: get("hour"), minute: get("minute") };
+  const weekday = parts.find((p) => p.type === "weekday")?.value;
+  return {
+    y: get("year"), m: get("month"), day: get("day"), hour: get("hour"), minute: get("minute"),
+    weekend: weekday === "Sat" || weekday === "Sun",
+  };
 }
 
 /** Minutes LA is offset from UTC at instant d (e.g. -420 in PDT). */
@@ -82,24 +87,30 @@ function laWallClock(y: number, m: number, day: number, hour: number): Date {
   return new Date(guess.getTime() - laOffsetMinutes(first) * 60000);
 }
 
+/** Inside the LA calling window on a weekday. */
 export function inCallingHours(at: Date, hours: { start: number; end: number }): boolean {
-  const h = laParts(at).hour;
-  return h >= hours.start && h < hours.end;
+  const p = laParts(at);
+  return !p.weekend && p.hour >= hours.start && p.hour < hours.end;
 }
 
 /**
  * Earliest time to dial: `from` plus the delay, pushed to the next window
- * opening when that lands outside calling hours (LA time).
+ * opening when that lands outside calling hours or on a weekend (LA time).
  */
 export function nextCallTime(from: Date, delayMinutes: number, hours: { start: number; end: number }): Date {
   const candidate = new Date(from.getTime() + delayMinutes * 60000);
   const p = laParts(candidate);
-  if (p.hour >= hours.start && p.hour < hours.end) return candidate;
-  if (p.hour < hours.start) return laWallClock(p.y, p.m, p.day, hours.start);
-  // After hours: next LA calendar day. Step from local noon to dodge DST edges.
-  const noonTomorrow = new Date(laWallClock(p.y, p.m, p.day, 12).getTime() + 24 * 3600000);
-  const t = laParts(noonTomorrow);
-  return laWallClock(t.y, t.m, t.day, hours.start);
+  if (inCallingHours(candidate, hours)) return candidate;
+  if (!p.weekend && p.hour < hours.start) return laWallClock(p.y, p.m, p.day, hours.start);
+  // After hours or a weekend: the next weekday's opening. Step from local noon
+  // to dodge DST edges.
+  let noon = laWallClock(p.y, p.m, p.day, 12);
+  for (let i = 0; i < 7; i++) {
+    noon = new Date(noon.getTime() + 24 * 3600000);
+    const t = laParts(noon);
+    if (!t.weekend) return laWallClock(t.y, t.m, t.day, hours.start);
+  }
+  return candidate; // unreachable: a week always has a weekday
 }
 
 export interface InquiryForCall {

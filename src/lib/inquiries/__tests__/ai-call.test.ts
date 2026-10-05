@@ -56,11 +56,27 @@ test("inCallingHours checks LA time at dial time", () => {
   assert.equal(inCallingHours(new Date("2026-10-02T00:59:00Z"), hours), true); // 17:59 PDT
   assert.equal(inCallingHours(new Date("2026-10-02T01:00:00Z"), hours), false); // 18:00 PDT
   assert.equal(inCallingHours(new Date("2026-10-01T15:59:00Z"), hours), false); // 8:59 PDT
+  assert.equal(inCallingHours(new Date("2026-10-03T18:00:00Z"), hours), false); // Sat 11:00 PDT
+  assert.equal(inCallingHours(new Date("2026-10-04T18:00:00Z"), hours), false); // Sun 11:00 PDT
 });
 
 test("nextCallTime handles the November DST change", () => {
-  // Sat Oct 31 2026 21:00 PDT = Nov 1 04:00Z. DST ends Nov 1, so 9:00 PST = 17:00Z.
-  assert.equal(nextCallTime(new Date("2026-11-01T04:00:00Z"), 2, hours).toISOString(), "2026-11-01T17:00:00.000Z");
+  // Sat Oct 31 2026 21:00 PDT = Nov 1 04:00Z. DST ends Sun Nov 1, and the
+  // weekend skip lands on Mon Nov 2 9:00 PST = 17:00Z.
+  assert.equal(nextCallTime(new Date("2026-11-01T04:00:00Z"), 2, hours).toISOString(), "2026-11-02T17:00:00.000Z");
+});
+
+test("nextCallTime never lands on a weekend", () => {
+  // Fri Oct 2 2026 19:00 PDT = Oct 3 02:00Z -> Mon Oct 5 9:00 PDT = 16:00Z
+  assert.equal(nextCallTime(new Date("2026-10-03T02:00:00Z"), 2, hours).toISOString(), "2026-10-05T16:00:00.000Z");
+  // Sat Oct 3 11:00 PDT -> Monday 9:00
+  assert.equal(nextCallTime(new Date("2026-10-03T18:00:00Z"), 2, hours).toISOString(), "2026-10-05T16:00:00.000Z");
+  // Sun Oct 4 7:00 PDT (before opening) -> Monday 9:00, not Sunday 9:00
+  assert.equal(nextCallTime(new Date("2026-10-04T14:00:00Z"), 2, hours).toISOString(), "2026-10-05T16:00:00.000Z");
+  // Fri 16:30 PDT plus the 2 hour retry delay -> Monday 9:00
+  assert.equal(nextCallTime(new Date("2026-10-02T23:30:00Z"), 120, hours).toISOString(), "2026-10-05T16:00:00.000Z");
+  // Mon 10:00 PDT stays put
+  assert.equal(nextCallTime(new Date("2026-10-05T17:00:00Z"), 2, hours).toISOString(), "2026-10-05T17:02:00.000Z");
 });
 
 test("ineligibleReason only allows HDR site quote inquiries with a US phone", () => {
