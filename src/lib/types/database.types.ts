@@ -984,6 +984,54 @@ export type Database = {
         }
         Relationships: []
       }
+      rental_inquiry_ai_pricing: {
+        Row: {
+          entity_id: string
+          private_first_day: number
+          private_extra_day: number
+          event_first_day: number
+          event_extra_day: number
+          guests_per_trailer: number
+          discount_2_pct: number
+          discount_3_pct: number
+          discount_4_plus_pct: number
+          attendant_hourly: number
+          attendant_min_hours: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          entity_id: string
+          private_first_day?: number
+          private_extra_day?: number
+          event_first_day?: number
+          event_extra_day?: number
+          guests_per_trailer?: number
+          discount_2_pct?: number
+          discount_3_pct?: number
+          discount_4_plus_pct?: number
+          attendant_hourly?: number
+          attendant_min_hours?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          entity_id?: string
+          private_first_day?: number
+          private_extra_day?: number
+          event_first_day?: number
+          event_extra_day?: number
+          guests_per_trailer?: number
+          discount_2_pct?: number
+          discount_3_pct?: number
+          discount_4_plus_pct?: number
+          attendant_hourly?: number
+          attendant_min_hours?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       rental_inquiry_funnel_enrollments: {
         Row: {
           id: string
