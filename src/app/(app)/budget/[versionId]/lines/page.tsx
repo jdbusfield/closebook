@@ -16,6 +16,7 @@ import { useBudgetVersion } from "../version-shell";
 import { fmtPct, fmtUsd, MONTH_ABBRS } from "@/lib/budget/format";
 import { METHOD_KINDS, type LineMethod, type MethodKind } from "@/lib/budget/line-methods";
 import { cn } from "@/lib/utils";
+import { MonthCells } from "@/components/budget/month-cells";
 
 interface Item {
   id: string;
@@ -60,36 +61,6 @@ const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "Ju
 const sum = (a: number[]) => a.reduce((t, v) => t + v, 0);
 const addTo = (t: number[], s: number[]) => s.forEach((v, i) => (t[i] += v));
 const zeros = () => new Array(12).fill(0) as number[];
-
-function changePct(now: number, prior: number): string {
-  if (!prior) return now ? "new" : "";
-  const p = ((now - prior) / Math.abs(prior)) * 100;
-  return `${p > 0 ? "+" : ""}${fmtPct(p)}`;
-}
-
-/** Row of twelve month cells plus total, prior and change */
-function MonthCells({ months, prior, showPrior, className, bold, invert }: { months: number[]; prior?: number[]; showPrior: boolean; className?: string; bold?: boolean; invert?: boolean }) {
-  const total = sum(months);
-  const priorTotal = prior ? sum(prior) : 0;
-  const pct = prior ? changePct(total, priorTotal) : "";
-  const up = total > priorTotal;
-  // For costs, up is red; for revenue (invert), up is green
-  const tone = !prior || !pct || pct === "new" ? "" : up === !invert ? "text-red-700" : "text-emerald-700";
-  return (
-    <>
-      {months.map((v, i) => (
-        <TableCell key={i} className={cn("whitespace-nowrap text-right tabular-nums", className, bold && "font-medium")}>{v ? fmtUsd(v) : ""}</TableCell>
-      ))}
-      <TableCell className={cn("whitespace-nowrap text-right tabular-nums", className, "font-medium")}>{fmtUsd(total)}</TableCell>
-      {showPrior && (
-        <>
-          <TableCell className={cn("whitespace-nowrap text-right tabular-nums text-muted-foreground", className)}>{prior ? fmtUsd(priorTotal) : ""}</TableCell>
-          <TableCell className={cn("whitespace-nowrap text-right tabular-nums text-xs", className, tone)}>{pct}</TableCell>
-        </>
-      )}
-    </>
-  );
-}
 
 export default function BudgetModelPage({ params }: { params: Promise<{ versionId: string }> }) {
   const { versionId } = use(params);

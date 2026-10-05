@@ -203,6 +203,15 @@ export default function BudgetOverviewPage() {
                   <Link href={`/budget/payroll/${year}`}>Open</Link>
                 </Button>
               </div>
+              {list.some((v) => v.reporting_entity_id && v.kind === "budget") && (
+                <div className="mt-2 flex flex-wrap items-center gap-3 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                  <span className="font-medium">Consolidated budget</span>
+                  <span className="text-muted-foreground">Every reporting group, read only</span>
+                  <Button asChild variant="outline" size="sm" className="ml-auto">
+                    <Link href={`/budget/consolidated/${year}`}>Open</Link>
+                  </Button>
+                </div>
+              )}
             </CardHeader>
             <CardContent className="overflow-x-auto">
               <Table>
