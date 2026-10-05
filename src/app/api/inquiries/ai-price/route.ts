@@ -31,6 +31,8 @@ function authorized(req: Request): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+
 const money = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 
 export async function POST(req: Request) {
@@ -76,7 +78,9 @@ export async function POST(req: Request) {
     pricing
   );
 
-  const trailerWord = q.trailers === 1 ? "one 4-stall trailer" : `${q.trailers} 4-stall trailers`;
+  // Spell the count out so the voice never reads "2 4-stall" as "twenty-four stall".
+  const count = NUMBER_WORDS[q.trailers] ?? String(q.trailers);
+  const trailerWord = q.trailers === 1 ? "one 4-stall trailer" : `${count} 4-stall trailers`;
   const dayWord = q.days === 1 ? "the day" : `the ${q.days}-day rental`;
   return NextResponse.json({
     trailers: q.trailers,
