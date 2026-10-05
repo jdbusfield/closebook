@@ -20,7 +20,8 @@ interface VersionRow {
 
 /**
  * GET /api/budget/consolidated-model?fiscalYear=&kind=budget|forecast&organizationId=
- * Read-only roll-up of the reporting groups' models for a year. Per group it
+ * Read-only roll-up of the reporting groups' models for a year, through
+ * EBITDA (JD: the combined budget is EBITDA-basis). Per group it
  * uses the active version, else the most recently updated one, so drafts can
  * be seen together before anything is set active. Each line carries the
  * group subtotals and every group's items beneath them. Lines on
@@ -132,18 +133,6 @@ export async function GET(request: Request) {
         masters: [...(linesBySection.get(s.id)?.values() ?? [])].map((l) => ({ ...l, months: round(l.months), priorYear: round(l.priorYear) })),
       }));
 
-    // Below EBITDA from the consolidated (IC-free) lines, the same net the Model page shows
-    const below = zeros();
-    const belowPrior = zeros();
-    for (const s of sections) {
-      if (s.id !== "other_expense" && s.id !== "other_income") continue;
-      const sign = s.id === "other_expense" ? 1 : -1;
-      for (const m of s.masters) for (let i = 0; i < 12; i++) {
-        below[i] += m.months[i] * sign;
-        belowPrior[i] += m.priorYear[i] * sign;
-      }
-    }
-
     return NextResponse.json({
       fiscalYear,
       kind,
@@ -157,8 +146,7 @@ export async function GET(request: Request) {
         };
       }),
       sections: sections.filter((s) => s.model),
-      belowEbitda: { months: round(below), priorYear: round(belowPrior) },
-      eliminated,
+      eliminated: eliminated.filter((e) => sectionMeta.get(e.section)?.model),
     });
   } catch (err) {
     console.error("GET /api/budget/consolidated-model error:", err);

@@ -58,7 +58,6 @@ interface Group {
 interface Payload {
   groups: Group[];
   sections: Section[];
-  belowEbitda: { months: number[]; priorYear: number[] };
   eliminated: Array<{ id: string; accountNumber: string | null; name: string; groups: Array<{ code: string; total: number }>; total: number }>;
 }
 
@@ -67,9 +66,9 @@ const addTo = (t: number[], s: number[]) => s.forEach((v, i) => (t[i] += v));
 const zeros = () => new Array(12).fill(0) as number[];
 
 /**
- * Every reporting group's budget for a year in one read-only model: each
- * line opens to the group subtotals, and each group to the items behind it.
- * Edits stay in the group versions.
+ * Every reporting group's budget for a year in one read-only model through
+ * EBITDA (JD): each line opens to the group subtotals, and each group to the
+ * items behind it. Edits stay in the group versions.
  */
 export default function ConsolidatedBudgetPage({ params }: { params: Promise<{ year: string }> }) {
   const { year } = use(params);
@@ -129,14 +128,7 @@ export default function ConsolidatedBudgetPage({ params }: { params: Promise<{ y
     };
     const now = line(bySection);
     const prior = line(priorBySection);
-    return {
-      bySection,
-      priorBySection,
-      now,
-      prior,
-      netIncome: now.ebitda.map((v, i) => v - data.belowEbitda.months[i]),
-      netIncomePrior: prior.ebitda.map((v, i) => v - data.belowEbitda.priorYear[i]),
-    };
+    return { bySection, priorBySection, now, prior };
   }, [data]);
 
   if (!Number.isFinite(fiscalYear) || fiscalYear <= 2000) return <p className="text-sm text-destructive">Not a valid year.</p>;
@@ -331,11 +323,6 @@ export default function ConsolidatedBudgetPage({ params }: { params: Promise<{ y
                       </Fragment>
                     );
                   })}
-                  <TableRow className="text-sm text-muted-foreground">
-                    <TableCell className="whitespace-nowrap">Below EBITDA, from the debt, asset and capex schedules</TableCell>
-                    <MonthCells months={data.belowEbitda.months} prior={data.belowEbitda.priorYear} showPrior={showPrior} className="text-muted-foreground" />
-                  </TableRow>
-                  {subtotalRow("Net income", totals.netIncome, totals.netIncomePrior, { strong: true, invert: true })}
                 </TableBody>
               </Table>
             </CardContent>
