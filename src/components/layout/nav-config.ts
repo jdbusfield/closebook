@@ -167,6 +167,10 @@ export function getEntityNavGroups(entityId: string): NavGroup[] {
             ...(entityId === SILVERCO_ENTITY_ID
               ? [{ title: "Rate Card", href: `${prefix}/inquiries/rate-card` }]
               : []),
+            // What the AI callback agent quotes restroom trailers from. HDR only.
+            ...(entityId === HDR_ENTITY_ID
+              ? [{ title: "AI Price Table", href: `${prefix}/inquiries/ai-pricing` }]
+              : []),
           ],
         },
         // Joe's preferred-vendor outreach pipeline — HDR only, and kept apart

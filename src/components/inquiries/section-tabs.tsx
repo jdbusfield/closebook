@@ -8,7 +8,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEmbed } from "@/lib/inquiries/embed-context";
 import { ResourceLibrary } from "@/components/inquiries/resource-library";
-import { SILVERCO_ENTITY_ID } from "@/lib/inquiries/shared";
+import { HDR_ENTITY_ID, SILVERCO_ENTITY_ID } from "@/lib/inquiries/shared";
 import {
   LayoutDashboard,
   KanbanSquare,
@@ -66,6 +66,10 @@ export function SectionTabs({
     // Versatile rather than shown empty.
     ...(entityId === SILVERCO_ENTITY_ID
       ? [{ key: "rate-card", label: "Rate Card", href: `${base}/rate-card`, icon: Tag }]
+      : []),
+    // The AI callback agent's restroom-trailer price table. HDR only.
+    ...(entityId === HDR_ENTITY_ID
+      ? [{ key: "ai-pricing", label: "AI Price Table", href: `${base}/ai-pricing`, icon: Tag }]
       : []),
   ];
 
