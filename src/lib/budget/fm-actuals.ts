@@ -24,11 +24,11 @@ const cache = new Map<string, { at: number; value: Record<string, number[]> }>()
 /** Master id -> twelve months (January first), or null when the version has no reporting group */
 export async function loadFinancialModelYear(admin: Admin, owner: VersionOwner, year: number): Promise<Record<string, number[]> | null> {
   if (!owner.reportingEntityId || !owner.organizationId) return null;
-  const key = `${owner.reportingEntityId}|${year}`;
+  const [members, chartId] = await Promise.all([loadMemberEntityIds(admin, owner), resolveVersionChartId(admin, owner)]);
+  const key = `${owner.reportingEntityId}|${chartId}|${year}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL_MS) return hit.value;
 
-  const [members, chartId] = await Promise.all([loadMemberEntityIds(admin, owner), resolveVersionChartId(admin, owner)]);
   const entityIds = [...members];
   if (!entityIds.length) return null;
   const { data: ent } = await admin.from("entities").select("fiscal_year_end_month").in("id", entityIds).limit(1);
