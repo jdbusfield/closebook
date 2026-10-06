@@ -66,12 +66,14 @@ export async function POST(request: Request) {
         continue;
       }
       // What this replaces: an earlier base, and with replaceItems every other item on the line
-      const { data: existing } = await admin
+      const { data: existing, error: findError } = await admin
         .from("budget_builds")
         .select("id, meta")
         .eq("budget_version_id", owner.id)
         .eq("master_account_id", line.masterId)
         .eq("build_type", "manual");
+      // Without this list an earlier base would survive next to the new one and double the line
+      if (findError) throw new Error(`Could not read the items on ${line.name}: ${findError.message}`);
       const isBase = (b: { meta: Record<string, unknown> | null }) => !!b.meta && typeof b.meta === "object" && "prior_base" in b.meta;
       const old = ((existing ?? []) as Array<{ id: string; meta: Record<string, unknown> | null }>).filter((b) => replaceItems || isBase(b)).map((b) => b.id);
       // Add the new base first, then remove what it replaces, so a failure never leaves the line empty
