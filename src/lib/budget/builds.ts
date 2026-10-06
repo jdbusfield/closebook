@@ -11,6 +11,7 @@ import { fleetRevenueBuilds } from "./driver-builds";
 import { trendBuilds } from "./trend-builds";
 import { recomputeMethodBuilds } from "./method-builds";
 import type { Admin, BuildContext, BuildInsert, BuildType } from "./build-types";
+import { loadOverriddenMasters, withoutOverridden } from "./line-overrides";
 
 export type RecomputeScope = "personnel" | "schedules" | "drivers" | "trend" | "methods" | "all";
 
@@ -71,6 +72,10 @@ async function replaceBuilds(admin: Admin, versionId: string, types: BuildType[]
 export async function recomputeVersion(admin: Admin, owner: VersionOwner, scope: RecomputeScope): Promise<RecomputeSummary> {
   const summary: RecomputeSummary = { scope, lines: { linesUpserted: 0, linesDeleted: 0 }, warnings: [] };
   const ctx = await buildContext(admin, owner);
+  // Lines set to "Use my own number" get no driver or schedule builds
+  const overridden = await loadOverriddenMasters(admin, owner.id);
+  const parentOfMaster = new Map(ctx.masters.filter((m) => m.parentAccountId).map((m) => [m.id, m.parentAccountId!]));
+  const keep = <T extends { master_account_id: string }>(b: T[]) => withoutOverridden(b, overridden, parentOfMaster);
 
   if (scope === "personnel" || scope === "all") {
     const p = await recomputePersonnel(admin, owner);
@@ -86,13 +91,13 @@ export async function recomputeVersion(admin: Admin, owner: VersionOwner, scope:
       insuranceBuilds(ctx).catch((e) => { summary.warnings.push(`Insurance: ${e.message}`); return []; }),
       allocationBuilds(ctx).catch((e) => { summary.warnings.push(`Allocations: ${e.message}`); return []; }),
     ]);
-    await replaceBuilds(admin, owner.id, ["schedule", "capex"], [...debt, ...leases, ...depreciation, ...insurance, ...allocations]);
+    await replaceBuilds(admin, owner.id, ["schedule", "capex"], keep([...debt, ...leases, ...depreciation, ...insurance, ...allocations]));
     summary.schedules = { debt: debt.length, leases: leases.length, depreciation: depreciation.length, insurance: insurance.length, allocations: allocations.length };
   }
 
   if (scope === "drivers" || scope === "all") {
     const fleet = await fleetRevenueBuilds(ctx).catch((e) => { summary.warnings.push(`Fleet revenue: ${e.message}`); return []; });
-    await replaceBuilds(admin, owner.id, ["driver"], fleet);
+    await replaceBuilds(admin, owner.id, ["driver"], keep(fleet));
     summary.drivers = { fleetRevenue: fleet.length };
   }
 

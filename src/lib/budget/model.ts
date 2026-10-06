@@ -14,6 +14,7 @@ import { loadMemberEntityIds, resolveVersionChartId } from "@/lib/budget/recompu
 import { INCOME_STATEMENT_SECTIONS } from "@/lib/config/statement-sections";
 import { describeMethod, readMethod, type LineMethod } from "@/lib/budget/line-methods";
 import { loadFinancialModelYear } from "@/lib/budget/fm-actuals";
+import { loadOverriddenMasters } from "@/lib/budget/line-overrides";
 
 const NIL_CLASS = "00000000-0000-0000-0000-000000000000";
 
@@ -327,6 +328,9 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
   if (owner.fiscalYear - 1 === today.getUTCFullYear()) priorYearMonths = Math.min(priorYearMonths, today.getUTCMonth());
   else if (owner.fiscalYear - 1 > today.getUTCFullYear()) priorYearMonths = 0;
 
+  // Lines set to "Use my own number" (no fleet driver or schedules)
+  const ownNumber = await loadOverriddenMasters(admin as unknown as Parameters<typeof loadOverriddenMasters>[0], owner.id);
+
   const sectionOf = (m: MasterInfo) => INCOME_STATEMENT_SECTIONS.find((s) => s.classification === m.classification && s.accountTypes.includes(m.accountType))?.id ?? null;
   const topMasters = masters.filter((m) => (m.classification === "Revenue" || m.classification === "Expense") && !m.parentAccountId);
   // Every section, so Review keeps its below-EBITDA lines; the model page shows the three that reach EBITDA
@@ -345,6 +349,7 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
         items: (items.get(m.id) ?? []).sort((a, b) => Math.abs(b.total) - Math.abs(a.total)),
         note: lineNotes.get(m.id)?.note ?? null,
         reviewFlag: lineNotes.get(m.id)?.reviewFlag ?? null,
+        ownNumber: ownNumber.has(m.id),
       })),
   }));
 
