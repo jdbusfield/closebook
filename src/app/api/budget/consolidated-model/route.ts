@@ -3,6 +3,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { accessErrorResponse, assertOrgMember, getBudgetActor, requireVersionAccess } from "@/lib/budget/access";
 import { buildVersionModel, type ModelItem } from "@/lib/budget/model";
 
+// Last year comes from a Financial Model build (bounded at 25s per group, then the GL)
+export const maxDuration = 120;
+
 const zeros = () => new Array(12).fill(0) as number[];
 const round = (a: number[]) => a.map((v) => Math.round(v * 100) / 100);
 const addInto = (t: number[], s: number[] | undefined) => {

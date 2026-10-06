@@ -18,6 +18,7 @@ interface StatementLine {
 // The statements take seconds to build; a budget page reloads often, so keep a group's
 // year for a few minutes in this server instance
 const TTL_MS = 10 * 60 * 1000;
+const BUILD_LIMIT_MS = 25_000;
 const cache = new Map<string, { at: number; value: Record<string, number[]> }>();
 
 /** Master id -> twelve months (January first), or null when the version has no reporting group */
@@ -34,7 +35,12 @@ export async function loadFinancialModelYear(admin: Admin, owner: VersionOwner, 
   const fyEnd = Number((ent ?? [])[0]?.fiscal_year_end_month ?? 12);
 
   const buckets = getPeriodsInRange(year, 1, year, 12, "monthly");
-  const result = await buildConsolidatedStatements({
+  // Never let a slow build take the page down: past the limit the caller falls back to the GL
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Financial Model build exceeded ${BUILD_LIMIT_MS / 1000}s`)), BUILD_LIMIT_MS);
+  });
+  const build = buildConsolidatedStatements({
     admin,
     organizationId: owner.organizationId,
     chartId,
@@ -55,6 +61,9 @@ export async function loadFinancialModelYear(admin: Admin, owner: VersionOwner, 
     endMonth: 12,
     fiscalYearStartMonth: (fyEnd % 12) + 1,
   });
+  // A build that loses the race may still fail later; that must not surface as an unhandled rejection
+  build.catch(() => undefined);
+  const result = await Promise.race([build, timeout]).finally(() => clearTimeout(timer));
 
   const out: Record<string, number[]> = {};
   for (const section of result.incomeStatement.sections as Array<{ lines: StatementLine[] }>) {
