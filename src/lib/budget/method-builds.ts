@@ -125,7 +125,7 @@ export async function recomputeMethodBuilds(ctx: BuildContext, bank?: HistoryBan
         meta: {
           ...(b.meta ?? {}),
           method,
-          history: { priorYear: Math.round(h.priorYear.reduce((t, v) => t + v, 0)), trailing12: Math.round(h.trailing12), trailing3Annualized: Math.round(h.trailing3Annualized), hasFullYear: h.hasFullYear },
+          history: { priorYear: Math.round(h.priorYear.reduce((t, v) => t + v, 0)), priorYearMonths: h.priorYear, trailing12: Math.round(h.trailing12), trailing3Annualized: Math.round(h.trailing3Annualized), hasFullYear: h.hasFullYear },
         },
       })
       .eq("id", b.id);

@@ -31,7 +31,7 @@ interface Item {
   months: number[];
   total: number;
   editable: boolean;
-  history: { priorYear: number; trailing12: number } | null;
+  history: { priorYear: number; trailing12: number; priorYearMonths?: number[] } | null;
   parts?: Array<{ label: string; months: number[]; total: number; note: string | null }>;
 }
 interface MasterLine {
@@ -53,6 +53,8 @@ interface Section {
 interface Payload {
   sections: Section[];
   priorYear: Record<string, number[]>;
+  /** Months of last year that are booked; averages divide by this */
+  priorYearMonths: number;
   belowEbitda: { months: number[]; priorYear: number[] };
   lineMasters: Array<{ id: string; name: string; accountNumber: string | null }>;
 }
@@ -61,6 +63,13 @@ const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "Ju
 const sum = (a: number[]) => a.reduce((t, v) => t + v, 0);
 const addTo = (t: number[], s: number[]) => s.forEach((v, i) => (t[i] += v));
 const zeros = () => new Array(12).fill(0) as number[];
+/**
+ * Last year's total for an item over the booked months. Items recomputed before months were kept
+ * only have a full-year total that can include the month in progress, so show nothing until a
+ * Recompute fills the months (unless last year is complete).
+ */
+const itemPriorTotal = (h: Item["history"], bookedMonths: number): number | null =>
+  !h ? null : h.priorYearMonths ? sum(h.priorYearMonths.slice(0, bookedMonths)) : bookedMonths >= 12 ? h.priorYear : null;
 
 export default function BudgetModelPage({ params }: { params: Promise<{ versionId: string }> }) {
   const { versionId } = use(params);
@@ -185,13 +194,15 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
   }
   if (!data || !totals) return <p className="text-sm text-muted-foreground">Nothing to show.</p>;
 
-  const colSpan = 1 + 12 + 1 + (showPrior ? 2 : 0);
+  const colSpan = 1 + 12 + 1 + (showPrior ? 3 : 0);
   const prior = fiscalYear - 1;
+  const pm = data.priorYearMonths ?? 0;
+  const priorHead = pm > 0 && pm < 12 ? `${prior} (Jan–${MONTH_ABBRS[pm - 1]})` : String(prior);
 
   const subtotalRow = (label: string, months: number[], priorMonths: number[], opts?: { strong?: boolean; invert?: boolean; pctOf?: number[] }) => (
     <TableRow className={cn("bg-muted/30", opts?.strong ? "border-t-2 font-semibold" : "font-medium")}>
       <TableCell className="whitespace-nowrap">{label}</TableCell>
-      <MonthCells months={months} prior={priorMonths} showPrior={showPrior} bold invert={opts?.invert} />
+      <MonthCells months={months} prior={priorMonths} priorMonths={pm} showPrior={showPrior} bold invert={opts?.invert} />
     </TableRow>
   );
   const pctRow = (label: string, num: number[], den: number[]) => (
@@ -199,7 +210,7 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
       <TableCell className="whitespace-nowrap">{label}</TableCell>
       {num.map((v, i) => <TableCell key={i} className="text-right tabular-nums">{den[i] ? fmtPct((v / den[i]) * 100) : ""}</TableCell>)}
       <TableCell className="text-right tabular-nums">{sum(den) ? fmtPct((sum(num) / sum(den)) * 100) : ""}</TableCell>
-      {showPrior && <TableCell colSpan={2} />}
+      {showPrior && <TableCell colSpan={3} />}
     </TableRow>
   );
 
@@ -240,8 +251,9 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
                 <TableHead className="text-right">Total</TableHead>
                 {showPrior && (
                   <>
-                    <TableHead className="text-right">{prior}</TableHead>
-                    <TableHead className="text-right">Change</TableHead>
+                    <TableHead className="whitespace-nowrap text-right">{priorHead}</TableHead>
+                    <TableHead className="whitespace-nowrap text-right">{prior} avg / mo</TableHead>
+                    <TableHead className="whitespace-nowrap text-right" title={`${fiscalYear} average month vs ${prior} average month`}>Change</TableHead>
                   </>
                 )}
               </TableRow>
@@ -269,7 +281,7 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
                                 {m.items.length > 0 && <span className="text-xs text-muted-foreground">{m.items.length === 1 && runRate ? "run rate" : `${m.items.length} item${m.items.length === 1 ? "" : "s"}`}</span>}
                               </button>
                             </TableCell>
-                            <MonthCells months={m.months} prior={p} showPrior={showPrior} invert={invert} />
+                            <MonthCells months={m.months} prior={p} priorMonths={pm} showPrior={showPrior} invert={invert} />
                           </TableRow>
                           {expanded && (
                             <>
@@ -305,7 +317,7 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
                                       )}
                                     </div>
                                   </TableCell>
-                                  <MonthCells months={it.months} showPrior={showPrior} className={cn("py-1.5 text-xs", it.parts ? "text-foreground" : "text-muted-foreground")} />
+                                  <MonthCells months={it.months} priorTotal={itemPriorTotal(it.history, pm)} priorMonths={pm} invert={invert} showPrior={showPrior} className={cn("py-1.5 text-xs", it.parts ? "text-foreground" : "text-muted-foreground")} />
                                 </TableRow>
                                 {(it.parts ?? []).map((p, idx) => (
                                   <TableRow key={idx} className="text-xs text-muted-foreground">
@@ -313,7 +325,7 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
                                       {p.label}
                                       {p.note && <span className="ml-2 italic">{p.note}</span>}
                                     </TableCell>
-                                    <MonthCells months={p.months} showPrior={showPrior} className="py-1 text-xs text-muted-foreground" />
+                                    <MonthCells months={p.months} priorMonths={pm} showPrior={showPrior} className="py-1 text-xs text-muted-foreground" />
                                   </TableRow>
                                 ))}
                                 </Fragment>
@@ -341,9 +353,9 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
                               {showPrior && p && (
                                 <TableRow className="text-xs text-muted-foreground">
                                   <TableCell className="py-1 pl-9">{prior} actual</TableCell>
-                                  {p.map((v, i) => <TableCell key={i} className="py-1 text-right tabular-nums">{v ? fmtUsd(v) : ""}</TableCell>)}
-                                  <TableCell className="py-1 text-right tabular-nums">{fmtUsd(sum(p))}</TableCell>
-                                  <TableCell colSpan={2} />
+                                  {p.map((v, i) => <TableCell key={i} className="py-1 text-right tabular-nums">{v && i < pm ? fmtUsd(v) : ""}</TableCell>)}
+                                  <TableCell className="py-1 text-right tabular-nums">{fmtUsd(sum(p.slice(0, pm)))}</TableCell>
+                                  <TableCell colSpan={3} />
                                 </TableRow>
                               )}
                             </>
@@ -372,7 +384,7 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
                   Below EBITDA, from the debt, asset and capex schedules
                   <Link href={`/budget/${versionId}/drivers`} className="ml-2 text-xs underline-offset-2 hover:underline">Drivers</Link>
                 </TableCell>
-                <MonthCells months={data.belowEbitda.months} prior={data.belowEbitda.priorYear} showPrior={showPrior} className="text-muted-foreground" />
+                <MonthCells months={data.belowEbitda.months} prior={data.belowEbitda.priorYear} priorMonths={pm} showPrior={showPrior} className="text-muted-foreground" />
               </TableRow>
               {subtotalRow("Net income", totals.netIncome, totals.netIncomePrior, { strong: true, invert: true })}
             </TableBody>
@@ -387,6 +399,8 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
           item={editing.item}
           lineMasters={data.lineMasters}
           fiscalYear={fiscalYear}
+          priorLine={data.priorYear[editing.master.id] ?? null}
+          priorMonths={pm}
           onClose={() => setEditing(null)}
           onSaved={async () => {
             setEditing(null);
@@ -419,6 +433,8 @@ function ItemDialog({
   item,
   lineMasters,
   fiscalYear,
+  priorLine,
+  priorMonths,
   onClose,
   onSaved,
 }: {
@@ -427,6 +443,10 @@ function ItemDialog({
   item: Item | null;
   lineMasters: Array<{ id: string; name: string; accountNumber: string | null }>;
   fiscalYear: number;
+  /** Last year's months for the whole line */
+  priorLine: number[] | null;
+  /** Months of last year that are booked */
+  priorMonths: number;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
@@ -446,6 +466,31 @@ function ItemDialog({
   const [saving, setSaving] = useState(false);
   const accountIds = initialMethod.account_ids;
   const prior = fiscalYear - 1;
+
+  // Last year for this item: its own accounts once broken out, else the whole line
+  const own = accountIds?.length && item?.history && itemPriorTotal(item.history, priorMonths) != null ? item.history : null;
+  // An item broken out by account uses only its own accounts; until a Recompute stores them, show
+  // nothing rather than the whole line's figures, which would double count the line
+  const brokenOut = !!accountIds?.length;
+  const priorSeries = own ? (own.priorYearMonths ?? null) : brokenOut ? null : priorLine;
+  const priorTotal = own ? itemPriorTotal(own, priorMonths) : brokenOut ? null : priorLine ? sum(priorLine.slice(0, priorMonths)) : null;
+  const priorAvg = priorTotal != null && priorMonths > 0 ? priorTotal / priorMonths : null;
+  const priorSpan = priorMonths > 0 && priorMonths < 12 ? `Jan–${MONTH_ABBRS[priorMonths - 1]}` : "full year";
+  const whose = own ? `${accountIds!.length === 1 ? "this account" : `these ${accountIds!.length} accounts`}` : master.name;
+  const useStraightLine = () => {
+    if (priorAvg == null) return;
+    setKind("flat");
+    setAmount(String(Math.round(priorAvg)));
+    setStartMonth("1");
+    setEndMonth("12");
+    if (!label.trim()) setLabel(`${master.name}: ${prior} average`);
+  };
+  const useMonthsFromPrior = () => {
+    if (!priorSeries || priorAvg == null) return;
+    setKind("months");
+    setMonths(priorSeries.map((v, i) => String(Math.round(i < priorMonths ? v : priorAvg))));
+    if (!label.trim()) setLabel(`${master.name}: ${prior} months`);
+  };
 
   const num = (s: string) => (s.trim() === "" ? undefined : Number(s));
   const method = (): LineMethod => {
@@ -513,6 +558,26 @@ function ItemDialog({
               <Input id="item-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Two new seats in March" />
             </div>
           </div>
+          {priorAvg != null && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2 text-sm">
+              <div>
+                <div className="text-xs text-muted-foreground">{prior} actual ({priorSpan}), {whose}</div>
+                <div className="tabular-nums">
+                  {fmtUsd(priorTotal ?? 0)} <span className="text-muted-foreground">·</span> <span className="font-medium">{fmtUsd(priorAvg)} / month</span>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={useStraightLine} title={`Flat: ${fmtUsd(priorAvg)} every month`}>
+                  Straight line at {prior} avg
+                </Button>
+                {priorSeries && (
+                  <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={useMonthsFromPrior} title={priorMonths < 12 ? `Booked months as they were; the rest at the ${prior} average` : `Last year's twelve months`}>
+                    12 months from {prior}
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
           <div className="grid gap-1.5">
             <Label htmlFor="item-kind">Method</Label>
             <Select value={kind} onValueChange={(v) => setKind(v as MethodKind)}>
