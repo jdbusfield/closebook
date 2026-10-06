@@ -1,7 +1,7 @@
 /**
  * "Build from last year" for revenue lines: a typed item whose twelve months are
  * last year's, either the actuals (booked months as they were, the rest at the
- * booked-month average) or the approved budget, moved by a percent.
+ * booked-month average) or the active budget version, moved by a percent.
  *
  * The item is an ordinary manual build tagged meta.prior_base, so building again
  * replaces it instead of stacking a second base on the line.
@@ -32,7 +32,7 @@ export interface PriorBaseLine {
   /** Last year's booked months only, then the twelve-month base built from them */
   actualBooked: number;
   actualMonths: number[];
-  /** Last year's approved budget, null when there is none for this line */
+  /** Last year's active budget version, null when there is none for this line */
   budgetMonths: number[] | null;
 }
 
@@ -51,7 +51,7 @@ export async function loadPriorBase(admin: Admin, owner: VersionOwner): Promise<
   const booked = model.priorYearMonths;
   const revenue = model.sections.find((s) => s.id === "revenue");
 
-  // Last year's approved budget for this group (reporting-entity version first, entity versions for the rest)
+  // Last year's active budget for this group (reporting-entity version first, entity versions for the rest)
   const [memberSet, chartId] = await Promise.all([loadMemberEntityIds(admin, owner), resolveVersionChartId(admin, owner)]);
   const priorVersions = await resolveActiveVersions(admin, {
     organizationId: owner.organizationId!,
@@ -117,7 +117,7 @@ export function priorBaseRow(owner: VersionOwner, line: PriorBaseLine, basis: Pr
     assumption_keys: [],
     is_computed: false,
     meta: { prior_base: { basis, pct, year: prior, booked_months: basis === "actuals" ? bookedMonths : null } },
-    note: basis === "actuals" ? `Built from ${prior} actuals${span}.` : `Built from the approved ${prior} budget.`,
+    note: basis === "actuals" ? `Built from ${prior} actuals${span}.` : `Built from the active ${prior} budget version.`,
     computed_at: new Date().toISOString(),
   };
 }

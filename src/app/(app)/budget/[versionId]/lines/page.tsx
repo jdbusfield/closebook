@@ -355,7 +355,7 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
                                         <Plus className="mr-1 h-3 w-3" /> Add item
                                       </Button>
                                       {s.id === "revenue" && (
-                                        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setFromPrior({ only: m.id })} title={`${prior} actuals or the approved ${prior} budget as this line's base`}>
+                                        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setFromPrior({ only: m.id })} title={`${prior} actuals or the active ${prior} budget as this line's base`}>
                                           Build from {prior}
                                         </Button>
                                       )}
@@ -723,11 +723,12 @@ interface PriorBaseLine {
   budgetMonths: number[] | null;
 }
 
-/** Revenue lines from last year: actuals or the approved budget, moved by a percent, line by line. */
+/** Revenue lines from last year: actuals or the active budget version, moved by a percent, line by line. */
 function BuildFromPriorDialog({ versionId, prior, only, onClose, onSaved }: { versionId: string; prior: number; only: string | null; onClose: () => void; onSaved: (masterIds: string[]) => Promise<void> }) {
   const [preview, setPreview] = useState<{ bookedMonths: number; budgetVersions: number; lines: PriorBaseLine[] } | null>(null);
   const [basis, setBasis] = useState<"actuals" | "budget">("actuals");
   const [pct, setPct] = useState("");
+  const [replaceItems, setReplaceItems] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
 
@@ -740,7 +741,7 @@ function BuildFromPriorDialog({ versionId, prior, only, onClose, onSaved }: { ve
         if (!res.ok) throw new Error(json.error ?? "Failed to load last year");
         if (!live) return;
         setPreview(json);
-        const usable = (json.lines as PriorBaseLine[]).filter((l) => !l.blockedBy && (only ? l.masterId === only : true));
+        const usable = (json.lines as PriorBaseLine[]).filter((l) => !l.blockedBy && (only ? l.masterId === only : l.otherItems === 0));
         setPicked(new Set(usable.map((l) => l.masterId)));
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to load last year");
@@ -767,7 +768,7 @@ function BuildFromPriorDialog({ versionId, prior, only, onClose, onSaved }: { ve
     if (!chosen.length) return;
     setSaving(true);
     try {
-      const res = await fetch("/api/budget/builds/from-prior", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ versionId, masterAccountIds: chosen.map((l) => l.masterId), basis, pct: p }) });
+      const res = await fetch("/api/budget/builds/from-prior", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ versionId, masterAccountIds: chosen.map((l) => l.masterId), basis, pct: p, replaceItems }) });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Build failed");
       const built = (json.built ?? []) as string[];
@@ -786,7 +787,7 @@ function BuildFromPriorDialog({ versionId, prior, only, onClose, onSaved }: { ve
     if (!baseOf(l)) return `No ${prior} ${basis}`;
     const parts: string[] = [];
     if (l.hasBase) parts.push("replaces its base");
-    if (l.otherItems > 0) parts.push(`${l.otherItems} other item${l.otherItems === 1 ? "" : "s"} stay`);
+    if (l.otherItems > 0) parts.push(replaceItems ? `replaces ${l.otherItems} other item${l.otherItems === 1 ? "" : "s"}` : `adds to ${l.otherItems} item${l.otherItems === 1 ? "" : "s"} already here: the line would double`);
     return parts.join("; ");
   };
 
@@ -796,7 +797,7 @@ function BuildFromPriorDialog({ versionId, prior, only, onClose, onSaved }: { ve
         <DialogHeader>
           <DialogTitle>{only ? "Build this line" : "Build revenue"} from {prior}</DialogTitle>
           <DialogDescription>
-            Each chosen line gets one item for {prior + 1}: twelve months of {prior}, moved by the percent. Building again replaces that item; other items on the line stay.
+            Each chosen line gets one item for {prior + 1}: twelve months of {prior}, moved by the percent. Building again replaces that item. Other items on the line stay unless you replace them, so lines that already have items start unticked.
             Actuals use the booked months as they were ({span}) and the rest at their average.
           </DialogDescription>
         </DialogHeader>
@@ -817,7 +818,11 @@ function BuildFromPriorDialog({ versionId, prior, only, onClose, onSaved }: { ve
                 <Label htmlFor="prior-pct">Change %</Label>
                 <Input id="prior-pct" type="number" step="0.1" value={pct} onChange={(e) => setPct(e.target.value)} placeholder="0" className="h-9 w-28" />
               </div>
-              {basis === "budget" && preview.budgetVersions === 0 && <span className="text-xs text-muted-foreground">No approved {prior} budget covers this group.</span>}
+              <label className="flex items-center gap-2 pb-2 text-sm">
+                <Switch checked={replaceItems} onCheckedChange={setReplaceItems} />
+                <span>Replace the line&apos;s other items</span>
+              </label>
+              {basis === "budget" && preview.budgetVersions === 0 && <span className="text-xs text-muted-foreground">No active {prior} budget version covers this group.</span>}
             </div>
             <Table>
               <TableHeader>
