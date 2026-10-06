@@ -292,8 +292,9 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
     priorYear = toArr(owner.fiscalYear - 1);
     priorYear2 = toArr(owner.fiscalYear - 2);
   }
-  // Months of last year that are booked (through the last month with any activity), so a
-  // year still in progress averages over what has closed rather than over twelve
+  // Months of last year that are booked: through the last month with any activity, but never
+  // the month in progress (its early syncs would drag every average down). Close status is not
+  // used because periods are often closed well after the books are usable.
   let priorYearMonths = 0;
   for (const series of Object.values(priorYear)) {
     for (let i = 11; i >= priorYearMonths; i--) {
@@ -303,6 +304,9 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
       }
     }
   }
+  const today = new Date();
+  if (owner.fiscalYear - 1 === today.getUTCFullYear()) priorYearMonths = Math.min(priorYearMonths, today.getUTCMonth());
+  else if (owner.fiscalYear - 1 > today.getUTCFullYear()) priorYearMonths = 0;
 
   const sectionOf = (m: MasterInfo) => INCOME_STATEMENT_SECTIONS.find((s) => s.classification === m.classification && s.accountTypes.includes(m.accountType))?.id ?? null;
   const topMasters = masters.filter((m) => (m.classification === "Revenue" || m.classification === "Expense") && !m.parentAccountId);
