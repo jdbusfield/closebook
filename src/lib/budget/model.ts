@@ -39,7 +39,8 @@ export interface ModelItem {
   /** Edited here (items) or through its source */
   editable: boolean;
   /** For breakout items: last year's total behind the method */
-  history: { priorYear: number; trailing12: number } | null;
+  /** Last year's total (and months, once the item has been recomputed) for the item's own history */
+  history: { priorYear: number; trailing12: number; priorYearMonths?: number[] } | null;
   /** A pod: the pieces that net to this item (a lease and its subleases) */
   parts?: Array<{ label: string; months: number[]; total: number; note: string | null }>;
 }
@@ -176,7 +177,7 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
         sourceLineName: method.source_master_id ? masterById.get(method.source_master_id)?.name : undefined,
       });
     }
-    const hist = (metaOf(b).history ?? null) as { priorYear?: number; trailing12?: number } | null;
+    const hist = (metaOf(b).history ?? null) as { priorYear?: number; priorYearMonths?: number[]; trailing12?: number } | null;
     push(top, {
       id: b.id,
       kind,
@@ -190,7 +191,9 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
       months: m,
       total: total(m),
       editable: kind === "method" || kind === "manual",
-      history: hist && (hist.priorYear != null || hist.trailing12 != null) ? { priorYear: Number(hist.priorYear ?? 0), trailing12: Number(hist.trailing12 ?? 0) } : null,
+      history: hist && (hist.priorYear != null || hist.trailing12 != null)
+        ? { priorYear: Number(hist.priorYear ?? 0), trailing12: Number(hist.trailing12 ?? 0), ...(Array.isArray(hist.priorYearMonths) && hist.priorYearMonths.length === 12 ? { priorYearMonths: hist.priorYearMonths.map(Number) } : {}) }
+        : null,
     });
   }
   for (const [key, g] of payroll) {
@@ -289,6 +292,17 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
     priorYear = toArr(owner.fiscalYear - 1);
     priorYear2 = toArr(owner.fiscalYear - 2);
   }
+  // Months of last year that are booked (through the last month with any activity), so a
+  // year still in progress averages over what has closed rather than over twelve
+  let priorYearMonths = 0;
+  for (const series of Object.values(priorYear)) {
+    for (let i = 11; i >= priorYearMonths; i--) {
+      if (series[i]) {
+        priorYearMonths = i + 1;
+        break;
+      }
+    }
+  }
 
   const sectionOf = (m: MasterInfo) => INCOME_STATEMENT_SECTIONS.find((s) => s.classification === m.classification && s.accountTypes.includes(m.accountType))?.id ?? null;
   const topMasters = masters.filter((m) => (m.classification === "Revenue" || m.classification === "Expense") && !m.parentAccountId);
@@ -342,6 +356,7 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
     lines,
     priorYear,
     priorYear2,
+    priorYearMonths,
     belowEbitda: { months: below.map((v) => Math.round(v * 100) / 100), priorYear: belowPrior.map((v) => Math.round(v * 100) / 100) },
     lineMasters: topMasters.filter((m) => MODEL_SECTIONS.has(sectionOf(m) ?? "")).map((m) => ({ id: m.id, name: m.name, accountNumber: m.accountNumber })),
   };
