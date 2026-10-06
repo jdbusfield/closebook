@@ -729,6 +729,8 @@ function BuildFromPriorDialog({ versionId, prior, only, onClose, onSaved }: { ve
   const [basis, setBasis] = useState<"actuals" | "budget">("actuals");
   const [pct, setPct] = useState("");
   const [replaceItems, setReplaceItems] = useState(false);
+  // Replacing deletes items for good, so the first click only asks
+  const [confirming, setConfirming] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
 
@@ -764,8 +766,14 @@ function BuildFromPriorDialog({ versionId, prior, only, onClose, onSaved }: { ve
   const chosen = lines.filter((l) => picked.has(l.masterId) && canBuild(l));
   const span = booked > 0 && booked < 12 ? `Jan–${MONTH_ABBRS[booked - 1]}` : String(prior);
 
+  const removing = replaceItems ? chosen.reduce((t, l) => t + l.otherItems, 0) : 0;
+  const removingLines = replaceItems ? chosen.filter((l) => l.otherItems > 0).length : 0;
   const apply = async () => {
     if (!chosen.length) return;
+    if (removing > 0 && !confirming) {
+      setConfirming(true);
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch("/api/budget/builds/from-prior", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ versionId, masterAccountIds: chosen.map((l) => l.masterId), basis, pct: p, replaceItems }) });
@@ -819,7 +827,7 @@ function BuildFromPriorDialog({ versionId, prior, only, onClose, onSaved }: { ve
                 <Input id="prior-pct" type="number" step="0.1" value={pct} onChange={(e) => setPct(e.target.value)} placeholder="0" className="h-9 w-28" />
               </div>
               <label className="flex items-center gap-2 pb-2 text-sm">
-                <Switch checked={replaceItems} onCheckedChange={setReplaceItems} />
+                <Switch checked={replaceItems} onCheckedChange={(v) => { setReplaceItems(v); setConfirming(false); }} />
                 <span>Replace the line&apos;s other items</span>
               </label>
               {basis === "budget" && preview.budgetVersions === 0 && <span className="text-xs text-muted-foreground">No active {prior} budget version covers this group.</span>}
@@ -848,14 +856,15 @@ function BuildFromPriorDialog({ versionId, prior, only, onClose, onSaved }: { ve
                           aria-label={`Build ${l.name}`}
                           disabled={!ok}
                           checked={ok && picked.has(l.masterId)}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            setConfirming(false);
                             setPicked((prev) => {
                               const n = new Set(prev);
                               if (e.target.checked) n.add(l.masterId);
                               else n.delete(l.masterId);
                               return n;
-                            })
-                          }
+                            });
+                          }}
                         />
                       </TableCell>
                       <TableCell className="whitespace-nowrap"><span className="mr-1.5 text-xs tabular-nums text-muted-foreground">{l.accountNumber}</span>{l.name}</TableCell>
@@ -878,11 +887,16 @@ function BuildFromPriorDialog({ versionId, prior, only, onClose, onSaved }: { ve
             </Table>
           </div>
         )}
+        {confirming && removing > 0 && (
+          <p className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
+            This permanently removes {removing} item{removing === 1 ? "" : "s"} on {removingLines} line{removingLines === 1 ? "" : "s"} (typed and method items; entered amounts and run rates are not touched). There is no undo.
+          </p>
+        )}
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={apply} disabled={saving || !chosen.length}>
+          <Button onClick={apply} disabled={saving || !chosen.length} variant={confirming && removing > 0 ? "destructive" : "default"}>
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Build {chosen.length} line{chosen.length === 1 ? "" : "s"}
+            {confirming && removing > 0 ? `Remove ${removing} item${removing === 1 ? "" : "s"} and build` : `Build ${chosen.length} line${chosen.length === 1 ? "" : "s"}`}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -25,7 +25,7 @@ export interface PriorBaseLine {
   name: string;
   /** Why this line can't take a base (fed by the fleet driver, a schedule, ...); null when it can */
   blockedBy: string | null;
-  /** Items on the line other than an earlier base (they stay; the base is added beside them) */
+  /** Typed and method items on the line other than an earlier base (the ones "replace" removes) */
   otherItems: number;
   /** An earlier base on this line, replaced when building again */
   hasBase: boolean;
@@ -76,7 +76,7 @@ export async function loadPriorBase(admin: Admin, owner: VersionOwner): Promise<
   const lines: PriorBaseLine[] = (revenue?.masters ?? []).map((m) => {
     const fed = m.items.find((it) => FED_KINDS.has(it.kind));
     const bases = m.items.filter((it) => it.priorBase);
-    const others = m.items.filter((it) => !it.priorBase && it.kind !== "run_rate");
+    const others = m.items.filter((it) => !it.priorBase && (it.kind === "manual" || it.kind === "method"));
     const prior = model.priorYear[m.id] ?? new Array(12).fill(0);
     const b = budgetByMaster.get(m.id);
     const budgetMonths = b ? Array.from({ length: 12 }, (_, i) => round2(b[String(i + 1)] ?? 0)) : null;
