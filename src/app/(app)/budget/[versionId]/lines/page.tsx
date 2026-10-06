@@ -33,6 +33,7 @@ interface Item {
   editable: boolean;
   history: { priorYear: number; trailing12: number; priorYearMonths?: number[] } | null;
   parts?: Array<{ label: string; months: number[]; total: number; note: string | null }>;
+  priorBase?: boolean;
 }
 interface MasterLine {
   id: string;
@@ -81,6 +82,8 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
   const [busy, setBusy] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ master: MasterLine; item: Item | null } | null>(null);
   const [removing, setRemoving] = useState<{ master: MasterLine; item: Item } | null>(null);
+  // "Build from last year": every revenue line, or just one (only)
+  const [fromPrior, setFromPrior] = useState<{ only: string | null } | null>(null);
   const fiscalYear = info?.version.fiscal_year ?? new Date().getFullYear() + 1;
 
   const load = useCallback(async () => {
@@ -264,7 +267,16 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
                 return (
                   <Fragment key={s.id}>
                     <TableRow className="bg-muted/50">
-                      <TableCell colSpan={colSpan} className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{s.title}</TableCell>
+                      <TableCell colSpan={colSpan} className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        <div className="flex items-center gap-3">
+                          <span>{s.title}</span>
+                          {s.id === "revenue" && !readOnly && (
+                            <Button variant="outline" size="sm" className="h-6 px-2 text-xs normal-case tracking-normal" onClick={() => setFromPrior({ only: null })}>
+                              Build revenue from {prior}
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
                     </TableRow>
                     {s.masters.map((m) => {
                       const expanded = open.has(m.id);
@@ -342,6 +354,11 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
                                       <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditing({ master: m, item: null })}>
                                         <Plus className="mr-1 h-3 w-3" /> Add item
                                       </Button>
+                                      {s.id === "revenue" && (
+                                        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setFromPrior({ only: m.id })} title={`${prior} actuals or the approved ${prior} budget as this line's base`}>
+                                          Build from {prior}
+                                        </Button>
+                                      )}
                                       <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => breakout(m)} disabled={busy === m.id} title="One run-rate item per account that fed this line last year">
                                         {busy === m.id ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
                                         Break out by account
@@ -405,6 +422,20 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
           onSaved={async () => {
             setEditing(null);
             setOpen((prev) => new Set(prev).add(editing.master.id));
+            await load();
+          }}
+        />
+      )}
+
+      {fromPrior && (
+        <BuildFromPriorDialog
+          versionId={versionId}
+          prior={prior}
+          only={fromPrior.only}
+          onClose={() => setFromPrior(null)}
+          onSaved={async (ids) => {
+            setFromPrior(null);
+            setOpen((prev) => new Set([...prev, ...ids]));
             await load();
           }}
         />
@@ -673,6 +704,180 @@ function ItemDialog({
           <Button onClick={save} disabled={saving}>
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             {item ? "Save" : "Add item"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface PriorBaseLine {
+  masterId: string;
+  accountNumber: string | null;
+  name: string;
+  blockedBy: string | null;
+  otherItems: number;
+  hasBase: boolean;
+  actualBooked: number;
+  actualMonths: number[];
+  budgetMonths: number[] | null;
+}
+
+/** Revenue lines from last year: actuals or the approved budget, moved by a percent, line by line. */
+function BuildFromPriorDialog({ versionId, prior, only, onClose, onSaved }: { versionId: string; prior: number; only: string | null; onClose: () => void; onSaved: (masterIds: string[]) => Promise<void> }) {
+  const [preview, setPreview] = useState<{ bookedMonths: number; budgetVersions: number; lines: PriorBaseLine[] } | null>(null);
+  const [basis, setBasis] = useState<"actuals" | "budget">("actuals");
+  const [pct, setPct] = useState("");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const res = await fetch(`/api/budget/builds/from-prior?versionId=${versionId}`);
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error ?? "Failed to load last year");
+        if (!live) return;
+        setPreview(json);
+        const usable = (json.lines as PriorBaseLine[]).filter((l) => !l.blockedBy && (only ? l.masterId === only : true));
+        setPicked(new Set(usable.map((l) => l.masterId)));
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to load last year");
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [versionId, only]);
+
+  const p = Number(pct) || 0;
+  const booked = preview?.bookedMonths ?? 0;
+  const lines = (preview?.lines ?? []).filter((l) => (only ? l.masterId === only : true));
+  const baseOf = (l: PriorBaseLine) => (basis === "actuals" ? (booked > 0 ? l.actualMonths : null) : l.budgetMonths);
+  const resultOf = (l: PriorBaseLine) => {
+    const b = baseOf(l);
+    return b ? sum(b) * (1 + p / 100) : null;
+  };
+  const canBuild = (l: PriorBaseLine) => !l.blockedBy && !!baseOf(l);
+  const chosen = lines.filter((l) => picked.has(l.masterId) && canBuild(l));
+  const span = booked > 0 && booked < 12 ? `Jan–${MONTH_ABBRS[booked - 1]}` : String(prior);
+
+  const apply = async () => {
+    if (!chosen.length) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/budget/builds/from-prior", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ versionId, masterAccountIds: chosen.map((l) => l.masterId), basis, pct: p }) });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Build failed");
+      const built = (json.built ?? []) as string[];
+      const skipped = (json.skipped ?? []) as Array<{ name: string; reason: string }>;
+      toast.success(`${built.length} line${built.length === 1 ? "" : "s"} built from ${prior} ${basis}${skipped.length ? `; skipped ${skipped.map((x) => `${x.name} (${x.reason})`).join(", ")}` : ""}`);
+      await onSaved(chosen.map((l) => l.masterId));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Build failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const noteFor = (l: PriorBaseLine) => {
+    if (l.blockedBy) return l.blockedBy;
+    if (!baseOf(l)) return `No ${prior} ${basis}`;
+    const parts: string[] = [];
+    if (l.hasBase) parts.push("replaces its base");
+    if (l.otherItems > 0) parts.push(`${l.otherItems} other item${l.otherItems === 1 ? "" : "s"} stay`);
+    return parts.join("; ");
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>{only ? "Build this line" : "Build revenue"} from {prior}</DialogTitle>
+          <DialogDescription>
+            Each chosen line gets one item for {prior + 1}: twelve months of {prior}, moved by the percent. Building again replaces that item; other items on the line stay.
+            Actuals use the booked months as they were ({span}) and the rest at their average.
+          </DialogDescription>
+        </DialogHeader>
+        {!preview ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading {prior}</div>
+        ) : (
+          <div className="grid gap-4">
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="grid gap-1.5">
+                <Label>Base</Label>
+                <div className="flex w-fit overflow-hidden rounded-md border">
+                  {([["actuals", `${prior} actuals`], ["budget", `${prior} budget`]] as const).map(([v, l], i) => (
+                    <button key={v} type="button" onClick={() => setBasis(v)} aria-pressed={basis === v} className={cn("px-3 py-1.5 text-sm", i > 0 && "border-l", basis === v ? "bg-foreground font-medium text-background" : "text-muted-foreground hover:bg-muted/40")}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="prior-pct">Change %</Label>
+                <Input id="prior-pct" type="number" step="0.1" value={pct} onChange={(e) => setPct(e.target.value)} placeholder="0" className="h-9 w-28" />
+              </div>
+              {basis === "budget" && preview.budgetVersions === 0 && <span className="text-xs text-muted-foreground">No approved {prior} budget covers this group.</span>}
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8" />
+                  <TableHead>Line</TableHead>
+                  <TableHead className="whitespace-nowrap text-right">{prior} actual ({span})</TableHead>
+                  <TableHead className="whitespace-nowrap text-right">{prior} actuals, 12 mo</TableHead>
+                  <TableHead className="whitespace-nowrap text-right">{prior} budget</TableHead>
+                  <TableHead className="whitespace-nowrap text-right">{prior + 1} base</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {lines.map((l) => {
+                  const ok = canBuild(l);
+                  const result = resultOf(l);
+                  return (
+                    <TableRow key={l.masterId} className={cn(!ok && "text-muted-foreground")}>
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          aria-label={`Build ${l.name}`}
+                          disabled={!ok}
+                          checked={ok && picked.has(l.masterId)}
+                          onChange={(e) =>
+                            setPicked((prev) => {
+                              const n = new Set(prev);
+                              if (e.target.checked) n.add(l.masterId);
+                              else n.delete(l.masterId);
+                              return n;
+                            })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap"><span className="mr-1.5 text-xs tabular-nums text-muted-foreground">{l.accountNumber}</span>{l.name}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtUsd(l.actualBooked)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{booked > 0 ? fmtUsd(sum(l.actualMonths)) : ""}</TableCell>
+                      <TableCell className="text-right tabular-nums">{l.budgetMonths ? fmtUsd(sum(l.budgetMonths)) : "—"}</TableCell>
+                      <TableCell className="text-right font-medium tabular-nums">{ok && result != null ? fmtUsd(result) : ""}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{noteFor(l)}</TableCell>
+                    </TableRow>
+                  );
+                })}
+                <TableRow className="font-medium">
+                  <TableCell />
+                  <TableCell>Chosen lines</TableCell>
+                  <TableCell colSpan={3} />
+                  <TableCell className="text-right tabular-nums">{fmtUsd(chosen.reduce((t, l) => t + (resultOf(l) ?? 0), 0))}</TableCell>
+                  <TableCell />
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={apply} disabled={saving || !chosen.length}>
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Build {chosen.length} line{chosen.length === 1 ? "" : "s"}
           </Button>
         </DialogFooter>
       </DialogContent>

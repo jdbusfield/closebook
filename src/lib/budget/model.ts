@@ -38,11 +38,12 @@ export interface ModelItem {
   total: number;
   /** Edited here (items) or through its source */
   editable: boolean;
-  /** For breakout items: last year's total behind the method */
   /** Last year's total (and months, once the item has been recomputed) for the item's own history */
   history: { priorYear: number; trailing12: number; priorYearMonths?: number[] } | null;
   /** A pod: the pieces that net to this item (a lease and its subleases) */
   parts?: Array<{ label: string; months: number[]; total: number; note: string | null }>;
+  /** Built from last year by "Build from last year" (replaced, not stacked, when built again) */
+  priorBase?: boolean;
 }
 
 interface BuildRow {
@@ -191,6 +192,7 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
       months: m,
       total: total(m),
       editable: kind === "method" || kind === "manual",
+      priorBase: !!metaOf(b).prior_base,
       history: hist && (hist.priorYear != null || hist.trailing12 != null)
         ? { priorYear: Number(hist.priorYear ?? 0), trailing12: Number(hist.trailing12 ?? 0), ...(Array.isArray(hist.priorYearMonths) && hist.priorYearMonths.length === 12 ? { priorYearMonths: hist.priorYearMonths.map(Number) } : {}) }
         : null,
