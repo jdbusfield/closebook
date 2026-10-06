@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { HDR_ENTITY_ID } from "@/lib/inquiries/shared";
-import { categoryFor, normalizePricing, quoteTrailers, rentalDays, MAX_DAYS } from "@/lib/inquiries/ai-pricing";
+import { categoryFor, normalizePricing, quoteTrailers, rentalDays, saySentence, MAX_DAYS } from "@/lib/inquiries/ai-pricing";
 
 export const runtime = "nodejs";
 
@@ -30,10 +30,6 @@ function authorized(req: Request): boolean {
   const b = Buffer.from(secret, "utf8");
   return a.length === b.length && timingSafeEqual(a, b);
 }
-
-const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
-
-const money = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 
 export async function POST(req: Request) {
   if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -78,10 +74,6 @@ export async function POST(req: Request) {
     pricing
   );
 
-  // Spell the count out so the voice never reads "2 4-stall" as "twenty-four stall".
-  const count = NUMBER_WORDS[q.trailers] ?? String(q.trailers);
-  const trailerWord = q.trailers === 1 ? "one 4-stall trailer" : `${count} 4-stall trailers`;
-  const dayWord = q.days === 1 ? "the day" : `the ${q.days}-day rental`;
   return NextResponse.json({
     trailers: q.trailers,
     days: q.days,
@@ -93,6 +85,6 @@ export async function POST(req: Request) {
     attendant_total: q.attendant_total,
     total: q.total,
     say_total: q.say_total,
-    say: `For ${q.guests} guests we'd recommend ${trailerWord}. We'd typically quote around ${money(q.say_total)} for ${dayWord}${q.attendant_hours ? `, including an attendant for ${q.attendant_hours} hours` : ""}.`,
+    say: saySentence(q),
   });
 }

@@ -9,7 +9,8 @@ import {
   type AiCallRow,
   type TranscriptTurn,
 } from "@/lib/inquiries/ai-call";
-import { sendAiCallReport, type RawTranscriptTurn, type ReportInquiry } from "@/lib/inquiries/ai-call-report";
+import { fromQuote, sendAiCallReport, type QuotedPrice, type RawTranscriptTurn, type ReportInquiry } from "@/lib/inquiries/ai-call-report";
+import { categoryFor, normalizePricing, parseGuests, quoteTrailers, rentalDays } from "@/lib/inquiries/ai-pricing";
 import { resendClient } from "@/lib/inquiries/funnel-send";
 
 export const runtime = "nodejs";
@@ -194,12 +195,31 @@ export async function POST(request: Request) {
         durationSecs: duration,
         transcript: (data.transcript ?? []) as RawTranscriptTurn[],
         conversationId,
+        expectedQuote: await expectedQuote(admin, inquiry, collected),
       });
     }
   }
   await admin.from("rental_inquiries").update({ last_activity_at: nowIso }).eq("id", call.inquiry_id);
 
   return NextResponse.json({ ok: true });
+}
+
+/** Price-table quote for the confirmed guest count (else the form's) and the form's dates. */
+async function expectedQuote(
+  admin: ReturnType<typeof createAdminClient>,
+  inquiry: ReportInquiry,
+  collected: Record<string, unknown>
+): Promise<QuotedPrice | null> {
+  const guests = parseGuests(collected.guest_count as string | number | null) ?? parseGuests(inquiry.guests);
+  const days = inquiry.start_date ? rentalDays(inquiry.start_date, inquiry.end_date) : null;
+  if (!guests || !days) return null;
+  const { data, error } = await admin
+    .from("rental_inquiry_ai_pricing")
+    .select("*")
+    .eq("entity_id", inquiry.entity_id)
+    .maybeSingle();
+  if (error) return null;
+  return fromQuote(quoteTrailers({ category: categoryFor(inquiry.use_case), guests, days }, normalizePricing(data)));
 }
 
 async function loadInquiry(

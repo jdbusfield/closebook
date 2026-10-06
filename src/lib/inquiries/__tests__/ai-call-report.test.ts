@@ -98,3 +98,56 @@ test("missed calls: voicemail and no answer after the retry", () => {
   assert.match(na.subject, /No answer after 2 tries$/);
   assert.match(na.text, /Email: sarah@example\.com/);
 });
+
+const steveInquiry: ReportInquiry = { ...inquiry, reference: "HDR-STEVE", name: "Steve", start_date: "2027-04-10", end_date: "2027-04-10", guests: "150", location: "92504" };
+const expected1249 = { trailers: 1, days: 1, rate_category: "wedding / event", discount_pct: 0, attendant_hours: 0, total: 1249, say_total: 1249, per_trailer_list: 1249, per_trailer: 1249, attendant_total: 0 };
+
+test("Steve, Oct 6: a made-up price with no lookup is flagged with the correct price", () => {
+  const r = buildAiCallReport({
+    kind: "answered", inquiry: steveInquiry, attempt: 1, outcome: "completed",
+    collected: { quote_response: "hesitant", guest_count: 150 },
+    transcript: [
+      { role: "agent", message: "So we'd typically quote around three thousand dollars for that day, which includes delivery, setup, pickup and the generator." },
+      { role: "user", message: "I do not need a generator." },
+    ],
+    expectedQuote: expected1249,
+  });
+  assert.match(r.subject, /WRONG PRICE SPOKEN: said \$3,000, correct \$1,249$/);
+  assert.match(r.text, /WARNING: The AI said around \$3,000, but the price table says \$1,249 \(it never ran a price lookup\)/);
+  assert.match(r.text, /CORRECT PRICE \(PRICE TABLE\)/);
+  assert.deepEqual(r.data.spoken_amounts, [3000]);
+});
+
+test("form price quoted correctly without a lookup is not flagged", () => {
+  const r = buildAiCallReport({
+    kind: "answered", inquiry: steveInquiry, attempt: 1, outcome: "completed",
+    collected: { quote_response: "accepted", guest_count: 150 },
+    transcript: [{ role: "agent", message: "For 150 guests we'd recommend one 4-stall trailer. We'd typically quote around $1,249 for the day." }],
+    expectedQuote: expected1249,
+  });
+  assert.match(r.subject, /Accepted around \$1,249 \(1 trailer\)$/);
+  assert.match(r.text, /Source: form price given to the agent/);
+  assert.equal(r.data.price_warning, null);
+});
+
+test("a price with nothing to check against is still flagged", () => {
+  const r = buildAiCallReport({
+    kind: "answered", inquiry: { ...steveInquiry, guests: null }, attempt: 1, outcome: "completed",
+    collected: { quote_response: "accepted" },
+    transcript: [{ role: "agent", message: "We'd typically quote around two thousand dollars." }],
+  });
+  assert.match(r.subject, /WRONG PRICE SPOKEN: said \$2,000$/);
+  assert.match(r.text, /without a price lookup, and there is no price-table quote/);
+});
+
+test("echoing the customer's budget is not a price", () => {
+  const r = buildAiCallReport({
+    kind: "answered", inquiry: steveInquiry, attempt: 1, outcome: "completed",
+    collected: { quote_response: "hesitant", customer_budget: "2500" },
+    transcript: [
+      ...transcript.slice(0, 3),
+      { role: "agent", message: "Understood, about 2,500 dollars. Our team will follow up with the best price we can." },
+    ],
+  });
+  assert.equal(r.data.price_warning, null);
+});

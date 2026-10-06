@@ -159,3 +159,116 @@ export function guestBands(p: AiPricing, bands = 5): { label: string; guests: nu
     trailers: i + 1,
   }));
 }
+
+// ---------------------------------------------------------------------------
+// Spoken quote helpers (agent tool, dial-time form price, call report)
+// ---------------------------------------------------------------------------
+
+const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+
+const money = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+
+/** The sentence the agent says. Spells the count out so "2 4-stall" is never read as "twenty-four stall". */
+export function saySentence(q: Quote): string {
+  const count = NUMBER_WORDS[q.trailers] ?? String(q.trailers);
+  const trailerWord = q.trailers === 1 ? "one 4-stall trailer" : `${count} 4-stall trailers`;
+  const dayWord = q.days === 1 ? "the day" : `the ${q.days}-day rental`;
+  return `For ${q.guests} guests we'd recommend ${trailerWord}. We'd typically quote around ${money(q.say_total)} for ${dayWord}${q.attendant_hours ? `, including an attendant for ${q.attendant_hours} hours` : ""}.`;
+}
+
+/** Guest count from a free-text form field: the largest number in it ("100-150" -> 150). */
+export function parseGuests(raw: string | number | null | undefined): number | null {
+  if (typeof raw === "number") return raw > 0 ? Math.round(raw) : null;
+  const nums = (raw ?? "").replace(/,/g, "").match(/\d+/g)?.map(Number).filter((n) => n > 0) ?? [];
+  return nums.length ? Math.max(...nums) : null;
+}
+
+/**
+ * The quote for the details on the website form, or null when the form is
+ * missing the guest count or a usable date. Closebook works this out before
+ * dialing so the agent does not have to remember to call get_price when
+ * nothing changes on the call.
+ */
+export function formQuote(
+  inq: { use_case: string | null; guests: string | number | null; start_date: string | null; end_date: string | null },
+  p: AiPricing
+): Quote | null {
+  const guests = parseGuests(inq.guests);
+  const days = inq.start_date ? rentalDays(inq.start_date, inq.end_date) : null;
+  if (!guests || !days) return null;
+  return quoteTrailers({ category: categoryFor(inq.use_case), guests, days }, p);
+}
+
+const UNITS: Record<string, number> = {
+  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,
+  seventeen: 17, eighteen: 18, nineteen: 19,
+};
+const TENS: Record<string, number> = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+
+/** Value of a run of number words: "three thousand", "eleven hundred forty nine", "thirty three sixty" (=3360). */
+function wordsValue(words: string[]): number | null {
+  if (!words.length) return null;
+  if (words.includes("hundred") || words.includes("thousand")) {
+    let total = 0;
+    let current = 0;
+    for (const w of words) {
+      if (w in UNITS) current += UNITS[w];
+      else if (w in TENS) current += TENS[w];
+      else if (w === "hundred") current = (current || 1) * 100;
+      else if (w === "thousand") {
+        total += (current || 1) * 1000;
+        current = 0;
+      }
+    }
+    return total + current;
+  }
+  // Paired style: "twelve forty-nine" = 12|49, "eight forty-nine" = 8|49.
+  const groups: number[] = [];
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    if (w in TENS) {
+      const next = words[i + 1];
+      if (next && next in UNITS && UNITS[next] > 0 && UNITS[next] < 10) {
+        groups.push(TENS[w] + UNITS[next]);
+        i++;
+      } else groups.push(TENS[w]);
+    } else if (w in UNITS) groups.push(UNITS[w]);
+  }
+  if (groups.length === 1) return groups[0];
+  if (groups.length === 2 && groups[1] < 100) return groups[0] * 100 + groups[1];
+  return null;
+}
+
+/**
+ * Dollar amounts the agent said, in digits or words. Counts "$1,249",
+ * "1,249 dollars", "around 1,249", "three thousand dollars" and
+ * "around twelve forty-nine". Ignores amounts under $100 (trailer counts).
+ */
+export function spokenAmounts(text: string): number[] {
+  const out: number[] = [];
+  const t = text.toLowerCase();
+  const digit = /\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|(\d{1,3}(?:,\d{3})+|\d{3,})(?:\.\d+)?\s*(?:dollars|bucks)|(?:around|about|roughly|approximately)\s+(\d{1,3}(?:,\d{3})+|\d{3,})/g;
+  for (const m of t.matchAll(digit)) {
+    const n = Number((m[1] ?? m[2] ?? m[3]).replace(/,/g, ""));
+    if (n >= 100) out.push(n);
+  }
+  const tokens = t.replace(/[^a-z0-9$\s-]/g, " ").split(/[\s-]+/).filter(Boolean);
+  const isNum = (w: string) => w in UNITS || w in TENS || w === "hundred" || w === "thousand";
+  for (let i = 0; i < tokens.length; i++) {
+    if (!isNum(tokens[i])) continue;
+    let j = i;
+    const run: string[] = [];
+    while (j < tokens.length && (isNum(tokens[j]) || (tokens[j] === "and" && run.length))) {
+      if (tokens[j] !== "and") run.push(tokens[j]);
+      j++;
+    }
+    const before = tokens[i - 1];
+    const after = tokens[j];
+    const priced = after === "dollars" || after === "bucks" || ["around", "about", "roughly", "approximately"].includes(before ?? "");
+    const v = wordsValue(run);
+    if (priced && v != null && v >= 100) out.push(v);
+    i = j - 1;
+  }
+  return out;
+}
