@@ -83,7 +83,7 @@ export async function POST(request: Request) {
       const { data: added, error } = await admin
         .from("budget_builds")
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .insert([priorBaseRow(owner, line, basis, pct, preview.bookedMonths) as any])
+        .insert([priorBaseRow(owner, line, basis, pct, preview.bookedMonths, preview.actualsSource) as any])
         .select("id")
         .single();
       if (error) throw new Error(`Could not add the base on ${line.name}: ${error.message}`);

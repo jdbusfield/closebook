@@ -729,7 +729,7 @@ interface PriorBaseLine {
 
 /** Revenue lines from last year: actuals or the active budget version, moved by a percent, line by line. */
 function BuildFromPriorDialog({ versionId, prior, only, onClose, onSaved }: { versionId: string; prior: number; only: string | null; onClose: () => void; onSaved: (masterIds: string[]) => Promise<void> }) {
-  const [preview, setPreview] = useState<{ bookedMonths: number; budgetVersions: number; lines: PriorBaseLine[] } | null>(null);
+  const [preview, setPreview] = useState<{ bookedMonths: number; budgetVersions: number; actualsSource?: "financial_model" | "gl"; lines: PriorBaseLine[] } | null>(null);
   const [basis, setBasis] = useState<"actuals" | "budget">("actuals");
   const [pct, setPct] = useState("");
   const [replaceItems, setReplaceItems] = useState(false);
@@ -834,6 +834,9 @@ function BuildFromPriorDialog({ versionId, prior, only, onClose, onSaved }: { ve
                 <Switch checked={replaceItems} onCheckedChange={(v) => { setReplaceItems(v); setConfirming(false); }} />
                 <span>Replace the line&apos;s other items</span>
               </label>
+              {basis === "actuals" && preview.actualsSource === "gl" && (
+                <span className="text-xs text-amber-700">The Financial Model could not be built just now, so these actuals are the general ledger. Close and reopen to try again.</span>
+              )}
               {basis === "budget" && preview.budgetVersions === 0 && <span className="text-xs text-muted-foreground">No active {prior} budget version covers this group.</span>}
             </div>
             <Table>

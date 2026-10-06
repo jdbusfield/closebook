@@ -15,9 +15,9 @@ interface StatementLine {
   drillDownMeta?: { type: string; masterAccountIds?: string[] };
 }
 
-// The statements take seconds to build; a budget page reloads often, so keep a group's
-// year for a few minutes in this server instance
-const TTL_MS = 10 * 60 * 1000;
+// The statements take seconds to build; a budget page reloads often, so keep a group's year
+// briefly in this server instance (short, so pro forma or allocation edits show up quickly)
+const TTL_MS = 2 * 60 * 1000;
 const BUILD_LIMIT_MS = 25_000;
 const cache = new Map<string, { at: number; value: Record<string, number[]> }>();
 
