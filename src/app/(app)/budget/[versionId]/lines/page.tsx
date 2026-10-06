@@ -63,6 +63,13 @@ const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "Ju
 const sum = (a: number[]) => a.reduce((t, v) => t + v, 0);
 const addTo = (t: number[], s: number[]) => s.forEach((v, i) => (t[i] += v));
 const zeros = () => new Array(12).fill(0) as number[];
+/**
+ * Last year's total for an item over the booked months. Items recomputed before months were kept
+ * only have a full-year total that can include the month in progress, so show nothing until a
+ * Recompute fills the months (unless last year is complete).
+ */
+const itemPriorTotal = (h: Item["history"], bookedMonths: number): number | null =>
+  !h ? null : h.priorYearMonths ? sum(h.priorYearMonths.slice(0, bookedMonths)) : bookedMonths >= 12 ? h.priorYear : null;
 
 export default function BudgetModelPage({ params }: { params: Promise<{ versionId: string }> }) {
   const { versionId } = use(params);
@@ -310,7 +317,7 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
                                       )}
                                     </div>
                                   </TableCell>
-                                  <MonthCells months={it.months} priorTotal={it.history ? it.history.priorYear : null} priorMonths={pm} invert={invert} showPrior={showPrior} className={cn("py-1.5 text-xs", it.parts ? "text-foreground" : "text-muted-foreground")} />
+                                  <MonthCells months={it.months} priorTotal={itemPriorTotal(it.history, pm)} priorMonths={pm} invert={invert} showPrior={showPrior} className={cn("py-1.5 text-xs", it.parts ? "text-foreground" : "text-muted-foreground")} />
                                 </TableRow>
                                 {(it.parts ?? []).map((p, idx) => (
                                   <TableRow key={idx} className="text-xs text-muted-foreground">
@@ -346,8 +353,8 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
                               {showPrior && p && (
                                 <TableRow className="text-xs text-muted-foreground">
                                   <TableCell className="py-1 pl-9">{prior} actual</TableCell>
-                                  {p.map((v, i) => <TableCell key={i} className="py-1 text-right tabular-nums">{v ? fmtUsd(v) : ""}</TableCell>)}
-                                  <TableCell className="py-1 text-right tabular-nums">{fmtUsd(sum(p))}</TableCell>
+                                  {p.map((v, i) => <TableCell key={i} className="py-1 text-right tabular-nums">{v && i < pm ? fmtUsd(v) : ""}</TableCell>)}
+                                  <TableCell className="py-1 text-right tabular-nums">{fmtUsd(sum(p.slice(0, pm)))}</TableCell>
                                   <TableCell colSpan={3} />
                                 </TableRow>
                               )}
@@ -461,9 +468,9 @@ function ItemDialog({
   const prior = fiscalYear - 1;
 
   // Last year for this item: its own accounts once broken out, else the whole line
-  const own = accountIds?.length && item?.history ? item.history : null;
+  const own = accountIds?.length && item?.history && itemPriorTotal(item.history, priorMonths) != null ? item.history : null;
   const priorSeries = own ? (own.priorYearMonths ?? null) : priorLine;
-  const priorTotal = own ? own.priorYear : priorLine ? sum(priorLine) : null;
+  const priorTotal = own ? itemPriorTotal(own, priorMonths) : priorLine ? sum(priorLine.slice(0, priorMonths)) : null;
   const priorAvg = priorTotal != null && priorMonths > 0 ? priorTotal / priorMonths : null;
   const priorSpan = priorMonths > 0 && priorMonths < 12 ? `Jan–${MONTH_ABBRS[priorMonths - 1]}` : "full year";
   const whose = own ? `${accountIds!.length === 1 ? "this account" : `these ${accountIds!.length} accounts`}` : master.name;

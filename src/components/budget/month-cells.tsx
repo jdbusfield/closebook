@@ -16,13 +16,15 @@ export function changePct(now: number, prior: number): string {
  * Row of twelve month cells plus total, prior and change.
  * With priorMonths (the months of last year that are booked) it adds last year's
  * average month and compares averages, so a year still closing reads fairly.
- * priorTotal stands in for prior when only last year's total is known (an item).
+ * priorTotal stands in for prior when only last year's total is known (an item); the
+ * caller passes it already limited to the booked months.
  */
 export function MonthCells({ months, prior, priorTotal: priorTotalIn, priorMonths, showPrior, className, bold, invert }: { months: number[]; prior?: number[]; priorTotal?: number | null; priorMonths?: number; showPrior: boolean; className?: string; bold?: boolean; invert?: boolean }) {
   const total = sum(months);
   const hasPrior = !!prior || priorTotalIn != null;
-  const priorTotal = prior ? sum(prior) : (priorTotalIn ?? 0);
   const withAvg = priorMonths != null;
+  // With a booked-month count, last year counts only those months (never the month in progress)
+  const priorTotal = prior ? sum(withAvg ? prior.slice(0, priorMonths) : prior) : (priorTotalIn ?? 0);
   const priorAvg = withAvg && priorMonths ? priorTotal / priorMonths : 0;
   const pct = !hasPrior ? "" : withAvg ? (priorMonths ? changePct(total / 12, priorAvg) : "") : changePct(total, priorTotal);
   const up = withAvg ? total / 12 > priorAvg : total > priorTotal;
