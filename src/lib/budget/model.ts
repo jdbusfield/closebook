@@ -13,6 +13,7 @@ import { loadMasters, loadMonthlyActuals, monthKey, rollupActualsToParents, type
 import { loadMemberEntityIds, resolveVersionChartId } from "@/lib/budget/recompute";
 import { INCOME_STATEMENT_SECTIONS } from "@/lib/config/statement-sections";
 import { describeMethod, readMethod, type LineMethod } from "@/lib/budget/line-methods";
+import { loadFinancialModelYear } from "@/lib/budget/fm-actuals";
 
 const NIL_CLASS = "00000000-0000-0000-0000-000000000000";
 
@@ -294,6 +295,22 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
     priorYear = toArr(owner.fiscalYear - 1);
     priorYear2 = toArr(owner.fiscalYear - 2);
   }
+  // Last year as the Financial Model shows it (pro forma and allocations on) for every
+  // income-statement line; the raw GL stays as the fallback when it can't be built
+  let priorYearSource: "financial_model" | "gl" = "gl";
+  if (actuals && owner.reportingEntityId) {
+    try {
+      const fm = await loadFinancialModelYear(admin, owner, owner.fiscalYear - 1);
+      if (fm) {
+        for (const m of masters) {
+          if ((m.classification === "Revenue" || m.classification === "Expense") && !m.parentAccountId) priorYear[m.id] = fm[m.id] ?? new Array(12).fill(0);
+        }
+        priorYearSource = "financial_model";
+      }
+    } catch (err) {
+      console.error("budget model: Financial Model actuals failed, using the GL", err);
+    }
+  }
   // Months of last year that are booked: through the last month with any activity, but never
   // the month in progress (its early syncs would drag every average down). Close status is not
   // used because periods are often closed well after the books are usable.
@@ -363,6 +380,7 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
     priorYear,
     priorYear2,
     priorYearMonths,
+    priorYearSource,
     belowEbitda: { months: below.map((v) => Math.round(v * 100) / 100), priorYear: belowPrior.map((v) => Math.round(v * 100) / 100) },
     lineMasters: topMasters.filter((m) => MODEL_SECTIONS.has(sectionOf(m) ?? "")).map((m) => ({ id: m.id, name: m.name, accountNumber: m.accountNumber })),
   };

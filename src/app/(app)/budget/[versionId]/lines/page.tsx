@@ -56,6 +56,8 @@ interface Payload {
   priorYear: Record<string, number[]>;
   /** Months of last year that are booked; averages divide by this */
   priorYearMonths: number;
+  /** Where last year's actuals come from: the Financial Model (pro forma and allocations on) or the raw GL */
+  priorYearSource?: "financial_model" | "gl";
   belowEbitda: { months: number[]; priorYear: number[] };
   lineMasters: Array<{ id: string; name: string; accountNumber: string | null }>;
 }
@@ -231,7 +233,9 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
             <div className="flex flex-wrap items-center gap-3 text-sm">
               <label className="flex items-center gap-2">
                 <Switch checked={showPrior} onCheckedChange={setShowPrior} />
-                <span>{prior} actual</span>
+                <span title={data?.priorYearSource === "financial_model" ? `${prior} as the Financial Model shows it: pro forma adjustments and allocations on` : `${prior} from the general ledger`}>
+                  {prior} actual{data?.priorYearSource === "financial_model" ? " (Financial Model)" : ""}
+                </span>
               </label>
               <Button variant="outline" size="sm" onClick={() => setOpen(open.size === allIds.length ? new Set() : new Set(allIds))}>
                 {open.size === allIds.length ? "Collapse all" : "Expand all"}
