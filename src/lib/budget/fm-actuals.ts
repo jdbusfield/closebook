@@ -61,10 +61,17 @@ export async function loadFinancialModelYear(admin: Admin, owner: VersionOwner, 
     endMonth: 12,
     fiscalYearStartMonth: (fyEnd % 12) + 1,
   });
-  // A build that loses the race may still fail later; that must not surface as an unhandled rejection
-  build.catch(() => undefined);
+  // A build that loses the race still lands in the cache, so the next load is quick; a late
+  // failure must not surface as an unhandled rejection
+  build.then((r) => cache.set(key, { at: Date.now(), value: byMaster(r, buckets) })).catch(() => undefined);
   const result = await Promise.race([build, timeout]).finally(() => clearTimeout(timer));
+  const out = byMaster(result, buckets);
+  cache.set(key, { at: Date.now(), value: out });
+  return out;
+}
 
+/** Income-statement lines that are one master each, by month */
+function byMaster(result: Awaited<ReturnType<typeof buildConsolidatedStatements>>, buckets: Array<{ key: string }>): Record<string, number[]> {
   const out: Record<string, number[]> = {};
   for (const section of result.incomeStatement.sections as Array<{ lines: StatementLine[] }>) {
     for (const line of section.lines) {
@@ -73,6 +80,5 @@ export async function loadFinancialModelYear(admin: Admin, owner: VersionOwner, 
       out[id] = buckets.map((b) => Math.round((line.amounts[b.key] ?? 0) * 100) / 100);
     }
   }
-  cache.set(key, { at: Date.now(), value: out });
   return out;
 }
