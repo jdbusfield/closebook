@@ -469,8 +469,11 @@ function ItemDialog({
 
   // Last year for this item: its own accounts once broken out, else the whole line
   const own = accountIds?.length && item?.history && itemPriorTotal(item.history, priorMonths) != null ? item.history : null;
-  const priorSeries = own ? (own.priorYearMonths ?? null) : priorLine;
-  const priorTotal = own ? itemPriorTotal(own, priorMonths) : priorLine ? sum(priorLine.slice(0, priorMonths)) : null;
+  // An item broken out by account uses only its own accounts; until a Recompute stores them, show
+  // nothing rather than the whole line's figures, which would double count the line
+  const brokenOut = !!accountIds?.length;
+  const priorSeries = own ? (own.priorYearMonths ?? null) : brokenOut ? null : priorLine;
+  const priorTotal = own ? itemPriorTotal(own, priorMonths) : brokenOut ? null : priorLine ? sum(priorLine.slice(0, priorMonths)) : null;
   const priorAvg = priorTotal != null && priorMonths > 0 ? priorTotal / priorMonths : null;
   const priorSpan = priorMonths > 0 && priorMonths < 12 ? `Jan–${MONTH_ABBRS[priorMonths - 1]}` : "full year";
   const whose = own ? `${accountIds!.length === 1 ? "this account" : `these ${accountIds!.length} accounts`}` : master.name;
