@@ -88,6 +88,12 @@ function laWallClock(y: number, m: number, day: number, hour: number): Date {
   return new Date(guess.getTime() - laOffsetMinutes(first) * 60000);
 }
 
+/** Midnight LA time at the start of the LA calendar day containing `at`. */
+export function laDayStart(at: Date): Date {
+  const p = laParts(at);
+  return laWallClock(p.y, p.m, p.day, 0);
+}
+
 /** Inside the LA calling window on a weekday. */
 export function inCallingHours(at: Date, hours: { start: number; end: number }): boolean {
   const p = laParts(at);
