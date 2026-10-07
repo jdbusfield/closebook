@@ -43,6 +43,8 @@ interface MasterLine {
   items: Item[];
   note: string | null;
   reviewFlag: string | null;
+  /** "Use my own number": no fleet driver or schedules on this line */
+  ownNumber?: boolean;
 }
 interface Section {
   id: string;
@@ -56,6 +58,8 @@ interface Payload {
   priorYear: Record<string, number[]>;
   /** Months of last year that are booked; averages divide by this */
   priorYearMonths: number;
+  /** Where last year's actuals come from: the Financial Model (pro forma and allocations on) or the raw GL */
+  priorYearSource?: "financial_model" | "gl";
   belowEbitda: { months: number[]; priorYear: number[] };
   lineMasters: Array<{ id: string; name: string; accountNumber: string | null }>;
 }
@@ -84,6 +88,7 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
   const [removing, setRemoving] = useState<{ master: MasterLine; item: Item } | null>(null);
   // "Build from last year": every revenue line, or just one (only)
   const [fromPrior, setFromPrior] = useState<{ only: string | null } | null>(null);
+  const [confirmOwn, setConfirmOwn] = useState<MasterLine | null>(null);
   const fiscalYear = info?.version.fiscal_year ?? new Date().getFullYear() + 1;
 
   const load = useCallback(async () => {
@@ -172,6 +177,23 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
     }
   };
 
+  // "Use my own number" on a line fed by the fleet driver or schedules, or back again
+  const setOwnNumber = async (master: MasterLine, on: boolean) => {
+    setBusy(`own-${master.id}`);
+    try {
+      const res = await fetch("/api/budget/lines/override", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ versionId, masterAccountId: master.id, on }) });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Could not change the line");
+      toast.success(on ? `${master.name}: your own number now (driver and schedules off)` : `${master.name}: driver and schedules back on`);
+      setConfirmOwn(null);
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not change the line");
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const remove = async () => {
     if (!removing) return;
     setBusy(removing.item.id);
@@ -231,7 +253,9 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
             <div className="flex flex-wrap items-center gap-3 text-sm">
               <label className="flex items-center gap-2">
                 <Switch checked={showPrior} onCheckedChange={setShowPrior} />
-                <span>{prior} actual</span>
+                <span title={data?.priorYearSource === "financial_model" ? `${prior} as the Financial Model shows it: pro forma adjustments and allocations on` : `${prior} from the general ledger`}>
+                  {prior} actual{data?.priorYearSource === "financial_model" ? " (Financial Model)" : ""}
+                </span>
               </label>
               <Button variant="outline" size="sm" onClick={() => setOpen(open.size === allIds.length ? new Set() : new Set(allIds))}>
                 {open.size === allIds.length ? "Collapse all" : "Expand all"}
@@ -291,6 +315,7 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
                                 <span className="text-xs tabular-nums text-muted-foreground">{m.accountNumber}</span>
                                 <span className="font-medium">{m.name}</span>
                                 {m.items.length > 0 && <span className="text-xs text-muted-foreground">{m.items.length === 1 && runRate ? "run rate" : `${m.items.length} item${m.items.length === 1 ? "" : "s"}`}</span>}
+                                {m.ownNumber && <span className="rounded border px-1.5 text-[11px] leading-5 text-muted-foreground" title="The fleet driver and schedules don't build this line">own number</span>}
                               </button>
                             </TableCell>
                             <MonthCells months={m.months} prior={p} priorMonths={pm} showPrior={showPrior} invert={invert} />
@@ -354,6 +379,17 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
                                       <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditing({ master: m, item: null })}>
                                         <Plus className="mr-1 h-3 w-3" /> Add item
                                       </Button>
+                                      {m.items.some((it) => it.kind === "driver" || it.kind === "schedule" || it.kind === "capex") && (
+                                        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setConfirmOwn(m)} disabled={busy === `own-${m.id}`} title="Stop the fleet driver and schedules building this line, so you can enter it yourself">
+                                          Use my own number
+                                        </Button>
+                                      )}
+                                      {m.ownNumber && (
+                                        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setOwnNumber(m, false)} disabled={busy === `own-${m.id}`}>
+                                          {busy === `own-${m.id}` ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                                          Use the driver and schedules again
+                                        </Button>
+                                      )}
                                       {s.id === "revenue" && (
                                         <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setFromPrior({ only: m.id })} title={`${prior} actuals or the active ${prior} budget as this line's base`}>
                                           Build from {prior}
@@ -440,6 +476,26 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
           }}
         />
       )}
+
+      <Dialog open={!!confirmOwn} onOpenChange={(o) => !o && setConfirmOwn(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Use your own number for {confirmOwn?.name}?</DialogTitle>
+            <DialogDescription>
+              The fleet driver and the schedules (allocations, leases, insurance, debt, capex) stop building this line in this version, and their items on it come off now.
+              The line becomes the items you add, for example a {prior} base from &quot;Build from {prior}&quot;. A Recompute keeps it that way; you can switch back on the line at any time.
+              If an allocation lands here, its other side elsewhere is not changed.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOwn(null)}>Cancel</Button>
+            <Button onClick={() => confirmOwn && setOwnNumber(confirmOwn, true)} disabled={!!busy}>
+              {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Use my own number
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!removing} onOpenChange={(o) => !o && setRemoving(null)}>
         <DialogContent>
@@ -725,7 +781,7 @@ interface PriorBaseLine {
 
 /** Revenue lines from last year: actuals or the active budget version, moved by a percent, line by line. */
 function BuildFromPriorDialog({ versionId, prior, only, onClose, onSaved }: { versionId: string; prior: number; only: string | null; onClose: () => void; onSaved: (masterIds: string[]) => Promise<void> }) {
-  const [preview, setPreview] = useState<{ bookedMonths: number; budgetVersions: number; lines: PriorBaseLine[] } | null>(null);
+  const [preview, setPreview] = useState<{ bookedMonths: number; budgetVersions: number; actualsSource?: "financial_model" | "gl"; lines: PriorBaseLine[] } | null>(null);
   const [basis, setBasis] = useState<"actuals" | "budget">("actuals");
   const [pct, setPct] = useState("");
   const [replaceItems, setReplaceItems] = useState(false);
@@ -734,6 +790,9 @@ function BuildFromPriorDialog({ versionId, prior, only, onClose, onSaved }: { ve
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
 
+  const [freeing, setFreeing] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [freed, setFreed] = useState<string[]>([]);
   useEffect(() => {
     let live = true;
     (async () => {
@@ -752,7 +811,24 @@ function BuildFromPriorDialog({ versionId, prior, only, onClose, onSaved }: { ve
     return () => {
       live = false;
     };
-  }, [versionId, only]);
+  }, [versionId, only, reloadKey]);
+
+  // A line the fleet driver or schedules build can be switched to "your own number" right here
+  const switchToOwnNumber = async (l: PriorBaseLine) => {
+    setFreeing(l.masterId);
+    try {
+      const res = await fetch("/api/budget/lines/override", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ versionId, masterAccountId: l.masterId, on: true }) });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Could not change the line");
+      toast.success(`${l.name}: driver and schedules off; build it from ${prior} now`);
+      setFreed((prev) => [...prev, l.masterId]);
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not change the line");
+    } finally {
+      setFreeing(null);
+    }
+  };
 
   const p = Number(pct) || 0;
   const booked = preview?.bookedMonths ?? 0;
@@ -830,6 +906,9 @@ function BuildFromPriorDialog({ versionId, prior, only, onClose, onSaved }: { ve
                 <Switch checked={replaceItems} onCheckedChange={(v) => { setReplaceItems(v); setConfirming(false); }} />
                 <span>Replace the line&apos;s other items</span>
               </label>
+              {basis === "actuals" && preview.actualsSource === "gl" && (
+                <span className="text-xs text-amber-700">The Financial Model could not be built just now, so these actuals are the general ledger. Close and reopen to try again.</span>
+              )}
               {basis === "budget" && preview.budgetVersions === 0 && <span className="text-xs text-muted-foreground">No active {prior} budget version covers this group.</span>}
             </div>
             <Table>
@@ -872,7 +951,19 @@ function BuildFromPriorDialog({ versionId, prior, only, onClose, onSaved }: { ve
                       <TableCell className="text-right tabular-nums">{booked > 0 ? fmtUsd(sum(l.actualMonths)) : ""}</TableCell>
                       <TableCell className="text-right tabular-nums">{l.budgetMonths ? fmtUsd(sum(l.budgetMonths)) : "—"}</TableCell>
                       <TableCell className="text-right font-medium tabular-nums">{ok && result != null ? fmtUsd(result) : ""}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{noteFor(l)}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {l.blockedBy ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span>{l.blockedBy}</span>
+                            <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-xs" disabled={freeing === l.masterId} onClick={() => switchToOwnNumber(l)} title="Turn off the fleet driver and schedules for this line so you can build it from last year">
+                              {freeing === l.masterId ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                              Use my own number
+                            </Button>
+                          </div>
+                        ) : (
+                          noteFor(l)
+                        )}
+                      </TableCell>
                     </TableRow>
                   );
                 })}
@@ -893,7 +984,7 @@ function BuildFromPriorDialog({ versionId, prior, only, onClose, onSaved }: { ve
           </p>
         )}
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={() => (freed.length ? onSaved(freed) : onClose())}>{freed.length ? "Close" : "Cancel"}</Button>
           <Button onClick={apply} disabled={saving || !chosen.length} variant={confirming && removing > 0 ? "destructive" : "default"}>
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             {confirming && removing > 0 ? `Remove ${removing} item${removing === 1 ? "" : "s"} and build` : `Build ${chosen.length} line${chosen.length === 1 ? "" : "s"}`}

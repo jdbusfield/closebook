@@ -13,6 +13,8 @@ import { loadMasters, loadMonthlyActuals, monthKey, rollupActualsToParents, type
 import { loadMemberEntityIds, resolveVersionChartId } from "@/lib/budget/recompute";
 import { INCOME_STATEMENT_SECTIONS } from "@/lib/config/statement-sections";
 import { describeMethod, readMethod, type LineMethod } from "@/lib/budget/line-methods";
+import { loadFinancialModelYear } from "@/lib/budget/fm-actuals";
+import { loadOverriddenMasters } from "@/lib/budget/line-overrides";
 
 const NIL_CLASS = "00000000-0000-0000-0000-000000000000";
 
@@ -294,6 +296,22 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
     priorYear = toArr(owner.fiscalYear - 1);
     priorYear2 = toArr(owner.fiscalYear - 2);
   }
+  // Last year as the Financial Model shows it (pro forma and allocations on) for every
+  // income-statement line; the raw GL stays as the fallback when it can't be built
+  let priorYearSource: "financial_model" | "gl" = "gl";
+  if (actuals && owner.reportingEntityId) {
+    try {
+      const fm = await loadFinancialModelYear(admin, owner, owner.fiscalYear - 1);
+      if (fm) {
+        for (const m of masters) {
+          if ((m.classification === "Revenue" || m.classification === "Expense") && !m.parentAccountId) priorYear[m.id] = fm[m.id] ?? new Array(12).fill(0);
+        }
+        priorYearSource = "financial_model";
+      }
+    } catch (err) {
+      console.error("budget model: Financial Model actuals failed, using the GL", err);
+    }
+  }
   // Months of last year that are booked: through the last month with any activity, but never
   // the month in progress (its early syncs would drag every average down). Close status is not
   // used because periods are often closed well after the books are usable.
@@ -309,6 +327,9 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
   const today = new Date();
   if (owner.fiscalYear - 1 === today.getUTCFullYear()) priorYearMonths = Math.min(priorYearMonths, today.getUTCMonth());
   else if (owner.fiscalYear - 1 > today.getUTCFullYear()) priorYearMonths = 0;
+
+  // Lines set to "Use my own number" (no fleet driver or schedules)
+  const ownNumber = await loadOverriddenMasters(admin as unknown as Parameters<typeof loadOverriddenMasters>[0], owner.id);
 
   const sectionOf = (m: MasterInfo) => INCOME_STATEMENT_SECTIONS.find((s) => s.classification === m.classification && s.accountTypes.includes(m.accountType))?.id ?? null;
   const topMasters = masters.filter((m) => (m.classification === "Revenue" || m.classification === "Expense") && !m.parentAccountId);
@@ -328,6 +349,7 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
         items: (items.get(m.id) ?? []).sort((a, b) => Math.abs(b.total) - Math.abs(a.total)),
         note: lineNotes.get(m.id)?.note ?? null,
         reviewFlag: lineNotes.get(m.id)?.reviewFlag ?? null,
+        ownNumber: ownNumber.has(m.id),
       })),
   }));
 
@@ -363,6 +385,7 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
     priorYear,
     priorYear2,
     priorYearMonths,
+    priorYearSource,
     belowEbitda: { months: below.map((v) => Math.round(v * 100) / 100), priorYear: belowPrior.map((v) => Math.round(v * 100) / 100) },
     lineMasters: topMasters.filter((m) => MODEL_SECTIONS.has(sectionOf(m) ?? "")).map((m) => ({ id: m.id, name: m.name, accountNumber: m.accountNumber })),
   };

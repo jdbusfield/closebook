@@ -3,6 +3,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { accessErrorResponse, getBudgetActor, requireVersionAccess } from "@/lib/budget/access";
 import { buildVersionModel } from "@/lib/budget/model";
 
+// Last year comes from a Financial Model build (bounded at 25s per group, then the GL)
+export const maxDuration = 120;
+
 const NIL_CLASS = "00000000-0000-0000-0000-000000000000";
 
 /**

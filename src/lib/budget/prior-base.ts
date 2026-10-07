@@ -38,6 +38,8 @@ export interface PriorBaseLine {
 
 export interface PriorBasePreview {
   priorYear: number;
+  /** Where last year's actuals came from on this load */
+  actualsSource: "financial_model" | "gl";
   bookedMonths: number;
   budgetVersions: number;
   lines: PriorBaseLine[];
@@ -92,11 +94,11 @@ export async function loadPriorBase(admin: Admin, owner: VersionOwner): Promise<
       budgetMonths: budgetMonths && budgetMonths.some((v) => v !== 0) ? budgetMonths : null,
     };
   });
-  return { priorYear: owner.fiscalYear - 1, bookedMonths: booked, budgetVersions: priorVersions.length, lines };
+  return { priorYear: owner.fiscalYear - 1, actualsSource: model.priorYearSource, bookedMonths: booked, budgetVersions: priorVersions.length, lines };
 }
 
 /** The build row for one line's base */
-export function priorBaseRow(owner: VersionOwner, line: PriorBaseLine, basis: PriorBasis, pct: number, bookedMonths: number): BuildInsert & { note: string } {
+export function priorBaseRow(owner: VersionOwner, line: PriorBaseLine, basis: PriorBasis, pct: number, bookedMonths: number, actualsSource: "financial_model" | "gl" = "financial_model"): BuildInsert & { note: string } {
   const prior = owner.fiscalYear - 1;
   const source = basis === "actuals" ? line.actualMonths : (line.budgetMonths ?? new Array(12).fill(0));
   const months = applyPct(source, pct);
@@ -116,8 +118,8 @@ export function priorBaseRow(owner: VersionOwner, line: PriorBaseLine, basis: Pr
     amounts: Object.fromEntries(months.map((v, i) => [String(i + 1), v])),
     assumption_keys: [],
     is_computed: false,
-    meta: { prior_base: { basis, pct, year: prior, booked_months: basis === "actuals" ? bookedMonths : null } },
-    note: basis === "actuals" ? `Built from ${prior} actuals${span}.` : `Built from the active ${prior} budget version.`,
+    meta: { prior_base: { basis, pct, year: prior, booked_months: basis === "actuals" ? bookedMonths : null, source: basis === "actuals" ? actualsSource : "budget" } },
+    note: basis === "actuals" ? `Built from ${prior} actuals (${actualsSource === "financial_model" ? "Financial Model" : "general ledger"})${span}.` : `Built from the active ${prior} budget version.`,
     computed_at: new Date().toISOString(),
   };
 }
