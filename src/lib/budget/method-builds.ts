@@ -14,6 +14,7 @@ import { lastBookedIndex, trendBuilds, trendStats } from "./trend-builds";
 import { evaluateMethod, readMethod, type LineMethod, type MethodHistory } from "./line-methods";
 import { fetchAllPaginated } from "@/lib/utils/paginated-fetch";
 import { amountsFromArray, type Admin, type BuildContext, type BuildInsert } from "./build-types";
+import { applyZeroMonths, loadZeroMonths } from "./line-zero-months";
 
 const NIL_CLASS = "00000000-0000-0000-0000-000000000000";
 
@@ -110,6 +111,12 @@ export async function recomputeMethodBuilds(ctx: BuildContext, bank?: HistoryBan
     const s = lineTotals.get(top) ?? new Array(12).fill(0);
     for (let m = 1; m <= 12; m++) s[m - 1] += Number(b.amounts?.[String(m)] ?? 0);
     lineTotals.set(top, s);
+  }
+  // A line held at $0 in some months is $0 there for the items that follow it too
+  const zeroMonths = await loadZeroMonths(admin, ctx.owner.id);
+  for (const [masterId, zero] of zeroMonths) {
+    const s = lineTotals.get(masterId);
+    if (s) lineTotals.set(masterId, applyZeroMonths(s, zero));
   }
 
   const now = new Date().toISOString();

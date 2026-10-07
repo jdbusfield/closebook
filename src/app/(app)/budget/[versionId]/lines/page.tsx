@@ -20,7 +20,7 @@ import { MonthCells } from "@/components/budget/month-cells";
 
 interface Item {
   id: string;
-  kind: "payroll" | "schedule" | "driver" | "capex" | "run_rate" | "method" | "manual" | "entered";
+  kind: "payroll" | "schedule" | "driver" | "capex" | "run_rate" | "method" | "manual" | "entered" | "zeroed";
   label: string;
   source: string;
   sourceHref: string | null;
@@ -45,6 +45,8 @@ interface MasterLine {
   reviewFlag: string | null;
   /** "Use my own number": no fleet driver or schedules on this line */
   ownNumber?: boolean;
+  /** Months (1-12) the line is held at $0 */
+  zeroMonths?: number[];
 }
 interface Section {
   id: string;
@@ -89,6 +91,7 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
   // "Build from last year": every revenue line, or just one (only)
   const [fromPrior, setFromPrior] = useState<{ only: string | null } | null>(null);
   const [confirmOwn, setConfirmOwn] = useState<MasterLine | null>(null);
+  const [zeroing, setZeroing] = useState<MasterLine | null>(null);
   const fiscalYear = info?.version.fiscal_year ?? new Date().getFullYear() + 1;
 
   const load = useCallback(async () => {
@@ -316,6 +319,7 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
                                 <span className="font-medium">{m.name}</span>
                                 {m.items.length > 0 && <span className="text-xs text-muted-foreground">{m.items.length === 1 && runRate ? "run rate" : `${m.items.length} item${m.items.length === 1 ? "" : "s"}`}</span>}
                                 {m.ownNumber && <span className="rounded border px-1.5 text-[11px] leading-5 text-muted-foreground" title="The fleet driver and schedules don't build this line">own number</span>}
+                                {!!m.zeroMonths?.length && <span className="rounded border px-1.5 text-[11px] leading-5 text-muted-foreground" title="Held at $0 in these months">$0: {m.zeroMonths.map((x) => MONTH_ABBRS[x - 1]).join(", ")}</span>}
                               </button>
                             </TableCell>
                             <MonthCells months={m.months} prior={p} priorMonths={pm} showPrior={showPrior} invert={invert} />
@@ -388,6 +392,11 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
                                         <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setOwnNumber(m, false)} disabled={busy === `own-${m.id}`}>
                                           {busy === `own-${m.id}` ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
                                           Use the driver and schedules again
+                                        </Button>
+                                      )}
+                                      {s.id === "revenue" && (
+                                        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setZeroing(m)} title="Hold this line at $0 in the months you pick">
+                                          Zero months
                                         </Button>
                                       )}
                                       {s.id === "revenue" && (
@@ -472,6 +481,20 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
           onSaved={async (ids) => {
             setFromPrior(null);
             setOpen((prev) => new Set([...prev, ...ids]));
+            await load();
+          }}
+        />
+      )}
+
+      {zeroing && (
+        <ZeroMonthsDialog
+          versionId={versionId}
+          master={zeroing}
+          onClose={() => setZeroing(null)}
+          onSaved={async () => {
+            const id = zeroing.id;
+            setZeroing(null);
+            setOpen((prev) => new Set(prev).add(id));
             await load();
           }}
         />
@@ -988,6 +1011,88 @@ function BuildFromPriorDialog({ versionId, prior, only, onClose, onSaved }: { ve
           <Button onClick={apply} disabled={saving || !chosen.length} variant={confirming && removing > 0 ? "destructive" : "default"}>
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             {confirming && removing > 0 ? `Remove ${removing} item${removing === 1 ? "" : "s"} and build` : `Build ${chosen.length} line${chosen.length === 1 ? "" : "s"}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Pick the months a line is held at $0. */
+function ZeroMonthsDialog({ versionId, master, onClose, onSaved }: { versionId: string; master: MasterLine; onClose: () => void; onSaved: () => Promise<void> }) {
+  const [months, setMonths] = useState<Set<number>>(new Set(master.zeroMonths ?? []));
+  const [saving, setSaving] = useState(false);
+  const toggle = (m: number) =>
+    setMonths((prev) => {
+      const n = new Set(prev);
+      if (n.has(m)) n.delete(m);
+      else n.add(m);
+      return n;
+    });
+  // What the line has in each month before zeroing (the zeroed row added back)
+  const before = master.months.map((v, i) => v - (master.items.find((it) => it.kind === "zeroed")?.months[i] ?? 0));
+  const removed = before.reduce((t, v, i) => t + (months.has(i + 1) ? v : 0), 0);
+  // Amounts typed straight into the line (not items) are not zeroed
+  const entered = master.items.filter((it) => it.kind === "entered").reduce((t, it) => t + it.total, 0);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/budget/lines/zero-months", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ versionId, masterAccountId: master.id, months: [...months] }) });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Save failed");
+      toast.success(months.size ? `${master.name}: $0 in ${[...months].sort((a, b) => a - b).map((m) => MONTH_ABBRS[m - 1]).join(", ")}` : `${master.name}: no months zeroed`);
+      await onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Zero months on {master.name}</DialogTitle>
+          <DialogDescription>
+            The line is $0 in the months you pick, whatever its items say (fleet driver, schedules or your own items). The items stay as they are, and a Recompute keeps the zeroed months. Untick a month to bring it back.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid grid-cols-6 gap-2">
+          {MONTH_ABBRS.map((m, i) => {
+            const on = months.has(i + 1);
+            return (
+              <button
+                key={m}
+                type="button"
+                onClick={() => toggle(i + 1)}
+                aria-pressed={on}
+                className={cn("rounded-md border px-2 py-1.5 text-left text-sm", on ? "border-foreground bg-foreground text-background" : "hover:bg-muted/40")}
+              >
+                <div className="font-medium">{m}</div>
+                <div className={cn("text-xs tabular-nums", on ? "line-through opacity-80" : "text-muted-foreground")}>{fmtUsd(before[i])}</div>
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <div className="flex gap-2">
+            <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setMonths(new Set(MONTH_ABBRS.map((_, i) => i + 1)))}>All</Button>
+            <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setMonths(new Set())}>None</Button>
+          </div>
+          <span className="text-muted-foreground">Takes out <span className="font-medium tabular-nums text-foreground">{fmtUsd(removed)}</span> of {fmtUsd(sum(before))}</span>
+        </div>
+        {entered !== 0 && (
+          <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            This line also has {fmtUsd(entered)} typed straight into it (&quot;Entered amounts&quot;). Those are not zeroed; replace them with an item to zero them too.
+          </p>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={save} disabled={saving}>
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Save
           </Button>
         </DialogFooter>
       </DialogContent>
