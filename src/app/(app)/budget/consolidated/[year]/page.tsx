@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ChevronDown, ChevronRight, ExternalLink, Loader2 } from "lucide-react";
 import { MonthCells } from "@/components/budget/month-cells";
+import { MasterExportButton } from "@/components/budget/master-export-button";
 import { fmtPct, fmtUsd, MONTH_ABBRS } from "@/lib/budget/format";
 import { cn } from "@/lib/utils";
 
@@ -160,6 +161,7 @@ export default function ConsolidatedBudgetPage({ params }: { params: Promise<{ y
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">Consolidated budget {fiscalYear}</h1>
         </div>
+        <MasterExportButton fiscalYear={fiscalYear} />
       </div>
 
       {loading ? (
