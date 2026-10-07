@@ -144,6 +144,11 @@ export function buildMasterWorkbook(opts: { fiscalYear: number; kind: "budget" |
         const account = m.accountNumber ?? "";
         const ic = intercompany.has(m.id);
         const items = m.items.filter((it) => it.months.some((v) => v !== 0) || it.kind !== "zeroed");
+        // Anything on the line that no item explains (typed cells next to builds) gets its own row, so the account ties to the budget page
+        if (items.length) {
+          const rest = m.months.map((v, i) => round2(v - items.reduce((t, it) => t + (it.months[i] ?? 0), 0)));
+          if (rest.some((v) => Math.abs(v) >= 0.01)) items.push({ id: `rest-${m.id}`, kind: "entered", label: "Other amounts on the line", source: "Line", sourceHref: null, methodText: "Typed into the line, not in an item", method: null, note: null, count: null, months: rest, total: round2(rest.reduce((a, b) => a + b, 0)), editable: false, history: null });
+        }
         const accountRow = r;
         writeRow({
           entity, section: s.title, account, accountName: m.name, level: "Account", line: ic ? `${m.name} (intercompany)` : m.name,

@@ -15,7 +15,7 @@ const group = (name: string, rev: number): MasterGroup => ({
     priorYear: { r1: m12(rev), ic: m12(5) },
     sections: [
       { id: "revenue", title: "Revenue", masters: [
-        { id: "r1", accountNumber: "4000", name: "Rental Revenue - Vehicles", months: m12(rev * 2), items: [item("RL line", "manual", m12(rev)), item("Missouri Fleet", "driver", m12(rev))] },
+        { id: "r1", accountNumber: "4000", name: "Rental Revenue - Vehicles", months: m12(rev * 2 + 1), items: [item("RL line", "manual", m12(rev)), item("Missouri Fleet", "driver", m12(rev))] },
         { id: "ic", accountNumber: "4999", name: "Intercompany Revenue", months: m12(5), items: [] },
       ] },
     ],
@@ -34,6 +34,10 @@ test("master list: account rows sum their items; consolidated skips intercompany
   const avonAccount = rows.find((x) => x.entity === "Avon" && x.level === "Account" && x.line === "Rental Revenue - Vehicles");
   assert.ok(avonAccount);
   assert.ok(rows.some((x) => x.line === "RL line" && x.level === "Detail"));
+  // The line has 1 a month typed outside its items: listed so the account ties to the budget page
+  const rest = [] as number[];
+  ws.eachRow((row, n) => { if (n > 2 && row.getCell(2).value === "Avon" && row.getCell(7).value === "Other amounts on the line") rest.push(Number(row.getCell(22).value)); });
+  assert.deepEqual(rest, [1]);
   const cons = rows.filter((x) => x.entity === "Consolidated" && x.level === "Account").map((x) => x.line);
   assert.deepEqual(cons, ["Rental Revenue - Vehicles"]);
 });
