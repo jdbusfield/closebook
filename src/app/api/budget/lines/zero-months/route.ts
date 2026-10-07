@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { accessErrorResponse, getBudgetActor, requireVersionAccess } from "@/lib/budget/access";
-import { syncLinesFromBuilds } from "@/lib/budget/recompute";
+import { resolveVersionChartId, syncLinesFromBuilds } from "@/lib/budget/recompute";
 import { setZeroMonths } from "@/lib/budget/line-zero-months";
 import { buildContext } from "@/lib/budget/builds";
 import { recomputeMethodBuilds } from "@/lib/budget/method-builds";
@@ -23,8 +23,9 @@ export async function POST(request: Request) {
     if (!versionId || !masterAccountId || !months) return NextResponse.json({ error: "versionId, masterAccountId and months are required" }, { status: 400 });
     const admin = createAdminClient();
     const owner = await requireVersionAccess(admin, actor, versionId, true);
-    const { data: master } = await admin.from("master_accounts").select("id").eq("id", masterAccountId).maybeSingle();
-    if (!master) return NextResponse.json({ error: "Unknown line" }, { status: 400 });
+    const chartId = await resolveVersionChartId(admin, owner);
+    const { data: master } = await admin.from("master_accounts").select("id").eq("id", masterAccountId).eq("chart_id", chartId).maybeSingle();
+    if (!master) return NextResponse.json({ error: "That line is not in this version's chart" }, { status: 400 });
     const saved = await setZeroMonths(admin, owner, masterAccountId, months, actor.userId);
     // Items that are a % of this line follow its zeroed months
     await recomputeMethodBuilds(await buildContext(admin, owner));
