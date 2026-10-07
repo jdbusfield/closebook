@@ -8,6 +8,7 @@
 // capture skips it as internal mail and it never lands on a timeline.
 
 import type { Resend } from "resend";
+import { spokenAmounts, type Quote } from "./ai-pricing";
 
 export const REPORT_FROM = "HDR AI Calls <inquiries@hdrsiteservices.com>";
 export const REPORT_TO_DEFAULT = "sales@hdrsiteservices.com";
@@ -77,6 +78,22 @@ export function extractQuotedPrice(turns: RawTranscriptTurn[]): QuotedPrice | nu
   return found;
 }
 
+/** A price-table Quote in the report's shape. */
+export function fromQuote(q: Quote): QuotedPrice {
+  return {
+    trailers: q.trailers,
+    days: q.days,
+    rate_category: q.category === "private" ? "backyard / private party" : "wedding / event",
+    discount_pct: q.discount_pct,
+    attendant_hours: q.attendant_hours,
+    total: q.total,
+    say_total: q.say_total,
+    per_trailer_list: q.per_trailer_list,
+    per_trailer: q.per_trailer,
+    attendant_total: q.attendant_total,
+  };
+}
+
 export type ReportKind = "answered" | "voicemail" | "no_answer" | "failed";
 
 export interface ReportInquiry {
@@ -105,6 +122,42 @@ export interface ReportInput {
   durationSecs?: number | null;
   transcript?: RawTranscriptTurn[];
   conversationId?: string | null;
+  /**
+   * What the price table says for this call: the confirmed guest count (or
+   * the form's) with the form's dates. Used when the agent quoted the form
+   * price without a get_price call, and to catch a made-up price.
+   */
+  expectedQuote?: QuotedPrice | null;
+}
+
+export interface PriceCheck {
+  /** The price the customer heard, if any: the get_price result, else the expected quote. */
+  used: QuotedPrice | null;
+  source: "price lookup on the call" | "form price given to the agent" | null;
+  spoken: number[];
+  /** Set when the agent said a dollar amount the price table doesn't back. */
+  warning: string | null;
+}
+
+/** Compare what the agent said out loud with the price table. */
+export function checkSpokenPrice(input: ReportInput): PriceCheck {
+  const tool = extractQuotedPrice(input.transcript ?? []);
+  const budget = num(input.collected?.customer_budget);
+  const agentText = (input.transcript ?? []).filter((t) => t.role === "agent").map((t) => t.message ?? "").join(" ");
+  const spoken = spokenAmounts(agentText).filter((a) => budget == null || Math.abs(a - budget) > 1);
+  const used = tool ?? (spoken.length && input.expectedQuote ? input.expectedQuote : null);
+  const source = tool ? "price lookup on the call" : used ? "form price given to the agent" : null;
+  let warning: string | null = null;
+  const said = (a: number) => money(a);
+  if (spoken.length && !used) {
+    warning = `The AI said around ${spoken.map(said).join(" / ")} without a price lookup, and there is no price-table quote to check it against (missing guest count or dates). Treat that number as wrong.`;
+  } else if (used) {
+    const bad = spoken.filter((a) => Math.abs(a - used.say_total) > 10 && Math.abs(a - used.total) > 10);
+    if (bad.length) {
+      warning = `The AI said around ${bad.map(said).join(" / ")}, but the price table says ${money(used.total)}${tool ? "" : " (it never ran a price lookup)"}. The customer heard the wrong number.`;
+    }
+  }
+  return { used, source, spoken, warning };
 }
 
 const money = (n: number) =>
@@ -193,9 +246,15 @@ export function priceLines(q: QuotedPrice): string[] {
 export function buildAiCallReport(input: ReportInput): { subject: string; text: string; data: Record<string, unknown> } {
   const inq = input.inquiry;
   const c = input.collected ?? {};
-  const quoted = input.kind === "answered" ? extractQuotedPrice(input.transcript ?? []) : null;
+  const check = input.kind === "answered" ? checkSpokenPrice(input) : { used: null, source: null, spoken: [], warning: null };
+  const quoted = check.used;
   const response = responseOf(c, quoted);
-  const { result, next } = headline(input, quoted, response);
+  let { result, next } = headline(input, quoted, response);
+  if (check.warning) {
+    const heard = check.spoken.map(money).join(" / ");
+    result = `WRONG PRICE SPOKEN: said ${heard}${quoted ? `, correct ${money(quoted.total)}` : ""}`;
+    next = `${next} The customer heard ${heard}; correct it in the written quote and say so.`;
+  }
   const who = inq.name?.trim() || inq.email || inq.phone || "Unknown";
   const subject = `[AI CALL] ${inq.reference} · ${who} · ${result}`;
 
@@ -205,6 +264,7 @@ export function buildAiCallReport(input: ReportInput): { subject: string; text: 
     "",
     `Result: ${result}`,
     `Next step: ${next}`,
+    ...(check.warning ? ["", `WARNING: ${check.warning}`] : []),
     "",
     "CUSTOMER",
     `  Name: ${inq.name ?? "unknown"}`,
@@ -225,8 +285,9 @@ export function buildAiCallReport(input: ReportInput): { subject: string; text: 
     out.push(`  Guests: ${str(c.guest_count) ?? "not confirmed"}`);
     out.push(`  Location: ${str(c.location) ?? "not confirmed"}`);
     if (str(c.callback_time)) out.push(`  Callback time: ${str(c.callback_time)}`);
-    out.push("", "PRICE QUOTED ON THE CALL");
+    out.push("", check.warning ? "CORRECT PRICE (PRICE TABLE)" : "PRICE QUOTED ON THE CALL");
     if (quoted) {
+      if (check.source) out.push(`  Source: ${check.source}`);
       for (const l of priceLines(quoted)) out.push(`  ${l}`);
       const budget = num(c.customer_budget);
       out.push(`  Customer response: ${response}${budget != null ? ` (budget ${money(budget)})` : ""}`);
@@ -261,6 +322,9 @@ export function buildAiCallReport(input: ReportInput): { subject: string; text: 
         ? { event_date: str(c.event_date), guests: str(c.guest_count), location: str(c.location), callback_time: str(c.callback_time) }
         : null,
     quoted_price: quoted,
+    quote_source: check.source,
+    spoken_amounts: check.spoken,
+    price_warning: check.warning,
     quote_response: input.kind === "answered" ? response : null,
     customer_budget: num(c.customer_budget),
     duration_secs: input.durationSecs ?? null,

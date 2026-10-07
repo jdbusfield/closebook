@@ -23,6 +23,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/types/database.types";
 import { HDR_ENTITY_ID, needsOutreachStatus } from "./shared";
+import { formQuote, normalizePricing, saySentence } from "./ai-pricing";
 
 type Admin = SupabaseClient<Database>;
 export type AiCallRow = Database["public"]["Tables"]["rental_inquiry_ai_calls"]["Row"];
@@ -149,8 +150,13 @@ export interface InquiryDetails {
   notes: string | null;
 }
 
-/** Every variable the agent prompt references. A missing one fails the call. */
-export function dynamicVariables(inq: InquiryDetails, callId: string): Record<string, string> {
+/**
+ * Every variable the agent prompt references. A missing one fails the call.
+ * form_price is the price-table quote for the form's details (or "unknown"),
+ * worked out before dialing so the agent needs get_price only when the
+ * customer changes something.
+ */
+export function dynamicVariables(inq: InquiryDetails, callId: string, formPrice?: string | null): Record<string, string> {
   const v = (s: string | null | undefined) => (s && s.trim() ? s.trim() : "unknown");
   const firstName = (inq.name ?? "").trim().split(/\s+/)[0] || "there";
   return {
@@ -161,6 +167,7 @@ export function dynamicVariables(inq: InquiryDetails, callId: string): Record<st
     guests: v(inq.guests),
     event_location: v(inq.location),
     notes: v(inq.notes).slice(0, 500),
+    form_price: formPrice || "unknown",
     closebook_call_id: callId,
   };
 }
@@ -377,6 +384,16 @@ export async function dialAiCall(admin: Admin, call: AiCallRow): Promise<{ outco
   const phoneNumberId = process.env.ELEVENLABS_AGENT_PHONE_NUMBER_ID;
   if (!apiKey || !agentId || !phoneNumberId) return fail("ElevenLabs env vars missing");
 
+  // Price for the form's details from JD's AI Price Table. Best effort: a
+  // failed read just leaves form_price "unknown" and the agent uses get_price.
+  const { data: pricingRow, error: pricingErr } = await admin
+    .from("rental_inquiry_ai_pricing")
+    .select("*")
+    .eq("entity_id", call.entity_id)
+    .maybeSingle();
+  if (pricingErr) console.error("[ai-call] pricing read failed", pricingErr.message);
+  const fq = pricingErr ? null : formQuote(inq, normalizePricing(pricingRow));
+
   try {
     const res = await fetch("https://api.elevenlabs.io/v1/convai/twilio/outbound-call", {
       method: "POST",
@@ -385,7 +402,7 @@ export async function dialAiCall(admin: Admin, call: AiCallRow): Promise<{ outco
         agent_id: agentId,
         agent_phone_number_id: phoneNumberId,
         to_number: call.to_number,
-        conversation_initiation_client_data: { dynamic_variables: dynamicVariables(inq, call.id) },
+        conversation_initiation_client_data: { dynamic_variables: dynamicVariables(inq, call.id, fq ? saySentence(fq) : null) },
       }),
     });
     const json = (await res.json().catch(() => ({}))) as {

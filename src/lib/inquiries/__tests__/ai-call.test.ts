@@ -114,8 +114,15 @@ test("dynamicVariables always fills every prompt variable", () => {
     guests: "unknown",
     event_location: "Malibu",
     notes: "unknown",
+    form_price: "unknown",
     closebook_call_id: "call-1",
   });
+  const priced = dynamicVariables(
+    { name: "Steve", use_case: "Wedding", start_date: "2027-04-10", end_date: null, guests: "150", location: "92504", notes: null },
+    "call-2",
+    "For 150 guests we'd recommend one 4-stall trailer. We'd typically quote around $1,249 for the day."
+  );
+  assert.equal(priced.form_price, "For 150 guests we'd recommend one 4-stall trailer. We'd typically quote around $1,249 for the day.");
   assert.equal(dynamicVariables({ name: null, use_case: null, start_date: null, end_date: null, guests: null, location: null, notes: null }, "x").customer_name, "there");
 });
 

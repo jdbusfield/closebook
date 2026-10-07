@@ -3,10 +3,14 @@ import { test } from "node:test";
 import {
   DEFAULT_AI_PRICING as P,
   categoryFor,
+  formQuote,
   guestBands,
   normalizePricing,
   quoteTrailers,
+  parseGuests,
   rentalDays,
+  saySentence,
+  spokenAmounts,
   trailersFor,
 } from "../ai-pricing";
 
@@ -92,4 +96,30 @@ test("guestBands follow guests_per_trailer", () => {
   const bands = guestBands(P, 3);
   assert.deepEqual(bands.map((b) => b.label), ["1–200", "201–400", "401–600"]);
   assert.deepEqual(bands.map((b) => b.trailers), [1, 2, 3]);
+});
+
+test("formQuote prices the website form, or null when it can't", () => {
+  // Steve, Oct 6: wedding, 150 guests, one day. The agent guessed $3,000.
+  const steve = formQuote({ use_case: "Wedding", guests: "150", start_date: "2027-04-10", end_date: "2027-04-10" }, P);
+  assert.ok(steve);
+  assert.equal(steve.say_total, 1249);
+  assert.equal(saySentence(steve), "For 150 guests we'd recommend one 4-stall trailer. We'd typically quote around $1,249 for the day.");
+  const range = formQuote({ use_case: "Corporate", guests: "300-450", start_date: "2026-12-04", end_date: "2026-12-05" }, P);
+  assert.equal(range?.trailers, 3);
+  assert.equal(saySentence(range!), "For 450 guests we'd recommend three 4-stall trailers. We'd typically quote around $3,360 for the 2-day rental.");
+  assert.equal(formQuote({ use_case: "Wedding", guests: "", start_date: "2027-04-10", end_date: null }, P), null);
+  assert.equal(formQuote({ use_case: "Wedding", guests: "150", start_date: null, end_date: null }, P), null);
+  assert.equal(parseGuests("about 1,200 people"), 1200);
+  assert.equal(parseGuests("unknown"), null);
+});
+
+test("spokenAmounts finds prices in digits and words, not guest counts", () => {
+  assert.deepEqual(spokenAmounts("So we'd typically quote around three thousand dollars for that day"), [3000]);
+  assert.deepEqual(spokenAmounts("We'd typically quote around $1,249 for the day."), [1249]);
+  assert.deepEqual(spokenAmounts("around thirty-three sixty for the two-day rental"), [3360]);
+  assert.deepEqual(spokenAmounts("around twelve forty-nine for the day"), [1249]);
+  assert.deepEqual(spokenAmounts("around eight hundred forty-nine dollars"), [849]);
+  assert.deepEqual(spokenAmounts("around eleven hundred forty-nine"), [1149]);
+  assert.deepEqual(spokenAmounts("I have April tenth with one hundred fifty guests in the nine two five zero four area"), []);
+  assert.deepEqual(spokenAmounts("For 450 guests we'd recommend three 4-stall trailers."), []);
 });
