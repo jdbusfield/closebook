@@ -7,15 +7,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Loader2, RefreshCw, Lock, Download } from "lucide-react";
 import { useBudgetVersion } from "./version-shell";
-import { fmtUsd, MONTH_ABBRS } from "@/lib/budget/format";
+import { fmtUsd } from "@/lib/budget/format";
+import { MasterExportButton } from "@/components/budget/master-export-button";
 
 export default function BudgetVersionOverviewPage({ params }: { params: Promise<{ versionId: string }> }) {
   const { versionId } = use(params);
   const { info, reload, readOnly } = useBudgetVersion();
   const [recomputing, setRecomputing] = useState(false);
   const [approving, setApproving] = useState(false);
-  // Last year's closed months shown in the master list (JD: Jan-Aug 2026 are closed)
-  const [closedThrough, setClosedThrough] = useState(8);
   const [lastRun, setLastRun] = useState<{ positions?: number; buildsWritten?: number; personnelTotal?: number; linesUpserted: number } | null>(null);
 
   const recompute = async () => {
@@ -135,22 +134,7 @@ export default function BudgetVersionOverviewPage({ params }: { params: Promise<
               Export consolidated {info.version.fiscal_year}
             </a>
           </Button>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" asChild>
-              <a href={`/api/budget/export/master?fiscalYear=${info.version.fiscal_year}&kind=${info.version.kind}&through=${closedThrough}`}>
-                <Download className="mr-2 h-4 w-4" />
-                Export master list
-              </a>
-            </Button>
-            <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-              {info.version.fiscal_year - 1} closed through
-              <select className="h-9 rounded-md border bg-background px-2 text-sm text-foreground" value={closedThrough} onChange={(e) => setClosedThrough(Number(e.target.value))}>
-                {MONTH_ABBRS.map((m, i) => (
-                  <option key={m} value={i + 1}>{m}</option>
-                ))}
-              </select>
-            </label>
-          </div>
+          <MasterExportButton fiscalYear={info.version.fiscal_year} kind={info.version.kind} />
           {!info.version.locked_at && (
             <Button onClick={approve} disabled={approving || !info.canEdit}>
               {approving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lock className="mr-2 h-4 w-4" />}

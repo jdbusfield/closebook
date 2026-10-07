@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { MasterExportButton } from "@/components/budget/master-export-button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -207,7 +208,8 @@ export default function BudgetOverviewPage() {
                 <div className="mt-2 flex flex-wrap items-center gap-3 rounded-md border bg-muted/40 px-3 py-2 text-sm">
                   <span className="font-medium">Consolidated budget</span>
                   <span className="text-muted-foreground">Every reporting group, read only</span>
-                  <Button asChild variant="outline" size="sm" className="ml-auto">
+                  <MasterExportButton fiscalYear={year} size="sm" className="ml-auto" />
+                  <Button asChild variant="outline" size="sm">
                     <Link href={`/budget/consolidated/${year}`}>Open</Link>
                   </Button>
                 </div>
