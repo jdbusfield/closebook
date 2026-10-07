@@ -385,7 +385,8 @@ export async function syncLinesFromBuilds(admin: Admin, owner: VersionOwner): Pr
   if (zeroMonths.size) {
     const ids = [...new Set(builds.map((b) => b.master_account_id))];
     for (let i = 0; i < ids.length; i += 500) {
-      const { data } = await admin.from("master_accounts").select("id, parent_account_id").in("id", ids.slice(i, i + 500));
+      const { data, error } = await admin.from("master_accounts").select("id, parent_account_id").in("id", ids.slice(i, i + 500));
+      if (error) throw new Error(`Could not read line parents for zeroed months: ${error.message}`);
       for (const r of (data ?? []) as Array<{ id: string; parent_account_id: string | null }>) if (r.parent_account_id) parentOf.set(r.id, r.parent_account_id);
     }
   }

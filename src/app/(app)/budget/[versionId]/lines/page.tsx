@@ -1032,6 +1032,8 @@ function ZeroMonthsDialog({ versionId, master, onClose, onSaved }: { versionId: 
   // What the line has in each month before zeroing (the zeroed row added back)
   const before = master.months.map((v, i) => v - (master.items.find((it) => it.kind === "zeroed")?.months[i] ?? 0));
   const removed = before.reduce((t, v, i) => t + (months.has(i + 1) ? v : 0), 0);
+  // Amounts typed straight into the line (not items) are not zeroed
+  const entered = master.items.filter((it) => it.kind === "entered").reduce((t, it) => t + it.total, 0);
 
   const save = async () => {
     setSaving(true);
@@ -1081,6 +1083,11 @@ function ZeroMonthsDialog({ versionId, master, onClose, onSaved }: { versionId: 
           </div>
           <span className="text-muted-foreground">Takes out <span className="font-medium tabular-nums text-foreground">{fmtUsd(removed)}</span> of {fmtUsd(sum(before))}</span>
         </div>
+        {entered !== 0 && (
+          <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            This line also has {fmtUsd(entered)} typed straight into it (&quot;Entered amounts&quot;). Those are not zeroed; replace them with an item to zero them too.
+          </p>
+        )}
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={save} disabled={saving}>
