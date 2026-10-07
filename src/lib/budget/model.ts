@@ -15,13 +15,14 @@ import { INCOME_STATEMENT_SECTIONS } from "@/lib/config/statement-sections";
 import { describeMethod, readMethod, type LineMethod } from "@/lib/budget/line-methods";
 import { loadFinancialModelYear } from "@/lib/budget/fm-actuals";
 import { loadOverriddenMasters } from "@/lib/budget/line-overrides";
+import { loadZeroMonths } from "@/lib/budget/line-zero-months";
 
 const NIL_CLASS = "00000000-0000-0000-0000-000000000000";
 
 /** The sections that roll up to EBITDA, in Financial Model order. */
 export const MODEL_SECTIONS = new Set(["revenue", "direct_operating_costs", "other_operating_costs"]);
 
-export type ItemKind = "payroll" | "schedule" | "driver" | "capex" | "run_rate" | "method" | "manual" | "entered";
+export type ItemKind = "payroll" | "schedule" | "driver" | "capex" | "run_rate" | "method" | "manual" | "entered" | "zeroed";
 
 export interface ModelItem {
   id: string;
@@ -330,6 +331,36 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
 
   // Lines set to "Use my own number" (no fleet driver or schedules)
   const ownNumber = await loadOverriddenMasters(admin as unknown as Parameters<typeof loadOverriddenMasters>[0], owner.id);
+  // Months a line is held at $0 (the line cells already are); a row under the items shows what was taken out
+  const zeroMonths = await loadZeroMonths(admin as unknown as Parameters<typeof loadZeroMonths>[0], owner.id);
+  const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const itemsWithZeroed = (masterId: string): ModelItem[] => {
+    const list = items.get(masterId) ?? [];
+    const zero = zeroMonths.get(masterId);
+    if (!zero?.length) return list;
+    const z = new Set(zero);
+    const built = new Array(12).fill(0) as number[];
+    for (const it of list) if (it.kind !== "entered") it.months.forEach((v, i) => (built[i] += v));
+    const months = built.map((v, i) => (z.has(i + 1) ? Math.round(-v * 100) / 100 : 0));
+    return [
+      ...list,
+      {
+        id: `zeroed-${masterId}`,
+        kind: "zeroed",
+        label: `Zeroed months (${zero.map((m) => MONTH_SHORT[m - 1]).join(", ")})`,
+        source: "Zero months",
+        sourceHref: null,
+        methodText: "The line is held at $0 in these months, whatever the items above say",
+        method: null,
+        note: null,
+        count: null,
+        months,
+        total: Math.round(months.reduce((t, v) => t + v, 0) * 100) / 100,
+        editable: false,
+        history: null,
+      },
+    ];
+  };
 
   const sectionOf = (m: MasterInfo) => INCOME_STATEMENT_SECTIONS.find((s) => s.classification === m.classification && s.accountTypes.includes(m.accountType))?.id ?? null;
   const topMasters = masters.filter((m) => (m.classification === "Revenue" || m.classification === "Expense") && !m.parentAccountId);
@@ -346,10 +377,11 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
         name: m.name,
         parentAccountId: null,
         months: (lineMonths.get(m.id) ?? new Array(12).fill(0)).map((v) => Math.round(v * 100) / 100),
-        items: (items.get(m.id) ?? []).sort((a, b) => Math.abs(b.total) - Math.abs(a.total)),
+        items: itemsWithZeroed(m.id).sort((a, b) => (a.kind === "zeroed" ? 1 : b.kind === "zeroed" ? -1 : Math.abs(b.total) - Math.abs(a.total))),
         note: lineNotes.get(m.id)?.note ?? null,
         reviewFlag: lineNotes.get(m.id)?.reviewFlag ?? null,
         ownNumber: ownNumber.has(m.id),
+        zeroMonths: zeroMonths.get(m.id) ?? [],
       })),
   }));
 

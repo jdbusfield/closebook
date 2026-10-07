@@ -18,6 +18,7 @@ import {
 } from "./personnel-engine";
 import { PERSONNEL_SUB_MASTERS, type PersonnelComponent } from "./personnel-accounts";
 import { upsertBudgetCells, type BudgetCell } from "./amounts";
+import { applyZeroMonths, loadZeroMonths } from "./line-zero-months";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Admin = SupabaseClient<any, any, any>;
@@ -378,6 +379,18 @@ export async function syncLinesFromBuilds(admin: Admin, owner: VersionOwner): Pr
       .range(offset, offset + limit - 1),
   );
 
+  // Lines with zeroed months (on the line or its parent) are $0 in those months
+  const zeroMonths = await loadZeroMonths(admin, owner.id);
+  const parentOf = new Map<string, string>();
+  if (zeroMonths.size) {
+    const ids = [...new Set(builds.map((b) => b.master_account_id))];
+    for (let i = 0; i < ids.length; i += 500) {
+      const { data } = await admin.from("master_accounts").select("id, parent_account_id").in("id", ids.slice(i, i + 500));
+      for (const r of (data ?? []) as Array<{ id: string; parent_account_id: string | null }>) if (r.parent_account_id) parentOf.set(r.id, r.parent_account_id);
+    }
+  }
+  const zeroFor = (masterId: string) => zeroMonths.get(masterId) ?? zeroMonths.get(parentOf.get(masterId) ?? "");
+
   const sums = new Map<string, { masterAccountId: string; classId: string | null; months: number[] }>();
   for (const b of builds) {
     const key = `${b.master_account_id}|${b.class_key ?? NIL_CLASS}`;
@@ -398,6 +411,7 @@ export async function syncLinesFromBuilds(admin: Admin, owner: VersionOwner): Pr
 
   const cells: BudgetCell[] = [];
   for (const entry of sums.values()) {
+    entry.months = applyZeroMonths(entry.months, zeroFor(entry.masterAccountId));
     for (let m = 1; m <= 12; m++) {
       cells.push({
         masterAccountId: entry.masterAccountId,
