@@ -652,6 +652,14 @@ export function HeadcountWorkspace({
     try {
       const { buildPayrollWorkbook, payrollExportFileName } = await import("@/lib/budget/payroll-export");
       const scopeLabel = isPlan ? "Payroll Plan" : `${ownerName} Payroll`;
+      // Groups plus whatever no group carries, so the tab ties to the plan total
+      const companyGroups = reportingEntities
+        .map((g) => ({ name: g.name, byMonth: groupByMonth[g.id] ?? new Array(12).fill(0) }))
+        .filter((g) => g.byMonth.some((v) => v !== 0));
+      if (companyGroups.length) {
+        const rest = totals.totalByMonth.map((v, i) => Math.round((v - companyGroups.reduce((t, g) => t + (g.byMonth[i] ?? 0), 0)) * 100) / 100);
+        if (rest.some((v) => Math.abs(v) >= 1)) companyGroups.push({ name: "Unallocated", byMonth: rest });
+      }
       const wb = buildPayrollWorkbook({
         fiscalYear: scope.fiscalYear,
         scopeLabel,
@@ -678,9 +686,7 @@ export function HeadcountWorkspace({
           };
         }),
         components: totals.components,
-        groups: reportingEntities
-          .map((g) => ({ name: g.name, byMonth: groupByMonth[g.id] ?? new Array(12).fill(0) }))
-          .filter((g) => g.byMonth.some((v) => v !== 0)),
+        groups: companyGroups,
       });
       const buf = await wb.xlsx.writeBuffer();
       const url = URL.createObjectURL(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
