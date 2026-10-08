@@ -11,7 +11,7 @@ const comps = (wages: number, taxes: number) => {
   return c;
 };
 const pos = (name: string, monthly: number): PayrollExportPosition => ({
-  name, title: "Driver", employeeId: "100", status: "active", company: "AVON", location: "Saticoy", class: "Vehicle Rental", function: "Operations",
+  name, title: "Driver", employeeId: "100", status: "active", hiredThrough: "Silverco Enterprises", company: "AVON", location: "Saticoy", class: "Vehicle Rental", function: "Operations",
   payType: "Hourly", pay: 25.5, adjustment: null, startMonth: 1, endMonth: null, byMonth: m12(monthly), components: comps(monthly * 11, monthly),
 });
 
@@ -32,11 +32,14 @@ test("payroll workbook: positions sorted, totals are formulas, tabs present", as
   assert.equal(ws.getCell("B3").value, "Amy");
   assert.equal(ws.getCell("B4").value, "Zed");
   assert.equal(ws.getCell("E3").value, "Active");
-  // Jan in column O (B + 13 text columns), total in AA, total row on 5
-  assert.equal(ws.getCell("O3").value, 100);
-  assert.deepEqual(ws.getCell("AA3").value, { formula: "SUM(O3:Z3)" });
+  assert.equal(ws.getCell("F2").value, "Hired Through");
+  assert.equal(ws.getCell("F3").value, "Silverco Enterprises");
+  assert.equal(ws.getCell("L3").numFmt, '#,##0.00;[Red](#,##0.00);"-"');
+  // Jan in column P (B + 14 text columns), total in AB, total row on 5
+  assert.equal(ws.getCell("P3").value, 100);
+  assert.deepEqual(ws.getCell("AB3").value, { formula: "SUM(P3:AA3)" });
   assert.equal(ws.getCell("B5").value, "Total");
-  assert.deepEqual(ws.getCell("O5").value, { formula: "SUM(O3:O4)" });
+  assert.deepEqual(ws.getCell("P5").value, { formula: "SUM(P3:P4)" });
 
   // Round trip: file opens and keeps the rows
   const buf = await wb.xlsx.writeBuffer();

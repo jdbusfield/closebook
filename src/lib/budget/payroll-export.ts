@@ -2,7 +2,7 @@
  * The payroll plan workbook, built from what the plan page already has
  * loaded and priced (so it ties to the page, and a version's export is that
  * group's share). Tabs:
- *  1. Positions    - one row per person: tags, pay in force, cost by month
+ *  1. Positions    - one row per person: employer, tags, pay in force, cost by month
  *  2. Cost Detail  - one row per person: full-year cost by component
  *  3. By Month     - component by month for the whole plan
  *  4. By Company   - reporting group by month (when the page has groups)
@@ -18,6 +18,8 @@ export interface PayrollExportPosition {
   title: string | null;
   employeeId: string | null;
   status: string;
+  /** The entity whose Paylocity company employs the person (blank for open roles) */
+  hiredThrough: string;
   company: string;
   location: string;
   class: string;
@@ -55,19 +57,19 @@ export function buildPayrollWorkbook(input: PayrollExportInput): ExcelJS.Workboo
 
   // ---- 1. Positions
   {
-    const text = ["Name", "Title", "Employee ID", "Status", "Company", "Location", "Class", "Function", "Pay Type", "Pay", "Adjustment", "Start", "End"];
-    const ws = sheet(wb, "Positions", [...text, ...monthHeads, `${fiscalYear} Total`], text.length, { Name: 28, Title: 28, Company: 22, Adjustment: 22 });
+    const text = ["Name", "Title", "Employee ID", "Status", "Hired Through", "Company", "Location", "Class", "Function", "Pay Type", "Pay", "Adjustment", "Start", "End"];
+    const ws = sheet(wb, "Positions", [...text, ...monthHeads, `${fiscalYear} Total`], text.length, { Name: 28, Title: 28, "Hired Through": 28, Company: 22, Adjustment: 22 });
     const cFirst = C0 + text.length;
     const first = 3;
     positions.forEach((p, i) => {
       const r = first + i;
       const row = ws.getRow(r);
       const vals: Array<string | number | null> = [
-        p.name, p.title ?? "", p.employeeId ?? "", titleCase(p.status), p.company, p.location, p.class, p.function, p.payType, p.pay,
+        p.name, p.title ?? "", p.employeeId ?? "", titleCase(p.status), p.hiredThrough, p.company, p.location, p.class, p.function, p.payType, p.pay,
         p.adjustment ?? "", MONTH_ABBRS[clampMonth(p.startMonth) - 1], p.endMonth ? MONTH_ABBRS[clampMonth(p.endMonth) - 1] : "",
       ];
       vals.forEach((v, j) => (row.getCell(C0 + j).value = v));
-      row.getCell(C0 + 9).numFmt = MONEY_CENTS;
+      row.getCell(C0 + text.indexOf("Pay")).numFmt = MONEY_CENTS;
       p.byMonth.forEach((v, m) => (row.getCell(cFirst + m).value = round2(v)));
       row.getCell(cFirst + 12).value = { formula: `SUM(${L(cFirst)}${r}:${L(cFirst + 11)}${r})` };
       styleRow(row, cFirst, cFirst + 12);
@@ -77,15 +79,15 @@ export function buildPayrollWorkbook(input: PayrollExportInput): ExcelJS.Workboo
 
   // ---- 2. Cost Detail
   {
-    const text = ["Name", "Title", "Status", "Company"];
-    const ws = sheet(wb, "Cost Detail", [...text, ...COST_COMPONENTS.map((c) => COMPONENT_LABELS[c]), `${fiscalYear} Total`], text.length, { Name: 28, Title: 28, Company: 22 });
+    const text = ["Name", "Title", "Status", "Hired Through", "Company"];
+    const ws = sheet(wb, "Cost Detail", [...text, ...COST_COMPONENTS.map((c) => COMPONENT_LABELS[c]), `${fiscalYear} Total`], text.length, { Name: 28, Title: 28, "Hired Through": 28, Company: 22 });
     const cFirst = C0 + text.length;
     const cLast = cFirst + COST_COMPONENTS.length - 1;
     const first = 3;
     positions.forEach((p, i) => {
       const r = first + i;
       const row = ws.getRow(r);
-      [p.name, p.title ?? "", titleCase(p.status), p.company].forEach((v, j) => (row.getCell(C0 + j).value = v));
+      [p.name, p.title ?? "", titleCase(p.status), p.hiredThrough, p.company].forEach((v, j) => (row.getCell(C0 + j).value = v));
       COST_COMPONENTS.forEach((c, j) => (row.getCell(cFirst + j).value = round2(p.components[c] ?? 0)));
       row.getCell(cLast + 1).value = { formula: `SUM(${L(cFirst)}${r}:${L(cLast)}${r})` };
       styleRow(row, cFirst, cLast + 1);
