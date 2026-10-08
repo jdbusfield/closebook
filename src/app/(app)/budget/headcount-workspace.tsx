@@ -20,6 +20,7 @@ import { AssumptionSet, type AssumptionRow } from "@/lib/budget/assumption-keys"
 import { readBaselineFields } from "@/lib/budget/baseline";
 import { PlanHistory } from "./plan-history";
 import { CLASSES, FUNCTIONS, GEOGRAPHY_BY_LOCATION, LOCATIONS, SPLIT_OPTIONS, primaryKey, readSplits, splitLabel, type TagSplit } from "@/lib/budget/tagging";
+import { employerEntityId } from "@/lib/paylocity/companies";
 import { effectiveAllocations, readEntityAllocations, type EntityAllocation } from "@/lib/budget/allocation";
 
 interface HeadcountRow {
@@ -149,6 +150,9 @@ const VIEW_MODES: Array<{ key: ViewMode; label: string }> = [
 const rowLocation = (r: HeadcountRow) => readSplits(r.location_allocations);
 const rowClass = (r: HeadcountRow) => readSplits(r.class_allocations, "class");
 const rowFunction = (r: HeadcountRow) => readSplits(r.function_allocations);
+
+// Fallback when the employing entity is not in this page's entity list
+const PAYLOCITY_COMPANY_NAMES: Record<string, string> = { "132427": "Silverco Enterprises", "316791": "Hollywood Depot Rentals" };
 
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -646,6 +650,13 @@ export function HeadcountWorkspace({
 
   const [exporting, setExporting] = useState(false);
   /** Excel download of what the page shows: every position, priced, plus component and company rollups */
+  /** The entity the person is hired through, from their Paylocity company */
+  const employerName = (companyId: string | null): string => {
+    if (!companyId) return "";
+    const id = employerEntityId(companyId);
+    const e = id ? entityById.get(id) : undefined;
+    return e?.name ?? PAYLOCITY_COMPANY_NAMES[companyId] ?? `Paylocity ${companyId}`;
+  };
   const exportXlsx = async () => {
     if (!totals) return;
     setExporting(true);
@@ -672,6 +683,7 @@ export function HeadcountWorkspace({
             title: r.title,
             employeeId: r.employee_id,
             status: r.status,
+            hiredThrough: employerName(r.paylocity_company_id),
             company: companyLabel(r) || "Not allocated",
             location: splitLabel(rowLocation(r)),
             class: splitLabel(rowClass(r)),
