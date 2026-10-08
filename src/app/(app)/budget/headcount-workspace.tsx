@@ -644,6 +644,64 @@ export function HeadcountWorkspace({
     return patch(id, { [field]: stored } as unknown as Partial<HeadcountRow>);
   };
 
+  const [exporting, setExporting] = useState(false);
+  /** Excel download of what the page shows: every position, priced, plus component and company rollups */
+  const exportXlsx = async () => {
+    if (!totals) return;
+    setExporting(true);
+    try {
+      const { buildPayrollWorkbook, payrollExportFileName } = await import("@/lib/budget/payroll-export");
+      const scopeLabel = isPlan ? "Payroll Plan" : `${ownerName} Payroll`;
+      // Groups plus whatever no group carries, so the tab ties to the plan total
+      const companyGroups = reportingEntities
+        .map((g) => ({ name: g.name, byMonth: groupByMonth[g.id] ?? new Array(12).fill(0) }))
+        .filter((g) => g.byMonth.some((v) => v !== 0));
+      if (companyGroups.length) {
+        const rest = totals.totalByMonth.map((v, i) => Math.round((v - companyGroups.reduce((t, g) => t + (g.byMonth[i] ?? 0), 0)) * 100) / 100);
+        if (rest.some((v) => Math.abs(v) >= 1)) companyGroups.push({ name: "Unallocated", byMonth: rest });
+      }
+      const wb = buildPayrollWorkbook({
+        fiscalYear: scope.fiscalYear,
+        scopeLabel,
+        positions: rows.map((r) => {
+          const p = pricedById.get(r.id);
+          const adjusted = !!r.comp_adj_kind && r.comp_adj_value != null && r.comp_adj_value !== 0;
+          const pay = r.pay_type === "Amount" ? r.amount_monthly : adjusted ? adjustedPay(r, r.comp_adj_kind!, r.comp_adj_value!) : payUnit(r).current;
+          return {
+            name: r.name,
+            title: r.title,
+            employeeId: r.employee_id,
+            status: r.status,
+            company: companyLabel(r) || "Not allocated",
+            location: splitLabel(rowLocation(r)),
+            class: splitLabel(rowClass(r)),
+            function: splitLabel(rowFunction(r)),
+            payType: r.pay_type === "Amount" ? "Amount Per Month" : payUnit(r).hourly ? "Hourly" : "Salary",
+            pay: pay ?? null,
+            adjustment: adjLabel(r),
+            startMonth: r.start_month,
+            endMonth: r.end_month,
+            byMonth: p?.totalByMonth ?? new Array(12).fill(0),
+            components: p?.componentTotals ?? ({} as Record<CostComponent, number>),
+          };
+        }),
+        components: totals.components,
+        groups: companyGroups,
+      });
+      const buf = await wb.xlsx.writeBuffer();
+      const url = URL.createObjectURL(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = payrollExportFileName(scope.fiscalYear, scopeLabel);
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const selectedRow = selected ? rows.find((r) => r.id === selected) ?? null : null;
   const selectedPriced = selected ? pricedById.get(selected) ?? null : null;
 
@@ -960,6 +1018,12 @@ export function HeadcountWorkspace({
                   </SelectContent>
                 </Select>
               </div>
+            )}
+            {rows.length > 0 && (
+              <Button variant="outline" onClick={exportXlsx} disabled={exporting || !totals}>
+                {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                Export to Excel
+              </Button>
             )}
             {isPlan && (
               <Button onClick={() => setReqOpen(true)} disabled={readOnly}>
