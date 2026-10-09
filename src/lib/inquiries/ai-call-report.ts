@@ -197,6 +197,21 @@ function headline(input: ReportInput, quoted: QuotedPrice | null, response: Resp
     return { result: "DO NOT CONTACT", next: "Customer asked us not to contact them again. Send nothing." };
   }
   if (input.outcome === "wrong_number") return { result: "Wrong number", next: "Follow up by email from the form details." };
+  // Off-script requests: the agent promised the team would email about
+  // something specific (e.g. a two-stall quote based on availability).
+  if (input.outcome === "email_followup") {
+    const what = str(c.notes);
+    return {
+      result: `Team to email${what ? `: ${what.length > 90 ? `${what.slice(0, 90)}...` : what}` : ""}`,
+      next: `Email the customer about what the agent promised (see Agent notes)${quoted ? `, along with the written quote; the AI quoted around ${money(quoted.say_total)}` : ", along with a written quote"}.`,
+    };
+  }
+  if (input.outcome === "customer_will_call") {
+    return {
+      result: `Customer will call us${quoted ? ` (quoted around ${money(quoted.say_total)})` : ""}`,
+      next: "No callback needed. Email the written quote the agent promised so they have it.",
+    };
+  }
   if (input.outcome === "callback_requested") {
     return {
       result: `Callback requested${callback ? `: ${callback}` : ""}`,

@@ -236,6 +236,8 @@ const OUTCOME_LABELS: Record<string, string> = {
   wrong_number: "Wrong number",
   voicemail: "Voicemail",
   hung_up_early: "Hung up early",
+  customer_will_call: "Customer will call us",
+  email_followup: "Team to email",
 };
 
 export function outcomeLabel(outcome: string | null | undefined): string {

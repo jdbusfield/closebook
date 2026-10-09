@@ -151,3 +151,16 @@ test("echoing the customer's budget is not a price", () => {
   });
   assert.equal(r.data.price_warning, null);
 });
+
+test("off-script outcomes: two-stall email follow-up and customer will call", () => {
+  const two = buildAiCallReport({
+    kind: "answered", inquiry, attempt: 1, outcome: "email_followup",
+    collected: { quote_response: "hesitant", notes: "Promised an updated quote for a two-stall trailer based on availability." },
+    transcript,
+  });
+  assert.match(two.subject, /Team to email: Promised an updated quote for a two-stall trailer based on availability\.$/);
+  assert.match(two.text, /Next step: Email the customer about what the agent promised \(see Agent notes\), along with the written quote; the AI quoted around \$3,360\./);
+  const later = buildAiCallReport({ kind: "answered", inquiry, attempt: 1, outcome: "customer_will_call", collected: { quote_response: "hesitant" }, transcript });
+  assert.match(later.subject, /Customer will call us \(quoted around \$3,360\)$/);
+  assert.match(later.text, /No callback needed/);
+});
