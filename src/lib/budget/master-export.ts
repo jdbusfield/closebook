@@ -258,7 +258,7 @@ export function buildMasterWorkbook(opts: { fiscalYear: number; kind: "budget" |
     if (meth) {
       const amount = Number(meth.amount ?? 0);
       const pct = Number(meth.pct ?? 0) / 100;
-      const reproduces = (vals: number[]) => vals.every((v, i) => Math.abs(v - (it.months[i] ?? 0)) < 1);
+      const reproduces = (vals: number[]) => vals.every((v, i) => Math.abs(v - (it.months[i] ?? 0)) < 0.005);
       if (meth.kind === "flat") {
         if (reproduces(it.months.map((_, i) => (inRange(meth, i) ? amount : 0)))) {
           driver(r, amount, "$ / month", DRIVER_MONEY);
