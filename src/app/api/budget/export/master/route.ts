@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { accessErrorResponse, assertOrgMember, getBudgetActor, requireVersionAccess } from "@/lib/budget/access";
 import { buildVersionModel } from "@/lib/budget/model";
-import { buildMasterWorkbook } from "@/lib/budget/master-export";
+import { buildMasterWorkbook, type MasterAssumption } from "@/lib/budget/master-export";
+import { ASSUMPTION_KEY_MAP } from "@/lib/budget/assumption-keys";
+import { fetchAllPaginated } from "@/lib/utils/paginated-fetch";
 
 // One Financial Model build per group for last year's actuals
 export const maxDuration = 120;
@@ -61,7 +63,23 @@ export async function GET(request: Request) {
     const models = await Promise.all(
       groups.map(async (r) => {
         const owner = await requireVersionAccess(admin, actor, chosen.get(r.id)!.id, false);
-        return { re: r, version: chosen.get(r.id)!, model: await buildVersionModel(admin, owner, { withActuals: true }) };
+        const [model, rows] = await Promise.all([
+          buildVersionModel(admin, owner, { withActuals: true }),
+          fetchAllPaginated<{ key: string; scope: string; scope_id: string | null; value: number | null; text_value: string | null; source_note: string | null; effective_from: string | null; effective_to: string | null }>((o, l) =>
+            admin.from("budget_assumptions").select("key, scope, scope_id, value, text_value, source_note, effective_from, effective_to").eq("budget_version_id", owner.id).order("key").order("scope").order("id").range(o, o + l - 1),
+          ),
+        ]);
+        // Per-line settings (own number, zero months) show on the Detail lines instead
+        const assumptions: MasterAssumption[] = rows
+          .filter((a) => ASSUMPTION_KEY_MAP.has(a.key))
+          .map((a) => {
+            const def = ASSUMPTION_KEY_MAP.get(a.key)!;
+            // Company scope ids are Paylocity company numbers (see the assumptions page)
+            const appliesTo = a.scope === "org" ? "All" : a.scope === "company" ? `Paylocity ${a.scope_id ?? ""}` : `${a.scope} ${a.scope_id ?? ""}`;
+            const effective = a.effective_from || a.effective_to ? `${a.effective_from ?? "start"} to ${a.effective_to ?? "end"}` : null;
+            return { label: def.label, key: a.key, scope: appliesTo, value: a.value == null ? null : Number(a.value), unit: def.unit, text: a.text_value, note: [effective, a.source_note].filter(Boolean).join("; ") || null };
+          });
+        return { re: r, version: chosen.get(r.id)!, model, assumptions };
       }),
     );
 
@@ -79,7 +97,7 @@ export async function GET(request: Request) {
       fiscalYear,
       kind,
       through,
-      groups: models.map((x) => ({ name: x.re.name, versionName: x.version.name, model: x.model })),
+      groups: models.map((x) => ({ name: x.re.name, versionName: x.version.name, model: x.model, assumptions: x.assumptions })),
       intercompany,
       exportedOn: new Date().toISOString().slice(0, 10),
     });
