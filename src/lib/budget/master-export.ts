@@ -469,7 +469,7 @@ export function buildMasterWorkbook(opts: { fiscalYear: number; kind: "budget" |
 
   // ---------------------------------------------------------------- Assumptions
   setupSheet(assumptions, [2, 16, 40, 26, 12, 14, 12, 30, 60]);
-  headerRow(assumptions, HEADER_ROW, ["Entity", "Assumption", "Key", "Scope", "Value", "Unit", "Text", "Note"], 2, 6);
+  headerRow(assumptions, HEADER_ROW, ["Entity", "Assumption", "Key", "Applies To", "Value", "Unit", "Text", "Effective / Note"], 2, 6);
   assumptions.views = [{ state: "frozen", xSplit: 0, ySplit: HEADER_ROW }];
   let ar = HEADER_ROW + 1;
   for (const g of groups) {
