@@ -27,6 +27,8 @@ const group = (name: string, rev: number): MasterGroup => {
         ] },
         { id: "other_operating_costs", title: "Other Operating Costs", masters: [
           { id: "o1", accountNumber: "6300", name: "Other Expenses", months: m12(rev / 4), items: [item("Audit", "method", m12(rev / 4), { kind: "annual", amount: rev * 3, spread: "even" })] },
+          // $1,000 a year spread evenly: CloseBook stores 83.33 a month (999.96 for the year)
+          { id: "o2", accountNumber: "6310", name: "Dues", months: m12(83.33), items: [item("Dues", "method", m12(83.33), { kind: "annual", amount: 1000, spread: "even" })] },
         ] },
         { id: "other_expense", title: "Other Expense", masters: [{ id: "d1", accountNumber: "7000", name: "Vehicle Depreciation", months: m12(2), items: [] }] },
       ],
@@ -59,11 +61,12 @@ test("detail: drivers feed formulas that reproduce the CloseBook amounts", () =>
     if (r.getCell(2).value === "Avon" && line) rows.set(line, { n, driver: r.getCell(9).value, unit: String(r.getCell(10).value ?? ""), jan: text(r.getCell(22).value) });
   });
   assert.equal(rows.get("RL line")!.driver, 100);
-  assert.equal(rows.get("RL line")!.jan, `=$I${rows.get("RL line")!.n}`);
+  assert.equal(rows.get("RL line")!.jan, `=ROUND($I${rows.get("RL line")!.n},2)`);
   const fee = rows.get("3% of rental")!;
   assert.equal(fee.driver, 0.03);
-  assert.equal(fee.jan, `=$I${fee.n}*V$${rows.get("Rental Revenue - Vehicles")!.n}`);
-  assert.equal(rows.get("Audit")!.jan, `=$I${rows.get("Audit")!.n}/12`);
+  assert.equal(fee.jan, `=ROUND($I${fee.n}*V$${rows.get("Rental Revenue - Vehicles")!.n},2)`);
+  assert.equal(rows.get("Audit")!.jan, `=ROUND($I${rows.get("Audit")!.n}/12,2)`);
+  assert.equal(rows.get("Dues")!.jan, `=ROUND($I${rows.get("Dues")!.n}/12,2)`);
   // 1 a month typed outside the items is listed so the account ties
   assert.ok(rows.has("Other amounts on the line"));
 });

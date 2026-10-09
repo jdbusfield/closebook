@@ -76,8 +76,6 @@ const PCT = '0.0%_);(0.0%);"-"_)';
 const DRIVER_MONEY = '$#,##0_);($#,##0);"-"_)';
 const DRIVER_PCT = '0.00%_);(0.00%);"-"_)';
 const DRIVER_NUM = '#,##0_);(#,##0);"-"_)';
-// SUMIFS ranges run to a fixed bottom row so rows added in Excel are still counted
-const MAX_ROW = 6000;
 const HEADER_ROW = 3;
 
 type Cell = ExcelJS.Cell;
@@ -222,6 +220,8 @@ export function buildMasterWorkbook(opts: { fiscalYear: number; kind: "budget" |
     }
     row++;
   }
+  // SUMIFS ranges run well past the last Detail row so rows added in Excel are still counted
+  const MAX_ROW = Math.max(6000, (row + 1000) * 2);
   const note = detail.getRow(row + 1).getCell(2);
   note.value = `Blue = typed inputs (CloseBook amounts), black = formulas. Account rows sum the items beneath them. Items with a Driver formula recalculate when you change the Driver. ${py} columns are Financial Model actuals for the closed months, at account level. Exported ${opts.exportedOn}.`;
   note.font = { name: FONT, size: 11, italic: true, color: { argb: GREY } };
@@ -258,30 +258,31 @@ export function buildMasterWorkbook(opts: { fiscalYear: number; kind: "budget" |
     if (meth) {
       const amount = Number(meth.amount ?? 0);
       const pct = Number(meth.pct ?? 0) / 100;
-      const reproduces = (vals: number[]) => vals.every((v, i) => Math.abs(v - (it.months[i] ?? 0)) < 0.005);
+      // CloseBook rounds each month to the cent, and so do the formulas (ROUND(...,2))
+      const reproduces = (vals: number[]) => vals.every((v, i) => Math.abs(round2(v) - (it.months[i] ?? 0)) < 0.001);
       if (meth.kind === "flat") {
         if (reproduces(it.months.map((_, i) => (inRange(meth, i) ? amount : 0)))) {
           driver(r, amount, "$ / month", DRIVER_MONEY);
-          formulas = it.months.map((_, i) => (inRange(meth, i) ? `${drv}` : null));
+          formulas = it.months.map((_, i) => (inRange(meth, i) ? `ROUND(${drv},2)` : null));
         }
       } else if (meth.kind === "annual" && meth.spread !== "shape") {
         const n = Array.from({ length: 12 }, (_, i) => inRange(meth, i)).filter(Boolean).length || 1;
         if (reproduces(it.months.map((_, i) => (inRange(meth, i) ? amount / n : 0)))) {
           driver(r, amount, n === 12 ? "$ / year" : `$ over ${n} months`, DRIVER_MONEY);
-          formulas = it.months.map((_, i) => (inRange(meth, i) ? `${drv}/${n}` : null));
+          formulas = it.months.map((_, i) => (inRange(meth, i) ? `ROUND(${drv}/${n},2)` : null));
         }
       } else if (meth.kind === "one_time") {
         const mi = Math.min(12, Math.max(1, Math.round(meth.month ?? 1))) - 1;
         if (reproduces(it.months.map((_, i) => (i === mi ? amount : 0)))) {
           driver(r, amount, `$ in ${MONTH_ABBRS[mi]}`, DRIVER_MONEY);
-          formulas = it.months.map((_, i) => (i === mi ? `${drv}` : null));
+          formulas = it.months.map((_, i) => (i === mi ? `ROUND(${drv},2)` : null));
         }
       } else if (meth.kind === "pct_of_line" && meth.source_master_id) {
         const srcRow = accountRowOf.get(`${p.entity}|${meth.source_master_id}`);
         const srcMaster = groups.find((g) => g.name === p.entity)?.model.sections.flatMap((s) => s.masters).find((x) => x.id === meth.source_master_id);
         if (srcRow && srcMaster && reproduces(srcMaster.months.map((v, i) => (inRange(meth, i) ? v * pct : 0)))) {
           driver(r, pct, `% of ${srcMaster.accountNumber ?? srcMaster.name}`, DRIVER_PCT);
-          formulas = it.months.map((_, i) => (inRange(meth, i) ? `${drv}*${L(dBFirst + i)}$${srcRow}` : null));
+          formulas = it.months.map((_, i) => (inRange(meth, i) ? `ROUND(${drv}*${L(dBFirst + i)}$${srcRow},2)` : null));
         }
       }
       if (!formulas) {
