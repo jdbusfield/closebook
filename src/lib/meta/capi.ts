@@ -10,7 +10,8 @@
 // All credentials come from env. If any are missing the module reports
 // "not configured" and the caller no-ops — nothing is sent and nothing fails.
 
-import { hashEmail, hashPhone } from "@/lib/google-ads/conversions";
+import { hashEmail } from "@/lib/google-ads/conversions";
+import { hashMetaPhone } from "@/lib/meta/crm-stages";
 
 const GRAPH_VERSION = "v21.0";
 
@@ -65,7 +66,7 @@ export async function uploadMetaPurchase(
   const userData: Record<string, unknown> = {};
   const he = hashEmail(input.email);
   if (he) userData.em = [he];
-  const hp = hashPhone(input.phone);
+  const hp = hashMetaPhone(input.phone);
   if (hp) userData.ph = [hp];
   if (input.fbc) userData.fbc = input.fbc;
   if (input.fbp) userData.fbp = input.fbp;

@@ -4068,6 +4068,45 @@ export type Database = {
         }
         Relationships: []
       }
+      meta_crm_stage_events: {
+        Row: {
+          id: string
+          entity_id: string
+          inquiry_id: string
+          stage: string
+          event_time: string
+          status: string
+          error: string | null
+          sent_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          inquiry_id: string
+          stage: string
+          event_time: string
+          status: string
+          error?: string | null
+          sent_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          inquiry_id?: string
+          stage?: string
+          event_time?: string
+          status?: string
+          error?: string | null
+          sent_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       budget_headcount: {
         Row: {
           id: string
