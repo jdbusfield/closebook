@@ -5,7 +5,7 @@ import { parseQuoteRefs } from "./names";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
-interface Connection {
+export interface Connection {
   id: string;
   realm_id: string;
   access_token: string;
@@ -15,7 +15,7 @@ interface Connection {
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-async function accessToken(admin: Admin, c: Connection): Promise<string> {
+export async function accessToken(admin: Admin, c: Connection): Promise<string> {
   if (new Date(c.access_token_expires_at).getTime() - Date.now() > 5 * 60 * 1000) return c.access_token;
   const basic = Buffer.from(`${process.env.QBO_CLIENT_ID}:${process.env.QBO_CLIENT_SECRET}`).toString("base64");
   const res = await fetch("https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer", {
@@ -36,7 +36,7 @@ async function accessToken(admin: Admin, c: Connection): Promise<string> {
   return t.access_token as string;
 }
 
-class Qbo {
+export class Qbo {
   constructor(private realm: string, private token: string) {}
 
   async queryAll(entity: string, where = ""): Promise<any[]> {

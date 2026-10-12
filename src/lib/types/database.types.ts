@@ -492,6 +492,48 @@ export type Database = {
         }
         Relationships: []
       }
+      qbo_ad_expense_tags: {
+        Row: {
+          id: string
+          entity_id: string
+          txn_type: string
+          txn_id: string
+          line_id: string
+          tag: string
+          restroom_share: number
+          note: string | null
+          tagged_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          txn_type: string
+          txn_id: string
+          line_id?: string
+          tag: string
+          restroom_share?: number
+          note?: string | null
+          tagged_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          txn_type?: string
+          txn_id?: string
+          line_id?: string
+          tag?: string
+          restroom_share?: number
+          note?: string | null
+          tagged_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       rental_inquiry_ad_spend: {
         Row: {
           id: string
