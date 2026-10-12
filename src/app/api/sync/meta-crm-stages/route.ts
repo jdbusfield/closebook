@@ -92,45 +92,68 @@ export async function GET(request: Request) {
   // Stages already sent or skipped. 'failed' rows are retried.
   const done = new Set<string>();
   {
-    const { data, error } = await supabase
-      .from("meta_crm_stage_events")
-      .select("inquiry_id, stage, status")
-      .in("inquiry_id", ids)
-      .in("status", ["sent", "skipped"]);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    for (const r of data ?? []) done.add(`${r.inquiry_id}:${r.stage}`);
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("meta_crm_stage_events")
+        .select("inquiry_id, stage, status")
+        .in("inquiry_id", ids)
+        .in("status", ["sent", "skipped"])
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      for (const r of data ?? []) done.add(`${r.inquiry_id}:${r.stage}`);
+      if (!data || data.length < PAGE) break;
+    }
   }
 
   // When each stage happened: activity log moves, then quote timestamps.
   const quotedAt = new Map<string, Date>();
   const bookedAt = new Map<string, Date>();
   {
-    const { data, error } = await supabase
-      .from("rental_inquiry_activity")
-      .select("inquiry_id, body, occurred_at")
-      .in("inquiry_id", ids)
-      .like("body", "Stage moved to%");
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    for (const a of data ?? []) {
-      const at = new Date(a.occurred_at);
-      if (isNaN(at.getTime())) continue;
-      const body = a.body ?? "";
-      if (body.includes(QUOTED_LABEL)) {
-        quotedAt.set(a.inquiry_id, earliest(quotedAt.get(a.inquiry_id), at));
-      } else if (BOOKED_LABELS.some((l) => body.includes(`“${l}”`))) {
-        bookedAt.set(a.inquiry_id, earliest(bookedAt.get(a.inquiry_id), at));
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("rental_inquiry_activity")
+        .select("inquiry_id, body, occurred_at")
+        .in("inquiry_id", ids)
+        .like("body", "Stage moved to%")
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      for (const a of data ?? []) {
+        const at = new Date(a.occurred_at);
+        if (isNaN(at.getTime())) continue;
+        const body = a.body ?? "";
+        if (body.includes(QUOTED_LABEL)) {
+          quotedAt.set(a.inquiry_id, earliest(quotedAt.get(a.inquiry_id), at));
+        } else if (BOOKED_LABELS.some((l) => body.includes(`“${l}”`))) {
+          bookedAt.set(a.inquiry_id, earliest(bookedAt.get(a.inquiry_id), at));
+        }
       }
+      if (!data || data.length < PAGE) break;
     }
   }
   const acceptedTotal = new Map<string, number>();
   {
-    const { data, error } = await supabase
-      .from("rental_inquiry_quotes")
-      .select("inquiry_id, status, total, created_at, accepted_at")
-      .in("inquiry_id", ids)
-      .order("created_at", { ascending: true });
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    for (const q of data ?? []) {
+    const quotes: {
+      inquiry_id: string;
+      status: string;
+      total: number | null;
+      created_at: string;
+      accepted_at: string | null;
+    }[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("rental_inquiry_quotes")
+        .select("inquiry_id, status, total, created_at, accepted_at")
+        .in("inquiry_id", ids)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      quotes.push(...(data ?? []));
+      if (!data || data.length < PAGE) break;
+    }
+    for (const q of quotes) {
       if (q.status !== "draft" && !quotedAt.has(q.inquiry_id)) {
         quotedAt.set(q.inquiry_id, new Date(q.created_at));
       }
