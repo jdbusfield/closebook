@@ -138,5 +138,12 @@ export interface RunResult {
     docsMatchedAmount: number;
     docsAmount: number;
   };
+  /** Documents from the prior month on, with the quote each one was tied to */
+  matchedDocs: {
+    num: string; type: DocType; date: IsoDate; customer: string; amount: number;
+    how: string; quoteId: string; quoteStatus: string; quoteStart: IsoDate; quoteEnd: IsoDate; quoteAmount: number;
+    /** Why the tie looks wrong, or "" */
+    check: string;
+  }[];
   unmatchedDocs: { num: string; type: DocType; date: IsoDate; customer: string; amount: number }[];
 }

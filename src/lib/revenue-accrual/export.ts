@@ -168,6 +168,25 @@ export async function workingWorkbook(entityName: string, report: AccrualReport)
   itemSheet(wb, "Deferrals", result.items.filter((i) => i.kind === "deferral" && i.tier !== "review"), included);
   itemSheet(wb, "Needs Review", result.items.filter((i) => i.tier === "review"), included);
 
+  const m = wb.addWorksheet("Matched Invoices");
+  header(m, [
+    { header: "Type", width: 14 },
+    { header: "Number", width: 10 },
+    { header: "Date", width: 11, date: true },
+    { header: "Customer", width: 60 },
+    { header: "Revenue", width: 13, money: true },
+    { header: "Tied By", width: 20 },
+    { header: "Quote ID", width: 20 },
+    { header: "Quote Status", width: 14 },
+    { header: "Rental Start", width: 11, date: true },
+    { header: "Rental End", width: 11, date: true },
+    { header: "Quote Total", width: 13, money: true },
+    { header: "Check", width: 36 },
+  ]);
+  const flagged = [...(result.matchedDocs ?? [])].sort((a, b) => (a.check ? 0 : 1) - (b.check ? 0 : 1));
+  for (const d of flagged)
+    m.addRow([d.type, d.num, asDate(d.date), d.customer, d.amount, d.how, d.quoteId, d.quoteStatus, asDate(d.quoteStart), asDate(d.quoteEnd), d.quoteAmount, d.check]).font = FONT;
+
   const u = wb.addWorksheet("Unmatched Invoices");
   header(u, [
     { header: "Type", width: 14 },

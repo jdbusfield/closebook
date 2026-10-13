@@ -17,6 +17,8 @@ const cents = (n: number) => Math.round(n * 100) / 100;
 const MATCH_WINDOW_DAYS = 150;
 const NAMELESS_MATCH_DAYS = 14;
 const NEXT_MONTH_REVIEW_DAYS = 10;
+/** A quote named on an invoice must run within this many days of the invoice date (or match its amount) */
+const REF_WINDOW_DAYS = 120;
 
 export interface RunInput {
   period: MonthRef;
@@ -175,15 +177,26 @@ export function runAccrual({ period, quotes, docs, settings }: RunInput): RunRes
       }
     }
   }
+  const sameAmount = (q: Quote, i: DocInfo) => Math.round(q.amount * 100) === Math.round(i.revenue * 100);
+  const daysFrom = (q: Quote, date: IsoDate) =>
+    toUtc(date) < toUtc(q.start) ? daysBetween(date, q.start) : toUtc(date) > toUtc(q.end) ? daysBetween(q.end, date) : 0;
+  const plausible = (q: Quote, i: DocInfo) => sameAmount(q, i) || Math.abs(daysFrom(q, i.doc.date)) <= REF_WINDOW_DAYS;
   const resolveRef = (ref: string, i: DocInfo): Quote | null => {
     const hits = byRef.get(ref) ?? [];
-    if (hits.length === 1) return hits[0];
-    // A bare number shared by an HDR and a WT quote: take the one on this customer
-    const mine = hits.filter((q) => {
+    const named = hits.length === 1 ? hits[0] : null;
+    if (named && plausible(named, i)) return named;
+    // A wrong prefix ("WT-116106" for HDR-116106) or a bare shared number: among the quotes with
+    // the same digits, take the one that fits this invoice (same amount, then this customer and dates)
+    const digits = ref.replace(/^\D+-/, "");
+    const pool = (byRef.get(digits) ?? []).filter((q) => plausible(q, i));
+    const exact = pool.filter((q) => sameAmount(q, i));
+    if (exact.length === 1) return exact[0];
+    const mine = pool.filter((q) => {
       const k = qKey.get(q.id) ?? mapKey(q.project);
       return !!k && (k === i.leafKey || k === i.topKey);
     });
-    return mine.length === 1 ? mine[0] : null;
+    if (mine.length === 1) return mine[0];
+    return named;
   };
   for (const i of infos) {
     const refs = (i.doc.quoteRefs ?? []).map((n) => resolveRef(n, i)).filter((q): q is Quote => !!q);
@@ -387,20 +400,28 @@ export function runAccrual({ period, quotes, docs, settings }: RunInput): RunRes
       if (amount < 0.01) continue;
       const long = toUtc(q.start) < toUtc(twoBackStart);
       const endedBefore = toUtc(q.end) < toUtc(S);
+      // An invoice on this job for exactly the quote total, already tied elsewhere, is likely this quote's bill
+      const twin = key
+        ? (jobDocs.get(key) ?? []).find(
+            (i) => i.quote && i.quote.id !== q.id && sameAmount(q, i) && Math.abs(daysFrom(q, i.doc.date)) <= MATCH_WINDOW_DAYS,
+          )
+        : undefined;
       const mix = jobMix(key);
       const rule = mix ? null : ruleMix(q);
       items.push({
         id: `accrual:quote:${q.id}`,
         kind: "accrual",
-        tier: long || endedBefore ? "review" : "quote",
+        tier: long || endedBefore || twin ? "review" : "quote",
         source: "Approved quote, not invoiced yet",
-        reason: long
+        reason: twin
+          ? `Invoice ${twin.doc.num} (${twin.doc.date}) on this job is for exactly ${fmt$(q.amount)} but is tied to ${twin.quote!.id}. If it bills this quote, fix its Quote Number in QuickBooks and pull again; do not accrue ${fmt$(amount)}.`
+          : long
           ? `Rental started ${q.start}. Long rentals are often billed up front or monthly on invoices that do not tie to the quote; check before accruing ${fmt$(amount)}.`
           : endedBefore
             ? `Rental ended ${q.end}, before ${S.slice(0, 7)}, and still has no invoice. It may have been billed under another customer name; accrue it only if it is still unbilled.`
             : `No invoice found for ${fmt$(need)} of this quote. ${pct(earned)} of the rental (${q.start} to ${q.end}) was on or before ${E}.`,
         amount,
-        defaultInclude: !long && !endedBefore,
+        defaultInclude: !long && !endedBefore && !twin,
         allocation: allocate(amount, mix ?? rule!.weights),
         allocationSource: mix ? "This job's invoice mix" : rule!.source,
         customer: key ? (jobDocs.get(key)?.[0]?.doc.customer ?? null) : null,
@@ -485,6 +506,21 @@ export function runAccrual({ period, quotes, docs, settings }: RunInput): RunRes
       docsMatchedAmount: cents(matched.reduce((s, i) => s + i.revenue, 0)),
       docsAmount: cents(infos.reduce((s, i) => s + i.revenue, 0)),
     },
+    matchedDocs: matched
+      .filter((i) => i.revenue !== 0 && toUtc(i.doc.date) >= toUtc(prevStart))
+      .map((i) => {
+        const q = i.quote!;
+        const check = !isApproved(q, settings)
+          ? `Quote is ${q.status || "not approved"}`
+          : Math.abs(daysFrom(q, i.doc.date)) > REF_WINDOW_DAYS
+            ? "Invoice date is far from the rental"
+            : "";
+        return {
+          num: i.doc.num, type: i.doc.type, date: i.doc.date, customer: i.doc.customer, amount: i.revenue,
+          how: i.quoteLinked ? "Quote Number field" : "Amount and customer",
+          quoteId: q.id, quoteStatus: q.status, quoteStart: q.start, quoteEnd: q.end, quoteAmount: q.amount, check,
+        };
+      }),
     unmatchedDocs: infos
       .filter((i) => !i.quote && i.revenue !== 0 && toUtc(i.doc.date) >= toUtc(prevStart))
       .map((i) => ({ num: i.doc.num, type: i.doc.type, date: i.doc.date, customer: i.doc.customer, amount: i.revenue })),
