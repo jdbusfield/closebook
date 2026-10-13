@@ -171,3 +171,36 @@ test("an invoice that names its quote ties to it even when the amounts differ", 
   assert.deepEqual(parseQuoteRefs("HDR 116116, 116117"), ["HDR-116116", "116117"]);
   assert.deepEqual(parseQuoteRefs("Quote HDR-116116"), ["HDR-116116"]);
 });
+
+test("a Quote Number with the wrong prefix ties to the same-digits quote that fits the invoice", () => {
+  const sep = { year: 2026, month: 9 };
+  const quotes = [
+    quote("Quote HDR-116106", "American Njinja Warrior", "2026-09-10", "2026-10-20", 139587.3),
+    quote("Quote WT-116106", "The Black Crowes", "2025-11-26", "2025-12-03", 1266, "Draft"),
+  ];
+  const d = {
+    ...doc("239102", "Canam Productions:American Ninja Warrior:American Ninja Warrior S19 (AC)", "2026-09-30", [[139587.3, "49006", "Power", "A/C"]]),
+    quoteRefs: parseQuoteRefs("WT 116106"),
+  };
+  const r = runAccrual({ period: sep, quotes, docs: [d], settings: S });
+  assert.equal(r.items.filter((x) => x.kind === "accrual").length, 0); // billed, never accrued from quote dates
+  const def = r.items.find((x) => x.kind === "deferral")!;
+  assert.equal(def.quoteId, "Quote HDR-116106");
+  assert.equal(def.amount, 68091.37); // 20 of 41 days fall in October
+  assert.equal(r.matchedDocs[0].quoteId, "Quote HDR-116106");
+  assert.equal(r.matchedDocs[0].check, "");
+});
+
+test("an unbilled quote with a same-amount invoice tied elsewhere goes to review, not the accrual", () => {
+  const sep = { year: 2026, month: 9 };
+  const quotes = [
+    quote("Quote WT-118990", "Rivian X Fall", "2026-09-10", "2026-09-11", 359.75),
+    quote("Quote WT-118000", "Rivian X Fall", "2026-09-01", "2026-09-02", 100),
+  ];
+  const d = { ...doc("238674", "Sharp and Solid:Rivian X Fall (W&T)", "2026-09-14", [[359.75, "49002", "Walkies", "Production Supplies"]]), quoteRefs: parseQuoteRefs("WT-118000") };
+  const r = runAccrual({ period: sep, quotes, docs: [d], settings: S });
+  const it = r.items.find((x) => x.quoteId === "Quote WT-118990")!;
+  assert.equal(it.tier, "review");
+  assert.equal(it.defaultInclude, false);
+  assert.match(it.reason, /238674/);
+});
