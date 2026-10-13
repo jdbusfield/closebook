@@ -3,6 +3,7 @@ import { createHmac } from "node:crypto";
 import { test } from "node:test";
 import {
   dynamicVariables,
+  spokenLocation,
   inCallingHours,
   formatCallMessage,
   ineligibleReason,
@@ -113,6 +114,7 @@ test("dynamicVariables always fills every prompt variable", () => {
     end_date: "2027-06-14",
     guests: "unknown",
     event_location: "Malibu",
+    event_location_spoken: "Malibu",
     notes: "unknown",
     form_price: "unknown",
     closebook_call_id: "call-1",
@@ -122,8 +124,18 @@ test("dynamicVariables always fills every prompt variable", () => {
     "call-2",
     "For 150 guests we'd recommend one 4-stall trailer. We'd typically quote around $1,249 for the day."
   );
+  assert.equal(priced.event_location_spoken, "nine two five oh four");
   assert.equal(priced.form_price, "For 150 guests we'd recommend one 4-stall trailer. We'd typically quote around $1,249 for the day.");
   assert.equal(dynamicVariables({ name: null, use_case: null, start_date: null, end_date: null, guests: null, location: null, notes: null }, "x").customer_name, "there");
+});
+
+test("spokenLocation writes zip codes digit by digit and leaves other text alone", () => {
+  assert.equal(spokenLocation("90046"), "nine oh oh four six");
+  assert.equal(spokenLocation("91307"), "nine one three oh seven");
+  assert.equal(spokenLocation("123 Main St, Malibu, CA 90265"), "123 Main St, Malibu, CA nine oh two six five");
+  assert.equal(spokenLocation("Malibu 90265-1234"), "Malibu nine oh two six five one two three four");
+  assert.equal(spokenLocation("12345678"), "12345678");
+  assert.equal(spokenLocation("unknown"), "unknown");
 });
 
 test("verifyWebhookSignature accepts a valid signature and rejects tampering or stale times", () => {

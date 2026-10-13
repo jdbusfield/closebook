@@ -160,7 +160,9 @@ export interface InquiryDetails {
  * Every variable the agent prompt references. A missing one fails the call.
  * form_price is the price-table quote for the form's details (or "unknown"),
  * worked out before dialing so the agent needs get_price only when the
- * customer changes something.
+ * customer changes something. event_location_spoken has every zip code written
+ * out digit by digit, because the LLM misreads zips (90046 -> "nine oh two four
+ * six") and the voice reads numerals as one big number.
  */
 export function dynamicVariables(inq: InquiryDetails, callId: string, formPrice?: string | null): Record<string, string> {
   const v = (s: string | null | undefined) => (s && s.trim() ? s.trim() : "unknown");
@@ -172,10 +174,20 @@ export function dynamicVariables(inq: InquiryDetails, callId: string, formPrice?
     end_date: v(inq.end_date || inq.start_date),
     guests: v(inq.guests),
     event_location: v(inq.location),
+    event_location_spoken: spokenLocation(v(inq.location)),
     notes: v(inq.notes).slice(0, 500),
     form_price: formPrice || "unknown",
     closebook_call_id: callId,
   };
+}
+
+const DIGIT_WORDS = ["oh", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+
+/** Writes each 5-digit zip (and ZIP+4) as words: "Malibu 90046" -> "Malibu nine oh oh four six". */
+export function spokenLocation(location: string): string {
+  return location.replace(/\b(\d{5})(?:-(\d{4}))?\b/g, (_m, zip: string, plus4?: string) =>
+    [...zip, ...(plus4 ?? "")].map((d) => DIGIT_WORDS[Number(d)]).join(" ")
+  );
 }
 
 /**
