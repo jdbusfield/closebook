@@ -77,7 +77,7 @@ export default function BudgetDashboardPage({ params }: { params: Promise<{ year
         <div className="flex flex-wrap items-end gap-3">
           <Segmented label="Company" value={entity} onChange={(v) => { setEntity(v); setDrill({ fn: null, lineId: null, itemKey: null }); }}
             options={[["All", "All companies"], ...(data?.groups ?? []).map((g) => [g.code, g.name] as [string, string])]} />
-          <Segmented<Mode> label="Compare" value={mode} onChange={setMode} options={[["pace", `Full year vs ${fiscalYear - 1} pace`], ["ytd", `Jan–${lastMonth} vs Jan–${lastMonth} ${fiscalYear - 1}`]]} />
+          <Segmented<Mode> label="Compare" value={mode} onChange={setMode} options={[["pace", `Full year vs ${fiscalYear - 1} pace`], ["ytd", booked > 0 ? `Jan–${lastMonth} vs Jan–${lastMonth} ${fiscalYear - 1}` : `Same months of ${fiscalYear - 1}`]]} />
           <Segmented<Units> label="Show amounts in" value={units} onChange={setUnits} options={[["M", "$M"], ["K", "$K"], ["D", "$"]]} />
           <Button variant="outline" size="sm" className="h-9" onClick={load} disabled={loading} aria-label="Reload the budget">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
