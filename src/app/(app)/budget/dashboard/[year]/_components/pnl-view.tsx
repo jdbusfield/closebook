@@ -135,8 +135,9 @@ function Master({ lines, units, mode, booked, fiscalYear, onDrill, companyName, 
         })}
         <td className={TOTAL_BORDER}>{amt(r.cur, dollar)}</td>
         <td>{amt(r.prior, dollar)}</td>
-        <td className={goodCls}>{Math.abs(change) < 0.5 ? EM_DASH : amt(change, dollar)}</td>
-        <td className={goodCls}>{Math.abs(change) < 0.5 || Math.abs(r.prior) < 0.5 ? EM_DASH : signedPct(change, r.prior)}</td>
+        {/* .stmt-table td sets its own color, so the good/bad color goes on a span, as the Financial Model does */}
+        <td>{Math.abs(change) < 0.5 ? EM_DASH : <span className={goodCls}>{amt(change, dollar)}</span>}</td>
+        <td>{Math.abs(change) < 0.5 || Math.abs(r.prior) < 0.5 ? EM_DASH : <span className={goodCls}>{signedPct(change, r.prior)}</span>}</td>
       </tr>
     );
   };
