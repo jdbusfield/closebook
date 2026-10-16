@@ -7,6 +7,7 @@ import { buildContext } from "@/lib/budget/builds";
 import { clearTrendForMaster, methodBuild, recomputeMethodBuilds, restoreTrendIfBare } from "@/lib/budget/method-builds";
 import { readMethod } from "@/lib/budget/line-methods";
 import type { BuildInsert } from "@/lib/budget/build-types";
+import { cleanSplitsInput } from "@/lib/budget/item-tags";
 
 /**
  * GET /api/budget/builds?versionId=&masterAccountId=&type=
@@ -68,8 +69,12 @@ export async function POST(request: Request) {
     const owner = await requireVersionAccess(admin, actor, versionId, true);
     const method = readMethod(body?.method);
     if (body?.method && !method) return NextResponse.json({ error: "Unknown method" }, { status: 400 });
+    const fnTags = cleanSplitsInput(body?.functionAllocations, "function");
+    const locTags = cleanSplitsInput(body?.locationAllocations, "location");
+    if (!fnTags.ok) return NextResponse.json({ error: fnTags.error }, { status: 400 });
+    if (!locTags.ok) return NextResponse.json({ error: locTags.error }, { status: 400 });
 
-    let row: BuildInsert & { note: string | null };
+    let row: BuildInsert & { note: string | null; function_allocations?: unknown; location_allocations?: unknown };
     if (method) {
       const ctx = await buildContext(admin, owner);
       row = methodBuild(ctx, masterAccountId, String(label), method, note ?? null);
@@ -93,6 +98,9 @@ export async function POST(request: Request) {
         computed_at: new Date().toISOString(),
       };
     }
+    if (classId !== undefined) row.qbo_class_id = (classId as string | null) ?? null;
+    row.function_allocations = fnTags.value;
+    row.location_allocations = locTags.value;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await admin.from("budget_builds").insert([row as any]).select("*").single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -108,7 +116,7 @@ export async function POST(request: Request) {
   }
 }
 
-/** PATCH { id, label?, note?, classId?, method? | amounts? } (manual items only) */
+/** PATCH { id, label?, note?, classId?, functionAllocations?, locationAllocations?, method? | amounts? } (manual items only; null tags = inherit) */
 export async function PATCH(request: Request) {
   try {
     const actor = await getBudgetActor();
@@ -124,6 +132,12 @@ export async function PATCH(request: Request) {
     if ("label" in body) fields.label = String(body.label);
     if ("note" in body) fields.note = body.note ?? null;
     if ("classId" in body) fields.qbo_class_id = body.classId ?? null;
+    for (const [key, kind, col] of [["functionAllocations", "function", "function_allocations"], ["locationAllocations", "location", "location_allocations"]] as const) {
+      if (!(key in body)) continue;
+      const c = cleanSplitsInput(body[key], kind);
+      if (!c.ok) return NextResponse.json({ error: c.error }, { status: 400 });
+      fields[col] = c.value;
+    }
     let hasMethod = false;
     if ("method" in body) {
       const method = readMethod(body.method);

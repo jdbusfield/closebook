@@ -22,7 +22,31 @@ export const CLASS_GROUPS: Array<{ group: string; classes: string[] }> = [
 
 export const CLASSES: string[] = [...new Set(CLASS_GROUPS.flatMap((g) => g.classes))];
 
-export const FUNCTIONS = ["Executive", "Administrative", "Sales", "Operations", "Fleet & Maintenance"] as const;
+/** The four functions every budget item and person rolls up to (JD, Oct 16 2026). */
+export const FUNCTIONS = ["Sales", "Fleet", "Operations", "Overhead"] as const;
+
+/** Older payroll function names, read as the four. */
+const FUNCTION_ALIASES: Record<string, string> = {
+  Executive: "Overhead",
+  Administrative: "Overhead",
+  "Fleet & Maintenance": "Fleet",
+  Maintenance: "Fleet",
+};
+
+/** One of the four functions, or the key unchanged when it isn't a known alias. */
+export function normalizeFunction(key: string): string {
+  return FUNCTION_ALIASES[key] ?? key;
+}
+
+/** A function split with old names mapped to the four and repeats summed. */
+export function normalizeFunctionSplits(splits: TagSplit[]): TagSplit[] {
+  const sums = new Map<string, number>();
+  for (const s of splits) {
+    const k = normalizeFunction(s.key);
+    sums.set(k, (sums.get(k) ?? 0) + s.pct);
+  }
+  return [...sums].map(([key, pct]) => ({ key, pct })).sort((a, b) => b.pct - a.pct);
+}
 
 /** Geography rolls the sites up: the two Los Angeles yards against the Southeast. */
 export const GEOGRAPHY_BY_LOCATION: Record<string, string> = {
@@ -68,10 +92,10 @@ export function primaryKey(splits: TagSplit[]): string {
 export function functionFromDepartment(department: string | null | undefined): string | null {
   const d = (department ?? "").toLowerCase();
   if (!d) return null;
-  if (d.includes("officer") || d.includes("executive")) return "Executive";
-  if (d.includes("admin") || d.includes("account") || d.includes("finance") || d.includes("hr")) return "Administrative";
+  if (d.includes("officer") || d.includes("executive")) return "Overhead";
+  if (d.includes("admin") || d.includes("account") || d.includes("finance") || d.includes("hr")) return "Overhead";
   if (d.includes("sales")) return "Sales";
-  if (d.includes("fleet") || d.includes("maint") || d.includes("mechanic") || d.includes("shop")) return "Fleet & Maintenance";
+  if (d.includes("fleet") || d.includes("maint") || d.includes("mechanic") || d.includes("shop")) return "Fleet";
   if (d.includes("operation") || d.includes("lot") || d.includes("warehouse") || d.includes("dispatch") || d.includes("driver")) return "Operations";
   return null;
 }

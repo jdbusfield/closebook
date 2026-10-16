@@ -4032,6 +4032,54 @@ export type Database = {
           },
         ]
       }
+      budget_tag_rules: {
+        Row: {
+          id: string
+          organization_id: string
+          reporting_entity_id: string | null
+          master_account_id: string | null
+          source_table: string | null
+          source_id: string | null
+          function_allocations: Json | null
+          location_allocations: Json | null
+          qbo_class_id: string | null
+          note: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          reporting_entity_id?: string | null
+          master_account_id?: string | null
+          source_table?: string | null
+          source_id?: string | null
+          function_allocations?: Json | null
+          location_allocations?: Json | null
+          qbo_class_id?: string | null
+          note?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          reporting_entity_id?: string | null
+          master_account_id?: string | null
+          source_table?: string | null
+          source_id?: string | null
+          function_allocations?: Json | null
+          location_allocations?: Json | null
+          qbo_class_id?: string | null
+          note?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       budget_payroll_plans: {
         Row: {
           id: string
@@ -4285,6 +4333,8 @@ export type Database = {
           assumption_keys: string[]
           is_computed: boolean
           meta: Json | null
+          function_allocations: Json | null
+          location_allocations: Json | null
           note: string | null
           computed_at: string | null
           created_at: string
@@ -4306,6 +4356,8 @@ export type Database = {
           assumption_keys?: string[]
           is_computed?: boolean
           meta?: Json | null
+          function_allocations?: Json | null
+          location_allocations?: Json | null
           note?: string | null
           computed_at?: string | null
           created_at?: string
@@ -4327,6 +4379,8 @@ export type Database = {
           assumption_keys?: string[]
           is_computed?: boolean
           meta?: Json | null
+          function_allocations?: Json | null
+          location_allocations?: Json | null
           note?: string | null
           computed_at?: string | null
           created_at?: string
