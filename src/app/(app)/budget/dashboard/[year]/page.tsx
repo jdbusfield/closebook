@@ -101,7 +101,7 @@ export default function BudgetDashboardPage({ params }: { params: Promise<{ year
       ) : (
         <>
           {tab === "overview" && <Overview {...view} payload={data} entity={entity} lines={lines} onEntity={setEntity} onOpenFunction={(f) => { setFnSel(f); setTab("functions"); }} onOpenLine={(id) => goDrill({ fn: null, lineId: id, itemKey: null })} />}
-          {tab === "pnl" && <PnlView {...view} lines={lines} drill={drill} onDrill={setDrill} />}
+          {tab === "pnl" && <PnlView {...view} lines={lines} drill={drill} onDrill={setDrill} companyName={entity === "All" ? data.organizationName ?? "All companies" : entityName} entityIsAll={entity === "All"} />}
           {tab === "functions" && <FunctionsView {...view} payload={data} entity={entity} lines={lines} fn={fnSel} onFn={setFnSel} onDrill={goDrill} />}
           {tab === "rent" && <RentView {...view} lines={lines} onDrill={goDrill} />}
           <p className="text-xs leading-relaxed text-muted-foreground">

@@ -120,7 +120,8 @@ export async function GET(request: Request) {
         }),
     );
 
-    const payload: DashboardPayload = { fiscalYear, asOf: new Date().toISOString(), groups };
+    const { data: org } = await admin.from("organizations").select("name").eq("id", organizationId!).maybeSingle();
+    const payload: DashboardPayload = { fiscalYear, asOf: new Date().toISOString(), organizationName: (org as { name?: string } | null)?.name ?? undefined, groups };
     return NextResponse.json(payload);
   } catch (err) {
     console.error("GET /api/budget/dashboard error:", err);

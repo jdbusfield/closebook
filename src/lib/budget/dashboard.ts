@@ -57,7 +57,7 @@ export interface DashGroup {
   priorYearSource: "financial_model" | "gl";
   masters: DashMaster[];
 }
-export interface DashboardPayload { fiscalYear: number; asOf: string; groups: DashGroup[] }
+export interface DashboardPayload { fiscalYear: number; asOf: string; organizationName?: string; groups: DashGroup[] }
 
 /** One line for the chosen company (or all companies), with items carrying their group. */
 export interface Line {

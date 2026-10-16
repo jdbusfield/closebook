@@ -2,27 +2,41 @@
 
 import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
-import { ExternalLink } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
+import { StatementHeader } from "@/components/financial-statements/statement-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
   current, fmtMoney, fmtSigned, fmtTable, FUNCTIONS, itemInFunction, lineFunctions, pnl, prior, priorFunctions, sum, UNASSIGNED, unitName,
-  type Line, type PnlRow,
+  type Line, type PnlRow, type Units,
 } from "@/lib/budget/dashboard";
-import { BarPair, changeClass, curLabel, FN_COLOR, MONTHS, MonthChart, priorLabel, Swatch, type ViewProps } from "./shared";
+import { BarPair, changeClass, curLabel, FN_COLOR, MONTHS, MonthChart, priorLabel, type ViewProps } from "./shared";
 
 export interface Drill { fn: string | null; lineId: string | null; itemKey: string | null }
 interface Props extends ViewProps {
   lines: Line[];
   drill: Drill;
   onDrill: (d: Drill) => void;
+  /** Company (or organization) name for the statement heading */
+  companyName: string;
+  entityIsAll: boolean;
 }
 
 /** Change as a signed percent of last year; "–" when there is nothing to compare against. */
 const signedPct = (change: number, base: number) =>
   Math.abs(change) < 0.5 || Math.abs(base) < 0.5 ? "–" : `${change > 0 ? "+" : "−"}${Math.round((Math.abs(change) / Math.abs(base)) * 100)}%`;
+const TOTAL_BORDER = "border-l-2 border-border";
+const EM_DASH = "\u2014";
+const MONTH_FULL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const pctText = (x: number) => (x < 0 ? `(${Math.abs(x * 100).toFixed(1)}%)` : `${(x * 100).toFixed(1)}%`);
+/** The Financial Model's figure style in the chosen unit: $ on a section's first line and totals, (negatives), em dash for zero. */
+function stmtAmount(v: number, units: Units, dollar: boolean): string {
+  const t = fmtTable(v, units);
+  if (t === "\u2013") return dollar ? `$${EM_DASH}` : EM_DASH;
+  return dollar ? `$${t}` : t;
+}
 const linkCls = "underline decoration-dotted underline-offset-4 hover:decoration-solid text-left";
 const splitText = (s: Array<{ key: string; pct: number }>) => (s.length === 0 ? "No function" : s.length === 1 ? s[0].key : s.map((x) => `${x.key} ${Math.round(x.pct)}%`).join(" / "));
 
@@ -49,7 +63,7 @@ export function PnlView(p: Props) {
   );
 }
 
-function Master({ lines, units, mode, booked, fiscalYear, onDrill }: Props) {
+function Master({ lines, units, mode, booked, fiscalYear, onDrill, companyName, entityIsAll }: Props) {
   const { rows } = useMemo(() => pnl(lines, mode, booked), [lines, mode, booked]);
   const [q, setQ] = useState("");
   const hasUnassigned = rows.some((r) => Math.abs(r.byFn[UNASSIGNED] ?? 0) >= 0.5 && r.kind === "account");
@@ -59,7 +73,73 @@ function Master({ lines, units, mode, booked, fiscalYear, onDrill }: Props) {
     if (s.length < 2) return [];
     return lines.flatMap((l) => l.items.filter((it) => `${it.label} ${l.name} ${l.accountNumber} ${it.functions.map((f) => f.key).join(" ")}`.toLowerCase().includes(s)).map((it) => ({ l, it }))).slice(0, 40);
   }, [q, lines]);
-  const rowCls = (r: PnlRow) => cn(r.kind === "head" && "bg-muted/40", (r.kind === "total" || r.kind === "derived") && "font-semibold", r.kind === "derived" && "bg-muted/30", r.kind === "pct" && "text-xs italic text-muted-foreground");
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggle = (k: string) =>
+    setCollapsed((prev) => {
+      const n = new Set(prev);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      return n;
+    });
+  // Rows grouped the way the Financial Model lays them out: a section header, its lines,
+  // its total, then the subtotals that follow it (gross margin, EBITDA, margins, net income)
+  const sections = useMemo(() => {
+    const out: Array<{ key: string; head: PnlRow | null; rows: PnlRow[]; foot: PnlRow | null; after: PnlRow[] }> = [];
+    for (const r of rows) {
+      if (r.kind === "head") out.push({ key: r.key, head: r, rows: [], foot: null, after: [] });
+      else if (r.kind === "account" && out.length) out[out.length - 1].rows.push(r);
+      else if (r.kind === "total" && out.length && !out[out.length - 1].foot) out[out.length - 1].foot = r;
+      else if (out.length) out[out.length - 1].after.push(r);
+    }
+    return out;
+  }, [rows]);
+  const amt = (v: number, dollar: boolean) => stmtAmount(v, units, dollar);
+  const renderRow = (r: PnlRow, dollar: boolean, striped: boolean) => {
+    const change = r.cur - r.prior;
+    const goodCls = Math.abs(change) < 0.5 ? "" : change > 0 === r.upIsGood ? "text-green-600" : "text-red-600";
+    if (r.kind === "pct") {
+      const pts = change * 100;
+      return (
+        <tr key={r.key} className="stmt-margin-row">
+          <td style={{ paddingLeft: "2rem" }}>{r.label}</td>
+          {cols.map((c) => <td key={c}></td>)}
+          <td className={TOTAL_BORDER}>{pctText(r.cur)}</td>
+          <td>{pctText(r.prior)}</td>
+          <td>{Math.abs(pts) < 0.05 ? EM_DASH : <span className={pts > 0 ? "text-green-600" : "text-red-600"}>{pts > 0 ? "+" : ""}{pts.toFixed(1)}pp</span>}</td>
+          <td></td>
+        </tr>
+      );
+    }
+    const cls = r.key === "ni" ? "stmt-grand-total" : r.kind === "account" ? cn("stmt-line-item", striped && "stmt-row-striped") : "stmt-subtotal";
+    return (
+      <tr key={r.key} className={cls}>
+        <td>
+          {r.kind === "account" ? (
+            <button type="button" className="text-left hover:text-primary hover:underline" onClick={() => onDrill({ fn: null, lineId: r.lineId!, itemKey: null })}>
+              {r.label.replace(/^\d+\s+/, "")}
+            </button>
+          ) : (
+            r.label
+          )}
+        </td>
+        {cols.map((c) => {
+          const v = r.byFn[c] ?? 0;
+          const clickable = r.kind === "account" && Math.abs(v) >= 0.5;
+          return (
+            <td key={c} className={clickable ? "cursor-pointer transition-colors hover:bg-accent/50" : undefined}
+              onClick={clickable ? () => onDrill({ fn: c, lineId: r.lineId!, itemKey: null }) : undefined}
+              title={clickable ? `${c} in ${r.label}` : undefined}>
+              {amt(v, dollar)}
+            </td>
+          );
+        })}
+        <td className={TOTAL_BORDER}>{amt(r.cur, dollar)}</td>
+        <td>{amt(r.prior, dollar)}</td>
+        <td className={goodCls}>{Math.abs(change) < 0.5 ? EM_DASH : amt(change, dollar)}</td>
+        <td className={goodCls}>{Math.abs(change) < 0.5 || Math.abs(r.prior) < 0.5 ? EM_DASH : signedPct(change, r.prior)}</td>
+      </tr>
+    );
+  };
   return (
     <>
       <Input id="budget-line-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a budget item, e.g. fuel, Saticoy, insurance" aria-label="Find a budget item" className="max-w-md" />
@@ -87,63 +167,59 @@ function Master({ lines, units, mode, booked, fiscalYear, onDrill }: Props) {
         </Card>
       )}
       <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Master P&L, {mode === "pace" ? `FY ${fiscalYear}` : curLabel(mode, fiscalYear, booked)}</CardTitle>
-          <CardDescription>The same P&L as the Summary tab, split into functions. Click a function, an account, or any number to see what makes it up. Amounts in {unitName(units)}.</CardDescription>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <Table className="min-w-[980px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="sticky left-0 z-10 bg-card">Income statement</TableHead>
-                {cols.map((c) => (
-                  <TableHead key={c} className="whitespace-nowrap text-right">
-                    <button type="button" className={linkCls} onClick={() => onDrill({ fn: c, lineId: null, itemKey: null })}><Swatch fn={c} />{c}</button>
-                  </TableHead>
-                ))}
-                <TableHead className="border-l text-right">{mode === "pace" ? `FY ${fiscalYear}` : "Budget"}</TableHead>
-                <TableHead className="whitespace-nowrap text-right">{priorLabel(mode, fiscalYear, booked)}</TableHead>
-                <TableHead className="text-right">Change</TableHead>
-                <TableHead className="text-right">Change %</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((r) => {
-                const change = r.cur - r.prior;
-                if (r.kind === "head") return <TableRow key={r.key} className={rowCls(r)}><TableCell colSpan={cols.length + 5} className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{r.label}</TableCell></TableRow>;
-                if (r.kind === "pct") return (
-                  <TableRow key={r.key} className={rowCls(r)}>
-                    <TableCell className="sticky left-0 bg-card">{r.label}</TableCell>
-                    {cols.map((c) => <TableCell key={c} />)}
-                    <TableCell className="border-l text-right tabular-nums">{Math.round(r.cur * 1000) / 10}%</TableCell>
-                    <TableCell className="text-right tabular-nums">{Math.round(r.prior * 1000) / 10}%</TableCell>
-                    <TableCell className="text-right tabular-nums">{Math.abs(change) < 0.0005 ? "–" : `${change > 0 ? "+" : "−"}${Math.abs(change * 100).toFixed(1)} pts`}</TableCell>
-                    <TableCell />
-                  </TableRow>
-                );
+        <CardContent className="pt-2">
+          <StatementHeader
+            companyName={companyName}
+            statementTitle={`${entityIsAll ? "Consolidated " : ""}Budget Income Statement by Function`}
+            startYear={fiscalYear} startMonth={1} endYear={fiscalYear} endMonth={12} granularity="yearly"
+            periodDescription={mode === "pace"
+              ? `Budget for the Year Ending December 31, ${fiscalYear} · ${unitName(units)}`
+              : `Budget for January to ${MONTH_FULL[Math.max(0, booked - 1)]} ${fiscalYear} · ${unitName(units)}`}
+          />
+          <p className="stmt-no-print pb-2 text-center text-xs text-muted-foreground">Click a function, a line or any number to see what makes it up.</p>
+          <div className="overflow-x-auto">
+            <table className="stmt-table min-w-[1060px]">
+              <thead>
+                <tr>
+                  <th className="min-w-[240px]"></th>
+                  {cols.map((c) => (
+                    <th key={c} className="min-w-[96px]">
+                      <button type="button" className="hover:text-primary hover:underline" onClick={() => onDrill({ fn: c, lineId: null, itemKey: null })}>{c}</button>
+                    </th>
+                  ))}
+                  <th className={cn("min-w-[110px] font-bold", TOTAL_BORDER)}>{mode === "pace" ? `FY ${fiscalYear}` : "Budget"}</th>
+                  <th className="min-w-[110px]">{priorLabel(mode, fiscalYear, booked)}</th>
+                  <th className="min-w-[110px]">Change</th>
+                  <th className="min-w-[80px]">Change %</th>
+                </tr>
+              </thead>
+              {sections.map((sec) => {
+                const isCollapsed = collapsed.has(sec.key);
+                const colCount = cols.length + 5;
                 return (
-                  <TableRow key={r.key} className={rowCls(r)}>
-                    <TableCell className={cn("sticky left-0 whitespace-nowrap", r.kind === "derived" ? "bg-muted/30" : "bg-card", r.kind === "account" && "pl-6")}>
-                      {r.kind === "account" ? <button type="button" className={linkCls} onClick={() => onDrill({ fn: null, lineId: r.lineId!, itemKey: null })}>{r.label}</button> : r.label}
-                    </TableCell>
-                    {cols.map((c) => {
-                      const v = r.byFn[c] ?? 0;
-                      const clickable = r.kind === "account" && Math.abs(v) >= 0.5;
-                      return (
-                        <TableCell key={c} className={cn("whitespace-nowrap text-right tabular-nums", Math.abs(v) < 0.5 && "text-muted-foreground/50")}>
-                          {clickable ? <button type="button" className={linkCls} aria-label={`${c} in ${r.label}`} onClick={() => onDrill({ fn: c, lineId: r.lineId!, itemKey: null })}>{fmtTable(v, units)}</button> : fmtTable(v, units)}
-                        </TableCell>
-                      );
-                    })}
-                    <TableCell className="whitespace-nowrap border-l text-right font-medium tabular-nums">{fmtTable(r.cur, units)}</TableCell>
-                    <TableCell className="whitespace-nowrap text-right tabular-nums text-muted-foreground">{fmtTable(r.prior, units)}</TableCell>
-                    <TableCell className={cn("whitespace-nowrap text-right tabular-nums", changeClass(change, r.upIsGood))}>{fmtSigned(change, units)}</TableCell>
-                    <TableCell className={cn("whitespace-nowrap text-right tabular-nums", changeClass(change, r.upIsGood))}>{signedPct(change, r.prior)}</TableCell>
-                  </TableRow>
+                  <tbody key={sec.key}>
+                    {sec.head && (
+                      <>
+                        <tr className="stmt-section-header">
+                          <td colSpan={colCount}>
+                            <button type="button" onClick={() => toggle(sec.key)} className="flex w-full items-center gap-1 text-left font-bold transition-colors hover:text-primary" aria-expanded={!isCollapsed}>
+                              {isCollapsed ? <ChevronRight className="h-3.5 w-3.5 shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 shrink-0" />}
+                              {sec.head.label}
+                            </button>
+                          </td>
+                        </tr>
+                        <tr className="stmt-separator"><td colSpan={colCount}></td></tr>
+                      </>
+                    )}
+                    {!isCollapsed && sec.rows.map((r, i) => renderRow(r, i === 0, i % 2 === 0))}
+                    {sec.foot && renderRow(sec.foot, true, false)}
+                    {sec.after.map((r) => renderRow(r, true, false))}
+                    <tr className="stmt-separator"><td colSpan={colCount}></td></tr>
+                  </tbody>
                 );
               })}
-            </TableBody>
-          </Table>
+            </table>
+          </div>
         </CardContent>
       </Card>
     </>
