@@ -15,7 +15,7 @@ const payload: DashboardPayload = {
       masters: [
         master({ id: "4000", section: "revenue", months: flat(100), prior: flat(90) }),
         master({ id: "6000", section: "other_operating_costs", months: flat(40), prior: flat(30), byFunction: { Fleet: flat(30), Sales: flat(10) } }),
-        master({ id: "7999", section: "other_expense", intercompany: true, months: flat(5), byFunction: { Overhead: flat(5) } }),
+        master({ id: "7999", section: "other_operating_costs", intercompany: true, months: flat(5), byFunction: { Overhead: flat(5) } }),
         master({ id: "7000", section: "other_expense", months: flat(20), prior: flat(20), byFunction: { Fleet: flat(20) } }),
       ],
     },
@@ -46,13 +46,15 @@ test("pace annualizes booked months; ytd compares the same months", () => {
   assert.equal(prior(flat(9), "pace", 0), 0);
 });
 
-test("the P&L ties: EBITDA and net income from the sections, function columns add to totals", () => {
+test("the P&L stops at EBITDA: below-the-line accounts are left out, function columns add to totals", () => {
   const { lines, booked } = combine(payload, "All");
   const { totals, rows } = pnl(lines, "pace", booked);
   assert.equal(totals.revenue.cur, 1800);
   assert.equal(totals.other_operating_costs.cur, 600);
   assert.equal(totals.ebitda.cur, 1200);
-  assert.equal(totals.ni.cur, 1200 - 240);
+  assert.equal(totals.ni, undefined);
+  assert.ok(!lines.some((l) => l.id === "7000"));
+  assert.equal(rows[rows.length - 1].key, "ebitda_pct");
   const rent = rows.find((r) => r.lineId === "6000")!;
   assert.equal(Object.values(rent.byFn).reduce((t, v) => t + v, 0), rent.cur);
   assert.deepEqual(Object.keys(rent.byFn).sort(), ["Fleet", "Operations", "Sales"]);
@@ -62,11 +64,10 @@ test("the P&L ties: EBITDA and net income from the sections, function columns ad
   assert.equal(Math.round(totals.revenue.prior), 1560);
 });
 
-test("function totals split operating cost from below the line; last year follows the budget mix", () => {
+test("function totals are operating cost only; last year follows the budget mix", () => {
   const { lines, booked } = combine(payload, "All");
   const f = functionTotals(lines, "pace", booked);
   assert.equal(f.Fleet.cur, 360);
-  assert.equal(f.Fleet.below, 240);
   assert.equal(f.Operations.cur, 120);
   const rent = lines.find((l) => l.id === "6000")!;
   const pf = priorFunctions(rent);
@@ -100,8 +101,8 @@ test("a company's share of the consolidated total leaves out intercompany when a
   const drop = combine(payload, "AVON", { dropIntercompany: true });
   assert.ok(keep.lines.some((l) => l.id === "7999"));
   assert.ok(!drop.lines.some((l) => l.id === "7999"));
-  const all = pnl(combine(payload, "All").lines, "pace", 8).totals.ni.cur;
-  const parts = ["AVON", "HDR"].map((c) => pnl(combine(payload, c, { dropIntercompany: true }).lines, "pace", 8).totals.ni.cur);
+  const all = pnl(combine(payload, "All").lines, "pace", 8).totals.ebitda.cur;
+  const parts = ["AVON", "HDR"].map((c) => pnl(combine(payload, c, { dropIntercompany: true }).lines, "pace", 8).totals.ebitda.cur);
   assert.equal(parts[0] + parts[1], all);
 });
 

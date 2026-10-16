@@ -21,7 +21,6 @@ const PLAIN = {
   revenue: "Money we expect to bring in: rentals, services, parking, supplies and damage reimbursements.",
   opex: "Day-to-day spending: people, rent, fleet upkeep, supplies and services.",
   ebitda: "Operating profit: revenue minus operating costs.",
-  ni: "The bottom line, after interest, depreciation, goodwill and taxes.",
 };
 
 export function Overview({ payload, entity, lines, mode, units, booked, fiscalYear, onEntity, onOpenFunction, onOpenLine }: Props) {
@@ -54,18 +53,17 @@ export function Overview({ payload, entity, lines, mode, units, booked, fiscalYe
   const fnKeys = [...FUNCTIONS, ...(Math.abs(fn[UNASSIGNED].cur) >= 0.5 ? [UNASSIGNED] : [])];
   const fnMax = Math.max(1, ...fnKeys.map((k) => Math.max(fn[k].cur, fn[k].prior)));
   const opTotal = fnKeys.reduce((t, k) => t + fn[k].cur, 0);
-  const k = (key: "revenue" | "opex" | "ebitda" | "ni", label: string) => {
+  const k = (key: "revenue" | "opex" | "ebitda", label: string) => {
     const r = totals[key];
     return <Kpi key={key} label={label} value={r.cur} change={r.cur - r.prior} base={r.prior} upIsGood={r.upIsGood} priorText={pl} plain={PLAIN[key]} units={units} />;
   };
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-3">
         {k("revenue", "Revenue")}
         {k("opex", "Operating costs")}
         {k("ebitda", "EBITDA")}
-        {k("ni", "Net income")}
       </div>
 
       <Card>
@@ -181,7 +179,7 @@ export function Overview({ payload, entity, lines, mode, units, booked, fiscalYe
                 ))}
               </TableBody>
             </Table>
-            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">EBITDA is what is left from revenue after day-to-day operating costs. Net income also takes off interest, depreciation, goodwill and taxes.</p>
+            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">EBITDA is what is left from revenue after the costs of running the business. Interest, depreciation, amortization and taxes are left out of this view.</p>
           </CardContent>
         </Card>
       </div>
