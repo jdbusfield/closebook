@@ -38,6 +38,8 @@ export interface ResolvedTags {
   locations: TagSplit[];
   functionOrigin: TagOrigin;
   locationOrigin: TagOrigin;
+  /** Scope of the rule that supplied the tags (function first), when one did */
+  ruleScope: "group" | "organization" | null;
 }
 
 /** Rules indexed once per model read, group-specific rules ahead of organization-wide ones. */
@@ -73,18 +75,19 @@ export function resolveTags(b: TaggableBuild, ctx: { index: RuleIndex; people: M
   for (let id: string | null = b.master_account_id, guard = 0; id && guard < 5; id = ctx.parentOf(id), guard++) {
     accountRules.push(...(ctx.index.byAccount.get(id) ?? []));
   }
-  const pick = (own: TagSplit[], fromPerson: TagSplit[] | undefined, field: "functionAllocations" | "locationAllocations"): [TagSplit[], TagOrigin] => {
-    if (own.length) return [own, "item"];
-    if (fromPerson?.length) return [fromPerson, "person"];
+  const pick = (own: TagSplit[], fromPerson: TagSplit[] | undefined, field: "functionAllocations" | "locationAllocations"): [TagSplit[], TagOrigin, TagRule | null] => {
+    if (own.length) return [own, "item", null];
+    if (fromPerson?.length) return [fromPerson, "person", null];
     const s = sourceRules.find((r) => r[field].length);
-    if (s) return [s[field], "source"];
+    if (s) return [s[field], "source", s];
     const a = accountRules.find((r) => r[field].length);
-    if (a) return [a[field], "account"];
-    return [[], "none"];
+    if (a) return [a[field], "account", a];
+    return [[], "none", null];
   };
-  const [functions, functionOrigin] = pick(fnOwn, person ? normalizeFunctionSplits(person.functionAllocations) : undefined, "functionAllocations");
-  const [locations, locationOrigin] = pick(locOwn, person?.locationAllocations, "locationAllocations");
-  return { functions: normalizeFunctionSplits(functions), locations, functionOrigin, locationOrigin };
+  const [functions, functionOrigin, fnRule] = pick(fnOwn, person ? normalizeFunctionSplits(person.functionAllocations) : undefined, "functionAllocations");
+  const [locations, locationOrigin, locRule] = pick(locOwn, person?.locationAllocations, "locationAllocations");
+  const rule = fnRule ?? locRule;
+  return { functions: normalizeFunctionSplits(functions), locations, functionOrigin, locationOrigin, ruleScope: rule ? (rule.reportingEntityId ? "group" : "organization") : null };
 }
 
 export const UNASSIGNED = "Unassigned";

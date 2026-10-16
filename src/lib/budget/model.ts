@@ -17,7 +17,7 @@ import { loadFinancialModelYear } from "@/lib/budget/fm-actuals";
 import { loadOverriddenMasters } from "@/lib/budget/line-overrides";
 import { loadZeroMonths } from "@/lib/budget/line-zero-months";
 import { addSplit, indexRules, readRule, resolveTags, splitMonths, tallyToSplits, type PersonTags, type TagOrigin } from "@/lib/budget/item-tags";
-import { readSplits, type TagSplit } from "@/lib/budget/tagging";
+import { FUNCTIONS, LOCATIONS, readSplits, type TagSplit } from "@/lib/budget/tagging";
 
 const NIL_CLASS = "00000000-0000-0000-0000-000000000000";
 
@@ -34,8 +34,11 @@ export interface ItemTags {
   locations: TagSplit[];
   functionOrigin: TagOrigin | "mixed";
   locationOrigin: TagOrigin | "mixed";
-  /** QBO class names on the item's builds */
+  /** QBO classes on the item's builds */
   classNames: string[];
+  classIds: string[];
+  /** Scope of the rule the tags come from, so an edit saves to that same rule */
+  ruleScope: "group" | "organization" | null;
   /** The item's months by function and by location ("Unassigned" for untagged amounts) */
   byFunction: Record<string, number[]>;
   byLocation: Record<string, number[]>;
@@ -97,20 +100,24 @@ class TagTally {
   fnOrigins = new Set<TagOrigin>();
   locOrigins = new Set<TagOrigin>();
   classes = new Set<string>();
+  classIdSet = new Set<string>();
+  scopes = new Set<"group" | "organization">();
   constructor(public target: TagTarget) {}
-  add(months: number[], r: { functions: TagSplit[]; locations: TagSplit[]; functionOrigin: TagOrigin; locationOrigin: TagOrigin }, className: string | null) {
+  add(months: number[], r: { functions: TagSplit[]; locations: TagSplit[]; functionOrigin: TagOrigin; locationOrigin: TagOrigin; ruleScope?: "group" | "organization" | null }, className: string | null, classId: string | null = null) {
+    if (r.ruleScope) this.scopes.add(r.ruleScope);
     addSplit(this.fn, splitMonths(months, r.functions));
     addSplit(this.loc, splitMonths(months, r.locations));
     this.fnOrigins.add(r.functionOrigin);
     this.locOrigins.add(r.locationOrigin);
     if (className) this.classes.add(className);
+    if (classId) this.classIdSet.add(classId);
   }
   done(): ItemTags {
     const round = (m: Map<string, number[]>) => Object.fromEntries([...m].map(([k, v]) => [k, v.map((x) => Math.round(x * 100) / 100)]));
     const one = (s: Set<TagOrigin>): TagOrigin | "mixed" => (s.size === 1 ? [...s][0] : s.size === 0 ? "none" : "mixed");
     const shares = (m: Map<string, number[]>) => tallyToSplits(m);
     return { functions: shares(this.fn), locations: shares(this.loc), functionOrigin: one(this.fnOrigins), locationOrigin: one(this.locOrigins),
-      classNames: [...this.classes].sort(), byFunction: round(this.fn), byLocation: round(this.loc), target: this.target };
+      classNames: [...this.classes].sort(), classIds: [...this.classIdSet], ruleScope: this.scopes.size === 1 ? [...this.scopes][0] : null, byFunction: round(this.fn), byLocation: round(this.loc), target: this.target };
   }
 }
 const metaOf = (b: BuildRow) => (b.meta && typeof b.meta === "object" ? (b.meta as Record<string, unknown>) : {});
@@ -244,7 +251,7 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
     return t;
   };
   const addBuildTags = (key: string, target: TagTarget, b: BuildRow, months: number[]) =>
-    tally(key, target).add(months, tagsOf(b), b.qbo_class_id ? classNameById.get(b.qbo_class_id) ?? null : null);
+    tally(key, target).add(months, tagsOf(b), b.qbo_class_id ? classNameById.get(b.qbo_class_id) ?? null : null, b.qbo_class_id);
 
   // Items beneath each master
   const items = new Map<string, ModelItem[]>();
@@ -559,10 +566,42 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
       reviewFlag: m.reviewFlag,
     })),
   );
+  // What the tag pickers offer, and each line's account default
+  const classRows = memberEntityIds.length
+    ? await fetchAllPaginated<{ id: string; name: string; entity_id: string; is_active: boolean | null }>((o, l) =>
+        admin.from("qbo_classes").select("id, name, entity_id, is_active").in("entity_id", memberEntityIds).order("id").range(o, o + l - 1),
+      )
+    : [];
+  const usedLocations = new Set<string>(LOCATIONS);
+  for (const r of tagRules) for (const s of readSplits(r.location_allocations)) usedLocations.add(s.key);
+  for (const p of people.values()) for (const s of p.locationAllocations) usedLocations.add(s.key);
+  const accountDefaults: Record<string, { functions: TagSplit[]; locations: TagSplit[]; scope: "group" | "organization" }> = {};
+  for (const m of topMasters) {
+    const rs = ruleIndex.byAccount.get(m.id) ?? [];
+    const fnRule = rs.find((r) => r.functionAllocations.length);
+    const locRule = rs.find((r) => r.locationAllocations.length);
+    if (!fnRule && !locRule) continue;
+    accountDefaults[m.id] = {
+      functions: fnRule?.functionAllocations ?? [],
+      locations: locRule?.locationAllocations ?? [],
+      scope: (fnRule ?? locRule)!.reportingEntityId ? "group" : "organization",
+    };
+  }
+  const tagOptions = {
+    functions: [...FUNCTIONS],
+    locations: [...usedLocations],
+    classes: ((classRows ?? []) as Array<{ id: string; name: string; entity_id: string; is_active: boolean | null }>)
+      .filter((c) => c.is_active !== false)
+      .map((c) => ({ id: c.id, name: c.name, entityId: c.entity_id }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  };
+
   return {
     version: owner,
     sections,
     lines,
+    tagOptions,
+    accountDefaults,
     priorYear,
     priorYear2,
     priorYearMonths,
