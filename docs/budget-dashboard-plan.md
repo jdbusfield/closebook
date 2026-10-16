@@ -28,14 +28,17 @@ regenerated on every recompute, so their tags live on the source or in a rule, n
 Tags are resolved when the model is read, so a rule change shows immediately without a recompute.
 
 ## Phase 1
-- [ ] 1. Data model: migration (build tag columns, `budget_tag_rules`, payroll functions to the four),
+- [x] 1. Data model: migration (build tag columns, `budget_tag_rules`, payroll functions to the four),
       resolver (`item-tags.ts`) with tests, model items carry their function / location split,
       rules API, builds API takes tags.
-- [ ] 2. Model page: Class / Location / Function on every item; edit an item's tags, a source's rule,
+- [x] 2. Model page: Class / Location / Function on every item; edit an item's tags, a source's rule,
       or an account default.
-- [ ] 3. Seed from the workbook into the FY 2027 versions (cloned first): amounts that differ, typed
+- [x] 3. Seed from the workbook into the FY 2027 versions (backed up first): amounts that differ, typed
       items for the fleet lines, tags for every item, rent splits as lease rules. Diff report before
       and after.
+      Done Oct 16: 3-way compare (original export / edited copy / CloseBook) kept CloseBook's revenue and rent
+      (edited after the export), took 9 Avon items from the workbook, tagged 97 items and added 89 source rules.
+      Backup: budget_builds_backup_20261016 (RLS on).
 - [ ] 4. Dashboard page `/budget/dashboard/[year]`: Overview, Master P&L by function with drill to the
       item, Cost by function, Rent by location; company switch, full year vs 2026 pace or Jan–Aug,
       $M / $K / $. 2026 actuals from the Financial Model.
