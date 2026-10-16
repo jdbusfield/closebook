@@ -64,8 +64,9 @@ Find: estimated shoot start date, estimated wrap date, and the parent studio/dis
     for (let turn = 0; turn < 4; turn++) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const resp = await (anthropic.messages.create as any)({
-        model: "claude-sonnet-4-6",
-        max_tokens: 4096,
+        model: "claude-sonnet-5-5",
+        max_tokens: 16000,
+        output_config: { effort: "low" },
         system: RESEARCH_SYSTEM_PROMPT,
         tools: [
           {

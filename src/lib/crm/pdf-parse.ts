@@ -51,8 +51,10 @@ export async function parseReportPdf(base64Pdf: string): Promise<ParsedReportRow
   }
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 16384,
+    model: "claude-sonnet-5-5",
+    // Sonnet 5.5 thinks by default and the thinking counts against max_tokens.
+    max_tokens: 32000,
+    output_config: { effort: "medium" },
     messages: [
       {
         role: "user",
