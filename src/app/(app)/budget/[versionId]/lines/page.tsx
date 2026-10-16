@@ -17,6 +17,7 @@ import { fmtPct, fmtUsd, MONTH_ABBRS } from "@/lib/budget/format";
 import { METHOD_KINDS, type LineMethod, type MethodKind } from "@/lib/budget/line-methods";
 import { cn } from "@/lib/utils";
 import { MonthCells } from "@/components/budget/month-cells";
+import { TagDialog, TagSummary, type ItemTagsView, type Split, type TagOptions, type TagTarget } from "@/components/budget/item-tags-editor";
 
 interface Item {
   id: string;
@@ -34,6 +35,7 @@ interface Item {
   history: { priorYear: number; trailing12: number; priorYearMonths?: number[] } | null;
   parts?: Array<{ label: string; months: number[]; total: number; note: string | null }>;
   priorBase?: boolean;
+  tags?: ItemTagsView & { classIds?: string[] };
 }
 interface MasterLine {
   id: string;
@@ -64,6 +66,10 @@ interface Payload {
   priorYearSource?: "financial_model" | "gl";
   belowEbitda: { months: number[]; priorYear: number[] };
   lineMasters: Array<{ id: string; name: string; accountNumber: string | null }>;
+  tagOptions?: TagOptions;
+  /** Lines below EBITDA (not edited here), so their account tags can be set */
+  belowMasters?: MasterLine[];
+  accountDefaults?: Record<string, { functions: Split[]; locations: Split[]; scope: "group" | "organization" }>;
 }
 
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -92,6 +98,7 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
   const [fromPrior, setFromPrior] = useState<{ only: string | null } | null>(null);
   const [confirmOwn, setConfirmOwn] = useState<MasterLine | null>(null);
   const [zeroing, setZeroing] = useState<MasterLine | null>(null);
+  const [tagging, setTagging] = useState<{ title: string; target: TagTarget; current: { functions: Split[]; locations: Split[]; classId?: string | null }; ownAtTarget: boolean } | null>(null);
   const fiscalYear = info?.version.fiscal_year ?? new Date().getFullYear() + 1;
 
   const load = useCallback(async () => {
@@ -99,7 +106,7 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
       const res = await fetch(`/api/budget/lines?versionId=${versionId}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Failed to load");
-      setData({ ...json, sections: (json.sections as Section[]).filter((s) => s.model) });
+      setData({ ...json, sections: (json.sections as Section[]).filter((s) => s.model), belowMasters: (json.sections as Section[]).filter((s) => !s.model).flatMap((s) => s.masters).filter((m) => m.months.some((v) => Math.abs(v) >= 0.5)) });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to load the model");
     } finally {
@@ -117,6 +124,15 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
       else next.add(id);
       return next;
     });
+  const openItemTags = (m: MasterLine, it: Item) => {
+    const t = it.tags!;
+    const own = t.target.type === "item" ? t.functionOrigin === "item" || t.locationOrigin === "item" : t.target.type === "source" ? t.functionOrigin === "source" || t.locationOrigin === "source" : t.target.type === "account" ? t.functionOrigin === "account" || t.locationOrigin === "account" : false;
+    setTagging({ title: it.kind === "run_rate" ? `${m.name} run rate` : it.label, target: t.target, current: { functions: t.functions, locations: t.locations, classId: t.classIds?.[0] ?? null }, ownAtTarget: own });
+  };
+  const openAccountTags = (m: MasterLine) => {
+    const d = data?.accountDefaults?.[m.id];
+    setTagging({ title: `${m.accountNumber ?? ""} ${m.name}`.trim(), target: { type: "account", masterAccountId: m.id }, current: { functions: d?.functions ?? [], locations: d?.locations ?? [] }, ownAtTarget: !!d });
+  };
   const allIds = useMemo(() => (data ? data.sections.flatMap((s) => s.masters.map((m) => m.id)) : []), [data]);
 
   const totals = useMemo(() => {
@@ -344,6 +360,7 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
                                         </div>
                                         {it.methodText && <div className="text-xs text-muted-foreground">{it.methodText}{it.history && it.history.priorYear ? ` · ${prior} ${fmtUsd(it.history.priorYear)}` : ""}</div>}
                                         {it.note && <div className="text-xs italic text-muted-foreground">{it.note}</div>}
+                                        <TagSummary tags={it.tags} onEdit={readOnly || !it.tags ? undefined : () => openItemTags(m, it)} />
                                       </div>
                                       {!readOnly && it.editable && (
                                         <div className="ml-auto flex shrink-0 gap-1">
@@ -404,6 +421,9 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
                                           Build from {prior}
                                         </Button>
                                       )}
+                                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openAccountTags(m)} title="Function and location for every item on this line that has no tags of its own">
+                                        Account tags{data.accountDefaults?.[m.id] ? `: ${[...data.accountDefaults[m.id].functions, ...data.accountDefaults[m.id].locations].map((x) => x.key).join(", ")}` : ""}
+                                      </Button>
                                       <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => breakout(m)} disabled={busy === m.id} title="One run-rate item per account that fed this line last year">
                                         {busy === m.id ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
                                         Break out by account
@@ -454,6 +474,42 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
         </CardContent>
       </Card>
 
+      {!!data.belowMasters?.length && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Below EBITDA: function and location</CardTitle>
+            <CardDescription>These lines come from the debt, asset and capex schedules. Tag each one so the dashboard can show the full cost of a function, such as vehicle depreciation under Fleet.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {data.belowMasters.map((m) => (
+              <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-sm first:border-t-0 first:pt-0">
+                <div className="min-w-0">
+                  <span className="mr-2 text-xs tabular-nums text-muted-foreground">{m.accountNumber}</span>
+                  <span className="font-medium">{m.name}</span>
+                  <span className="ml-2 tabular-nums text-muted-foreground">{fmtUsd(sum(m.months))}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <TagSummary tags={m.items[0]?.tags ?? { functions: data.accountDefaults?.[m.id]?.functions ?? [], locations: data.accountDefaults?.[m.id]?.locations ?? [], functionOrigin: data.accountDefaults?.[m.id] ? "account" : "none", locationOrigin: data.accountDefaults?.[m.id] ? "account" : "none", classNames: [], target: { type: "account", masterAccountId: m.id } }} />
+                  {!readOnly && <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openAccountTags(m)}>Account tags</Button>}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+      {tagging && data.tagOptions && (
+        <TagDialog
+          {...tagging}
+          options={{ ...data.tagOptions, classes: data.tagOptions.classes.map((c) => ({ ...c, name: (info?.memberEntities.length ?? 0) > 1 ? `${c.name} (${info?.memberEntities.find((e) => e.id === c.entityId)?.code ?? ""})` : c.name })) }}
+          organizationId={info?.owner.organizationId ?? null}
+          reportingEntityId={info?.owner.reportingEntityId ?? null}
+          groupName={info?.owner.ownerName ?? "This company"}
+          versionId={versionId}
+          fiscalYear={fiscalYear}
+          onClose={() => setTagging(null)}
+          onSaved={load}
+        />
+      )}
       {editing && (
         <ItemDialog
           versionId={versionId}
