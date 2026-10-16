@@ -214,6 +214,15 @@ export default function BudgetOverviewPage() {
                   </Button>
                 </div>
               )}
+              {list.some((v) => v.reporting_entity_id && v.kind === "budget") && (
+                <div className="mt-2 flex flex-wrap items-center gap-3 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                  <span className="font-medium">Budget dashboard</span>
+                  <span className="text-muted-foreground">P&amp;L by function, drill to the item</span>
+                  <Button asChild variant="outline" size="sm" className="ml-auto">
+                    <Link href={`/budget/dashboard/${year}`}>Open</Link>
+                  </Button>
+                </div>
+              )}
             </CardHeader>
             <CardContent className="overflow-x-auto">
               <Table>
