@@ -384,16 +384,18 @@ export async function POST(request: Request) {
         if (q.length < 2) return NextResponse.json({ customers: [] });
         const { settings } = await loadProgram(admin, entityId);
         const prefixFilter = settings.invoicePrefixes.map((p) => `invoice_number.like.${p}%`).join(",");
-        const { data, error } = await admin
-          .from("rw_invoices_cache")
-          .select("customer_id, customer, sub_total, invoice_date, status")
-          .ilike("customer", `%${q}%`)
-          .or(prefixFilter)
-          .neq("status", "VOID")
-          .limit(2000);
-        if (error) return bad(error.message, 500);
+        const data = await fetchAll((from, to) =>
+          admin
+            .from("rw_invoices_cache")
+            .select("rw_invoice_id, customer_id, customer, sub_total, invoice_date, status")
+            .ilike("customer", `%${q}%`)
+            .or(prefixFilter)
+            .neq("status", "VOID")
+            .order("rw_invoice_id")
+            .range(from, to),
+        );
         const byId = new Map<string, { rwCustomerId: string; customerName: string; revenue: number; invoices: number; lastInvoice: string | null }>();
-        for (const r of data ?? []) {
+        for (const r of data) {
           if (!r.customer_id) continue;
           const cur = byId.get(r.customer_id) ?? { rwCustomerId: r.customer_id, customerName: r.customer ?? "", revenue: 0, invoices: 0, lastInvoice: null };
           cur.revenue += Number(r.sub_total) || 0;
@@ -630,15 +632,29 @@ export async function POST(request: Request) {
         if (!["approved", "fulfilled", "cancelled"].includes(status)) return bad("Unknown status");
         const { data: red } = await admin.from("rewards_redemptions").select("*").eq("id", redemptionId).eq("entity_id", entityId).single();
         if (!red) return bad("Redemption not found", 404);
-        if (red.status === "cancelled") return bad("This redemption was cancelled");
+        // Allowed moves: requested -> approved; requested/approved -> fulfilled
+        // or cancelled. A fulfilled reward has been handed over: no cancel.
+        const from: Record<string, string[]> = {
+          approved: ["requested"],
+          fulfilled: ["requested", "approved"],
+          cancelled: ["requested", "approved"],
+        };
+        if (!from[status].includes(red.status)) return bad(`A ${red.status} redemption can't be marked ${status}`);
         const now = new Date().toISOString();
         const stamp: Record<string, unknown> = { status };
         if (status === "approved") stamp.approved_at = now;
         if (status === "fulfilled") stamp.fulfilled_at = now;
         if (status === "cancelled") stamp.cancelled_at = now;
         if (body.costToCompany !== undefined) stamp.cost_to_company = body.costToCompany === "" ? null : Number(body.costToCompany);
-        const { error } = await admin.from("rewards_redemptions").update(stamp).eq("id", redemptionId);
+        // Conditional on the status we checked, so two clicks can't both win.
+        const { data: moved, error } = await admin
+          .from("rewards_redemptions")
+          .update(stamp)
+          .eq("id", redemptionId)
+          .in("status", from[status])
+          .select("id");
         if (error) return bad(error.message, 500);
+        if (!moved || moved.length === 0) return bad("This redemption changed in the meantime. Reload and try again.", 409);
 
         if (status === "cancelled") {
           // Give the points back and take back any refund.
