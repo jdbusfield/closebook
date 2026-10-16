@@ -45,10 +45,11 @@ export function Overview({ payload, entity, lines, mode, units, booked, fiscalYe
     () =>
       payload.groups.map((g) => {
         const c = combine(payload, g.code, { dropIntercompany: entity === "All" });
-        const t = pnl(c.lines, mode, c.booked).totals;
+        // Same booked months as the headline, so the rows add up to it
+        const t = pnl(c.lines, mode, entity === "All" ? booked : c.booked).totals;
         return { code: g.code, name: g.name, rev: t.revenue.cur, eb: t.ebitda.cur, ebPrior: t.ebitda.prior };
       }),
-    [payload, mode, entity],
+    [payload, mode, entity, booked],
   );
   const fnKeys = [...FUNCTIONS, ...(Math.abs(fn[UNASSIGNED].cur) >= 0.5 ? [UNASSIGNED] : [])];
   const fnMax = Math.max(1, ...fnKeys.map((k) => Math.max(fn[k].cur, fn[k].prior)));
