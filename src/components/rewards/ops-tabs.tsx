@@ -468,6 +468,7 @@ export function SettingsTab({ entityId, program, onChanged }: { entityId: string
     use_rebate_exclusions: program.use_rebate_exclusions,
     weekend_bonus_enabled: program.weekend_bonus_enabled,
     auto_enroll: program.auto_enroll,
+    statements_enabled: program.statements_enabled,
     points_expire_months: String(program.points_expire_months),
   });
   const [saving, setSaving] = useState(false);
@@ -489,6 +490,7 @@ export function SettingsTab({ entityId, program, onChanged }: { entityId: string
           use_rebate_exclusions: d.use_rebate_exclusions,
           weekend_bonus_enabled: d.weekend_bonus_enabled,
           auto_enroll: d.auto_enroll,
+          statements_enabled: d.statements_enabled,
           points_expire_months: Math.trunc(Number(d.points_expire_months)),
         },
       });
@@ -508,7 +510,7 @@ export function SettingsTab({ entityId, program, onChanged }: { entityId: string
       <p className="text-xs text-muted-foreground">{hint}</p>
     </div>
   );
-  const toggle = (key: "use_rebate_exclusions" | "weekend_bonus_enabled" | "auto_enroll", label: string, hint: string) => (
+  const toggle = (key: "use_rebate_exclusions" | "weekend_bonus_enabled" | "auto_enroll" | "statements_enabled", label: string, hint: string) => (
     <div className="flex items-start gap-3">
       <Switch checked={d[key]} onCheckedChange={(v) => setD({ ...d, [key]: v })} />
       <div>
@@ -542,6 +544,7 @@ export function SettingsTab({ entityId, program, onChanged }: { entityId: string
           {toggle("use_rebate_exclusions", "Use the rebate tracker's exclusions", "Its global excluded I-codes also earn nothing here.")}
           {toggle("weekend_bonus_enabled", "Weekend rate", "Orders billed over a Saturday or Sunday earn the tier's weekend rate on the whole order.")}
           {toggle("auto_enroll", "Enroll customers automatically", "Every Versatile customer with a counted invoice becomes a member.")}
+          {toggle("statements_enabled", "Statement emails", "On the 5th, active members' contacts get last month's statement. Off until you switch it on; never before launch.")}
         </div>
         <Button onClick={save} disabled={saving}>
           {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}

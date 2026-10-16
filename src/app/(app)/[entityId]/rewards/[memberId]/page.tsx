@@ -120,12 +120,36 @@ export default function RewardsMemberPage() {
           </Link>
           <h1 className="flex items-center gap-3 text-2xl font-semibold">
             {member.name}
+            {member.member_number ? <span className="text-base font-normal text-muted-foreground">VR-{member.member_number}</span> : null}
             <Badge variant={member.status === "active" ? "default" : member.status === "opted_out" ? "destructive" : "secondary"}>
               {STATUS_LABEL[member.status]}
             </Badge>
           </h1>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
+          <Button size="sm" variant="outline" asChild>
+            <a href={`/rewards-portal/staff-preview?member=${memberId}`} target="_blank" rel="noopener noreferrer">
+              View as Member
+            </a>
+          </Button>
+          <Button size="sm" variant="outline" asChild>
+            <a href={`/rewards-portal/staff-preview?member=${memberId}&preview=1`} target="_blank" rel="noopener noreferrer">
+              View With 2026 Preview
+            </a>
+          </Button>
+          {member.status === "active" && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy || d.contacts.length === 0}
+              onClick={() =>
+                confirm(`Email a sign-in invite to ${d.contacts.map((c) => c.email).join(", ")}?`) &&
+                act("send_invite", {}, "Invite sent")
+              }
+            >
+              Email Sign-In Invite
+            </Button>
+          )}
           <Button size="sm" variant="outline" onClick={() => setDialog("rename")}>
             Rename
           </Button>
