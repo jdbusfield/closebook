@@ -104,6 +104,7 @@ export async function GET(request: Request) {
                     functionOrigin: it.tags?.functionOrigin ?? "none",
                     byFunction: it.tags?.byFunction ?? { Unassigned: it.months },
                     byLocation: it.tags?.byLocation ?? { Unassigned: it.months },
+                    people: it.people,
                   }),
                 ),
               })),

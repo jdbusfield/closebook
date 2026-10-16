@@ -75,6 +75,20 @@ export interface ModelItem {
   priorBase?: boolean;
   /** Function, location and class, resolved (docs/budget-dashboard-plan.md) */
   tags?: ItemTags;
+  /** Payroll: the people behind the item, each with their own months and tags */
+  people?: PersonCost[];
+}
+
+export interface PersonCost {
+  /** budget_headcount id */
+  id: string;
+  name: string;
+  title: string | null;
+  months: number[];
+  total: number;
+  functions: TagSplit[];
+  locations: TagSplit[];
+  byFunction: Record<string, number[]>;
 }
 
 interface BuildRow {
@@ -220,10 +234,12 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
   const ruleIndex = indexRules(tagRules.map(readRule), owner.reportingEntityId);
   const personIds = [...new Set(builds.filter((b) => b.source_table === "budget_headcount" && b.source_id).map((b) => b.source_id as string))];
   const people = new Map<string, PersonTags>();
+  const personInfo = new Map<string, { name: string; title: string | null }>();
   for (let i = 0; i < personIds.length; i += 150) {
-    const { data } = await admin.from("budget_headcount").select("id, function_allocations, location_allocations").in("id", personIds.slice(i, i + 150));
-    for (const p of (data ?? []) as Array<{ id: string; function_allocations: unknown; location_allocations: unknown }>) {
+    const { data } = await admin.from("budget_headcount").select("id, name, title, function_allocations, location_allocations").in("id", personIds.slice(i, i + 150));
+    for (const p of (data ?? []) as Array<{ id: string; name: string | null; title: string | null; function_allocations: unknown; location_allocations: unknown }>) {
       people.set(p.id, { functionAllocations: readSplits(p.function_allocations), locationAllocations: readSplits(p.location_allocations) });
+      personInfo.set(p.id, { name: p.name ?? "", title: p.title ?? null });
     }
   }
   const classIds = [...new Set(builds.map((b) => b.qbo_class_id).filter((c): c is string => !!c))];
@@ -260,7 +276,8 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
   const sourceOf = (b: BuildRow) => SOURCE_BY_TABLE[b.source_table ?? ""] ?? { label: b.build_type === "driver" ? "Fleet driver" : "Schedule", href: () => null };
 
   // Payroll: one item per component (sub-master), people counted
-  const payroll = new Map<string, { top: string; label: string; months: number[]; people: Set<string> }>();
+  type PersonTally = { name: string; months: number[]; fn: Map<string, number[]>; loc: Map<string, number[]> };
+  const payroll = new Map<string, { top: string; label: string; months: number[]; people: Set<string>; byPerson: Map<string, PersonTally> }>();
   // Leases and other schedules: one item per source row, components summed
   const grouped = new Map<string, { top: string; b: BuildRow; months: number[]; count: number }>();
   for (const b of builds) {
@@ -269,9 +286,18 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
     if (b.build_type === "headcount") {
       const sub = masterById.get(b.master_account_id);
       const key = `${top}|${b.master_account_id}`;
-      const g = payroll.get(key) ?? { top, label: sub?.name ?? "Personnel", months: new Array(12).fill(0), people: new Set<string>() };
+      const g = payroll.get(key) ?? { top, label: sub?.name ?? "Personnel", months: new Array(12).fill(0), people: new Set<string>(), byPerson: new Map<string, PersonTally>() };
       addInto(g.months, m);
-      g.people.add(b.label.replace(/\s*\([^)]*\)\s*$/, ""));
+      const personName = b.label.replace(/\s*\([^)]*\)\s*$/, "");
+      g.people.add(personName);
+      // Each person keeps their own months and tags, so the dashboard can show who makes up the line
+      const pid = b.source_id ?? personName;
+      const pt = g.byPerson.get(pid) ?? { name: personInfo.get(pid)?.name || personName, months: new Array(12).fill(0), fn: new Map<string, number[]>(), loc: new Map<string, number[]>() };
+      addInto(pt.months, m);
+      const rt = tagsOf(b);
+      addSplit(pt.fn, splitMonths(m, rt.functions));
+      addSplit(pt.loc, splitMonths(m, rt.locations));
+      g.byPerson.set(pid, pt);
       payroll.set(key, g);
       addBuildTags(`payroll:${key}`, { type: "people" }, b, m);
       continue;
@@ -343,6 +369,18 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
       editable: false,
       history: null,
       tags: tallies.get(`payroll:${key}`)?.done(),
+      people: [...g.byPerson]
+        .map(([id, p]) => ({
+          id,
+          name: p.name,
+          title: personInfo.get(id)?.title ?? null,
+          months: p.months.map((v) => Math.round(v * 100) / 100),
+          total: total(p.months),
+          functions: tallyToSplits(p.fn),
+          locations: tallyToSplits(p.loc),
+          byFunction: Object.fromEntries([...p.fn].map(([k, v]) => [k, v.map((x) => Math.round(x * 100) / 100)])),
+        }))
+        .sort((a, b) => b.total - a.total),
     });
   }
   // Each location is one pod (JD): the lease with its subleases beneath it, net on the pod line

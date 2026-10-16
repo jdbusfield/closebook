@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { combine, current, prior, pnl, functionTotals, monthly, priorFunctions, fmtTable, fmtMoney, fmtSigned, type DashboardPayload, type DashMaster } from "../dashboard";
+import { combine, current, prior, pnl, functionTotals, monthly, priorFunctions, fmtTable, fmtMoney, fmtSigned, peopleOn, type DashboardPayload, type Line, type DashMaster } from "../dashboard";
 
 const flat = (v: number) => new Array(12).fill(v) as number[];
 const master = (p: Partial<DashMaster> & { id: string; section: string }): DashMaster => ({
@@ -112,4 +112,22 @@ test("formats follow the chosen unit", () => {
   assert.equal(fmtTable(100, "K"), "–");
   assert.equal(fmtMoney(23_422_000, "M"), "$23.42M");
   assert.equal(fmtSigned(-1_175_000, "K"), "−$1,175K");
+});
+
+test("peopleOn adds a person's payroll components together and keeps only the picked function's share", () => {
+  const person = (id: string, name: string, v: number, byFunction: Record<string, number[]>) =>
+    ({ id, name, title: null, months: flat(v), total: v * 12, functions: [], locations: [], byFunction });
+  const item = (id: string, label: string, people: ReturnType<typeof person>[]) =>
+    ({ id, label, group: "AVON", groupName: "Avon", people }) as unknown as Line["items"][number];
+  const items = [
+    item("w", "Wages", [person("a", "Ana", 100, { Sales: flat(60), Fleet: flat(40) }), person("b", "Bo", 50, { Fleet: flat(50) })]),
+    item("t", "Payroll taxes", [person("a", "Ana", 10, { Sales: flat(6), Fleet: flat(4) })]),
+  ];
+  const all = peopleOn(items, null);
+  assert.deepEqual(all.map((p) => p.name), ["Ana", "Bo"]);
+  assert.equal(all[0].months[0], 110);
+  assert.equal(all[0].parts.length, 2);
+  const fleet = peopleOn(items, "Fleet");
+  assert.deepEqual(fleet.map((p) => [p.name, p.months[0]]), [["Bo", 50], ["Ana", 44]]);
+  assert.equal(peopleOn(items, "Operations").length, 0);
 });

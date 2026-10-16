@@ -36,6 +36,18 @@ export interface DashItem {
   functionOrigin: string;
   byFunction: Record<string, number[]>;
   byLocation: Record<string, number[]>;
+  /** Payroll items: the people behind them */
+  people?: DashPerson[];
+}
+export interface DashPerson {
+  id: string;
+  name: string;
+  title: string | null;
+  months: number[];
+  total: number;
+  functions: Split[];
+  locations: Split[];
+  byFunction: Record<string, number[]>;
 }
 export interface DashMaster {
   id: string;
@@ -276,6 +288,37 @@ export function monthly(lines: Line[], booked: number) {
     priorRevenue: i < booked ? prev[i] : null,
     priorEbitda: i < booked ? prev[i] - pop[i] : null,
   }));
+}
+
+/** One person's cost on a line: every payroll component (wages, taxes, benefits) added up. */
+export interface PersonOnLine {
+  key: string;
+  name: string;
+  title: string | null;
+  group: string;
+  groupName: string;
+  months: number[];
+  functions: Split[];
+  locations: Split[];
+  /** The components that make up the person's cost */
+  parts: Array<{ label: string; months: number[] }>;
+}
+
+/** The people behind a line's payroll items (or one item), in one function when a function is picked. */
+export function peopleOn(items: Line["items"], fn: string | null): PersonOnLine[] {
+  const byKey = new Map<string, PersonOnLine>();
+  for (const it of items) {
+    for (const p of it.people ?? []) {
+      const m = !fn || fn === "Revenue" ? p.months : p.byFunction[fn];
+      if (!m || m.every((v) => Math.abs(v) < 0.005)) continue;
+      const key = `${it.group}:${p.id}`;
+      const cur = byKey.get(key) ?? { key, name: p.name, title: p.title, group: it.group, groupName: it.groupName, months: zeros(), functions: p.functions, locations: p.locations, parts: [] };
+      add(cur.months, m);
+      cur.parts.push({ label: it.label, months: m.slice() });
+      byKey.set(key, cur);
+    }
+  }
+  return [...byKey.values()].sort((a, b) => sum(b.months) - sum(a.months));
 }
 
 /** An item's amount in one function (its whole amount when no function is picked). */

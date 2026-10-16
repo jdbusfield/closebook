@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
-  current, fmtMoney, fmtSigned, fmtTable, FUNCTIONS, itemInFunction, lineFunctions, pnl, prior, priorFunctions, sum, UNASSIGNED, unitName,
+  current, fmtMoney, fmtSigned, fmtTable, FUNCTIONS, itemInFunction, lineFunctions, peopleOn, pnl, prior, priorFunctions, sum, UNASSIGNED, unitName,
   type Line, type PnlRow, type Units,
 } from "@/lib/budget/dashboard";
 import { BarPair, changeClass, curLabel, FN_COLOR, MONTHS, MonthChart, priorLabel, type ViewProps } from "./shared";
@@ -282,6 +282,7 @@ function LineView({ units, mode, booked, fiscalYear, onDrill, drill, line }: Pro
   const linePrior = fn ? prior(priorFunctions(line)[fn] ?? new Array(12).fill(0), mode, booked) : prior(line.prior, mode, booked);
   const up = line.section === "revenue" || line.section === "other_income";
   return (
+    <div className="space-y-4">
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-base">{line.accountNumber} {line.name}{fn ? ` · ${fn}` : ""}</CardTitle>
@@ -309,6 +310,8 @@ function LineView({ units, mode, booked, fiscalYear, onDrill, drill, line }: Pro
         </Table>
       </CardContent>
     </Card>
+    <PeopleCard items={items.map((x) => x.it)} fn={fn} units={units} mode={mode} booked={booked} fiscalYear={fiscalYear} title={`People on ${line.name}${fn ? ` · ${fn}` : ""}`} />
+    </div>
   );
 }
 
@@ -350,6 +353,7 @@ function ItemView({ units, mode, booked, fiscalYear, line, itemKey, drill }: Pro
           </div>
         </CardContent>
       </Card>
+      <PeopleCard items={[it]} fn={fn} units={units} mode={mode} booked={booked} fiscalYear={fiscalYear} title={`People in ${it.label}`} />
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-base">About this item</CardTitle></CardHeader>
         <CardContent>
@@ -360,5 +364,71 @@ function ItemView({ units, mode, booked, fiscalYear, line, itemKey, drill }: Pro
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/** The employees behind a line's payroll items, each expandable to their months and components. */
+function PeopleCard({ items, fn, units, mode, booked, fiscalYear, title }: { items: Line["items"]; fn: string | null; units: Units; mode: ViewProps["mode"]; booked: number; fiscalYear: number; title: string }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const people = useMemo(() => peopleOn(items, fn), [items, fn]);
+  if (!people.length) return null;
+  const totalCur = people.reduce((a, x) => a + current(x.months, mode, booked), 0);
+  const multiCo = new Set(people.map((x) => x.group)).size > 1;
+  const cols = multiCo ? 7 : 6;
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">{title}</CardTitle>
+        <CardDescription>
+          {people.length} {people.length === 1 ? "person" : "people"}{fn ? ` (their ${fn} share)` : ""}, {fmtMoney(totalCur, units)} {curLabel(mode, fiscalYear, booked)}. Click a person for their month by month cost. Amounts in {unitName(units)}.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Employee</TableHead><TableHead>Title</TableHead>{multiCo && <TableHead>Company</TableHead>}<TableHead>Function</TableHead><TableHead>Location</TableHead>
+              <TableHead className="text-right">{curLabel(mode, fiscalYear, booked)}</TableHead><TableHead className="text-right">Share</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {people.map((x) => {
+              const cur = current(x.months, mode, booked);
+              const isOpen = open === x.key;
+              return (
+                <Fragment key={x.key}>
+                  <TableRow className="cursor-pointer" onClick={() => setOpen(isOpen ? null : x.key)}>
+                    <TableCell className="whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1 font-medium">{isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}{x.name}</span>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{x.title ?? ""}</TableCell>
+                    {multiCo && <TableCell className="text-muted-foreground">{x.groupName}</TableCell>}
+                    <TableCell className="whitespace-nowrap">{splitText(x.functions)}</TableCell>
+                    <TableCell className="whitespace-nowrap">{x.locations.length && !x.locations.every((l) => l.key === UNASSIGNED) ? splitText(x.locations) : <span className="text-amber-600">Not set</span>}</TableCell>
+                    <TableCell className="text-right tabular-nums">{fmtTable(cur, units)}</TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">{totalCur ? `${Math.round((cur / totalCur) * 100)}%` : ""}</TableCell>
+                  </TableRow>
+                  {isOpen && (
+                    <TableRow className="hover:bg-transparent">
+                      <TableCell colSpan={cols} className="bg-muted/30 p-3">
+                        <div className="overflow-x-auto">
+                          <Table className="min-w-[900px]">
+                            <TableHeader><TableRow><TableHead />{MONTHS.map((m) => <TableHead key={m} className="text-right">{m}</TableHead>)}<TableHead className="text-right">Total</TableHead></TableRow></TableHeader>
+                            <TableBody>
+                              <TableRow className="font-medium"><TableCell>{fiscalYear} budget</TableCell>{x.months.map((v, i) => <TableCell key={i} className="text-right tabular-nums">{fmtTable(v, units)}</TableCell>)}<TableCell className="text-right tabular-nums">{fmtTable(sum(x.months), units)}</TableCell></TableRow>
+                              {x.parts.length > 1 && x.parts.map((pt, i) => <TableRow key={i} className="text-xs text-muted-foreground"><TableCell className="pl-6">{pt.label}</TableCell>{pt.months.map((v, j) => <TableCell key={j} className="text-right tabular-nums">{fmtTable(v, units)}</TableCell>)}<TableCell className="text-right tabular-nums">{fmtTable(sum(pt.months), units)}</TableCell></TableRow>)}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }
