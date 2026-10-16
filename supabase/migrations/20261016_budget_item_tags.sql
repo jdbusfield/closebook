@@ -57,6 +57,10 @@ INSERT INTO public.audit_table_config (table_name, parent_column, parent_table) 
 ON CONFLICT (table_name) DO NOTHING;
 SELECT public.audit_install_triggers();
 
+-- Keep the old payroll functions (Executive vs Administrative) before they merge into Overhead
+CREATE TABLE IF NOT EXISTS budget_headcount_functions_20261016 AS
+  SELECT id, function_allocations, now() AS saved_at FROM budget_headcount;
+
 -- Payroll functions to the four used everywhere. Executive and Administrative become
 -- Overhead, Fleet & Maintenance becomes Fleet; a split that lands twice on one key is summed.
 UPDATE budget_headcount h
