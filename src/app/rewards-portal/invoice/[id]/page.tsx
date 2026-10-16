@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireMember } from "@/lib/rewards/portal/server";
+import { fetchAll } from "@/lib/rewards/run";
 import { fmtDate, fmtMoney, fmtRate, fmtSignedPoints } from "@/lib/rewards/portal/view";
 import { Label, Rows, StaffBanner, StripeCard, SubHeader } from "../../_ui";
 
@@ -23,7 +24,9 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
   const [{ data: inv }, { data: items }] = row.rw_invoice_id
     ? await Promise.all([
         admin.from("rw_invoices_cache").select("sub_total").eq("rw_invoice_id", row.rw_invoice_id).maybeSingle(),
-        admin.from("rw_invoice_items").select("rec_type, i_code, extended").eq("rw_invoice_id", row.rw_invoice_id).limit(1000),
+        fetchAll((from, to) =>
+          admin.from("rw_invoice_items").select("id, rec_type, i_code, extended").eq("rw_invoice_id", row.rw_invoice_id!).order("id").range(from, to),
+        ).then((data) => ({ data })),
       ])
     : [{ data: null }, { data: [] }];
 

@@ -50,7 +50,8 @@ export async function sendMonthlyStatements(admin: Admin, entityId: string, mont
     const { data: contacts } = await admin.from("rewards_contacts").select("email").eq("member_id", m.id).eq("receives_statements", true);
     if (!contacts?.length) continue;
     run.members += 1;
-    const rows = (await memberLedgerRows(admin, m.id)) as ViewLedgerRow[];
+    // Only activity through the month's last day; the run happens on the 5th.
+    const rows = ((await memberLedgerRows(admin, m.id)) as ViewLedgerRow[]).filter((r) => r.earned_on <= monthEnd);
     const view = buildMemberView(rows, tiers, settings, monthEnd, false);
     const inMonth = view.rows.filter((r) => r.entry_type === "earn" && r.earned_on.startsWith(month));
     const earned = inMonth.reduce((s, r) => s + r.points, 0);
