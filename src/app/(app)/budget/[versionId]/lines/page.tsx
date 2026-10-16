@@ -98,7 +98,7 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
   const [fromPrior, setFromPrior] = useState<{ only: string | null } | null>(null);
   const [confirmOwn, setConfirmOwn] = useState<MasterLine | null>(null);
   const [zeroing, setZeroing] = useState<MasterLine | null>(null);
-  const [tagging, setTagging] = useState<{ title: string; target: TagTarget; current: { functions: Split[]; locations: Split[]; classId?: string | null }; ownAtTarget: boolean } | null>(null);
+  const [tagging, setTagging] = useState<{ title: string; target: TagTarget; current: { functions: Split[]; locations: Split[]; classId?: string | null }; ownAtTarget: boolean; initialScope?: "group" | "organization" } | null>(null);
   const fiscalYear = info?.version.fiscal_year ?? new Date().getFullYear() + 1;
 
   const load = useCallback(async () => {
@@ -127,11 +127,11 @@ export default function BudgetModelPage({ params }: { params: Promise<{ versionI
   const openItemTags = (m: MasterLine, it: Item) => {
     const t = it.tags!;
     const own = t.target.type === "item" ? t.functionOrigin === "item" || t.locationOrigin === "item" : t.target.type === "source" ? t.functionOrigin === "source" || t.locationOrigin === "source" : t.target.type === "account" ? t.functionOrigin === "account" || t.locationOrigin === "account" : false;
-    setTagging({ title: it.kind === "run_rate" ? `${m.name} run rate` : it.label, target: t.target, current: { functions: t.functions, locations: t.locations, classId: t.classIds?.[0] ?? null }, ownAtTarget: own });
+    setTagging({ title: it.kind === "run_rate" ? `${m.name} run rate` : it.label, target: t.target, current: { functions: t.functions, locations: t.locations, classId: t.classIds?.[0] ?? null }, ownAtTarget: own, initialScope: own && t.ruleScope ? t.ruleScope : "group" });
   };
   const openAccountTags = (m: MasterLine) => {
     const d = data?.accountDefaults?.[m.id];
-    setTagging({ title: `${m.accountNumber ?? ""} ${m.name}`.trim(), target: { type: "account", masterAccountId: m.id }, current: { functions: d?.functions ?? [], locations: d?.locations ?? [] }, ownAtTarget: !!d });
+    setTagging({ title: `${m.accountNumber ?? ""} ${m.name}`.trim(), target: { type: "account", masterAccountId: m.id }, current: { functions: d?.functions ?? [], locations: d?.locations ?? [] }, ownAtTarget: !!d, initialScope: d?.scope ?? "group" });
   };
   const allIds = useMemo(() => (data ? data.sections.flatMap((s) => s.masters.map((m) => m.id)) : []), [data]);
 

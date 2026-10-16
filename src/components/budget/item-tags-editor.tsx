@@ -34,6 +34,7 @@ export interface ItemTagsView {
   locationOrigin: TagOrigin;
   classNames: string[];
   target: TagTarget;
+  ruleScope?: "group" | "organization" | null;
 }
 export interface TagOptions {
   functions: string[];
@@ -128,6 +129,8 @@ export interface TagDialogProps {
   current: { functions: Split[]; locations: Split[]; classId?: string | null };
   /** Whether the current tags were set at this target (else the editor starts empty = inherit) */
   ownAtTarget: boolean;
+  /** Where the rule being edited lives; saves go back to the same scope */
+  initialScope?: "group" | "organization";
   options: TagOptions;
   organizationId: string | null;
   reportingEntityId: string | null;
@@ -143,7 +146,7 @@ export function TagDialog(p: TagDialogProps) {
   const [fns, setFns] = useState<Split[]>(start(p.current.functions));
   const [locs, setLocs] = useState<Split[]>(start(p.current.locations));
   const [classId, setClassId] = useState<string>(p.current.classId ?? "");
-  const [scope, setScope] = useState<"group" | "organization">("group");
+  const [scope, setScope] = useState<"group" | "organization">(p.initialScope ?? "group");
   const [saving, setSaving] = useState(false);
   const target = p.target;
 

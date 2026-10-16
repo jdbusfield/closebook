@@ -37,6 +37,8 @@ export interface ItemTags {
   /** QBO classes on the item's builds */
   classNames: string[];
   classIds: string[];
+  /** Scope of the rule the tags come from, so an edit saves to that same rule */
+  ruleScope: "group" | "organization" | null;
   /** The item's months by function and by location ("Unassigned" for untagged amounts) */
   byFunction: Record<string, number[]>;
   byLocation: Record<string, number[]>;
@@ -99,8 +101,10 @@ class TagTally {
   locOrigins = new Set<TagOrigin>();
   classes = new Set<string>();
   classIdSet = new Set<string>();
+  scopes = new Set<"group" | "organization">();
   constructor(public target: TagTarget) {}
-  add(months: number[], r: { functions: TagSplit[]; locations: TagSplit[]; functionOrigin: TagOrigin; locationOrigin: TagOrigin }, className: string | null, classId: string | null = null) {
+  add(months: number[], r: { functions: TagSplit[]; locations: TagSplit[]; functionOrigin: TagOrigin; locationOrigin: TagOrigin; ruleScope?: "group" | "organization" | null }, className: string | null, classId: string | null = null) {
+    if (r.ruleScope) this.scopes.add(r.ruleScope);
     addSplit(this.fn, splitMonths(months, r.functions));
     addSplit(this.loc, splitMonths(months, r.locations));
     this.fnOrigins.add(r.functionOrigin);
@@ -113,7 +117,7 @@ class TagTally {
     const one = (s: Set<TagOrigin>): TagOrigin | "mixed" => (s.size === 1 ? [...s][0] : s.size === 0 ? "none" : "mixed");
     const shares = (m: Map<string, number[]>) => tallyToSplits(m);
     return { functions: shares(this.fn), locations: shares(this.loc), functionOrigin: one(this.fnOrigins), locationOrigin: one(this.locOrigins),
-      classNames: [...this.classes].sort(), classIds: [...this.classIdSet], byFunction: round(this.fn), byLocation: round(this.loc), target: this.target };
+      classNames: [...this.classes].sort(), classIds: [...this.classIdSet], ruleScope: this.scopes.size === 1 ? [...this.scopes][0] : null, byFunction: round(this.fn), byLocation: round(this.loc), target: this.target };
   }
 }
 const metaOf = (b: BuildRow) => (b.meta && typeof b.meta === "object" ? (b.meta as Record<string, unknown>) : {});
@@ -563,9 +567,11 @@ export async function buildVersionModel(admin: ReturnType<typeof createAdminClie
     })),
   );
   // What the tag pickers offer, and each line's account default
-  const { data: classRows } = memberEntityIds.length
-    ? await admin.from("qbo_classes").select("id, name, entity_id, is_active").in("entity_id", memberEntityIds)
-    : { data: [] };
+  const classRows = memberEntityIds.length
+    ? await fetchAllPaginated<{ id: string; name: string; entity_id: string; is_active: boolean | null }>((o, l) =>
+        admin.from("qbo_classes").select("id, name, entity_id, is_active").in("entity_id", memberEntityIds).order("id").range(o, o + l - 1),
+      )
+    : [];
   const usedLocations = new Set<string>(LOCATIONS);
   for (const r of tagRules) for (const s of readSplits(r.location_allocations)) usedLocations.add(s.key);
   for (const p of people.values()) for (const s of p.locationAllocations) usedLocations.add(s.key);
