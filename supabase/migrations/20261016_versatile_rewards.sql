@@ -251,49 +251,39 @@ create table rewards_tier_changes (
 );
 create index rewards_tier_changes_open on rewards_tier_changes (entity_id) where done_at is null;
 
--- RLS: org members read; editors write. API routes use the service role and
--- check the same roles in code.
+-- RLS: members who can see the entity read (user_entity_ids honours entity
+-- allowlists); admin/controller/preparer on the entity write. API routes use
+-- the service role and check the same scopes in code.
 do $$
 declare t text;
 begin
   foreach t in array array[
-    'rewards_tiers','rewards_members','rewards_member_customers',
+    'rewards_programs','rewards_tiers','rewards_members','rewards_member_customers',
     'rewards_ledger','rewards_perks','rewards_perk_uses','rewards_catalog_items',
     'rewards_redemptions','rewards_tier_changes'
   ] loop
     execute format('alter table %I enable row level security', t);
-    execute format($p$create policy "Members read %1$s" on %1$I for select using (entity_id in (
-      select e.id from entities e join organization_members om on om.organization_id = e.organization_id
-      where om.user_id = auth.uid()))$p$, t);
-    execute format($p$create policy "Editors manage %1$s" on %1$I for all using (entity_id in (
-      select e.id from entities e join organization_members om on om.organization_id = e.organization_id
-      where om.user_id = auth.uid() and om.role in ('admin','controller','preparer')))$p$, t);
+    execute format($p$create policy "Members read %1$s" on %1$I for select
+      using (entity_id in (select public.user_entity_ids()))$p$, t);
+    execute format($p$create policy "Editors manage %1$s" on %1$I for all
+      using (public.user_entity_role(entity_id) in ('admin','controller','preparer'))
+      with check (public.user_entity_role(entity_id) in ('admin','controller','preparer'))$p$, t);
   end loop;
 end $$;
-
-alter table rewards_programs enable row level security;
-create policy "Members read rewards_programs" on rewards_programs for select using (entity_id in (
-  select e.id from entities e join organization_members om on om.organization_id = e.organization_id
-  where om.user_id = auth.uid()));
-create policy "Editors manage rewards_programs" on rewards_programs for all using (entity_id in (
-  select e.id from entities e join organization_members om on om.organization_id = e.organization_id
-  where om.user_id = auth.uid() and om.role in ('admin','controller','preparer')));
 
 -- Child tables without entity_id inherit access through their parent.
 alter table rewards_contacts enable row level security;
 create policy "Members read rewards_contacts" on rewards_contacts for select using (member_id in (
-  select m.id from rewards_members m join entities e on e.id = m.entity_id
-  join organization_members om on om.organization_id = e.organization_id where om.user_id = auth.uid()));
+  select m.id from rewards_members m where m.entity_id in (select public.user_entity_ids())));
 create policy "Editors manage rewards_contacts" on rewards_contacts for all using (member_id in (
-  select m.id from rewards_members m join entities e on e.id = m.entity_id
-  join organization_members om on om.organization_id = e.organization_id
-  where om.user_id = auth.uid() and om.role in ('admin','controller','preparer')));
+  select m.id from rewards_members m where public.user_entity_role(m.entity_id) in ('admin','controller','preparer')))
+  with check (member_id in (
+  select m.id from rewards_members m where public.user_entity_role(m.entity_id) in ('admin','controller','preparer')));
 
 alter table rewards_tier_perks enable row level security;
 create policy "Members read rewards_tier_perks" on rewards_tier_perks for select using (tier_id in (
-  select t.id from rewards_tiers t join entities e on e.id = t.entity_id
-  join organization_members om on om.organization_id = e.organization_id where om.user_id = auth.uid()));
+  select t.id from rewards_tiers t where t.entity_id in (select public.user_entity_ids())));
 create policy "Editors manage rewards_tier_perks" on rewards_tier_perks for all using (tier_id in (
-  select t.id from rewards_tiers t join entities e on e.id = t.entity_id
-  join organization_members om on om.organization_id = e.organization_id
-  where om.user_id = auth.uid() and om.role in ('admin','controller','preparer')));
+  select t.id from rewards_tiers t where public.user_entity_role(t.entity_id) in ('admin','controller','preparer')))
+  with check (tier_id in (
+  select t.id from rewards_tiers t where public.user_entity_role(t.entity_id) in ('admin','controller','preparer')));

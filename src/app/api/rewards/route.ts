@@ -9,6 +9,8 @@ import {
 } from "@/lib/budget/access";
 import { fetchAll, isRewardsEntity, loadProgram, refreshMemberSummaries, runRewards, todayLA } from "@/lib/rewards/run";
 import { addMonths, computeBalance } from "@/lib/rewards/engine";
+import { getMemberAccess } from "@/lib/access/server";
+import { canOpenModule } from "@/lib/access/modules";
 import { allowanceState, redemptionRefund, type AllowancePeriod } from "@/lib/rewards/perks";
 
 export const maxDuration = 300;
@@ -122,6 +124,12 @@ export async function POST(request: Request) {
     const READ_ACTIONS = new Set(["get_overview", "get_member", "search_customers", "preview_report"]);
     if (READ_ACTIONS.has(action)) assertOrgMember(actor, orgId);
     else assertOrgEditor(actor, orgId);
+    // Member access scopes: the entity allowlist and the Rewards module.
+    const access = await getMemberAccess();
+    if (access) {
+      if (access.entityIds && !access.entityIds.includes(entityId)) return bad("Forbidden", 403);
+      if (!canOpenModule(access, "rewards")) return bad("Forbidden", 403);
+    }
     if (!(await isRewardsEntity(admin, entityId))) return bad("Rewards is not set up for this entity", 404);
 
     switch (action) {
@@ -602,6 +610,13 @@ export async function POST(request: Request) {
         if (ledgerErr) {
           await admin.from("rewards_redemptions").delete().eq("id", red.id);
           return bad(ledgerErr.message, 500);
+        }
+        // Two requests at once can both pass the check above. Recheck after
+        // writing and back this one out if the balance went negative.
+        if ((await availablePoints(admin, memberId)) < 0) {
+          await admin.from("rewards_ledger").delete().eq("redemption_id", red.id);
+          await admin.from("rewards_redemptions").delete().eq("id", red.id);
+          return bad("Not enough points: another redemption just used them. Reload and try again.", 409);
         }
 
         // Tier perk: a share of the points back, when switched on.
