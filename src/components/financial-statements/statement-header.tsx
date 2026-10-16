@@ -29,6 +29,8 @@ interface StatementHeaderProps {
   endMonth: number;
   granularity: Granularity;
   unaudited?: boolean;
+  /** Replaces the computed period line (e.g. a budget year that has not ended) */
+  periodDescription?: string;
 }
 
 export function StatementHeader({
@@ -40,8 +42,9 @@ export function StatementHeader({
   endMonth,
   granularity,
   unaudited = true,
+  periodDescription: periodOverride,
 }: StatementHeaderProps) {
-  const periodDescription = getStatementPeriodDescription(
+  const periodDescription = periodOverride ?? getStatementPeriodDescription(
     startYear,
     startMonth,
     endYear,
