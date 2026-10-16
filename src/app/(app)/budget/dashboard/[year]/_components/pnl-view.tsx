@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
-  current, fmtMoney, fmtPctChange, fmtSigned, fmtTable, FUNCTIONS, itemInFunction, lineFunctions, pnl, prior, priorFunctions, sum, UNASSIGNED, unitName,
+  current, fmtMoney, fmtSigned, fmtTable, FUNCTIONS, itemInFunction, lineFunctions, pnl, prior, priorFunctions, sum, UNASSIGNED, unitName,
   type Line, type PnlRow,
 } from "@/lib/budget/dashboard";
 import { BarPair, changeClass, curLabel, FN_COLOR, MONTHS, MonthChart, priorLabel, Swatch, type ViewProps } from "./shared";
@@ -20,6 +20,9 @@ interface Props extends ViewProps {
   onDrill: (d: Drill) => void;
 }
 
+/** Change as a signed percent of last year; "–" when there is nothing to compare against. */
+const signedPct = (change: number, base: number) =>
+  Math.abs(change) < 0.5 || Math.abs(base) < 0.5 ? "–" : `${change > 0 ? "+" : "−"}${Math.round((Math.abs(change) / Math.abs(base)) * 100)}%`;
 const linkCls = "underline decoration-dotted underline-offset-4 hover:decoration-solid text-left";
 const splitText = (s: Array<{ key: string; pct: number }>) => (s.length === 0 ? "No function" : s.length === 1 ? s[0].key : s.map((x) => `${x.key} ${Math.round(x.pct)}%`).join(" / "));
 
@@ -101,12 +104,13 @@ function Master({ lines, units, mode, booked, fiscalYear, onDrill }: Props) {
                 <TableHead className="border-l text-right">{mode === "pace" ? `FY ${fiscalYear}` : "Budget"}</TableHead>
                 <TableHead className="whitespace-nowrap text-right">{priorLabel(mode, fiscalYear, booked)}</TableHead>
                 <TableHead className="text-right">Change</TableHead>
+                <TableHead className="text-right">Change %</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((r) => {
                 const change = r.cur - r.prior;
-                if (r.kind === "head") return <TableRow key={r.key} className={rowCls(r)}><TableCell colSpan={cols.length + 4} className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{r.label}</TableCell></TableRow>;
+                if (r.kind === "head") return <TableRow key={r.key} className={rowCls(r)}><TableCell colSpan={cols.length + 5} className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{r.label}</TableCell></TableRow>;
                 if (r.kind === "pct") return (
                   <TableRow key={r.key} className={rowCls(r)}>
                     <TableCell className="sticky left-0 bg-card">{r.label}</TableCell>
@@ -114,6 +118,7 @@ function Master({ lines, units, mode, booked, fiscalYear, onDrill }: Props) {
                     <TableCell className="border-l text-right tabular-nums">{Math.round(r.cur * 1000) / 10}%</TableCell>
                     <TableCell className="text-right tabular-nums">{Math.round(r.prior * 1000) / 10}%</TableCell>
                     <TableCell className="text-right tabular-nums">{Math.abs(change) < 0.0005 ? "–" : `${change > 0 ? "+" : "−"}${Math.abs(change * 100).toFixed(1)} pts`}</TableCell>
+                    <TableCell />
                   </TableRow>
                 );
                 return (
@@ -132,7 +137,8 @@ function Master({ lines, units, mode, booked, fiscalYear, onDrill }: Props) {
                     })}
                     <TableCell className="whitespace-nowrap border-l text-right font-medium tabular-nums">{fmtTable(r.cur, units)}</TableCell>
                     <TableCell className="whitespace-nowrap text-right tabular-nums text-muted-foreground">{fmtTable(r.prior, units)}</TableCell>
-                    <TableCell className={cn("whitespace-nowrap text-right tabular-nums", changeClass(change, r.upIsGood))}>{fmtSigned(change, units)}{fmtPctChange(change, r.prior)}</TableCell>
+                    <TableCell className={cn("whitespace-nowrap text-right tabular-nums", changeClass(change, r.upIsGood))}>{fmtSigned(change, units)}</TableCell>
+                    <TableCell className={cn("whitespace-nowrap text-right tabular-nums", changeClass(change, r.upIsGood))}>{signedPct(change, r.prior)}</TableCell>
                   </TableRow>
                 );
               })}
