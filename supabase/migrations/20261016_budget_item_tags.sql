@@ -60,6 +60,8 @@ SELECT public.audit_install_triggers();
 -- Keep the old payroll functions (Executive vs Administrative) before they merge into Overhead
 CREATE TABLE IF NOT EXISTS budget_headcount_functions_20261016 AS
   SELECT id, function_allocations, now() AS saved_at FROM budget_headcount;
+-- No policies: only the service role can read it
+ALTER TABLE budget_headcount_functions_20261016 ENABLE ROW LEVEL SECURITY;
 
 -- Payroll functions to the four used everywhere. Executive and Administrative become
 -- Overhead, Fleet & Maintenance becomes Fleet; a split that lands twice on one key is summed.
