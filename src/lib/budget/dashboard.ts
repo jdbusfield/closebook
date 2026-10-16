@@ -11,7 +11,8 @@
 
 export const FUNCTIONS = ["Sales", "Fleet", "Operations", "Overhead"] as const;
 export const UNASSIGNED = "Unassigned";
-export const SECTIONS = ["revenue", "direct_operating_costs", "other_operating_costs", "other_expense", "other_income"] as const;
+/** Management view: the business down to EBITDA. Interest, depreciation, amortization, taxes and other income/expense are left out. */
+export const SECTIONS = ["revenue", "direct_operating_costs", "other_operating_costs"] as const;
 export type SectionId = (typeof SECTIONS)[number];
 export type Mode = "pace" | "ytd";
 export type Units = "M" | "K" | "D";
@@ -131,7 +132,7 @@ export function prior(months: number[], mode: Mode, booked: number): number {
 
 /** A line's months by function. Revenue is its own column; costs use the item tags. */
 export function lineFunctions(l: Line): Record<string, number[]> {
-  if (l.section === "revenue" || l.section === "other_income") return { Revenue: l.months.slice() };
+  if (l.section === "revenue") return { Revenue: l.months.slice() };
   const out: Record<string, number[]> = {};
   const tagged = Object.values(l.byFunction).reduce((t, m) => t + Math.abs(sum(m)), 0);
   for (const [k, m] of Object.entries(l.byFunction)) out[k] = m.slice();
@@ -150,7 +151,7 @@ export function priorFunctions(l: Line): Record<string, number[]> {
   const fn = lineFunctions(l);
   const totals = Object.entries(fn).map(([k, m]) => [k, Math.abs(sum(m))] as const);
   const all = totals.reduce((t, [, v]) => t + v, 0);
-  if (all < 0.005) return { [l.section === "revenue" || l.section === "other_income" ? "Revenue" : UNASSIGNED]: l.prior.slice() };
+  if (all < 0.005) return { [l.section === "revenue" ? "Revenue" : UNASSIGNED]: l.prior.slice() };
   const out: Record<string, number[]> = {};
   for (const [k, v] of totals) if (v > 0) out[k] = l.prior.map((x) => (x * v) / all);
   return out;
@@ -178,8 +179,6 @@ const SECTION_TITLE: Record<SectionId, [string, string]> = {
   revenue: ["Revenue", "Total revenue"],
   direct_operating_costs: ["Direct operating costs", "Total direct operating costs"],
   other_operating_costs: ["Other operating costs", "Total other operating costs"],
-  other_expense: ["Below operating profit", "Total other expense"],
-  other_income: ["Other income", "Total other income"],
 };
 
 /** The income statement the Summary tab shows, with a column per function. */
@@ -205,11 +204,7 @@ export function pnl(lines: Line[], mode: Mode, booked: number): { rows: PnlRow[]
     // Every line counts in the totals; a row is shown when any figure on it is not zero
     const ls = lines.filter((l) => l.section === s);
     const shows = (l: Line) => Math.abs(current(l.months, mode, booked)) >= 0.5 || Math.abs(sum(l.months)) >= 0.5 || Math.abs(sum(l.prior, booked)) >= 0.5;
-    const up = s === "revenue" || s === "other_income";
-    if (s === "other_income" && ls.length === 0) {
-      totals[s] = mk(`t:${s}`, "total", SECTION_TITLE[s][1], up, zeros(), zeros(), {});
-      return;
-    }
+    const up = s === "revenue";
     rows.push(mk(`h:${s}`, "head", SECTION_TITLE[s][0], up, zeros(), zeros(), {}, { section: s }));
     const tm = zeros();
     const tp = zeros();
@@ -240,30 +235,22 @@ export function pnl(lines: Line[], mode: Mode, booked: number): { rows: PnlRow[]
   const eb = combineRows(gm, totals.other_operating_costs, -1, "ebitda", "EBITDA (operating profit)");
   rows.push(eb);
   pctRow("ebitda_pct", "EBITDA margin %", eb, totals.revenue);
-  section("other_expense");
-  section("other_income");
-  const ni = combineRows(combineRows(eb, totals.other_expense, -1, "x", ""), totals.other_income, 1, "ni", "Net income");
-  rows.push(ni);
   const opex = combineRows(totals.direct_operating_costs, totals.other_operating_costs, 1, "opex", "Operating costs");
   opex.upIsGood = false;
-  Object.assign(totals, { gm, ebitda: eb, ni, opex });
+  Object.assign(totals, { gm, ebitda: eb, opex });
   return { rows, totals };
 }
 
-/** Function totals for operating costs (direct + other operating) and below operating profit. */
+/** Function totals for operating costs (direct + other operating). */
 export function functionTotals(lines: Line[], mode: Mode, booked: number) {
   const keys = [...FUNCTIONS, UNASSIGNED];
-  const out = Object.fromEntries(keys.map((k) => [k, { cur: 0, prior: 0, below: 0, months: zeros() }])) as Record<string, { cur: number; prior: number; below: number; months: number[] }>;
+  const out = Object.fromEntries(keys.map((k) => [k, { cur: 0, prior: 0, months: zeros() }])) as Record<string, { cur: number; prior: number; months: number[] }>;
   for (const l of lines) {
-    if (l.section === "revenue" || l.section === "other_income") continue;
+    if (l.section === "revenue") continue;
     const fn = lineFunctions(l);
     const pf = priorFunctions(l);
     for (const k of keys) {
       const m = fn[k];
-      if (l.section === "other_expense") {
-        if (m) out[k].below += current(m, mode, booked);
-        continue;
-      }
       if (m) {
         out[k].cur += current(m, mode, booked);
         add(out[k].months, m);

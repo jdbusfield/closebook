@@ -32,7 +32,7 @@ interface Props extends ViewProps {
 export function FunctionsView({ payload, entity, lines, fn, onFn, onDrill, units, mode, booked, fiscalYear }: Props) {
   const totals = useMemo(() => functionTotals(lines, mode, booked), [lines, mode, booked]);
   const keys = [...FUNCTIONS, ...(Math.abs(totals[UNASSIGNED].cur) >= 0.5 ? [UNASSIGNED] : [])];
-  const me = totals[fn] ?? { cur: 0, prior: 0, below: 0, months: [] };
+  const me = totals[fn] ?? { cur: 0, prior: 0, months: [] };
   const opAll = keys.reduce((t, k) => t + totals[k].cur, 0);
   const change = me.cur - me.prior;
   const pl = priorLabel(mode, fiscalYear, booked);
@@ -42,7 +42,6 @@ export function FunctionsView({ payload, entity, lines, fn, onFn, onDrill, units
     .map((l) => ({ l, cur: current(lineFunctions(l)[fn] ?? [], mode, booked), prior: prior(priorFunctions(l)[fn] ?? new Array(12).fill(0), mode, booked) }))
     .filter((r) => Math.abs(r.cur) >= 0.5 || Math.abs(r.prior) >= 0.5)
     .sort((a, b) => b.cur - a.cur), [lines, fn, mode, booked]);
-  const below = useMemo(() => lines.filter((l) => l.section === "other_expense").map((l) => ({ l, cur: current(lineFunctions(l)[fn] ?? [], mode, booked) })).filter((r) => Math.abs(r.cur) >= 0.5), [lines, fn, mode, booked]);
   const companies = useMemo(() => (entity === "All" ? payload.groups : payload.groups.filter((g) => g.code === entity)).map((g) => {
     const c = combine(payload, g.code, { dropIntercompany: entity === "All" });
     const t = functionTotals(c.lines, mode, entity === "All" ? booked : c.booked)[fn];
@@ -115,23 +114,6 @@ export function FunctionsView({ payload, entity, lines, fn, onFn, onDrill, units
                   <span className="tabular-nums"><b>{fmtMoney(c.cur, units)}</b> <span className={changeClass(c.cur - c.prior, false)}>{fmtSigned(c.cur - c.prior, units)}</span></span>
                 </div>
               ))}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Also charged to {fn}, below operating profit</CardTitle>
-              <CardDescription>Not day-to-day spending, so not in the total above, but part of what {fn} really costs.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              {below.map((r) => (
-                <div key={r.l.id} className="flex justify-between gap-3 border-t pt-2 first:border-t-0 first:pt-0">
-                  <button type="button" className={linkCls} onClick={() => onDrill({ fn, lineId: r.l.id, itemKey: null })}>{r.l.accountNumber} {r.l.name}</button>
-                  <b className="tabular-nums">{fmtMoney(r.cur, units)}</b>
-                </div>
-              ))}
-              {below.length === 0 ? <p className="text-muted-foreground">Nothing for this function.</p> : (
-                <div className="flex justify-between gap-3 border-t pt-2 font-semibold"><span>All-in cost of {fn}</span><span className="tabular-nums">{fmtMoney(me.cur + me.below, units)}</span></div>
-              )}
             </CardContent>
           </Card>
         </div>

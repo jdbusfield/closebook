@@ -27,7 +27,7 @@ export default function BudgetDashboardPage({ params }: { params: Promise<{ year
   const [loading, setLoading] = useState(true);
   const [entity, setEntity] = useState("All");
   const [mode, setMode] = useState<Mode>("pace");
-  const [units, setUnits] = useState<Units>("M");
+  const [units, setUnits] = useState<Units>("D");
   const [tab, setTab] = useState<Tab>("overview");
   const [drill, setDrill] = useState<Drill>({ fn: null, lineId: null, itemKey: null });
   const [fnSel, setFnSel] = useState("Fleet");
@@ -78,7 +78,7 @@ export default function BudgetDashboardPage({ params }: { params: Promise<{ year
           <Segmented label="Company" value={entity} onChange={(v) => { setEntity(v); setDrill({ fn: null, lineId: null, itemKey: null }); }}
             options={[["All", "All companies"], ...(data?.groups ?? []).map((g) => [g.code, g.name] as [string, string])]} />
           <Segmented<Mode> label="Compare" value={mode} onChange={setMode} options={[["pace", `Full year vs ${fiscalYear - 1} pace`], ["ytd", booked > 0 ? `Jan–${lastMonth} vs Jan–${lastMonth} ${fiscalYear - 1}` : `Same months of ${fiscalYear - 1}`]]} />
-          <Segmented<Units> label="Show amounts in" value={units} onChange={setUnits} options={[["M", "$M"], ["K", "$K"], ["D", "$"]]} />
+          <Segmented<Units> label="Show amounts in" value={units} onChange={setUnits} options={[["D", "$"], ["K", "$K"], ["M", "$M"]]} />
           <Button variant="outline" size="sm" className="h-9" onClick={load} disabled={loading} aria-label="Reload the budget">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           </Button>

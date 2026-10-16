@@ -110,7 +110,7 @@ function Master({ lines, units, mode, booked, fiscalYear, onDrill, companyName, 
         </tr>
       );
     }
-    const cls = r.key === "ni" ? "stmt-grand-total" : r.kind === "account" ? cn("stmt-line-item", striped && "stmt-row-striped") : "stmt-subtotal";
+    const cls = r.key === "ebitda" ? "stmt-grand-total" : r.kind === "account" ? cn("stmt-line-item", striped && "stmt-row-striped") : "stmt-subtotal";
     return (
       <tr key={r.key} className={cls}>
         <td>
@@ -235,7 +235,7 @@ function FunctionView({ lines, units, mode, booked, fiscalYear, onDrill, fn }: P
       return m || pm ? { l, cur: m ? current(m, mode, booked) : 0, prior: pm ? prior(pm, mode, booked) : 0 } : null;
     })
     .filter((x): x is { l: Line; cur: number; prior: number } => !!x && (Math.abs(x.cur) >= 0.5 || Math.abs(x.prior) >= 0.5)), [lines, fn, mode, booked]);
-  const op = rows.filter((r) => r.l.section !== "other_expense");
+  const op = rows;
   const total = op.reduce((t, r) => t + r.cur, 0);
   const max = Math.max(1, ...op.map((r) => Math.max(r.cur, r.prior)));
   const up = fn === "Revenue";
@@ -248,7 +248,7 @@ function FunctionView({ lines, units, mode, booked, fiscalYear, onDrill, fn }: P
           <TableCell className="text-right tabular-nums">{fmtTable(r.cur, units)}</TableCell>
           <TableCell className="text-right tabular-nums text-muted-foreground">{fmtTable(r.prior, units)}</TableCell>
           <TableCell className={cn("text-right tabular-nums", changeClass(r.cur - r.prior, up))}>{fmtSigned(r.cur - r.prior, units)}</TableCell>
-          <TableCell className="w-[28%] min-w-32">{r.l.section !== "other_expense" && <BarPair value={r.cur} max={max} color={FN_COLOR[fn] ?? FN_COLOR.Unassigned} />}</TableCell>
+          <TableCell className="w-[28%] min-w-32">{<BarPair value={r.cur} max={max} color={FN_COLOR[fn] ?? FN_COLOR.Unassigned} />}</TableCell>
         </TableRow>
       ))}
     </>
@@ -264,7 +264,6 @@ function FunctionView({ lines, units, mode, booked, fiscalYear, onDrill, fn }: P
           <TableHeader><TableRow><TableHead>GL account</TableHead><TableHead className="text-right">{curLabel(mode, fiscalYear, booked)}</TableHead><TableHead className="text-right">{priorLabel(mode, fiscalYear, booked)}</TableHead><TableHead className="text-right">Change</TableHead><TableHead>Share</TableHead></TableRow></TableHeader>
           <TableBody>
             {block(up ? "Revenue" : "Operating costs", op)}
-            {block("Below operating profit", rows.filter((r) => r.l.section === "other_expense"))}
           </TableBody>
         </Table>
       </CardContent>
@@ -280,7 +279,7 @@ function LineView({ units, mode, booked, fiscalYear, onDrill, drill, line }: Pro
     .sort((a, b) => Math.abs(b.cur) - Math.abs(a.cur));
   const lineCur = fn ? current(lineFunctions(line)[fn] ?? new Array(12).fill(0), mode, booked) : current(line.months, mode, booked);
   const linePrior = fn ? prior(priorFunctions(line)[fn] ?? new Array(12).fill(0), mode, booked) : prior(line.prior, mode, booked);
-  const up = line.section === "revenue" || line.section === "other_income";
+  const up = line.section === "revenue";
   return (
     <div className="space-y-4">
     <Card>
@@ -321,7 +320,7 @@ function ItemView({ units, mode, booked, fiscalYear, line, itemKey, drill }: Pro
   const months = itemInFunction(it, fn);
   const priorMonths = it.history?.priorYearMonths ?? null;
   const cur = current(months, mode, booked);
-  const up = line.section === "revenue" || line.section === "other_income";
+  const up = line.section === "revenue";
   const facts: Array<[string, React.ReactNode]> = [
     ["Company", it.groupName],
     ["GL account", `${line.accountNumber ?? ""} ${line.name}`],
