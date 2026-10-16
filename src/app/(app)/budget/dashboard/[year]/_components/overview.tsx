@@ -44,11 +44,11 @@ export function Overview({ payload, entity, lines, mode, units, booked, fiscalYe
   const companies = useMemo(
     () =>
       payload.groups.map((g) => {
-        const c = combine(payload, g.code);
+        const c = combine(payload, g.code, { dropIntercompany: entity === "All" });
         const t = pnl(c.lines, mode, c.booked).totals;
         return { code: g.code, name: g.name, rev: t.revenue.cur, eb: t.ebitda.cur, ebPrior: t.ebitda.prior };
       }),
-    [payload, mode],
+    [payload, mode, entity],
   );
   const fnKeys = [...FUNCTIONS, ...(Math.abs(fn[UNASSIGNED].cur) >= 0.5 ? [UNASSIGNED] : [])];
   const fnMax = Math.max(1, ...fnKeys.map((k) => Math.max(fn[k].cur, fn[k].prior)));
@@ -151,7 +151,7 @@ export function Overview({ payload, entity, lines, mode, units, booked, fiscalYe
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">By company</CardTitle>
-            <CardDescription>Choose View to see one company on every tab. Amounts in {unitName(units)}.</CardDescription>
+            <CardDescription>Choose View to see one company on every tab. {entity === "All" ? "Shown without intercompany lines, so the companies add up to the total above. " : ""}Amounts in {unitName(units)}.</CardDescription>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             <Table>

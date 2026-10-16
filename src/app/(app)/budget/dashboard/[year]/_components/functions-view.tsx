@@ -44,7 +44,7 @@ export function FunctionsView({ payload, entity, lines, fn, onFn, onDrill, units
     .sort((a, b) => b.cur - a.cur), [lines, fn, mode, booked]);
   const below = useMemo(() => lines.filter((l) => l.section === "other_expense").map((l) => ({ l, cur: current(lineFunctions(l)[fn] ?? [], mode, booked) })).filter((r) => Math.abs(r.cur) >= 0.5), [lines, fn, mode, booked]);
   const companies = useMemo(() => (entity === "All" ? payload.groups : payload.groups.filter((g) => g.code === entity)).map((g) => {
-    const c = combine(payload, g.code);
+    const c = combine(payload, g.code, { dropIntercompany: entity === "All" });
     const t = functionTotals(c.lines, mode, c.booked)[fn];
     return { name: g.name, cur: t.cur, prior: t.prior };
   }), [payload, entity, fn, mode]);

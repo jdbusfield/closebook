@@ -77,13 +77,17 @@ const add = (t: number[], s: number[] | undefined) => {
 };
 export const sum = (a: number[], n = 12) => a.slice(0, n).reduce((t, v) => t + v, 0);
 
-/** "All" combines every group and drops intercompany lines; a group code keeps them. */
-export function combine(p: DashboardPayload, entity: string): { lines: Line[]; booked: number } {
+/**
+ * "All" combines every group and drops intercompany lines; a group code keeps them, unless
+ * dropIntercompany asks for a company's share of the consolidated total.
+ */
+export function combine(p: DashboardPayload, entity: string, opts?: { dropIntercompany?: boolean }): { lines: Line[]; booked: number } {
   const groups = entity === "All" ? p.groups : p.groups.filter((g) => g.code === entity);
+  const dropIc = entity === "All" || !!opts?.dropIntercompany;
   const byId = new Map<string, Line>();
   for (const g of groups) {
     for (const m of g.masters) {
-      if (entity === "All" && m.intercompany) continue;
+      if (dropIc && m.intercompany) continue;
       if (!(SECTIONS as readonly string[]).includes(m.section)) continue;
       const l = byId.get(m.id) ?? { id: m.id, accountNumber: m.accountNumber, name: m.name, section: m.section as SectionId, months: zeros(), prior: zeros(), byFunction: {}, items: [] };
       add(l.months, m.months);
@@ -186,7 +190,9 @@ export function pnl(lines: Line[], mode: Mode, booked: number): { rows: PnlRow[]
     return r;
   };
   const section = (s: SectionId) => {
-    const ls = lines.filter((l) => l.section === s && (Math.abs(sum(l.months)) >= 0.5 || Math.abs(sum(l.prior, booked)) >= 0.5));
+    // Every line counts in the totals; a row is shown when any figure on it is not zero
+    const ls = lines.filter((l) => l.section === s);
+    const shows = (l: Line) => Math.abs(current(l.months, mode, booked)) >= 0.5 || Math.abs(sum(l.months)) >= 0.5 || Math.abs(sum(l.prior, booked)) >= 0.5;
     const up = s === "revenue" || s === "other_income";
     if (s === "other_income" && ls.length === 0) {
       totals[s] = mk(`t:${s}`, "total", SECTION_TITLE[s][1], up, zeros(), zeros(), {});
@@ -198,7 +204,7 @@ export function pnl(lines: Line[], mode: Mode, booked: number): { rows: PnlRow[]
     const tf: Record<string, number[]> = {};
     for (const l of ls) {
       const fn = lineFunctions(l);
-      rows.push(mk(`a:${l.id}`, "account", `${l.accountNumber ?? ""} ${l.name}`.trim(), up, l.months, l.prior, fn, { section: s, lineId: l.id }));
+      if (shows(l)) rows.push(mk(`a:${l.id}`, "account", `${l.accountNumber ?? ""} ${l.name}`.trim(), up, l.months, l.prior, fn, { section: s, lineId: l.id }));
       add(tm, l.months);
       add(tp, l.prior);
       for (const [k, m] of Object.entries(fn)) add((tf[k] ??= zeros()), m);

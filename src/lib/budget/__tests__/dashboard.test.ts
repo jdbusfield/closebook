@@ -84,6 +84,27 @@ test("monthly shows last year only for booked months", () => {
   assert.equal(m[11].priorRevenue, null);
 });
 
+test("a line that nets to zero over the year still counts in the months compared", () => {
+  const m = flat(0);
+  m[2] = 20; m[10] = -20;
+  const p: DashboardPayload = { ...payload, groups: [{ ...payload.groups[0], masters: [master({ id: "4000", section: "revenue", months: flat(100) }), master({ id: "5090", section: "direct_operating_costs", months: m, byFunction: { Fleet: m } })] }] };
+  const { lines, booked } = combine(p, "AVON");
+  const ytd = pnl(lines, "ytd", booked);
+  assert.equal(ytd.totals.direct_operating_costs.cur, 20);
+  assert.equal(ytd.totals.ebitda.cur, 800 - 20);
+  assert.ok(ytd.rows.some((r) => r.lineId === "5090"));
+});
+
+test("a company's share of the consolidated total leaves out intercompany when asked", () => {
+  const keep = combine(payload, "AVON");
+  const drop = combine(payload, "AVON", { dropIntercompany: true });
+  assert.ok(keep.lines.some((l) => l.id === "7999"));
+  assert.ok(!drop.lines.some((l) => l.id === "7999"));
+  const all = pnl(combine(payload, "All").lines, "pace", 8).totals.ni.cur;
+  const parts = ["AVON", "HDR"].map((c) => pnl(combine(payload, c, { dropIntercompany: true }).lines, "pace", 8).totals.ni.cur);
+  assert.equal(parts[0] + parts[1], all);
+});
+
 test("formats follow the chosen unit", () => {
   assert.equal(fmtTable(8_400_000, "M"), "8.40");
   assert.equal(fmtTable(8_400_000, "K"), "8,400");
