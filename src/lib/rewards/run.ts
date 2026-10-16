@@ -26,6 +26,7 @@ import {
   type TierDef,
 } from "./engine";
 import { DEFAULT_CATALOG, DEFAULT_PERKS, DEFAULT_TIERS } from "./defaults";
+import { getEntityFeatures } from "@/components/layout/nav-config";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -37,7 +38,7 @@ export function todayLA(): string {
 }
 
 /** Page through a query builder factory until a short page comes back. */
-async function fetchAll<T>(build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>): Promise<T[]> {
+export async function fetchAll<T>(build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>): Promise<T[]> {
   const out: T[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await build(from, from + PAGE - 1);
@@ -55,6 +56,16 @@ function chunks<T>(arr: T[], size: number): T[][] {
 }
 
 // ── Program setup ─────────────────────────────────────────────────────────
+
+/**
+ * Whether an entity runs the rewards program (the same "rewards" feature that
+ * shows the sidebar item). The invoice cache has no entity_id, so a program on
+ * any other entity would post Versatile invoices to it.
+ */
+export async function isRewardsEntity(admin: Admin, entityId: string): Promise<boolean> {
+  const { data } = await admin.from("entities").select("name").eq("id", entityId).maybeSingle();
+  return getEntityFeatures(data?.name ?? undefined).has("rewards");
+}
 
 /** Create the program, tiers, perks and catalog from defaults if missing. */
 export async function ensureProgram(admin: Admin, entityId: string): Promise<void> {

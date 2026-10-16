@@ -7,7 +7,7 @@ import {
   getBudgetActor,
   organizationForEntity,
 } from "@/lib/budget/access";
-import { loadProgram, refreshMemberSummaries, runRewards, todayLA } from "@/lib/rewards/run";
+import { fetchAll, isRewardsEntity, loadProgram, refreshMemberSummaries, runRewards, todayLA } from "@/lib/rewards/run";
 import { addMonths, computeBalance } from "@/lib/rewards/engine";
 import { allowanceState, redemptionRefund, type AllowancePeriod } from "@/lib/rewards/perks";
 
@@ -68,15 +68,17 @@ async function memberEntity(admin: Admin, memberId: string): Promise<string | nu
 }
 
 async function memberLedger(admin: Admin, memberId: string) {
-  const { data, error } = await admin
-    .from("rewards_ledger")
-    .select("*")
-    .eq("member_id", memberId)
-    .order("earned_on", { ascending: false })
-    .order("created_at", { ascending: false })
-    .range(0, 4999);
-  if (error) throw new Error(error.message);
-  return data ?? [];
+  // Paged: Supabase caps a request at 1,000 rows.
+  return fetchAll((from, to) =>
+    admin
+      .from("rewards_ledger")
+      .select("*")
+      .eq("member_id", memberId)
+      .order("earned_on", { ascending: false })
+      .order("created_at", { ascending: false })
+      .order("id")
+      .range(from, to),
+  );
 }
 
 /** Live spendable balance for one member, straight from the ledger. */
@@ -120,6 +122,7 @@ export async function POST(request: Request) {
     const READ_ACTIONS = new Set(["get_overview", "get_member", "search_customers", "preview_report"]);
     if (READ_ACTIONS.has(action)) assertOrgMember(actor, orgId);
     else assertOrgEditor(actor, orgId);
+    if (!(await isRewardsEntity(admin, entityId))) return bad("Rewards is not set up for this entity", 404);
 
     switch (action) {
       // ── Overview ──────────────────────────────────────────────────────
@@ -640,6 +643,7 @@ export async function POST(request: Request) {
         if (status === "cancelled") {
           // Give the points back and take back any refund.
           const today = todayLA();
+          const { settings } = await loadProgram(admin, entityId);
           const { data: refunds } = await admin
             .from("rewards_ledger")
             .select("points")
@@ -652,6 +656,8 @@ export async function POST(request: Request) {
             entry_type: "redeem_reversal",
             points: red.points - refunded,
             earned_on: today,
+            // Returned points expire like newly earned ones.
+            expires_on: addMonths(today, settings.pointsExpireMonths),
             is_available: true,
             redemption_id: redemptionId,
             reason: `Cancelled: ${red.description}`,

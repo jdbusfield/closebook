@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { syncRwInvoiceItems } from "@/lib/rentalworks/sync-invoice-items";
-import { runRewards } from "@/lib/rewards/run";
+import { isRewardsEntity, runRewards } from "@/lib/rewards/run";
 
 // ============================================================================
 // Versatile Rewards nightly earn run.
@@ -38,6 +38,10 @@ export async function GET(request: Request) {
 
   const runs: Record<string, unknown>[] = [];
   for (const p of programs ?? []) {
+    if (!(await isRewardsEntity(admin, p.entity_id))) {
+      runs.push({ entityId: p.entity_id, skipped: "rewards feature is off for this entity" });
+      continue;
+    }
     try {
       runs.push({ entityId: p.entity_id, ...(await runRewards(admin, p.entity_id)) });
     } catch (err) {
