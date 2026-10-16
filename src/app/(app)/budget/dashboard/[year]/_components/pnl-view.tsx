@@ -240,7 +240,7 @@ function ItemView({ units, mode, booked, fiscalYear, line, itemKey, drill }: Pro
     ["Company", it.groupName],
     ["GL account", `${line.accountNumber ?? ""} ${line.name}`],
     ["Function", up ? "Revenue" : splitText(it.functions)],
-    ["Location", it.locations.length ? splitText(it.locations) : "Not set"],
+    ["Location", it.locations.length && !it.locations.every((l) => l.key === "Unassigned") ? splitText(it.locations) : "Not set"],
     ["Class", it.classNames.length ? it.classNames.join(", ") : "None"],
     ["How it is budgeted", it.methodText ?? it.source],
   ];

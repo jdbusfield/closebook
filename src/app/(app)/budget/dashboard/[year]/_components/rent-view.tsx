@@ -11,6 +11,9 @@ import type { Drill } from "./pnl-view";
 const linkCls = "underline decoration-dotted underline-offset-4 hover:decoration-solid text-left";
 const splitText = (s: Array<{ key: string; pct: number }>, empty: string) => (s.length === 0 ? empty : s.length === 1 ? s[0].key : s.map((x) => `${x.key} ${Math.round(x.pct)}%`).join(" / "));
 
+/** No location, or only an Unassigned share */
+const noLocation = (l: Array<{ key: string }>) => l.length === 0 || l.every((x) => x.key === "Unassigned");
+
 interface Props extends ViewProps {
   lines: Line[];
   onDrill: (d: Drill) => void;
@@ -25,7 +28,7 @@ export function RentView({ lines, onDrill, units, mode, booked, fiscalYear }: Pr
   const pr = prior(rent.prior, mode, booked);
   const byFn = Object.entries(rent.byFunction).map(([key, m]) => ({ key, value: current(m, mode, booked) })).filter((x) => Math.abs(x.value) >= 0.5).sort((a, b) => b.value - a.value);
   const max = Math.max(1, ...rows.map((r) => r.cur));
-  const unlocated = rows.filter((r) => r.it.locations.length === 0 || r.it.locations.every((l) => l.key === "Unassigned")).length;
+  const unlocated = rows.filter((r) => noLocation(r.it.locations)).length;
   return (
     <div className="space-y-4">
       <div className="grid gap-4 md:grid-cols-3">
@@ -61,7 +64,7 @@ export function RentView({ lines, onDrill, units, mode, booked, fiscalYear }: Pr
                     <TableCell><button type="button" className={linkCls} onClick={() => onDrill({ fn: null, lineId: rent.id, itemKey: `${it.group}:${it.id}` })}>{it.label}</button></TableCell>
                     <TableCell className="text-muted-foreground">{it.groupName}</TableCell>
                     <TableCell className="whitespace-nowrap">{splitText(it.functions, "No function")}</TableCell>
-                    <TableCell className={cn(it.locations.length === 0 && "text-amber-700 dark:text-amber-400")}>{splitText(it.locations, "Not set")}</TableCell>
+                    <TableCell className={cn(noLocation(it.locations) && "text-amber-700 dark:text-amber-400")}>{noLocation(it.locations) ? "Not set" : splitText(it.locations, "Not set")}</TableCell>
                     <TableCell className="text-right tabular-nums">{fmtTable(c, units)}</TableCell>
                     <TableCell><BarPair value={c} max={max} color={FN_COLOR[top] ?? FN_COLOR.Unassigned} /></TableCell>
                   </TableRow>
