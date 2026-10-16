@@ -89,10 +89,13 @@ export function Swatch({ fn }: { fn: string }) {
   return <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm align-[-1px]" style={{ background: FN_COLOR[fn] ?? FN_COLOR.Unassigned }} aria-hidden />;
 }
 
-const axisMoney = (u: Units) => (v: number) => {
+/** Axis ticks in the chosen unit, with enough decimals that small items don't all read $0M. */
+const axisMoney = (u: Units, maxAbs: number) => (v: number) => {
   const div = u === "M" ? 1e6 : u === "K" ? 1e3 : 1;
   const x = v / div;
-  return `${v < 0 ? "−" : ""}$${Math.abs(x).toLocaleString("en-US", { maximumFractionDigits: u === "M" ? 1 : 0 })}${u === "M" ? "M" : u === "K" ? "K" : ""}`;
+  const top = maxAbs / div;
+  const dec = top >= 10 ? 0 : top >= 1 ? 1 : top >= 0.1 ? 2 : 3;
+  return `${v < 0 ? "−" : ""}$${Math.abs(x).toLocaleString("en-US", { maximumFractionDigits: u === "D" ? 0 : dec })}${u === "M" ? "M" : u === "K" ? "K" : ""}`;
 };
 
 /** Budget vs last year by month, bars from zero (negatives go below). */
@@ -103,7 +106,7 @@ export function MonthChart({ data, units, height = 240, priorName, budgetName }:
         <BarChart data={data} barGap={2} barCategoryGap="22%" margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
           <CartesianGrid vertical={false} strokeDasharray="0" stroke="currentColor" strokeOpacity={0.08} />
           <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={12} />
-          <YAxis tickFormatter={axisMoney(units)} tickLine={false} axisLine={false} fontSize={12} width={64} />
+          <YAxis tickFormatter={axisMoney(units, Math.max(1, ...data.flatMap((d) => [Math.abs(d.budget), Math.abs(d.prior ?? 0)])))} tickLine={false} axisLine={false} fontSize={12} width={72} />
           <ReferenceLine y={0} stroke="currentColor" strokeOpacity={0.35} />
           <Tooltip
             cursor={{ fill: "currentColor", fillOpacity: 0.05 }}
