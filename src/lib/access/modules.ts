@@ -57,6 +57,7 @@ export const MODULES: ModuleDef[] = [
   { key: "revenue_accruals", label: "Revenue Accruals", scope: "entity", entityPaths: ["/revenue"] },
   { key: "commissions", label: "Commissions", scope: "entity", entityPaths: ["/commissions"] },
   { key: "rebates", label: "Rebate Tracker", scope: "entity", entityPaths: ["/rebates"] },
+  { key: "rewards", label: "Versatile Rewards", scope: "entity", entityPaths: ["/rewards"], hint: "Customer points, tiers, perks and redemptions" },
   { key: "revenue_projection", label: "Revenue Projection", scope: "entity", entityPaths: ["/revenue-projection"] },
   { key: "entity_settings", label: "Entity Settings", scope: "entity", entityPaths: ["/settings"] },
 ];

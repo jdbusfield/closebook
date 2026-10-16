@@ -34,6 +34,10 @@
     {
       "path": "/api/sync/meta-crm-stages",
       "schedule": "20 * * * *"
+    },
+    {
+      "path": "/api/cron/rewards-earn",
+      "schedule": "45 11 * * *"
     }
   ]
 }
