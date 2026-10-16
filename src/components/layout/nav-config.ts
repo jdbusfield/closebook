@@ -24,6 +24,7 @@ import {
   Truck,
   Layers,
   HandCoins,
+  Gift,
   ArrowLeftRight,
   TrendingUp,
   Shield,
@@ -35,7 +36,7 @@ import {
   Handshake,
 } from "lucide-react";
 
-export type EntityFeatureFlag = "rebates" | "revenue_projection" | "inquiries";
+export type EntityFeatureFlag = "rebates" | "rewards" | "revenue_projection" | "inquiries";
 
 export interface NavItem {
   title: string;
@@ -221,6 +222,13 @@ export function getEntityNavGroups(entityId: string): NavGroup[] {
           feature: "rebates",
         },
         {
+          title: "Rewards",
+          href: `${prefix}/rewards`,
+          icon: Gift,
+          module: "rewards",
+          feature: "rewards",
+        },
+        {
           title: "Revenue Projection",
           href: `${prefix}/revenue-projection`,
           icon: TrendingUp,
@@ -242,6 +250,7 @@ export function getEntityFeatures(entityName: string | undefined): Set<EntityFea
   const features = new Set<EntityFeatureFlag>();
   if (entityName?.includes("Versatile")) {
     features.add("rebates");
+    features.add("rewards");
     features.add("revenue_projection");
     features.add("inquiries");
   }

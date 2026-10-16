@@ -7346,6 +7346,591 @@ export type Database = {
         }
         Relationships: []
       }
+      rewards_programs: {
+        Row: {
+          entity_id: string
+          name: string
+          program_start_date: string
+          preview_start_date: string | null
+          invoice_prefixes: string[]
+          counted_statuses: string[]
+          paid_statuses: string[]
+          eligible_rec_types: string[]
+          excluded_icodes: string[]
+          use_rebate_exclusions: boolean
+          bathroom_icodes: string[]
+          weekend_bonus_enabled: boolean
+          points_expire_months: number
+          auto_enroll: boolean
+          last_run_at: string | null
+          last_run_summary: Json | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          entity_id: string
+          name?: string
+          program_start_date?: string
+          preview_start_date?: string | null
+          invoice_prefixes?: string[]
+          counted_statuses?: string[]
+          paid_statuses?: string[]
+          eligible_rec_types?: string[]
+          excluded_icodes?: string[]
+          use_rebate_exclusions?: boolean
+          bathroom_icodes?: string[]
+          weekend_bonus_enabled?: boolean
+          points_expire_months?: number
+          auto_enroll?: boolean
+          last_run_at?: string | null
+          last_run_summary?: Json | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          entity_id?: string
+          name?: string
+          program_start_date?: string
+          preview_start_date?: string | null
+          invoice_prefixes?: string[]
+          counted_statuses?: string[]
+          paid_statuses?: string[]
+          eligible_rec_types?: string[]
+          excluded_icodes?: string[]
+          use_rebate_exclusions?: boolean
+          bathroom_icodes?: string[]
+          weekend_bonus_enabled?: boolean
+          points_expire_months?: number
+          auto_enroll?: boolean
+          last_run_at?: string | null
+          last_run_summary?: Json | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      rewards_tiers: {
+        Row: {
+          id: string
+          entity_id: string
+          key: string
+          name: string
+          sort_order: number
+          min_annual_spend: number
+          points_per_dollar: number
+          weekend_points_per_dollar: number | null
+          bathroom_bonus_points: number | null
+          rollover_cap: number | null
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          key: string
+          name: string
+          sort_order?: number
+          min_annual_spend?: number
+          points_per_dollar?: number
+          weekend_points_per_dollar?: number | null
+          bathroom_bonus_points?: number | null
+          rollover_cap?: number | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          key?: string
+          name?: string
+          sort_order?: number
+          min_annual_spend?: number
+          points_per_dollar?: number
+          weekend_points_per_dollar?: number | null
+          bathroom_bonus_points?: number | null
+          rollover_cap?: number | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      rewards_members: {
+        Row: {
+          id: string
+          entity_id: string
+          name: string
+          status: string
+          activated_at: string | null
+          opted_out_at: string | null
+          notes: string | null
+          current_tier_key: string | null
+          tier_effective_on: string | null
+          tier_expires_on: string | null
+          qualifying_year: number | null
+          qualifying_spend: number
+          next_tier_key: string | null
+          spend_to_next_tier: number | null
+          points_available: number
+          points_pending: number
+          points_expiring_soon: number
+          points_lifetime: number
+          preview_spend: number
+          preview_points: number
+          preview_tier_key: string | null
+          summary_refreshed_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          name: string
+          status?: string
+          activated_at?: string | null
+          opted_out_at?: string | null
+          notes?: string | null
+          current_tier_key?: string | null
+          tier_effective_on?: string | null
+          tier_expires_on?: string | null
+          qualifying_year?: number | null
+          qualifying_spend?: number
+          next_tier_key?: string | null
+          spend_to_next_tier?: number | null
+          points_available?: number
+          points_pending?: number
+          points_expiring_soon?: number
+          points_lifetime?: number
+          preview_spend?: number
+          preview_points?: number
+          preview_tier_key?: string | null
+          summary_refreshed_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          name?: string
+          status?: string
+          activated_at?: string | null
+          opted_out_at?: string | null
+          notes?: string | null
+          current_tier_key?: string | null
+          tier_effective_on?: string | null
+          tier_expires_on?: string | null
+          qualifying_year?: number | null
+          qualifying_spend?: number
+          next_tier_key?: string | null
+          spend_to_next_tier?: number | null
+          points_available?: number
+          points_pending?: number
+          points_expiring_soon?: number
+          points_lifetime?: number
+          preview_spend?: number
+          preview_points?: number
+          preview_tier_key?: string | null
+          summary_refreshed_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      rewards_member_customers: {
+        Row: {
+          id: string
+          entity_id: string
+          member_id: string
+          rw_customer_id: string
+          customer_name: string | null
+          customer_number: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          member_id: string
+          rw_customer_id: string
+          customer_name?: string | null
+          customer_number?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          member_id?: string
+          rw_customer_id?: string
+          customer_name?: string | null
+          customer_number?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      rewards_contacts: {
+        Row: {
+          id: string
+          member_id: string
+          name: string | null
+          email: string
+          title: string | null
+          receives_statements: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          member_id: string
+          name?: string | null
+          email: string
+          title?: string | null
+          receives_statements?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          member_id?: string
+          name?: string | null
+          email?: string
+          title?: string | null
+          receives_statements?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      }
+      rewards_redemptions: {
+        Row: {
+          id: string
+          entity_id: string
+          member_id: string
+          catalog_item_id: string | null
+          description: string
+          points: number
+          status: string
+          cost_to_company: number | null
+          note: string | null
+          requested_at: string
+          approved_at: string | null
+          fulfilled_at: string | null
+          cancelled_at: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          member_id: string
+          catalog_item_id?: string | null
+          description: string
+          points: number
+          status?: string
+          cost_to_company?: number | null
+          note?: string | null
+          requested_at?: string
+          approved_at?: string | null
+          fulfilled_at?: string | null
+          cancelled_at?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          member_id?: string
+          catalog_item_id?: string | null
+          description?: string
+          points?: number
+          status?: string
+          cost_to_company?: number | null
+          note?: string | null
+          requested_at?: string
+          approved_at?: string | null
+          fulfilled_at?: string | null
+          cancelled_at?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      rewards_ledger: {
+        Row: {
+          id: string
+          entity_id: string
+          member_id: string
+          rw_customer_id: string | null
+          entry_type: string
+          source_key: string | null
+          points: number
+          eligible_spend: number
+          rw_invoice_id: string | null
+          invoice_number: string | null
+          invoice_date: string | null
+          invoice_status: string | null
+          tier_key: string | null
+          points_per_dollar: number | null
+          weekend_applied: boolean
+          bonus_points: number
+          is_preview: boolean
+          is_available: boolean
+          earned_on: string
+          expires_on: string | null
+          redemption_id: string | null
+          reason: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          member_id: string
+          rw_customer_id?: string | null
+          entry_type: string
+          source_key?: string | null
+          points: number
+          eligible_spend?: number
+          rw_invoice_id?: string | null
+          invoice_number?: string | null
+          invoice_date?: string | null
+          invoice_status?: string | null
+          tier_key?: string | null
+          points_per_dollar?: number | null
+          weekend_applied?: boolean
+          bonus_points?: number
+          is_preview?: boolean
+          is_available?: boolean
+          earned_on: string
+          expires_on?: string | null
+          redemption_id?: string | null
+          reason?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          member_id?: string
+          rw_customer_id?: string | null
+          entry_type?: string
+          source_key?: string | null
+          points?: number
+          eligible_spend?: number
+          rw_invoice_id?: string | null
+          invoice_number?: string | null
+          invoice_date?: string | null
+          invoice_status?: string | null
+          tier_key?: string | null
+          points_per_dollar?: number | null
+          weekend_applied?: boolean
+          bonus_points?: number
+          is_preview?: boolean
+          is_available?: boolean
+          earned_on?: string
+          expires_on?: string | null
+          redemption_id?: string | null
+          reason?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      rewards_perks: {
+        Row: {
+          id: string
+          entity_id: string
+          key: string
+          name: string
+          category: string
+          value_kind: string
+          description: string | null
+          sort_order: number
+          is_active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          key: string
+          name: string
+          category?: string
+          value_kind?: string
+          description?: string | null
+          sort_order?: number
+          is_active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          key?: string
+          name?: string
+          category?: string
+          value_kind?: string
+          description?: string | null
+          sort_order?: number
+          is_active?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      }
+      rewards_tier_perks: {
+        Row: {
+          id: string
+          tier_id: string
+          perk_id: string
+          enabled: boolean
+          value_number: number | null
+          value_text: string | null
+          allowance: number | null
+          allowance_period: string | null
+          proposed_value: string | null
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          tier_id: string
+          perk_id: string
+          enabled?: boolean
+          value_number?: number | null
+          value_text?: string | null
+          allowance?: number | null
+          allowance_period?: string | null
+          proposed_value?: string | null
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          tier_id?: string
+          perk_id?: string
+          enabled?: boolean
+          value_number?: number | null
+          value_text?: string | null
+          allowance?: number | null
+          allowance_period?: string | null
+          proposed_value?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      rewards_perk_uses: {
+        Row: {
+          id: string
+          entity_id: string
+          member_id: string
+          perk_id: string
+          used_on: string
+          quantity: number
+          order_number: string | null
+          note: string | null
+          logged_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          member_id: string
+          perk_id: string
+          used_on?: string
+          quantity?: number
+          order_number?: string | null
+          note?: string | null
+          logged_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          member_id?: string
+          perk_id?: string
+          used_on?: string
+          quantity?: number
+          order_number?: string | null
+          note?: string | null
+          logged_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      rewards_catalog_items: {
+        Row: {
+          id: string
+          entity_id: string
+          name: string
+          points_cost: number
+          kind: string
+          cash_value: number | null
+          cost_to_company: number | null
+          is_active: boolean
+          sort_order: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          name: string
+          points_cost: number
+          kind?: string
+          cash_value?: number | null
+          cost_to_company?: number | null
+          is_active?: boolean
+          sort_order?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          name?: string
+          points_cost?: number
+          kind?: string
+          cash_value?: number | null
+          cost_to_company?: number | null
+          is_active?: boolean
+          sort_order?: number
+          created_at?: string
+        }
+        Relationships: []
+      }
+      rewards_tier_changes: {
+        Row: {
+          id: string
+          entity_id: string
+          member_id: string
+          from_tier_key: string | null
+          to_tier_key: string | null
+          effective_on: string
+          reason: string | null
+          done_at: string | null
+          done_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          entity_id: string
+          member_id: string
+          from_tier_key?: string | null
+          to_tier_key?: string | null
+          effective_on: string
+          reason?: string | null
+          done_at?: string | null
+          done_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          entity_id?: string
+          member_id?: string
+          from_tier_key?: string | null
+          to_tier_key?: string | null
+          effective_on?: string
+          reason?: string | null
+          done_at?: string | null
+          done_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       sales_commission_plans: {
         Row: {
           id: string
