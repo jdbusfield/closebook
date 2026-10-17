@@ -7,6 +7,7 @@ import {
   computeMemberEarnings,
   eligibleSpend,
   isInScope,
+  openLots,
   roundPoints,
   tierStatus,
   type CachedInvoice,
@@ -163,4 +164,10 @@ test("balance: oldest points are spent first, then expire after 12 months", () =
   assert.equal(later.available, 0);
   // A preview entry never counts.
   assert.equal(computeBalance([{ ...e(5000, "2026-03-01"), isPreview: true }], "2026-04-01").available, 0);
+});
+
+test("open lots: what is left of each batch, oldest first", () => {
+  const e = (points: number, earnedOn: string) => ({ points, earnedOn, expiresOn: points > 0 ? addMonths(earnedOn, 12) : null, isAvailable: true, isPreview: false });
+  const lots = openLots([e(9200, "2027-01-12"), e(15800, "2027-01-30"), e(12500, "2027-02-11"), e(-30000, "2027-02-28")], "2027-06-01");
+  assert.deepEqual(lots.map((l) => [l.earnedOn, l.left, l.expiresOn]), [["2027-02-11", 7500, "2028-02-11"]]);
 });

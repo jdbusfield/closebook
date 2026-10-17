@@ -7400,6 +7400,75 @@ export type Database = {
         }
         Relationships: []
       }
+      rewards_portal_tokens: {
+        Row: {
+          id: string
+          token_hash: string
+          contact_id: string
+          member_id: string
+          expires_at: string
+          used_at: string | null
+          requested_ip: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          token_hash: string
+          contact_id: string
+          member_id: string
+          expires_at: string
+          used_at?: string | null
+          requested_ip?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          token_hash?: string
+          contact_id?: string
+          member_id?: string
+          expires_at?: string
+          used_at?: string | null
+          requested_ip?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      rewards_portal_sessions: {
+        Row: {
+          id: string
+          session_hash: string
+          member_id: string
+          contact_id: string | null
+          staff_user_id: string | null
+          include_preview: boolean
+          expires_at: string
+          last_seen_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          session_hash: string
+          member_id: string
+          contact_id?: string | null
+          staff_user_id?: string | null
+          include_preview?: boolean
+          expires_at: string
+          last_seen_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          session_hash?: string
+          member_id?: string
+          contact_id?: string | null
+          staff_user_id?: string | null
+          include_preview?: boolean
+          expires_at?: string
+          last_seen_at?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       rewards_programs: {
         Row: {
           entity_id: string
@@ -7420,6 +7489,8 @@ export type Database = {
           last_run_summary: Json | null
           created_at: string
           updated_at: string
+          statements_enabled: boolean
+          last_statement_month: string | null
         }
         Insert: {
           entity_id: string
@@ -7440,6 +7511,8 @@ export type Database = {
           last_run_summary?: Json | null
           created_at?: string
           updated_at?: string
+          statements_enabled?: boolean
+          last_statement_month?: string | null
         }
         Update: {
           entity_id?: string
@@ -7460,6 +7533,8 @@ export type Database = {
           last_run_summary?: Json | null
           created_at?: string
           updated_at?: string
+          statements_enabled?: boolean
+          last_statement_month?: string | null
         }
         Relationships: []
       }
@@ -7537,6 +7612,7 @@ export type Database = {
           summary_refreshed_at: string | null
           created_at: string
           updated_at: string
+          member_number: number
         }
         Insert: {
           id?: string
@@ -7563,6 +7639,7 @@ export type Database = {
           summary_refreshed_at?: string | null
           created_at?: string
           updated_at?: string
+          member_number?: number
         }
         Update: {
           id?: string
@@ -7589,6 +7666,7 @@ export type Database = {
           summary_refreshed_at?: string | null
           created_at?: string
           updated_at?: string
+          member_number?: number
         }
         Relationships: []
       }
@@ -7631,6 +7709,7 @@ export type Database = {
           title: string | null
           receives_statements: boolean
           created_at: string
+          last_signed_in_at: string | null
         }
         Insert: {
           id?: string
@@ -7640,6 +7719,7 @@ export type Database = {
           title?: string | null
           receives_statements?: boolean
           created_at?: string
+          last_signed_in_at?: string | null
         }
         Update: {
           id?: string
@@ -7649,6 +7729,7 @@ export type Database = {
           title?: string | null
           receives_statements?: boolean
           created_at?: string
+          last_signed_in_at?: string | null
         }
         Relationships: []
       }
@@ -7669,6 +7750,7 @@ export type Database = {
           cancelled_at: string | null
           created_by: string | null
           created_at: string
+          requested_by_contact_id: string | null
         }
         Insert: {
           id?: string
@@ -7686,6 +7768,7 @@ export type Database = {
           cancelled_at?: string | null
           created_by?: string | null
           created_at?: string
+          requested_by_contact_id?: string | null
         }
         Update: {
           id?: string
@@ -7703,6 +7786,7 @@ export type Database = {
           cancelled_at?: string | null
           created_by?: string | null
           created_at?: string
+          requested_by_contact_id?: string | null
         }
         Relationships: []
       }
@@ -7958,6 +8042,7 @@ export type Database = {
           done_at: string | null
           done_by: string | null
           created_at: string
+          customer_seen_at: string | null
         }
         Insert: {
           id?: string
@@ -7970,6 +8055,7 @@ export type Database = {
           done_at?: string | null
           done_by?: string | null
           created_at?: string
+          customer_seen_at?: string | null
         }
         Update: {
           id?: string
@@ -7982,6 +8068,7 @@ export type Database = {
           done_at?: string | null
           done_by?: string | null
           created_at?: string
+          customer_seen_at?: string | null
         }
         Relationships: []
       }

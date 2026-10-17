@@ -7,11 +7,15 @@ import {
   getBudgetActor,
   organizationForEntity,
 } from "@/lib/budget/access";
-import { fetchAll, isRewardsEntity, loadProgram, refreshMemberSummaries, runRewards, todayLA } from "@/lib/rewards/run";
-import { addMonths, computeBalance } from "@/lib/rewards/engine";
+import { fetchAll, isRewardsEntity, loadProgram, runRewards, todayLA } from "@/lib/rewards/run";
+import { addMonths } from "@/lib/rewards/engine";
 import { getMemberAccess } from "@/lib/access/server";
 import { canOpenModule } from "@/lib/access/modules";
-import { allowanceState, redemptionRefund, type AllowancePeriod } from "@/lib/rewards/perks";
+import { sendInviteEmail } from "@/lib/rewards/portal/email";
+import { publicPortalUrl } from "@/lib/rewards/portal/hosts";
+import { fmtDate, fmtMemberNumber, fmtRate } from "@/lib/rewards/portal/view";
+import { allowanceState, type AllowancePeriod } from "@/lib/rewards/perks";
+import { memberLedgerRows, moveRedemption, refreshOneMember, requestRedemption } from "@/lib/rewards/redemptions";
 
 export const maxDuration = 300;
 
@@ -38,6 +42,7 @@ const PROGRAM_FIELDS = new Set([
   "weekend_bonus_enabled",
   "points_expire_months",
   "auto_enroll",
+  "statements_enabled",
 ]);
 const TIER_FIELDS = new Set([
   "key",
@@ -69,35 +74,8 @@ async function memberEntity(admin: Admin, memberId: string): Promise<string | nu
   return data?.entity_id ?? null;
 }
 
-async function memberLedger(admin: Admin, memberId: string) {
-  // Paged: Supabase caps a request at 1,000 rows.
-  return fetchAll((from, to) =>
-    admin
-      .from("rewards_ledger")
-      .select("*")
-      .eq("member_id", memberId)
-      .order("earned_on", { ascending: false })
-      .order("created_at", { ascending: false })
-      .order("id")
-      .range(from, to),
-  );
-}
 
-/** Live spendable balance for one member, straight from the ledger. */
-async function availablePoints(admin: Admin, memberId: string): Promise<number> {
-  const rows = await memberLedger(admin, memberId);
-  return computeBalance(
-    rows.map((r) => ({ points: r.points, earnedOn: r.earned_on, expiresOn: r.expires_on, isAvailable: r.is_available, isPreview: r.is_preview })),
-    todayLA(),
-  ).available;
-}
 
-/** Refresh one member's stored summary after a hand entry. */
-async function refreshOne(admin: Admin, entityId: string, memberId: string) {
-  const { settings, tiers } = await loadProgram(admin, entityId);
-  const { data: m } = await admin.from("rewards_members").select("id, name, status, current_tier_key").eq("id", memberId).single();
-  if (m) await refreshMemberSummaries(admin, entityId, settings, tiers, [m], todayLA());
-}
 
 export async function POST(request: Request) {
   const admin = createAdminClient();
@@ -308,7 +286,7 @@ export async function POST(request: Request) {
             admin.from("rewards_members").select("*").eq("id", memberId).eq("entity_id", entityId).single(),
             admin.from("rewards_member_customers").select("*").eq("member_id", memberId).order("customer_name"),
             admin.from("rewards_contacts").select("*").eq("member_id", memberId).order("created_at"),
-            memberLedger(admin, memberId),
+            memberLedgerRows(admin, memberId),
             admin.from("rewards_perk_uses").select("*").eq("member_id", memberId).order("used_on", { ascending: false }).limit(500),
             admin.from("rewards_redemptions").select("*").eq("member_id", memberId).order("requested_at", { ascending: false }),
             admin.from("rewards_tier_changes").select("*").eq("member_id", memberId).order("created_at", { ascending: false }),
@@ -480,6 +458,42 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, summary });
       }
 
+      case "send_invite": {
+        // Welcome email with the member's details and a link to sign in.
+        const memberId = String(body.memberId ?? "");
+        const { data: member } = await admin
+          .from("rewards_members")
+          .select("name, status, member_number, current_tier_key")
+          .eq("id", memberId)
+          .eq("entity_id", entityId)
+          .single();
+        if (!member) return bad("Member not found", 404);
+        if (member.status !== "active") return bad("Activate the member before sending an invite");
+        let cq = admin.from("rewards_contacts").select("id, email").eq("member_id", memberId);
+        if (typeof body.contactId === "string") cq = cq.eq("id", body.contactId);
+        const { data: contacts } = await cq;
+        if (!contacts?.length) return bad("Add a contact email first");
+        const { settings, tiers } = await loadProgram(admin, entityId);
+        const tier = tiers.find((t) => t.key === member.current_tier_key) ?? [...tiers].sort((a, b) => a.minAnnualSpend - b.minAnnualSpend)[0];
+        const portal = publicPortalUrl();
+        const failures: string[] = [];
+        for (const c of contacts) {
+          const result = await sendInviteEmail({
+            to: c.email,
+            memberName: member.name,
+            memberNumber: fmtMemberNumber(member.member_number),
+            tierName: tier.name,
+            rate: fmtRate(tier.pointsPerDollar),
+            programStart: fmtDate(settings.programStartDate),
+            signInUrl: `${portal}/sign-in`,
+            assetBase: portal,
+          });
+          if (!result.ok) failures.push(`${c.email}: ${result.error}`);
+        }
+        if (failures.length) return bad(`Not sent to ${failures.join("; ")}`, 502);
+        return NextResponse.json({ ok: true, sent: contacts.length });
+      }
+
       case "add_contact": {
         const memberId = String(body.memberId ?? "");
         const email = String(body.email ?? "").trim().toLowerCase();
@@ -522,7 +536,7 @@ export async function POST(request: Request) {
           created_by: actor.userId,
         });
         if (error) return bad(error.message, 500);
-        await refreshOne(admin, entityId, memberId);
+        await refreshOneMember(admin, entityId, memberId);
         return NextResponse.json({ ok: true });
       }
 
@@ -554,148 +568,29 @@ export async function POST(request: Request) {
 
       // ── Redemptions ───────────────────────────────────────────────────
       case "request_redemption": {
-        const memberId = String(body.memberId ?? "");
-        const { data: member } = await admin
-          .from("rewards_members")
-          .select("status, current_tier_key")
-          .eq("id", memberId)
-          .eq("entity_id", entityId)
-          .single();
-        if (!member) return bad("Member not found", 404);
-        if (member.status !== "active") return bad("Only active members can redeem. Activate the member first.");
-
-        let description = String(body.description ?? "").trim();
-        let points = Math.trunc(Number(body.points));
-        let costToCompany: number | null = null;
-        const itemId = typeof body.catalogItemId === "string" ? body.catalogItemId : null;
-        if (itemId) {
-          const { data: item } = await admin.from("rewards_catalog_items").select("*").eq("id", itemId).eq("entity_id", entityId).single();
-          if (!item) return bad("Catalog item not found", 404);
-          description = item.name;
-          points = item.points_cost;
-          costToCompany = item.cost_to_company;
-        }
-        if (!description || !(points > 0)) return bad("Pick a catalog item, or give a description and points");
-
-        const available = await availablePoints(admin, memberId);
-        if (points > available) return bad(`Not enough points: ${available.toLocaleString()} available`);
-
-        const today = todayLA();
-        const { data: red, error } = await admin
-          .from("rewards_redemptions")
-          .insert({
-            entity_id: entityId,
-            member_id: memberId,
-            catalog_item_id: itemId,
-            description,
-            points,
-            cost_to_company: costToCompany,
-            note: (body.note as string) || null,
-            created_by: actor.userId,
-          })
-          .select("id")
-          .single();
-        if (error) return bad(error.message, 500);
-        const { error: ledgerErr } = await admin.from("rewards_ledger").insert({
-          entity_id: entityId,
-          member_id: memberId,
-          entry_type: "redeem",
-          points: -points,
-          earned_on: today,
-          is_available: true,
-          redemption_id: red.id,
-          reason: description,
-          created_by: actor.userId,
+        const result = await requestRedemption(admin, {
+          entityId,
+          memberId: String(body.memberId ?? ""),
+          catalogItemId: typeof body.catalogItemId === "string" ? body.catalogItemId : null,
+          description: String(body.description ?? ""),
+          points: Number(body.points),
+          note: (body.note as string) || null,
+          createdBy: actor.userId,
         });
-        if (ledgerErr) {
-          await admin.from("rewards_redemptions").delete().eq("id", red.id);
-          return bad(ledgerErr.message, 500);
-        }
-        // Two requests at once can both pass the check above. Recheck after
-        // writing and back this one out if the balance went negative.
-        if ((await availablePoints(admin, memberId)) < 0) {
-          await admin.from("rewards_ledger").delete().eq("redemption_id", red.id);
-          await admin.from("rewards_redemptions").delete().eq("id", red.id);
-          return bad("Not enough points: another redemption just used them. Reload and try again.", 409);
-        }
-
-        // Tier perk: a share of the points back, when switched on.
-        const refundPct = await tierPerkNumber(admin, entityId, member.current_tier_key, "redemption_refund");
-        const refund = redemptionRefund(points, refundPct);
-        if (refund > 0) {
-          const { settings } = await loadProgram(admin, entityId);
-          await admin.from("rewards_ledger").insert({
-            entity_id: entityId,
-            member_id: memberId,
-            entry_type: "redeem_refund",
-            points: refund,
-            earned_on: today,
-            expires_on: addMonths(today, settings.pointsExpireMonths),
-            is_available: true,
-            redemption_id: red.id,
-            reason: `${refundPct}% back on ${description}`,
-            created_by: actor.userId,
-          });
-        }
-        await refreshOne(admin, entityId, memberId);
-        return NextResponse.json({ ok: true, id: red.id, refund });
+        if (!result.ok) return bad(result.error, result.status);
+        return NextResponse.json({ ok: true, id: result.id, refund: result.refund });
       }
 
       case "update_redemption": {
-        const redemptionId = String(body.redemptionId ?? "");
-        const status = String(body.status ?? "");
-        if (!["approved", "fulfilled", "cancelled"].includes(status)) return bad("Unknown status");
-        const { data: red } = await admin.from("rewards_redemptions").select("*").eq("id", redemptionId).eq("entity_id", entityId).single();
-        if (!red) return bad("Redemption not found", 404);
-        // Allowed moves: requested -> approved; requested/approved -> fulfilled
-        // or cancelled. A fulfilled reward has been handed over: no cancel.
-        const from: Record<string, string[]> = {
-          approved: ["requested"],
-          fulfilled: ["requested", "approved"],
-          cancelled: ["requested", "approved"],
-        };
-        if (!from[status].includes(red.status)) return bad(`A ${red.status} redemption can't be marked ${status}`);
-        const now = new Date().toISOString();
-        const stamp: Record<string, unknown> = { status };
-        if (status === "approved") stamp.approved_at = now;
-        if (status === "fulfilled") stamp.fulfilled_at = now;
-        if (status === "cancelled") stamp.cancelled_at = now;
-        if (body.costToCompany !== undefined) stamp.cost_to_company = body.costToCompany === "" ? null : Number(body.costToCompany);
-        // Conditional on the status we checked, so two clicks can't both win.
-        const { data: moved, error } = await admin
-          .from("rewards_redemptions")
-          .update(stamp)
-          .eq("id", redemptionId)
-          .in("status", from[status])
-          .select("id");
-        if (error) return bad(error.message, 500);
-        if (!moved || moved.length === 0) return bad("This redemption changed in the meantime. Reload and try again.", 409);
-
-        if (status === "cancelled") {
-          // Give the points back and take back any refund.
-          const today = todayLA();
-          const { settings } = await loadProgram(admin, entityId);
-          const { data: refunds } = await admin
-            .from("rewards_ledger")
-            .select("points")
-            .eq("redemption_id", redemptionId)
-            .eq("entry_type", "redeem_refund");
-          const refunded = (refunds ?? []).reduce((s, r) => s + r.points, 0);
-          await admin.from("rewards_ledger").insert({
-            entity_id: entityId,
-            member_id: red.member_id,
-            entry_type: "redeem_reversal",
-            points: red.points - refunded,
-            earned_on: today,
-            // Returned points expire like newly earned ones.
-            expires_on: addMonths(today, settings.pointsExpireMonths),
-            is_available: true,
-            redemption_id: redemptionId,
-            reason: `Cancelled: ${red.description}`,
-            created_by: actor.userId,
-          });
-          await refreshOne(admin, entityId, red.member_id);
-        }
+        const status = String(body.status ?? "") as "approved" | "fulfilled" | "cancelled";
+        const result = await moveRedemption(admin, {
+          entityId,
+          redemptionId: String(body.redemptionId ?? ""),
+          status,
+          actorId: actor.userId,
+          costToCompany: body.costToCompany === undefined ? undefined : body.costToCompany === "" ? null : Number(body.costToCompany),
+        });
+        if (!result.ok) return bad(result.error, result.status);
         return NextResponse.json({ ok: true });
       }
 
@@ -747,14 +642,4 @@ export async function POST(request: Request) {
   }
 }
 
-async function tierPerkNumber(admin: Admin, entityId: string, tierKey: string | null, perkKey: string): Promise<number | null> {
-  if (!tierKey) return null;
-  const [{ data: tier }, { data: perk }] = await Promise.all([
-    admin.from("rewards_tiers").select("id").eq("entity_id", entityId).eq("key", tierKey).maybeSingle(),
-    admin.from("rewards_perks").select("id").eq("entity_id", entityId).eq("key", perkKey).eq("is_active", true).maybeSingle(),
-  ]);
-  if (!tier || !perk) return null;
-  const { data: tp } = await admin.from("rewards_tier_perks").select("enabled, value_number").eq("tier_id", tier.id).eq("perk_id", perk.id).maybeSingle();
-  return tp?.enabled && tp.value_number !== null ? Number(tp.value_number) : null;
-}
 

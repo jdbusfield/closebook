@@ -15,6 +15,7 @@ export interface RewardsProgram {
   weekend_bonus_enabled: boolean;
   points_expire_months: number;
   auto_enroll: boolean;
+  statements_enabled: boolean;
   last_run_at: string | null;
   last_run_summary: Record<string, unknown> | null;
 }
@@ -73,6 +74,7 @@ export type MemberStatus = "shadow" | "active" | "opted_out";
 
 export interface RewardsMember {
   id: string;
+  member_number: number | null;
   name: string;
   status: MemberStatus;
   activated_at: string | null;

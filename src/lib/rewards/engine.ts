@@ -400,6 +400,40 @@ export interface Balance {
 export function computeBalance(entries: LedgerEntry[], asOf: string, soonDays = 60): Balance {
   const live = entries.filter((e) => !e.isPreview);
   const pending = live.filter((e) => !e.isAvailable && e.points > 0).reduce((s, e) => s + e.points, 0);
+  const { lots, expired, deficit } = spendLots(live, asOf);
+  const soon = addDays(asOf, soonDays);
+  let available = 0;
+  let expiringSoon = 0;
+  for (const lot of lots) {
+    available += lot.left;
+    if (lot.left > 0 && lot.expiresOn && lot.expiresOn <= soon) expiringSoon += lot.left;
+  }
+  return {
+    available: available - deficit,
+    pending,
+    expired,
+    expiringSoon,
+    lifetimeEarned: live.filter((e) => e.points > 0).reduce((s, e) => s + e.points, 0),
+  };
+}
+
+export interface PointLot {
+  earnedOn: string;
+  expiresOn: string | null;
+  points: number;
+  /** Points of this lot not yet spent or expired as of the date asked. */
+  left: number;
+}
+
+/**
+ * The spendable lots still holding points on a date, oldest first, after
+ * redemptions and expiry. Used for the "expiring soon" list.
+ */
+export function openLots(entries: LedgerEntry[], asOf: string): PointLot[] {
+  return spendLots(entries.filter((e) => !e.isPreview), asOf).lots.filter((l) => l.left > 0);
+}
+
+function spendLots(live: LedgerEntry[], asOf: string): { lots: PointLot[]; expired: number; deficit: number } {
   const lots = live
     .filter((e) => e.isAvailable && e.points > 0)
     .map((e) => ({ ...e, left: e.points }))
@@ -443,20 +477,12 @@ export function computeBalance(entries: LedgerEntry[], asOf: string, soonDays = 
   }
   expireThrough(asOf);
 
-  const soon = addDays(asOf, soonDays);
-  let available = 0;
-  let expiringSoon = 0;
-  for (const lot of lots) {
-    if (lot.earnedOn > asOf) continue;
-    available += lot.left;
-    if (lot.left > 0 && lot.expiresOn && lot.expiresOn <= soon) expiringSoon += lot.left;
-  }
   return {
-    available: available - deficit,
-    pending,
+    lots: lots
+      .filter((l) => l.earnedOn <= asOf)
+      .map((l) => ({ earnedOn: l.earnedOn, expiresOn: l.expiresOn, points: l.points, left: l.left })),
     expired,
-    expiringSoon,
-    lifetimeEarned: live.filter((e) => e.points > 0).reduce((s, e) => s + e.points, 0),
+    deficit,
   };
 }
 
