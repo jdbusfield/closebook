@@ -61,12 +61,25 @@ async function send(to: string, subject: string, html: string, text: string): Pr
 
 // ── Sign-in link ──────────────────────────────────────────────────────────
 
-export async function sendSignInEmail(input: {
+export interface RenderedEmail {
+  subject: string;
+  html: string;
+  text: string;
+}
+
+export interface SignInEmailInput {
   to: string;
   links: { memberName: string; url: string }[];
   assetBase: string;
   minutes: number;
-}): Promise<SendResult> {
+}
+
+export async function sendSignInEmail(input: SignInEmailInput): Promise<SendResult> {
+  const e = renderSignInEmail(input);
+  return send(input.to, e.subject, e.html, e.text);
+}
+
+export function renderSignInEmail(input: SignInEmailInput): RenderedEmail {
   const many = input.links.length > 1;
   const body =
     `<div style="font-size:22px;font-weight:bold;margin-bottom:12px">Versatile Rewards Sign In</div>` +
@@ -78,12 +91,12 @@ export async function sendSignInEmail(input: {
     `Link valid for ${input.minutes} minutes, works once.`,
     ...input.links.map((l) => `${many ? l.memberName + ": " : ""}${l.url}`),
   ].join("\n");
-  return send(input.to, "Your Versatile Rewards Sign-In Link", shell(input.assetBase, body), text);
+  return { subject: "Your Versatile Rewards Sign-In Link", html: shell(input.assetBase, body), text };
 }
 
 // ── Welcome invite ──────────────────────────────────────────────────────────
 
-export async function sendInviteEmail(input: {
+export interface InviteEmailInput {
   to: string;
   memberName: string;
   memberNumber: string;
@@ -92,7 +105,14 @@ export async function sendInviteEmail(input: {
   programStart: string;
   signInUrl: string;
   assetBase: string;
-}): Promise<SendResult> {
+}
+
+export async function sendInviteEmail(input: InviteEmailInput): Promise<SendResult> {
+  const e = renderInviteEmail(input);
+  return send(input.to, e.subject, e.html, e.text);
+}
+
+export function renderInviteEmail(input: InviteEmailInput): RenderedEmail {
   const body =
     `<div style="font-size:22px;font-weight:bold;margin-bottom:12px">${esc(input.memberName)}</div>` +
     rows([
@@ -117,7 +137,7 @@ export async function sendInviteEmail(input: {
     `Points Start: ${input.programStart}`,
     `View your points: ${input.signInUrl}`,
   ].join("\n");
-  return send(input.to, "Your Versatile Rewards Account Is Active", shell(input.assetBase, body), text);
+  return { subject: "Your Versatile Rewards Account Is Active", html: shell(input.assetBase, body), text };
 }
 
 // ── Monthly statement ───────────────────────────────────────────────────────
@@ -140,6 +160,11 @@ export interface StatementInput {
 }
 
 export async function sendStatementEmail(input: StatementInput): Promise<SendResult> {
+  const e = renderStatementEmail(input);
+  return send(input.to, e.subject, e.html, e.text);
+}
+
+export function renderStatementEmail(input: StatementInput): RenderedEmail {
   const grid = (cells: [string, string][]) =>
     `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cells
       .map(
@@ -175,5 +200,5 @@ export async function sendStatementEmail(input: StatementInput): Promise<SendRes
     .filter(Boolean)
     .join("\n");
   const footer = ` · <a href="${esc(input.accountUrl)}" style="color:#6b6b6b">Turn Off Statement Emails</a>`;
-  return send(input.to, `Your ${input.monthLabel} Rewards Statement`, shell(input.assetBase, body, footer), text);
+  return { subject: `Your ${input.monthLabel} Rewards Statement`, html: shell(input.assetBase, body, footer), text };
 }
