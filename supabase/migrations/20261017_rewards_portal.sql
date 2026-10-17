@@ -57,3 +57,41 @@ create index rewards_portal_sessions_member on rewards_portal_sessions (member_i
 
 alter table rewards_portal_tokens enable row level security;
 alter table rewards_portal_sessions enable row level security;
+
+-- Title Case for the perk and catalog rows created from the first defaults
+-- (only rows still carrying the original text are renamed).
+update rewards_perks set name = 'Free Ice' where name = 'Free ice';
+update rewards_perks set name = 'Parking Discount' where name = 'Parking discount';
+update rewards_perks set name = 'Automatic Order Discount' where name = 'Automatic order discount';
+update rewards_perks set name = 'Quarterly Rebate' where name = 'Quarterly rebate';
+update rewards_perks set name = 'Free Early Pickup and Late Return' where name = 'Free early pickup and late return';
+update rewards_perks set name = 'Complimentary Delivery' where name = 'Complimentary delivery';
+update rewards_perks set name = 'Expendable Return Credit' where name = 'Expendable return credit';
+update rewards_perks set name = 'Priority Vehicle Holds' where name = 'Priority vehicle holds';
+update rewards_perks set name = 'Dedicated Support Concierge' where name = 'Dedicated support concierge';
+update rewards_perks set name = 'Warehouse Wheel Spin' where name = 'Warehouse wheel spin';
+update rewards_perks set name = 'Free PA for a Day (Manifest)' where name = 'Free PA for a day (Manifest)';
+update rewards_perks set name = 'V-IP Group and Offers' where name = 'V-IP group and offers';
+update rewards_perks set name = 'Points Back After a Redemption' where name = 'Points back after a redemption';
+update rewards_perks set name = 'The Hotel Guy Travel Benefits' where name = 'The Hotel Guy travel benefits';
+update rewards_perks set name = 'Catering Partner' where name = 'Catering partner';
+update rewards_perks set name = 'Coffee Partner' where name = 'Coffee partner';
+update rewards_perks set name = 'PA Wheel Spin on a Clean Return' where name = 'PA wheel spin on a clean return';
+update rewards_perks set description = 'Exclusions Apply · Doesn''t Stack With a Negotiated Discount' where description = 'Exclusions apply. Does not stack with a negotiated discount.';
+update rewards_perks set description = 'Paid Each Quarter on Eligible Spend' where description = '% back on spend each quarter. Existing rebate contracts stay as they are.';
+update rewards_perks set description = 'Before 7am and After 7pm' where description = 'Before 7am and after 7pm.';
+update rewards_perks set description = 'LA Production Zone · Equipment, Trucks, Trailers and Bathrooms' where description = 'Within the LA production zone; equipment, trucks, trailers and bathrooms.';
+update rewards_perks set description = 'Hangers, Ram Board and Other Reusable Expendables' where description = 'Hangers, Ram Board and other reusable expendables.';
+update rewards_catalog_items set name = 'VS T-Shirt' where name = 'VS T-shirt';
+update rewards_catalog_items set name = 'VS Hat' where name = 'VS hat';
+update rewards_catalog_items set name = 'VS Signature Tote' where name = 'VS signature tote';
+update rewards_catalog_items set name = 'VS Water Bottle' where name = 'VS water bottle';
+update rewards_catalog_items set name = '$5 Starbucks Gift Card' where name = '$5 Starbucks gift card';
+update rewards_catalog_items set name = 'VS Premium Swag (Yeti, Owala)' where name = 'VS premium swag (Yeti, Owala)';
+update rewards_catalog_items set name = '$100 AMEX Gift Card' where name = '$100 AMEX gift card';
+update rewards_catalog_items set name = '$200 AMEX Gift Card' where name = '$200 AMEX gift card';
+update rewards_catalog_items set name = '$500 Off Your Next Order' where name = '$500 off your next order';
+update rewards_catalog_items set name = '$500 AMEX Gift Card' where name = '$500 AMEX gift card';
+update rewards_catalog_items set name = '$1,200 Off Your Next Order' where name = '$1,200 off your next order';
+update rewards_catalog_items set name = '$1,500 AMEX Gift Card' where name = '$1,500 AMEX gift card';
+update rewards_catalog_items set name = '$3,500 Off Your Next Order' where name = '$3,500 off your next order';

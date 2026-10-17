@@ -23,7 +23,7 @@ export function esc(s: string): string {
 const FONT = "Arial, Helvetica, sans-serif";
 
 function shell(assetBase: string, body: string, footerExtra = ""): string {
-  return `<!doctype html><html><body style="margin:0;padding:0;background:#f2f2f2">
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0;padding:0;background:#f2f2f2">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f2f2"><tr><td align="center" style="padding:16px 8px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:8px;overflow:hidden;font-family:${FONT};color:#121212">
 <tr><td style="background:#000000;padding:18px 24px"><img src="${assetBase}/rewards-portal-assets/vs-wordmark-white.png" alt="Versatile Studios" height="18" style="display:block;height:18px;border:0"></td></tr>
